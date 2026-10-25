@@ -32,7 +32,7 @@ export function PasscodeScreen({ error, onDone }: { error: string | null; onDone
           className="h-[52px] w-full rounded-full bg-card px-5 text-center text-base outline-none ring-accent focus:ring-2"
         />
         <Button type="submit" disabled={!code.trim() || busy} className="w-full">{busy ? "Checking…" : "Get started"}</Button>
-        <p className="text-center t-foot text-muted">You only do this once on this iPhone.</p>
+        <p className="text-center t-foot text-muted">You only need to do this once.</p>
       </div>
     </form>
   );
