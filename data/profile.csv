@@ -1,0 +1,11 @@
+who,type,value
+household,rule,Weeknight dinners on the table in about 30 minutes.
+household,rule,One pot or one pan when possible.
+Matt,role,Adult A
+Matt,like,Spicy food
+Marcela,role,Adult B
+Marcela,like,Fresh herbs and big salads
+Felix,role,"Child, 11"
+Felix,dislike,Mushrooms
+Nico,role,"Child, 8"
+Nico,like,Tacos
