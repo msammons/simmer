@@ -41,7 +41,7 @@ export default function App() {
       loaded.current = true;
       setPeople(h.people);
       store.setPeople(h.people);
-      setError(h.stale ? "Couldn't refresh from your Sheet, so this uses the last copy." : null);
+      setError(h.stale ? "Couldn't refresh, so this uses the last copy." : null);
       return true;
     } catch (e) {
       if (e instanceof AuthError) { store.setPasscode(null); setError(e.message); setView("passcode"); return false; }
