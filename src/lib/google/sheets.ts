@@ -4,8 +4,13 @@ import { createSign } from "node:crypto";
 type ServiceAccount = { client_email: string; private_key: string };
 let token: { value: string; expires: number } | null = null;
 
+// This app's Sheet. Not a secret (it grants no access without the service account key); SHEET_ID in Vercel overrides it.
+const SHEET = "1FOQPuSPWntp6VURMw97-olFmd-xFs3LbuK104Eo6uEM";
+const sheetId = () => process.env.SHEET_ID || SHEET;
+
+/** With the service account key the app uses its Sheet; without it (local dev, tests) it reads data/*.csv. */
 export function sheetsConfigured() {
-  return Boolean(process.env.SHEET_ID && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  return Boolean(sheetId() && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 }
 
 function serviceAccount(): ServiceAccount {
@@ -39,7 +44,7 @@ async function accessToken(): Promise<string> {
   return token.value;
 }
 
-const base = () => `https://sheets.googleapis.com/v4/spreadsheets/${process.env.SHEET_ID}/values`;
+const base = () => `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}/values`;
 
 export async function readTab(tab: string): Promise<string[][]> {
   const r = await fetch(`${base()}/${encodeURIComponent(tab)}`, {
@@ -65,7 +70,7 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
 
 /** Creates the tab if it doesn't exist yet. */
 export async function ensureTab(title: string): Promise<void> {
-  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${process.env.SHEET_ID}:batchUpdate`, {
+  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}:batchUpdate`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
     body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
