@@ -1,0 +1,9 @@
+# Never upload secrets or local-only data
+.env*
+!.env.example
+service-account.json
+.data/
+.claude/
+scripts/
+node_modules/
+.next/
