@@ -13,7 +13,7 @@ shape of the app and the lessons that came from building Head Out, so they don't
 - **The Google Sheet is the data store.** People edit it by hand and Gemini edits it too, so parsing is forgiving: columns
   are matched by header name in any order, values in any capitalization, and a bad row is skipped and reported, never fatal
   (`lib/parse.ts`). The server keeps the last good copy for 60 s and falls back to it when the Sheet can't be reached
-  (`lib/data.ts`). Without `SHEET_ID`, local dev reads `data/*.csv`.
+  (`lib/data.ts`). The Sheet's id is in `lib/google/sheets.ts`; without the service account key, local dev reads `data/*.csv`.
 - **Code owns facts; the model writes words.** Anything checkable (dates, times, quantities, what's in the Sheet) comes from
   code. Gemini (`lib/google/gemini.ts`, structured JSON output, retries, a lighter fallback model) only writes the friendly
   sentences. In Head Out, people's names were swapped for roles ("Adult A", "Child, 11") before anything was sent to the
@@ -74,5 +74,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 
 1. A Google Sheet with a **Profile** tab (`who, type, value`; see `data/profile.csv`), shared as Editor with the service
    account's email.
-2. A Vercel project linked to this repo, with `HOUSEHOLD_PASSCODE`, `SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` (the key
+2. A Vercel project linked to this repo, with `HOUSEHOLD_PASSCODE`, `GOOGLE_SERVICE_ACCOUNT_JSON` (the key
    file's whole JSON on one line) and `GEMINI_API_KEY` (see `.env.example`).
+   These three are secrets: they stay in Vercel (ideally as shared variables linked to every app), never in code,
+   because code is copied everywhere and git keeps every version forever. The Sheet's id isn't a secret, so it lives in code.
