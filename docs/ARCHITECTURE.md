@@ -58,6 +58,8 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 ## Standing preferences
 
 - No technical words in anything a person sees: no "Gemini", "Google", "Sheet", "tab", "web", "API".
+- No device names in anything a person sees either: not "iPhone", "iPad" or "phone". Say "saved", "here" or "your
+  settings" instead.
 - No scheduled background jobs. Work happens while someone is using the app (or right after a response, with `after()`).
 - No maintenance screens in the app. The Sheet is where data is managed.
 - Secrets live only in Vercel and on Matt's Mac. Never print them, never commit them.
