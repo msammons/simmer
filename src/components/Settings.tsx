@@ -6,7 +6,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: { theme: Theme; onThe
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
       <div className="pb-2">
-        <Group header="Look" footer="Light or dark follows your iPhone. Simmer & Sage is Simmer by day and Sage by night.">
+        <Group header="Look" footer="Light or dark follows your settings. Simmer & Sage is Simmer by day and Sage by night.">
           {THEMES.map((t) => (
             <Row
               key={t.id}
