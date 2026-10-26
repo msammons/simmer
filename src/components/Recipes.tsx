@@ -1,7 +1,8 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
-import { api, errorText, fileToSend, type Draft, type Effort, type Ingredient, type Recipe } from "@/lib/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
+import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Groceries";
 import { Icon } from "./icons";
@@ -30,8 +31,8 @@ function Some({ header, items, onOpen, onAll }: { header: string; items: Recipe[
 }
 
 /** Search (the round button): her collection, searched as she types; before typing, the collection by kind. */
-export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, onAdd }: {
-  recipes: Recipe[] | null; query: string; recent: string[]; error: string | null;
+export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, onAdd, freezer = [] }: {
+  recipes: Recipe[] | null; query: string; recent: string[]; error: string | null; freezer?: Frozen[];
   onSearch: (q: string) => void; onOpen: (r: Recipe) => void; onAdd: () => void;
 }) {
   const all = useMemo(() => recipes ?? [], [recipes]);
@@ -58,6 +59,7 @@ export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, 
         <>
           <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
           {recent.length > 0 && <Group header="Recent">{recent.map((x) => <Row key={x} icon="search" title={x} onClick={() => onSearch(x)} accessory="chevron" />)}</Group>}
+          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} onOpen={onOpen} onAll={() => onSearch(freezer[0]?.item ?? "")} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} onOpen={onOpen} onAll={() => onSearch("favorites")} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("quick")} />
           <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("regular")} />
@@ -70,9 +72,20 @@ export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, 
 }
 
 /** A recipe (drill-in from Search): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, onBack, onEdit, onEffort, onActive, onAddToList }: {
+export function RecipeScreen({ r, onBack, onEdit, onEffort, onActive, onAddToList, tonight, onMade }: {
   r: Recipe; onBack: () => void; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
+  /** It's tonight's dinner: cooking it, so the screen stays on and Made it is one tap. */
+  tonight?: { made: boolean }; onMade?: () => void;
 }) {
+  useEffect(() => {
+    // Keep the screen awake while cooking, where the browser allows it.
+    let lock: { release: () => Promise<void> } | null = null;
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<{ release: () => Promise<void> }> } };
+    const take = () => { if (document.visibilityState === "visible") nav.wakeLock?.request("screen").then((l) => { lock = l; }, () => {}); };
+    take();
+    document.addEventListener("visibilitychange", take);
+    return () => { document.removeEventListener("visibilitychange", take); lock?.release().catch(() => {}); };
+  }, []);
   const fresh = r.ingredients.filter((i) => i.section === "fresh"), rest = r.ingredients.filter((i) => i.section !== "fresh");
   const link = /^https?:\/\//.test(r.source) ? r.source : "";
   return (
@@ -104,6 +117,9 @@ export function RecipeScreen({ r, onBack, onEdit, onEffort, onActive, onAddToLis
           {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
         </Group>
       )}
+      {tonight && onMade && (tonight.made
+        ? <Notice tone="info">Made tonight.</Notice>
+        : <Button onClick={onMade} icon="check" className="w-full">Made it</Button>)}
       <Button variant="plain" onClick={() => onActive(!r.active)} className="w-full">{r.active ? "Stop suggesting this" : "Suggest this again"}</Button>
     </div>
   );
