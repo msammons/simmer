@@ -29,7 +29,7 @@ export function records(rows: string[][]) {
   }));
 }
 
-const PERSON_TYPES = { role: "role", like: "likes", dislike: "dislikes", allergy: "allergies", note: "notes" } as const;
+const PERSON_TYPES = { role: "role", like: "likes", dislike: "dislikes", allergy: "allergies", note: "notes", rule: "rules" } as const;
 
 /**
  * The Profile tab: who / type / value rows. "household" rows with type "rule" apply to everyone; a person's rows say
@@ -49,7 +49,7 @@ export function parseProfile(rows: string[][]): { profile: Profile; ignored: Ign
       continue;
     }
     const key = who.toLowerCase();
-    const person = byKey.get(key) ?? { key, name: who, role: "", isAdult: false, likes: [], dislikes: [], allergies: [], notes: [] };
+    const person = byKey.get(key) ?? { key, name: who, role: "", isAdult: false, likes: [], dislikes: [], allergies: [], notes: [], rules: [] };
     byKey.set(key, person);
     if (!value) { bad("missing value"); continue; }
     const field = PERSON_TYPES[type as keyof typeof PERSON_TYPES];

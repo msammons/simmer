@@ -19,7 +19,7 @@ describe("parsing", () => {
     ].join("\n")));
     expect(profile.household).toEqual(["Weeknights in 30 minutes"]);
     expect(profile.people.map((p) => [p.name, p.isAdult, p.dislikes, p.allergies])).toEqual([["Felix", false, ["Mushrooms"], ["Peanuts"]], ["Matt", true, [], []]]);
-    expect(ignored.map((i) => i.why[0])).toEqual(['unknown type "favorite" (use role, like, dislike, allergy, note)', "no role row, so this person is left out"]);
+    expect(ignored.map((i) => i.why[0])).toEqual(['unknown type "favorite" (use role, like, dislike, allergy, note, rule)', "no role row, so this person is left out"]);
   });
 });
 

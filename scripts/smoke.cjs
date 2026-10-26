@@ -18,15 +18,33 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
     ok(`${scheme}: wrong passcode message`, await page.getByText("That passcode didn't work").waitFor({ timeout: 5000 }).then(() => true, () => false));
     await page.screenshot({ path: `${dir}/1-pass-${scheme}.png` });
     await page.getByLabel("Household passcode").fill("test123"); await page.getByRole("button", { name: "Get started" }).tap();
-    ok(`${scheme}: reaches This week`, await page.getByText("Nothing planned yet").waitFor({ timeout: 8000 }).then(() => true, () => false));
-    ok(`${scheme}: names from the Profile`, await page.getByText(/Matt, Marcela, Felix & Nico/).isVisible());
+    ok(`${scheme}: reaches This week`, await page.getByRole("heading", { name: "This week" }).waitFor({ timeout: 8000 }).then(() => true, () => false));
+    await page.waitForTimeout(800);
     await page.screenshot({ path: `${dir}/2-week-${scheme}.png` });
+    if (scheme === "light") {
+      // Plan the week: the nights, the trips, the dinners, the lunches, then save.
+      // On a weekend the main button plans next week; on a weekday, this week.
+      await page.getByRole("button", { name: /^Plan (the|next) week/ }).first().tap(); await page.waitForTimeout(500);
+      await page.screenshot({ path: `${dir}/2a-nights.png` });
+      await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300);
+      await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
+      ok("plan: dinners suggested", await page.getByRole("heading", { name: "Dinners" }).isVisible() && (await page.getByText("Nothing fits this night").count()) < 7);
+      await page.screenshot({ path: `${dir}/2b-dinners.png`, fullPage: true });
+      await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300);
+      ok("plan: lunches for each boy", (await page.getByText("Felix", { exact: true }).count()) >= 4);
+      await page.screenshot({ path: `${dir}/2c-lunches.png` });
+      await page.getByRole("button", { name: "Save the week" }).tap();
+      ok("plan: saved, and the list told", await page.getByText(/to the grocery list/).waitFor({ timeout: 10000 }).then(() => true, () => false));
+      ok("plan: the week shows", await page.getByRole("heading", { name: /^(The|Next) week$/ }).first().isVisible());
+      await page.screenshot({ path: `${dir}/2d-week.png`, fullPage: true });
+    }
     await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(400); await page.screenshot({ path: `${dir}/3-settings-${scheme}.png` });
     await page.getByRole("radio", { name: /^Sage/ }).tap(); await page.waitForTimeout(200);
     ok(`${scheme}: theme switches`, (await page.evaluate(() => document.documentElement.dataset.theme)) === "sage");
     await page.getByRole("radio", { name: /^Simmer$/ }).tap();
     await page.mouse.click(195, 30); await page.waitForTimeout(400);
-    await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(300); await page.screenshot({ path: `${dir}/4-groceries-${scheme}.png` });
+    await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(800); await page.screenshot({ path: `${dir}/4-groceries-${scheme}.png`, fullPage: true });
+    ok(`${scheme}: the plan's pantry things to check`, await page.getByRole("heading", { name: "Check you have these" }).isVisible());
     await page.getByRole("button", { name: "Search", exact: true }).tap(); await page.waitForTimeout(500);
     await page.keyboard.type("Tacos"); await page.keyboard.press("Enter"); await page.waitForTimeout(300); await page.screenshot({ path: `${dir}/5-search-${scheme}.png` });
     ok(`${scheme}: search finds the recipe`, await page.getByText("1 found").isVisible());
