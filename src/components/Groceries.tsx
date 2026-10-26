@@ -17,6 +17,8 @@ export type ListActions = {
   need: (it: Item) => void;
   have: () => void;
   freeze: (text: string) => void;
+  /** Out of stock: open the planned night this item was for, to swap the meal. */
+  swapFor?: (forWhat: string) => void;
   takeOut: (f: Frozen) => void;
 };
 
@@ -128,6 +130,11 @@ function ItemSheet({ it, act, onClose }: { it: Item; act: ListActions; onClose: 
             <Row key={s} title={SECTION_NAMES[s]} role="radio" checked={it.section === s} accessory="check" onClick={() => { act.move(it, { section: s }); onClose(); }} />
           ))}
         </Group>
+        {it.for && it.for !== "lunches" && act.swapFor && (
+          <Group header="Didn't get it?" footer={`It's for ${it.for}. Move it to another store above, or swap the meal.`}>
+            <Row icon="refresh" title="Swap the meal" accessory="chevron" onClick={() => { onClose(); act.swapFor!(it.for); }} />
+          </Group>
+        )}
         <Button variant="secondary" onClick={() => { act.remove(it); onClose(); }} className="w-full">Take it off the list</Button>
       </div>
     </Sheet>

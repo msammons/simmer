@@ -173,6 +173,15 @@ export default function App() {
     remove: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
     need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     have: () => change({ op: "have" }, (l) => ({ ...l, items: l.items.filter((x) => !(x.check && !x.checked)) })),
+    swapFor: (forWhat) => {
+      // "Tuesday's turkey chili" → that night, in this week or next.
+      const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+      for (const w of [week, next]) {
+        const n = w?.nights.find((x) => x.date >= dateIn(0) && x.meal && forWhat.toLowerCase().includes(`${dayName(x.date)}'s ${(recipes?.find((r) => r.id === x.meal)?.name ?? x.meal).toLowerCase()}`.toLowerCase()));
+        if (w && n) { setView("week"); setLastTab("week"); setNight({ w, n }); return; }
+      }
+      setView("week"); setLastTab("week");
+    },
     freeze: (text) => api.freezer({ op: "add", text }).then(setKitchen, (e) => setListError(errorText(e))),
     takeOut: (f) => {
       setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });

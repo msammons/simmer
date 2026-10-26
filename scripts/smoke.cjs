@@ -45,6 +45,13 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
     await page.mouse.click(195, 30); await page.waitForTimeout(400);
     await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(800); await page.screenshot({ path: `${dir}/4-groceries-${scheme}.png`, fullPage: true });
     ok(`${scheme}: the plan's pantry things to check`, await page.getByRole("heading", { name: "Check you have these" }).isVisible());
+    if (scheme === "light") {
+      await page.getByRole("button", { name: "More for ground beef" }).tap(); await page.waitForTimeout(400);
+      await page.getByRole("button", { name: /^Swap the meal/ }).tap(); await page.waitForTimeout(600);
+      ok("didn't get it: opens the night", await page.getByRole("heading", { name: /^Monday: Tacos/ }).isVisible());
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(600);
+    }
     await page.getByRole("button", { name: /^Freezer/ }).tap(); await page.waitForTimeout(400);
     await page.getByLabel("Add to the freezer").fill(`2 shrimp ${scheme}`); await page.keyboard.press("Enter");
     ok(`${scheme}: freezer add`, await page.getByText(`shrimp ${scheme}`).first().waitFor({ timeout: 5000 }).then(() => true, () => false));
