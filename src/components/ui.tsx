@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
-import { WORDMARK } from "./wordmark";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
 // pills for controls, 22px cards (inset grouped lists), 36px sheets, the t-* type scale, one line-icon set.
@@ -24,15 +23,12 @@ export function Button({ children, onClick, href, disabled, type = "button", var
 
 /** The brand: the app icon and "Simmer" in SF Pro Rounded. sm in every screen's top bar; md on the splash and sign-in. */
 export function Brand({ size = "sm" }: { size?: "sm" | "md" }) {
-  const s = { sm: ["size-7 rounded-[8px]", "h-[21px]", "gap-2"], md: ["size-20 rounded-[1.4rem]", "h-[44px]", "gap-4 flex-col"] }[size];
+  const s = { sm: ["size-7 rounded-[8px]", "text-[19px]", "gap-2"], md: ["size-20 rounded-[1.4rem]", "text-[36px]", "gap-4 flex-col"] }[size];
   return (
     <span className={`inline-flex items-center ${s[2]}`}>
       {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG; next/image adds nothing here */}
       <img src="/icon.svg" alt="" className={`${s[0]} shadow-[0_4px_14px_color-mix(in_srgb,var(--g2)_30%,transparent)]`} />
-      {/* The name, hand-lettered, in the brand color. */}
-      <svg viewBox="20 -880 3410 900" className={`${s[1]} w-auto text-accent`} role="img" aria-label="Simmer">
-        <path d={WORDMARK} fill="currentColor" />
-      </svg>
+      <span className={`font-brand font-extrabold leading-none tracking-[-0.03em] text-ink ${s[1]}`}>Simmer</span>
     </span>
   );
 }
