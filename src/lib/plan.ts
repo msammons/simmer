@@ -5,21 +5,23 @@
 // from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, type Store } from "./groceries";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
-import { eatingText, emptyNight, LUNCH_PARTS, lunchShopping, readEating, weekDates, type Lunch, type LunchOption, type LunchPart, type Night, type NightKind, type Taste } from "./week";
+import { norm } from "./words";
+import { eatingText, emptyNight, freezerMatch, LUNCH_PARTS, lunchShopping, readEating, weekDates, type Frozen, type Lunch, type LunchOption, type LunchPart, type Night, type NightKind, type Taste } from "./week";
 
-const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan";
+const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer";
 const HEADERS: Record<string, string[]> = {
   [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes"],
   [MADE]: ["date", "recipe"],
   [TRIPS]: ["date", "store"],
   [LUNCHES]: ["kid", "part", "item", "ingredients", "notes"],
   [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school"],
+  [FREEZER]: ["id", "item", "amount", "added", "store"],
 };
 
 const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
@@ -121,10 +123,11 @@ export type WeekData = {
   monday: string; nights: Night[]; planned: boolean; lastWeek: Night[]; lastMade: Record<string, string>;
   trips: ReturnType<typeof tripsDue>; lunchOptions: LunchOption[]; lunches: Lunch[];
   people: (Taste & { rules: string[] })[];
+  freezer: Frozen[];
 };
 
 export async function loadWeek(monday: string): Promise<WeekData> {
-  const [plan, made, trips, options, lunchPlan, hh] = await Promise.all([rows(PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(LUNCH_PLAN), loadHousehold()]);
+  const [plan, made, trips, options, lunchPlan, hh, freezer] = await Promise.all([rows(PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(LUNCH_PLAN), loadHousehold(), loadFreezer()]);
   const nights = toNights(plan);
   const dates = weekDates(monday), before = weekDates(addDays(monday, -7));
   const mine = dates.flatMap((d) => nights.filter((n) => n.date === d).slice(-1));
@@ -138,6 +141,7 @@ export async function loadWeek(monday: string): Promise<WeekData> {
     lunchOptions: toOptions(options),
     lunches: toLunches(lunchPlan).filter((l) => dates.includes(l.date)),
     people: hh.profile.people.map((p) => ({ name: p.name, isAdult: p.isAdult, likes: p.likes, dislikes: p.dislikes, rules: p.rules })),
+    freezer,
   };
 }
 
@@ -150,7 +154,7 @@ const dayName = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateStri
  * with what's there: fresh things to buy, pantry things to check. A night whose meal didn't change adds nothing again.
  */
 export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): Promise<{ added: number }> {
-  const [plan, lunchPlan, recipes, options] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN), loadRecipes(), rows(LUNCHES)]);
+  const [plan, lunchPlan, recipes, options, freezer] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN), loadRecipes(), rows(LUNCHES), loadFreezer()]);
   const old = toNights(plan);
   const was = (d: string) => old.filter((n) => n.date === d).pop();
   await upsert(PLAN, nights.map((n) => {
@@ -175,7 +179,8 @@ export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): P
       const r: Recipe | undefined = byId.get(id);
       if (!r || id === before) continue;
       const forWhat = `${dayName(n.date)}'s ${r.name.toLowerCase()}`;
-      for (const i of r.ingredients) need.push({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" });
+      // What's in the freezer isn't bought again: it's used from there (and counted down when the meal is made).
+      for (const i of r.ingredients) if (!freezer.some((f) => freezerMatch(f.item, i.item))) need.push({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" });
     }
   }
   // Lunches: only what's new since the last save of this week.
@@ -192,9 +197,56 @@ export async function markMade(date: string, made: boolean) {
   if (!n) return;
   await upsert(PLAN, [{ date, made: made ? "yes" : "no" }], ["date"]);
   if (!made) return;
-  const ids = new Set((await loadRecipes()).map((r) => r.id));
-  await append(MADE, [n.meal, n.kidsMeal].filter((id) => ids.has(id)).map((recipe) => ({ date, recipe })));
+  const recipes = await loadRecipes();
+  const used = recipes.filter((r) => r.id === n.meal || r.id === n.kidsMeal);
+  await append(MADE, used.map((r) => ({ date, recipe: r.id })));
+  // The freezer counts down: one of each thing the meal used from it, the oldest first.
+  const freezer = await loadFreezer();
+  for (const r of used) {
+    const f = freezer.find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
+    if (f) await takeFrozen(f.id);
+  }
+}
+
+/** The freezer and when the next trips are, for the Groceries tab. */
+export async function loadKitchen() {
+  const [freezer, trips] = await Promise.all([loadFreezer(), rows(TRIPS)]);
+  return { freezer, trips: tripsDue(trips, todayIn()) };
 }
 
 /** A finished trip (Done shopping), for the store rhythm. */
 export const recordTrip = (store: Store) => append(TRIPS, [{ date: todayIn(), store }]);
+
+// ---- the freezer (docs/PLAN.md, section 4.6)
+
+/** What's in the freezer, oldest first. */
+export async function loadFreezer(): Promise<Frozen[]> {
+  return records(await rows(FREEZER)).flatMap((r) => (r.get("item") ? [{ id: r.get("id") || `row-${r.rowNumber}`, item: r.get("item"), amount: r.get("amount"), added: r.get("added"), store: r.get("store") }] : []))
+    .sort((a, b) => (a.added || "9").localeCompare(b.added || "9"));
+}
+
+/** "2 salmon" → two salmon, put in today. The same thing added again adds up. */
+export async function addFrozen(text: string, store = "") {
+  const m = text.trim().match(/^(\d+)\s+(.+)$/);
+  const item = (m ? m[2] : text).trim().slice(0, 60), amount = m ? m[1] : "";
+  if (!item) return;
+  const same = (await loadFreezer()).find((f) => norm(f.item) === norm(item));
+  if (same && /^\d+$/.test(same.amount) && amount) return upsert(FREEZER, [{ id: same.id, amount: String(Number(same.amount) + Number(amount)) }], ["id"]);
+  await upsert(FREEZER, [{ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, item, amount, added: todayIn(), store }], ["id"]);
+}
+
+/** One used: the amount goes down, and at none (or no amount written) it's gone. */
+export async function takeFrozen(id: string) {
+  const f = (await loadFreezer()).find((x) => x.id === id);
+  if (!f) return;
+  const n = Number(f.amount);
+  if (Number.isFinite(n) && n > 1) await upsert(FREEZER, [{ id, amount: String(n - 1) }], ["id"]);
+  else await removeRows(FREEZER, (get) => get("id") === id);
+}
+
+async function removeRows(tab: string, drop: (get: (k: string) => string) => boolean) {
+  const all = await rows(tab);
+  const keep = [all[0] ?? HEADERS[tab], ...records(all).filter((r) => !drop(r.get)).map((r) => all[r.rowNumber - 1])];
+  if (sheetsConfigured()) await replaceTab(tab, keep);
+  else memory.set(tab, keep);
+}
