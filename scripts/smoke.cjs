@@ -39,8 +39,8 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
       await page.screenshot({ path: `${dir}/2d-week.png`, fullPage: true });
     }
     await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(400); await page.screenshot({ path: `${dir}/3-settings-${scheme}.png` });
-    await page.getByRole("radio", { name: /^Sage/ }).tap(); await page.waitForTimeout(200);
-    ok(`${scheme}: theme switches`, (await page.evaluate(() => document.documentElement.dataset.theme)) === "sage");
+    await page.getByRole("radio", { name: /^Apricot/ }).tap(); await page.waitForTimeout(200);
+    ok(`${scheme}: theme switches`, (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot");
     await page.getByRole("radio", { name: /^Simmer$/ }).tap();
     await page.mouse.click(195, 30); await page.waitForTimeout(400);
     await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(800); await page.screenshot({ path: `${dir}/4-groceries-${scheme}.png`, fullPage: true });
