@@ -2,27 +2,27 @@
 
 /*
  * Colors follow iOS: system grouped backgrounds and labels, warmed slightly. A theme sets the accent (tint) and the brand
- * gradient (--g1 → --g2 → --g3). Simmer's own looks are Simmer (butter → apricot → terracotta, the default, matching the
- * icon) and Sage (soft herb greens); Simmer & Sage is Simmer in light mode and Sage in dark. The gradient is for brand
+ * gradient (--g1 → --g2 → --g3). Simmer's own looks are Simmer (Sunday supper: berry and tangerine on cream, the
+ * default, matching the icon) and Sage (soft herb greens); Simmer & Sage is Simmer in light mode and Sage in dark. The gradient is for brand
  * surfaces (a feature card, the loading ring), never for things you tap. The plain accent themes get a gradient made from
  * their one color. Set by data-theme on <html> (see the script in layout.tsx).
  */
 :root {
-  --bg: #F6F3EF;
+  --bg: #FFF6EC;
   --card: #FFFFFF;
-  --sunk: #ECE7E1;
+  --sunk: #F6E9DA;
   --ink: #000000;
   --muted: #8A8A8E;
-  --line: #E8E2DB;
+  --line: #F0E2D2;
   --on-accent: #FFFFFF;
   --warn-bg: #FFF4D6;
   --warn-ink: #8A5A00;
   --alert: #FF3B30;
-  /* Simmer (the default), matching the icon. */
-  --accent: #C4553E;
-  --g1: #F6C177;
-  --g2: #E8875A;
-  --g3: #C4553E;
+  /* Simmer (the default), matching the icon: berry and tangerine. */
+  --accent: #E2336B;
+  --g1: #FF8A00;
+  --g2: #FF6A5C;
+  --g3: #FF4F8B;
 }
 :root[data-theme="sage"] { --accent: #4E7A5C; --g1: #B9D3A8; --g2: #7FA982; --g3: #4E7A5C; }
 :root[data-theme="blue"] { --accent: #007AFF; }
@@ -44,7 +44,7 @@
     --warn-ink: #FFD60A;
     --alert: #FF453A;
     /* Simmer in dark mode. */
-    --accent: #F08A66;
+    --accent: #FF6B9D;
   }
   /* Simmer & Sage: Simmer by day (the light values above), Sage by night. */
   :root[data-theme="simmersage"],
