@@ -579,7 +579,7 @@ Answered by Matt on Oct 26, 2026:
 
 ## Brand (Oct 26)
 
-Matt chose "Sunday supper", fun and energetic, food is love: berry and tangerine on cream. The icon is a big S of steam
-rising from a small pan (a play on the letter S that reads at every size); the name is set in hand-lettered script
-(the Pacifico typeface, drawn as a shape in `components/wordmark.ts`, so no font has to load) in berry. Simmer's default
-theme is berry buttons on a cream background, a lighter berry in dark mode.
+The icon is a big S of steam rising from a small pan, a play on the letter S that reads at every size. The look is
+warm orange (apricot to burnt orange, no pink: the earlier berry-and-tangerine read as an Instagram copy), and the
+name is set simply, in the phone's rounded bold type. Simmer's default theme is burnt-orange buttons on a warm cream
+background, a lighter orange in dark mode.
