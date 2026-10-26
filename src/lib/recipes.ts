@@ -318,6 +318,27 @@ export async function readText(raw: string, src = "Typed in"): Promise<Draft[]> 
   });
 }
 
+const READABLE = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
+
+/**
+ * Reads the recipes in a picture (a screenshot, a photo of a card or a cookbook page) or a PDF. The model writes out
+ * each recipe's text as it appears, and the amounts and times it reports are checked against that text, as with typed
+ * recipes; anything it couldn't read stays blank for her.
+ */
+export async function readRecipeFile(f: { name: string; mimeType: string; data: string }): Promise<Draft[]> {
+  const src = f.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || (f.mimeType.startsWith("image/") ? "Photo" : "File");
+  if (/^text\//.test(f.mimeType)) return readText(Buffer.from(f.data, "base64").toString("utf8"), src);
+  if (!READABLE.test(f.mimeType)) throw new AppError("Simmer can read pictures, PDFs and text files.");
+  const schema = structuredClone(DRAFT_SCHEMA) as typeof DRAFT_SCHEMA & { properties: { recipes: { items: { properties: Record<string, unknown>; required: string[] } } } };
+  schema.properties.recipes.items.properties.text = { type: "STRING" };
+  schema.properties.recipes.items.required.push("text");
+  const { data } = await generateJson<{ recipes: (ModelRecipe & { text: string })[] }>(
+    `Read every recipe in this ${f.mimeType === "application/pdf" ? "document" : "picture"} into structured form. For each: text is the recipe's own words as they appear (the title, ingredient lines and steps), copied exactly; then the same recipe in fields. Copy ingredient lines as written; only include minutes or servings it states. If a part is unreadable, leave it out rather than guess. effort: "quick" if it's about 30 minutes or less on a weeknight, else "regular". make_ahead: true if it can be made earlier in the day or the night before. for: "kids" for a children's dinner, else "everyone". protein: the main protein in a few words. tags: up to 4 short words. If there's no recipe, return an empty list.`,
+    schema, { files: [{ mimeType: f.mimeType, data: f.data }], timeoutMs: 55_000 },
+  );
+  return (data.recipes ?? []).filter((r) => r.name?.trim()).slice(0, 60).map((r) => checkAgainst(r.text ?? "", r, src));
+}
+
 /** Meal ideas ("Tacos") become recipes that are just a name and a guessed effort: enough to plan with. */
 async function guessIdeas(names: string[], src: string): Promise<Draft[]> {
   const bare = (name: string, effort: Effort, makeAhead = false, forWho: For = "everyone"): Draft => ({
