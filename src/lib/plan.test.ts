@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadList } from "./groceries";
-import { loadWeek, markMade, saveWeek } from "./plan";
+import { addFrozen, loadFreezer, loadWeek, markMade, saveWeek } from "./plan";
 import { addDays, todayIn } from "./time";
 import { planLunches, weekOf } from "./week";
 
@@ -25,5 +25,19 @@ describe("saving the week", () => {
     expect(again.nights.find((n) => n.date === day)).toMatchObject({ meal: "turkey-chili-1", pinned: true, plannedBy: "Marcela" });
     await markMade(day, true);
     expect((await loadWeek(day)).lastMade["turkey-chili-1"]).toBe(day);
+  });
+
+  it("uses the freezer instead of buying, and counts it down when made", async () => {
+    const later = addDays(todayIn(), 9);
+    await addFrozen("2 salmon");
+    await addFrozen("1 salmon");
+    expect((await loadFreezer()).find((f) => f.item === "salmon")?.amount).toBe("3");
+    const week = await loadWeek(weekOf(later));
+    await saveWeek(week.nights.map((n) => (n.date === later ? { ...n, kind: "quick" as const, meal: "salmon-1" } : n)), [], "Matt");
+    const { items } = await loadList();
+    expect(items.some((i) => i.item === "salmon" && !i.checked)).toBe(false);
+    expect(items.find((i) => i.item === "broccoli")?.for).toMatch(/salmon and broccoli/);
+    await markMade(later, true);
+    expect((await loadFreezer()).find((f) => f.item === "salmon")?.amount).toBe("2");
   });
 });

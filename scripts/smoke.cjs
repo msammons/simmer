@@ -45,6 +45,12 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
     await page.mouse.click(195, 30); await page.waitForTimeout(400);
     await page.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(800); await page.screenshot({ path: `${dir}/4-groceries-${scheme}.png`, fullPage: true });
     ok(`${scheme}: the plan's pantry things to check`, await page.getByRole("heading", { name: "Check you have these" }).isVisible());
+    await page.getByRole("button", { name: /^Freezer/ }).tap(); await page.waitForTimeout(400);
+    await page.getByLabel("Add to the freezer").fill(`2 shrimp ${scheme}`); await page.keyboard.press("Enter");
+    ok(`${scheme}: freezer add`, await page.getByText(`shrimp ${scheme}`).first().waitFor({ timeout: 5000 }).then(() => true, () => false));
+    await page.screenshot({ path: `${dir}/4b-freezer-${scheme}.png` });
+    await page.getByRole("button", { name: /Use one/ }).first().tap(); await page.waitForTimeout(600);
+    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
     await page.getByRole("button", { name: "Search", exact: true }).tap(); await page.waitForTimeout(500);
     await page.keyboard.type("Tacos"); await page.keyboard.press("Enter"); await page.waitForTimeout(300); await page.screenshot({ path: `${dir}/5-search-${scheme}.png` });
     ok(`${scheme}: search finds the recipe`, await page.getByText("1 found").isVisible());
@@ -56,6 +62,11 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
     await page.getByRole("button", { name: /^Add \d+ to the list/ }).tap(); await page.waitForTimeout(800);
     await page.getByRole("button", { name: "Recipes" }).first().tap(); await page.waitForTimeout(300);
     await page.getByRole("button", { name: "Add recipes" }).first().tap(); await page.waitForTimeout(400);
+    // A photo: read by the model on the server (here, without a model, it should fail gently, not break).
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.locator('input[accept="image/*"]').setInputFiles({ name: "card.png", mimeType: "image/png", buffer: png });
+    ok(`${scheme}: a photo is sent and answered`, await page.getByText(/Found|Try again|didn't load|busy|Couldn't find/).first().waitFor({ timeout: 30000 }).then(() => true, () => false));
+    await page.screenshot({ path: `${dir}/8a-photo-${scheme}.png` });
     await page.getByRole("button", { name: /^Type it in/ }).tap(); await page.waitForTimeout(200);
     await page.keyboard.type(`Pizza night ${scheme}\nChicken soup ${scheme}\nBreakfast for dinner ${scheme}`);
     await page.getByRole("button", { name: "Read it" }).tap();

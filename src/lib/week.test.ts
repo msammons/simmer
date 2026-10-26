@@ -83,6 +83,14 @@ describe("planning the week", () => {
     expect(away.indexOf("spicy noodles")).toBeGreaterThan(home.indexOf("spicy noodles"));
   });
 
+  it("favors what's in the freezer, the oldest most", () => {
+    const nights = [emptyNight(monday, "quick")];
+    const withSalmon = { ...ctx, freezer: [{ id: "f1", item: "Chicken", amount: "2", added: "2026-09-01", store: "" }] };
+    const top = rank(nights, 0, withSalmon)[0];
+    expect(top.recipe.id).toBe("quesadillas");
+    expect(top.why).toBe("Uses the chicken in the freezer");
+  });
+
   it("gives three new ideas for Something else", () => {
     const nights = [emptyNight(monday, "regular")];
     const a = choices(nights, 0, ctx, 0).map((o) => o.recipe.id), b = choices(nights, 0, ctx, 1).map((o) => o.recipe.id);

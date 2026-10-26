@@ -5,13 +5,14 @@ const FALLBACK = () => process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-li
 
 // search: Gemini may look things up with Google Search first. Search plus a JSON schema is newer API ground; if the API
 // refuses the combination, the request is repeated without the schema and the JSON is read out of the text.
+// files: pictures or PDFs sent along with the prompt (base64), for reading recipes out of them.
 // urls: Gemini may open links named in the prompt (its URL context tool), for pages that refuse our own server.
 // sources: with search on, the web hosts Gemini's answer drew on (from its grounding metadata).
 // patient: for work that runs after the response (event search, top-up), wait out a rate limit as long as Google asks, up to 40 s.
-export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; search?: boolean; urls?: boolean; timeoutMs?: number; patient?: boolean } = {}): Promise<{ data: T; model: string; sources: string[] }> {
+export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; search?: boolean; urls?: boolean; files?: { mimeType: string; data: string }[]; timeoutMs?: number; patient?: boolean } = {}): Promise<{ data: T; model: string; sources: string[] }> {
   let schemaInText = false;
   const body = () => JSON.stringify({
-    contents: [{ parts: [{ text: schemaInText ? `${prompt}\n\nReply with only JSON matching this schema:\n${JSON.stringify(schema)}` : prompt }] }],
+    contents: [{ parts: [...(opts.files ?? []).map((f) => ({ inline_data: { mime_type: f.mimeType, data: f.data } })), { text: schemaInText ? `${prompt}\n\nReply with only JSON matching this schema:\n${JSON.stringify(schema)}` : prompt }] }],
     ...((opts.search || opts.urls) && { tools: [...(opts.search ? [{ google_search: {} }] : []), ...(opts.urls ? [{ url_context: {} }] : [])] }),
     generationConfig: schemaInText ? {} : { responseMimeType: "application/json", responseSchema: schema },
   });
