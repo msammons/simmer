@@ -13,7 +13,7 @@ export function SettingsSheet({ theme, onTheme, onClose, people = [], me = "", o
             ))}
           </Group>
         )}
-        <Group header="Look" footer="Light or dark follows your settings. Simmer & Sage is Simmer by day and Sage by night.">
+        <Group header="Look" footer="Light or dark follows your settings.">
           {THEMES.map((t) => (
             <Row
               key={t.id}
