@@ -32,7 +32,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - `Group`/`Row` (inset grouped lists), `Button` (primary is tinted glass; no gradients on anything you tap), `Sheet`
   (one grabber, pull down to close, page dots, rides above the keyboard), `EmptyState`, `Notice`, `IconBadge`.
 - Type scale `t-*` utilities and colors as CSS variables in `app/globals.css`. Themes set `--accent` and a brand gradient
-  (`--g1..g3`) used only on non-interactive brand surfaces. Simmer, Sage, Simmer & Sage, then plain iOS colors.
+  (`--g1..g3`) used only on non-interactive brand surfaces. Simmer (calm sage, matching the icon), Apricot (the original warm orange), then plain iOS colors.
 - One line-icon set (`components/icons.tsx`). No emoji anywhere.
 
 ## Lessons from Head Out (keep these)
