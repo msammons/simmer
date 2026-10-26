@@ -4,7 +4,6 @@ import { api, applyTheme, AuthError, dateIn, errorText, store, type Draft, type 
 import { addDays } from "@/lib/time";
 import { weekOf } from "@/lib/week";
 import { PasscodeScreen } from "./PasscodeScreen";
-import { LoadingScreen, type WaitKind } from "./LoadingScreen";
 import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
@@ -12,7 +11,7 @@ import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, SearchScreen 
 import { Notice, Splash, TabBar, type TabDef } from "./ui";
 
 type Tab = "week" | "groceries";
-type View = "boot" | "passcode" | "loading" | Tab | "search" | "recipe";
+type View = "boot" | "passcode" | Tab | "search" | "recipe";
 const TABS: [TabDef<Tab>, TabDef<Tab>] = [{ id: "week", label: "This week", icon: "calendar" }, { id: "groceries", label: "Groceries", icon: "list" }];
 /** Screens at rest: an update can reload the app on these without losing anything (see the update check below). */
 const RESTING: View[] = ["passcode", "week", "groceries", "search", "recipe"];
@@ -35,7 +34,6 @@ export default function App() {
   const [listError, setListError] = useState<string | null>(null);
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const [me, setMe] = useState(() => (browser ? store.me() : ""));
-  const [waitKind, setWaitKind] = useState<WaitKind>("week");
   const [searchText, setSearchText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
@@ -49,8 +47,6 @@ export default function App() {
   const [night, setNight] = useState<{ w: WeekData; n: Night } | null>(null);
   const [lastTab, setLastTab] = useState<Tab>("week"); // where the collapsed tab button in Search goes back to
   const loaded = useRef(false); // the household has loaded from the server this session
-  const inflight = useRef<AbortController | null>(null); // the wait on the loading screen, so Cancel can stop it
-  const cancelTo = useRef<View>("week");
 
   const loadHousehold = useCallback(async () => {
     try {
@@ -212,7 +208,7 @@ export default function App() {
   }, [loadHousehold]);
 
   // A new version shipped while the app sat open (an iPhone can keep it in memory for days): when it's next brought to the
-  // front on a screen at rest, reload into the new version and come back to the same screen. Mid-wait it waits for next time.
+  // front on a screen at rest, reload into the new version and come back to the same screen.
   const here = useRef(view);
   useEffect(() => { here.current = view; }, [view]);
   useEffect(() => {
@@ -229,40 +225,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", check);
   }, []);
 
-  /**
-   * Runs a slow request behind the loading screen: one at a time (a double tap starts one), with Cancel going back to
-   * `back`, and a late answer after Cancel ignored. Records how long it took for next time's estimate.
-   */
-  async function wait<T>(kind: WaitKind, back: View, work: (signal: AbortSignal) => Promise<T>): Promise<T | null> {
-    if (inflight.current) return null;
-    const ctl = new AbortController();
-    inflight.current = ctl;
-    cancelTo.current = back;
-    setError(null);
-    setWaitKind(kind);
-    setView("loading");
-    const t0 = Date.now();
-    try {
-      const res = await work(ctl.signal);
-      store.addWait(kind, (Date.now() - t0) / 1000);
-      return res;
-    } catch (e) {
-      if (ctl.signal.aborted) return null;
-      if (e instanceof AuthError) { store.setPasscode(null); setError(e.message); setView("passcode"); return null; }
-      setError(errorText(e));
-      setView(back);
-      return null;
-    } finally {
-      if (inflight.current === ctl) inflight.current = null;
-    }
-  }
-  void wait; // used by the first real feature (e.g. planning the week)
 
-  function cancelWait() {
-    inflight.current?.abort();
-    inflight.current = null;
-    setView(cancelTo.current);
-  }
 
   const tab = view === "week" || view === "groceries" ? view : view === "search" ? "search" : null;
   // A recipe that's gone (removed in the Sheet by hand, or a stale resume) goes back to Search.
@@ -289,7 +252,6 @@ export default function App() {
           if (await loadHousehold()) setView("week");
         }} />
       )}
-      {view === "loading" && <LoadingScreen key={waitKind} kind={waitKind} onCancel={cancelWait} />}
       {view === "week" && (
         <>
           {weekNote && <div className="mb-4"><Notice tone="info" onClick={() => setWeekNote(null)}>{weekNote}</Notice></div>}
