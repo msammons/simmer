@@ -40,7 +40,7 @@ const asStore = (s: string): Store | "" => {
 // ---- ingredient lines
 
 const FRACTIONS: Record<string, string> = { "½": "1/2", "¼": "1/4", "¾": "3/4", "⅓": "1/3", "⅔": "2/3", "⅛": "1/8" };
-const UNITS = "cups?|c|tablespoons?|tbsps?|tbsp|T|teaspoons?|tsps?|tsp|t|pounds?|lbs?|ounces?|oz|grams?|g|kilograms?|kg|ml|liters?|l|quarts?|qt|pints?|pt|cans?|jars?|packages?|pkgs?|bags?|boxes|box|bunch(?:es)?|heads?|cloves?|sticks?|slices?|pinch(?:es)?|dash(?:es)?|sprigs?|stalks?|handfuls?|containers?|bottles?";
+const UNITS = "cups?|c|tablespoons?|tbsps?|tbsp|T|teaspoons?|tsps?|tsp|t|pounds?|lbs?|ounces?|oz|grams?|g|kilograms?|kg|ml|liters?|l|quarts?|qt|pints?|pt|cans?|jars?|packages?|pkgs?|bags?|boxes|box|bunch(?:es)?|heads?|cloves?|sticks?|slices?|pinch(?:es)?|dash(?:es)?|sprigs?|stalks?|handfuls?|containers?|bottles?|packets?|envelopes?|pouch(?:es)?|loaf|loaves|dozen";
 const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\s*(?:-|to)\s*(?:\d+/\d+|\d+(?:\.\d+)?))?|an?|one|two|three|four)\s+(?:\((?:[^)]*)\)\s*)?(?:(${UNITS})\.?\s+(?:of\s+)?)?(.+)$`, "i");
 
 /** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */

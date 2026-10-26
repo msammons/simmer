@@ -12,6 +12,8 @@ describe("the grocery list", () => {
   it("files common things without asking", async () => {
     expect(await file("bananas")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("toilet paper")).toEqual({ store: "costco", section: "household" });
+    expect(await file("Grapes")).toEqual({ store: "safeway", section: "fresh" });
+    expect(await file("apples")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("goldfish crackers")).toEqual({ store: "safeway", section: "pantry" });
   });
   it("merges the same thing, checks it off, and clears a store's checked items when the trip is done", async () => {

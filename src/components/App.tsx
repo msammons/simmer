@@ -1,13 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, applyTheme, AuthError, errorText, store, type Draft, type Effort, type Ingredient, type ListState, type Person, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, dateIn, errorText, store, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Recipe, type Theme, type WeekData } from "@/lib/client";
+import { addDays } from "@/lib/time";
+import { weekOf } from "@/lib/week";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { LoadingScreen, type WaitKind } from "./LoadingScreen";
 import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
-import { WeekScreen } from "./Screens";
+import { NightSheet, PlanSheet, WeekScreen } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, SearchScreen } from "./Recipes";
-import { Splash, TabBar, type TabDef } from "./ui";
+import { Notice, Splash, TabBar, type TabDef } from "./ui";
 
 type Tab = "week" | "groceries";
 type View = "boot" | "passcode" | "loading" | Tab | "search" | "recipe";
@@ -39,6 +41,11 @@ export default function App() {
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
+  const [week, setWeek] = useState<WeekData | null>(() => (browser ? store.week() : null)); // last time's, for opening offline
+  const [next, setNext] = useState<WeekData | null>(null);
+  const [weekError, setWeekError] = useState<string | null>(null);
+  const [planning, setPlanning] = useState<WeekData | null>(null);
+  const [night, setNight] = useState<{ w: WeekData; n: Night } | null>(null);
   const [lastTab, setLastTab] = useState<Tab>("week"); // where the collapsed tab button in Search goes back to
   const loaded = useRef(false); // the household has loaded from the server this session
   const inflight = useRef<AbortController | null>(null); // the wait on the loading screen, so Cancel can stop it
@@ -92,7 +99,7 @@ export default function App() {
       setRecipesError(errorText(e));
     }
   }, [gotRecipes]);
-  const inRecipes = view === "search" || view === "recipe";
+  const inRecipes = view === "search" || view === "recipe" || view === "week"; // the week shows meal names
   useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, refreshRecipes]);
   const open = recipes?.find((r) => r.id === openId) ?? null;
   async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
@@ -108,6 +115,39 @@ export default function App() {
   }
   function addToList(r: Recipe, items: Ingredient[]) {
     change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
+  }
+  // The week: this one, and next week from Saturday on (for "Plan next week").
+  const refreshWeek = useCallback(async () => {
+    try {
+      const today = dateIn(0);
+      const [w, n] = await Promise.all([api.week(today), [6, 0].includes(new Date(`${today}T12:00:00Z`).getUTCDay()) ? api.week(addDays(weekOf(today), 7)) : Promise.resolve(null)]);
+      setWeek(w); store.setWeek(w); setNext(n); setWeekError(null);
+    } catch (e) {
+      if (e instanceof AuthError) { store.setPasscode(null); setError(e.message); setView("passcode"); return; }
+      setWeekError(errorText(e));
+    }
+  }, []);
+  useEffect(() => { if (view === "week") queueMicrotask(refreshWeek); }, [view, refreshWeek]);
+  /** A saved week comes back from the server as it is now; it replaces this week or next, whichever it is. */
+  function gotWeek(w: WeekData) {
+    if (week && w.monday === week.monday) { setWeek(w); store.setWeek(w); }
+    else if (w.monday === weekOf(dateIn(0))) { setWeek(w); store.setWeek(w); }
+    else setNext(w);
+  }
+  async function saveWeek(nights: Night[], lunches: Lunch[]) {
+    try {
+      const w = await api.saveWeek(nights, lunches, me);
+      gotWeek(w);
+      setPlanning(null);
+      setWeekError(null);
+      setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
+    } catch (e) { setWeekError(errorText(e)); setPlanning(null); }
+  }
+  const [weekNote, setWeekNote] = useState<string | null>(null);
+  async function made(date: string, yes: boolean) {
+    setWeek((w) => w && { ...w, nights: w.nights.map((n) => (n.date === date ? { ...n, made: yes ? "yes" : "no" } : n)), lastWeek: w.lastWeek.map((n) => (n.date === date ? { ...n, made: yes ? "yes" : "no" } : n)) });
+    try { const w = await api.made(date, yes); if (w.monday === week?.monday) gotWeek(w); else refreshWeek(); }
+    catch (e) { setWeekError(errorText(e)); }
   }
   function openRecipe(r: Recipe) { setOpenId(r.id); setView("recipe"); window.scrollTo(0, 0); }
 
@@ -129,6 +169,8 @@ export default function App() {
     check: (it, checked) => change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
     move: (it, to) => change({ op: "move", id: it.id, ...to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, ...to } : x)) })),
     remove: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
+    need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
+    have: () => change({ op: "have" }, (l) => ({ ...l, items: l.items.filter((x) => !(x.check && !x.checked)) })),
     done: (s) => change({ op: "done", store: s }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
   };
 
@@ -232,7 +274,17 @@ export default function App() {
         }} />
       )}
       {view === "loading" && <LoadingScreen key={waitKind} kind={waitKind} onCancel={cancelWait} />}
-      {view === "week" && <WeekScreen people={people} error={error} onSettings={() => setSettings(true)} />}
+      {view === "week" && (
+        <>
+          {weekNote && <div className="mb-4"><Notice tone="info" onClick={() => setWeekNote(null)}>{weekNote}</Notice></div>}
+          <WeekScreen week={week} next={next} recipes={recipes ?? []} error={error ?? weekError} onSettings={() => setSettings(true)}
+            onPlan={setPlanning} onNight={(w, n) => setNight({ w, n })} onMade={made}
+            onOpen={(id) => { const r = recipes?.find((x) => x.id === id); if (r) openRecipe(r); }} />
+        </>
+      )}
+      {planning && <PlanSheet w={planning} recipes={recipes ?? []} me={me} onSave={saveWeek} onClose={() => setPlanning(null)} />}
+      {night && <NightSheet w={night.w} n={night.n} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, night.w.lunches)}
+        onOpen={(id) => { const r = recipes?.find((x) => x.id === id); if (r) openRecipe(r); }} onClose={() => setNight(null)} />}
       {view === "groceries" && <GroceriesScreen list={list} error={listError} act={act} onSettings={() => setSettings(true)} />}
       {view === "search" && <SearchScreen recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
       {view === "recipe" && open && (
