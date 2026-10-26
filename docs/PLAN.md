@@ -548,11 +548,12 @@ times are checked against them. A file with many recipes gets the checkbox list;
 the review screen, usual products from past orders. Checkout stays in the Safeway app.
 
 **Phase 6: The freezer and store rhythm.** The freezer list, freezer-aware planning and list, trip hints, out-of-stock
-swaps. Done Oct 26, except out-of-stock swaps (section 4.4), which are next: the Freezer tab and sheet
+swaps. Done Oct 26: the Freezer tab and sheet
 (from Groceries; *Use one* counts down), planning that favors what's in the freezer (the oldest most, "Uses the shrimp
 in the freezer"), the list not buying what's in the freezer, *Made it* counting the freezer down, *Safeway order
 Tuesday* on the Groceries tab, and the next Trader Joe's trip under its group (two weeks after the last *Done
-shopping*, on a Wednesday).
+shopping*, on a Wednesday). Out of stock (section 4.4): an item a planned meal needs has *Didn't get it?* in its
+options, with *Swap the meal* (which opens that night) beside moving it to another store.
 
 **Phase 7: Later.** Put-away order, leftovers, "what can I make right now?".
 
