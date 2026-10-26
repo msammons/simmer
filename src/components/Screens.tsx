@@ -18,15 +18,6 @@ export function WeekScreen({ people, error, onSettings }: { people: Person[]; er
   );
 }
 
-export function GroceriesScreen() {
-  return (
-    <div className="space-y-6">
-      <TopBar title="Groceries" subtitle="For this week's meals" />
-      <EmptyState icon="list" title="Your list is empty">Plan the week and everything you need lands here.</EmptyState>
-    </div>
-  );
-}
-
 export function SearchScreen({ recent, onSearch }: { recent: string[]; onSearch: (q: string) => void }) {
   const ideas = recent.length ? recent : ["Tacos", "Soup", "Something with salmon"];
   return (

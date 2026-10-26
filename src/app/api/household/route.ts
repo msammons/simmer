@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
     const hh = await loadHousehold();
-    return Response.json({ people: hh.profile.people.map((p) => ({ key: p.key, name: p.name })), stale: hh.stale });
+    return Response.json({ people: hh.profile.people.map((p) => ({ key: p.key, name: p.name, isAdult: p.isAdult })), stale: hh.stale });
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: 502 });
   }

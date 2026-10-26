@@ -1,11 +1,18 @@
 "use client";
-import { THEMES, type Theme } from "@/lib/client";
+import { THEMES, type Person, type Theme } from "@/lib/client";
 import { Group, Row, Sheet } from "./ui";
 
-export function SettingsSheet({ theme, onTheme, onClose }: { theme: Theme; onTheme: (t: Theme) => void; onClose: () => void }) {
+export function SettingsSheet({ theme, onTheme, onClose, people = [], me = "", onMe }: { theme: Theme; onTheme: (t: Theme) => void; onClose: () => void; people?: Person[]; me?: string; onMe?: (name: string) => void }) {
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
-      <div className="pb-2">
+      <div className="space-y-5 pb-2">
+        {onMe && people.some((p) => p.isAdult) && (
+          <Group header="Who's using this?" footer="So the list shows who added what.">
+            {people.filter((p) => p.isAdult).map((p) => (
+              <Row key={p.key} role="radio" checked={me === p.name} onClick={() => onMe(p.name)} title={p.name} accessory="check" />
+            ))}
+          </Group>
+        )}
         <Group header="Look" footer="Light or dark follows your settings. Simmer & Sage is Simmer by day and Sage by night.">
           {THEMES.map((t) => (
             <Row
