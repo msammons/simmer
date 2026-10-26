@@ -528,7 +528,14 @@ itself, and if that fails too she's asked to copy the recipe into *Type it in*.
 
 **Phase 3: Planning the week.** The plan sheet (shape, pins, who's eating, trips), suggestions, the week screen, *Made
 it* and *Did you make it?*, ingredients flowing into the list with the fresh/pantry split and merging. Then the boys'
-lunches (section 4.9), on the same sheet.
+lunches (section 4.9), on the same sheet. Done Oct 26: `lib/week.ts` (the nights, shapes, suggestions and lunch rotation, all
+code with tests), `lib/plan.ts` (the Plan, Made, Trips, Lunches and Lunch plan tabs), `components/Week.tsx`. As built:
+the week runs Monday to Sunday, and from Saturday the main button plans next week; nights already past aren't
+suggested. The few words on why a pick is there ("You haven't made this since March", "Good for fall") are written by
+code from the same facts, so no model is involved in planning. Quantities aren't scaled for who's eating yet (buying a
+pound of ground beef doesn't change much for three). A boy's school-lunch days are a rule in his Profile rows
+(`Felix, rule, School lunch on Thursdays`). Finishing a trip (*Done shopping*) is recorded in the Trips tab, which sets
+the Trader Joe's and Costco toggles.
 
 **Phase 4: The rest of import.** Drive files and PDFs with the pick-what-to-keep list, screenshots, photos of physical
 recipes, duplicates.

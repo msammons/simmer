@@ -13,6 +13,8 @@ export type ListActions = {
   move: (it: Item, to: { store?: Store; section?: Section }) => void;
   remove: (it: Item) => void;
   done: (store: Store) => void;
+  need: (it: Item) => void;
+  have: () => void;
 };
 
 /** A round check, filled when the item's in the cart. */
@@ -25,7 +27,7 @@ export function Check({ on }: { on: boolean }) {
 }
 
 function ItemRow({ it, act, onMore }: { it: Item; act: ListActions; onMore: () => void }) {
-  const details = [it.quantity, SECTION_NAMES[it.section], it.addedBy && `${it.addedBy} added`].filter(Boolean).join(" · ");
+  const details = [it.quantity, SECTION_NAMES[it.section], it.for ? `for ${it.for}` : it.addedBy && `${it.addedBy} added`].filter(Boolean).join(" · ");
   return (
     <div className="flex items-center">
       <div className="min-w-0 flex-1">
@@ -55,7 +57,9 @@ export function GroceriesScreen({ list, error, act, onSettings }: { list: ListSt
   const [text, setText] = useState("");
   const [more, setMore] = useState<Item | null>(null);
   const [staples, setStaples] = useState(false);
-  const items = list?.items ?? [];
+  const all = list?.items ?? [];
+  const toCheck = all.filter((i) => i.check && !i.checked);
+  const items = all.filter((i) => !(i.check && !i.checked));
   const stores = (Object.keys(STORE_NAMES) as Store[]).filter((s) => items.some((i) => i.store === s));
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { act.add(text.trim()); setText(""); } };
   return (
@@ -70,7 +74,13 @@ export function GroceriesScreen({ list, error, act, onSettings }: { list: ListSt
       <Group>
         <Row icon="list" title="Running low?" subtitle="Add from the things you always keep" accessory="chevron" onClick={() => setStaples(true)} />
       </Group>
-      {list && !items.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
+      {toCheck.length > 0 && (
+        <Group header="Check you have these" aside={<button className="t-foot font-semibold text-accent" onClick={act.have}>I have the rest</button>}
+          footer="From the week's plan. Tap any you're out of to put it on the list.">
+          {toCheck.map((it) => <Row key={it.id} title={it.item.charAt(0).toUpperCase() + it.item.slice(1)} subtitle={[it.quantity, it.for && `for ${it.for}`].filter(Boolean).join(" · ")} value="Need it" onClick={() => act.need(it)} />)}
+        </Group>
+      )}
+      {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
       {stores.map((s) => <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={setMore} />)}
       {more && <ItemSheet it={more} act={act} onClose={() => setMore(null)} />}
       {staples && list && <StaplesSheet staples={list.staples} items={items} act={act} onClose={() => setStaples(false)} />}

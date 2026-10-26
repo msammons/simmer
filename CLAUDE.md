@@ -7,4 +7,5 @@ changing anything: it covers the shape of the app, the interface building blocks
 standing preferences (no technical words on screen, no background jobs, no maintenance screens, secrets only in Vercel
 and on Matt's Mac, no model names in commits or PRs).
 
-The screens in `components/Screens.tsx` are placeholders showing where real content goes; replace them as features land.
+The screens: `components/Week.tsx` (This week, planning), `Groceries.tsx` (the shared list), `Recipes.tsx` (Search and the
+collection). The planning rules are plain code in `lib/week.ts`, with tests; keep them there.

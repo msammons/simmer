@@ -8,6 +8,7 @@ describe("the recipe collection", () => {
     expect(parseIngredient("1 ½ cups rice")).toMatchObject({ quantity: "1 1/2", unit: "cups", item: "rice", section: "pantry" });
     expect(parseIngredient("2 (15 oz) cans black beans")).toMatchObject({ quantity: "2", unit: "cans", item: "black beans", section: "pantry" });
     expect(parseIngredient("Salt to taste")).toMatchObject({ quantity: "", item: "salt" });
+    expect(parseIngredient("1 packet taco seasoning")).toMatchObject({ quantity: "1", unit: "packet", item: "taco seasoning", section: "pantry" });
     expect(parseIngredient("a pinch of cumin")).toMatchObject({ quantity: "1", unit: "pinch", item: "cumin" });
   });
 
