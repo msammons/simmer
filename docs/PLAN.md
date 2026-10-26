@@ -538,13 +538,22 @@ pound of ground beef doesn't change much for three). A boy's school-lunch days a
 the Trader Joe's and Costco toggles.
 
 **Phase 4: The rest of import.** Drive files and PDFs with the pick-what-to-keep list, screenshots, photos of physical
-recipes, duplicates.
+recipes, duplicates. Done Oct 26: *From a photo* (camera or library: cards, cookbook pages, screenshots) and *From my
+files* (PDFs, pictures and text files). On her iPhone the file picker includes Google Drive (through the Files app), so
+her Drive files are picked inside Simmer without a separate sign-in; a Google Doc needs saving as a PDF first. Pictures
+are made smaller on the phone before they're sent. The model writes out each recipe's own words and the amounts and
+times are checked against them. A file with many recipes gets the checkbox list; duplicates are caught by name.
 
 **Phase 5: Safeway ordering**, built the way the Phase 1 test said (server, Mac browser, or fallback): fill the cart,
 the review screen, usual products from past orders. Checkout stays in the Safeway app.
 
 **Phase 6: The freezer and store rhythm.** The freezer list, freezer-aware planning and list, trip hints, out-of-stock
-swaps.
+swaps. Done Oct 26: the Freezer tab and sheet
+(from Groceries; *Use one* counts down), planning that favors what's in the freezer (the oldest most, "Uses the shrimp
+in the freezer"), the list not buying what's in the freezer, *Made it* counting the freezer down, *Safeway order
+Tuesday* on the Groceries tab, and the next Trader Joe's trip under its group (two weeks after the last *Done
+shopping*, on a Wednesday). Out of stock (section 4.4): an item a planned meal needs has *Didn't get it?* in its
+options, with *Swap the meal* (which opens that night) beside moving it to another store.
 
 **Phase 7: Later.** Put-away order, leftovers, "what can I make right now?".
 

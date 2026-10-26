@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, applyTheme, AuthError, dateIn, errorText, store, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Recipe, type Theme, type WeekData } from "@/lib/client";
+import { api, applyTheme, AuthError, dateIn, errorText, store, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { weekOf } from "@/lib/week";
 import { PasscodeScreen } from "./PasscodeScreen";
@@ -33,6 +33,7 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
   const [listError, setListError] = useState<string | null>(null);
+  const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const [me, setMe] = useState(() => (browser ? store.me() : ""));
   const [waitKind, setWaitKind] = useState<WaitKind>("week");
   const [searchText, setSearchText] = useState("");
@@ -83,6 +84,7 @@ export default function App() {
   useEffect(() => {
     if (view !== "groceries") return;
     queueMicrotask(refreshList);
+    api.kitchen().then(setKitchen, () => {});
     const visible = () => document.visibilityState === "visible";
     const t = setInterval(() => { if (visible()) refreshList(); }, 30_000);
     const back = () => { if (visible()) refreshList(); };
@@ -171,7 +173,21 @@ export default function App() {
     remove: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
     need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     have: () => change({ op: "have" }, (l) => ({ ...l, items: l.items.filter((x) => !(x.check && !x.checked)) })),
-    done: (s) => change({ op: "done", store: s }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
+    swapFor: (forWhat) => {
+      // "Tuesday's turkey chili" → that night, in this week or next.
+      const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+      for (const w of [week, next]) {
+        const n = w?.nights.find((x) => x.date >= dateIn(0) && x.meal && forWhat.toLowerCase().includes(`${dayName(x.date)}'s ${(recipes?.find((r) => r.id === x.meal)?.name ?? x.meal).toLowerCase()}`.toLowerCase()));
+        if (w && n) { setView("week"); setLastTab("week"); setNight({ w, n }); return; }
+      }
+      setView("week"); setLastTab("week");
+    },
+    freeze: (text) => api.freezer({ op: "add", text }).then(setKitchen, (e) => setListError(errorText(e))),
+    takeOut: (f) => {
+      setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
+      api.freezer({ op: "use", id: f.id }).then(setKitchen, (e) => setListError(errorText(e)));
+    },
+    done: (s) => change({ op: "done", store: s }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })).then(() => api.kitchen().then(setKitchen, () => {})),
   };
 
   // Boot reads browser-only state (localStorage), which only exists after mount.
@@ -285,7 +301,7 @@ export default function App() {
       {planning && <PlanSheet w={planning} recipes={recipes ?? []} me={me} onSave={saveWeek} onClose={() => setPlanning(null)} />}
       {night && <NightSheet w={night.w} n={night.n} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, night.w.lunches)}
         onOpen={(id) => { const r = recipes?.find((x) => x.id === id); if (r) openRecipe(r); }} onClose={() => setNight(null)} />}
-      {view === "groceries" && <GroceriesScreen list={list} error={listError} act={act} onSettings={() => setSettings(true)} />}
+      {view === "groceries" && <GroceriesScreen list={list} kitchen={kitchen} error={listError} act={act} onSettings={() => setSettings(true)} />}
       {view === "search" && <SearchScreen recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
       {view === "recipe" && open && (
         <RecipeScreen r={open} onBack={() => { setView("search"); }} onEdit={() => setSheet("edit")} onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} />

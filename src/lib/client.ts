@@ -88,8 +88,9 @@ export type { Item, Section, Staple, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
 import type { WeekData } from "./plan";
-import type { Lunch, Night } from "./week";
-export type { Lunch, Night, WeekData };
+import type { Frozen, Lunch, Night } from "./week";
+export type { Frozen, Lunch, Night, WeekData };
+export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
 export type ListState = { items: Item[]; staples: Staple[] };
 type Change = { op: "need"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store };
 
@@ -99,12 +100,35 @@ export const api = {
   recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }),
   saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
   recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
-  readRecipe: (from: { link: string } | { text: string }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
+  readRecipe: (from: { link: string } | { text: string } | { file: { name: string; type: string; data: string } }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
   week: (date: string, signal?: AbortSignal) => call<WeekData>(`/api/plan?week=${date}`, { signal }),
   saveWeek: (nights: Night[], lunches: Lunch[], by: string) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "save", nights, lunches, by }) }),
   made: (date: string, made: boolean) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "made", date, made }) }),
+  kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
+  freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
 };
+
+/**
+ * A picked file, ready to send: pictures are made smaller first (a phone photo is several megabytes; the recipe reads
+ * just as well at 2000 pixels), and anything else is sent as it is if it's small enough.
+ */
+export async function fileToSend(f: File): Promise<{ name: string; type: string; data: string }> {
+  const b64 = (blob: Blob) => new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] ?? ""); r.onerror = () => bad(r.error); r.readAsDataURL(blob); });
+  if (f.type.startsWith("image/")) {
+    try {
+      const img = await createImageBitmap(f);
+      const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", 0.85));
+      if (blob) return { name: f.name, type: "image/jpeg", data: await b64(blob) };
+    } catch { /* a picture the browser can't open (some HEIC): send it as it is */ }
+  }
+  if (f.size > 3_200_000) throw new Error("That file is too big. Try a smaller one, or a picture of the page.");
+  return { name: f.name, type: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : /\.txt$/i.test(f.name) ? "text/plain" : ""), data: await b64(f) };
+}
 
 /*
  * Dates read the same everywhere: today and tomorrow are words, later days get the weekday.

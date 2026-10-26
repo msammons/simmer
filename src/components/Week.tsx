@@ -23,7 +23,7 @@ function nightLine(n: Night) {
 }
 
 function contextFor(w: WeekData, recipes: Recipe[], trips = { traderJoes: w.trips.traderJoes, costco: w.trips.costco }): Context {
-  return { recipes, lastMade: w.lastMade, people: w.people, trips };
+  return { recipes, lastMade: w.lastMade, people: w.people, trips, freezer: w.freezer ?? [] };
 }
 
 // ---- This week (tab)

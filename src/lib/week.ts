@@ -53,6 +53,14 @@ const inSeason = (r: Recipe, date: string) => {
   return r.season.some((s) => SEASONS[s]?.includes(m));
 };
 
+/** Something in the freezer. */
+export type Frozen = { id: string; item: string; amount: string; added: string; store: string };
+/** Does a freezer item ("salmon fillets") stand for an ingredient ("1 1/2 lb salmon")? Either name inside the other. */
+export const freezerMatch = (frozen: string, ingredient: string) => {
+  const a = norm(frozen), b = norm(ingredient);
+  return a.length > 2 && b.length > 2 && (a.includes(b) || b.includes(a) || a.split(" ").some((w) => w.length > 3 && b.split(" ").includes(w) && !["chicken", "ground", "frozen"].includes(w)) || a === b);
+};
+
 export type Taste = { name: string; isAdult: boolean; likes: string[]; dislikes: string[] };
 export type Context = {
   recipes: Recipe[];
@@ -60,6 +68,7 @@ export type Context = {
   lastMade: Record<string, string>;
   people: Taste[];
   trips: { traderJoes: boolean; costco: boolean };
+  freezer?: Frozen[];
 };
 export type Option = { recipe: Recipe; score: number; why: string };
 
@@ -108,6 +117,12 @@ export function rank(nights: Night[], at: number, ctx: Context, forKids = false)
       if (away.length && away.some((p) => p.likes.some((l) => { const w = norm(l.split(" ")[0]); return w.length > 2 && (r.tags.some((t) => norm(t).includes(w)) || norm(r.name).includes(w)); }))) score -= 2.5;
       if (before && r.protein && before.protein && norm(r.protein) === norm(before.protein)) score -= 2;
       if (before && r.tags.some((t) => before.tags.includes(t))) score -= 1;
+      const frozen = (ctx.freezer ?? []).find((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)));
+      if (frozen) {
+        const weeks = frozen.added ? daysBetween(frozen.added, night.date) / 7 : 0;
+        const lift = 1.5 + Math.min(weeks / 8, 1); // the longer it's been in there, the more it's worth using
+        score += lift; why.push([lift + 1, `Uses the ${frozen.item.toLowerCase()} in the freezer`]);
+      }
       if (r.store === "trader-joes") { score += 0.5; why.push([0.5, "From this week's Trader Joe's trip"]); }
       if (r.makeAhead && night.kind === "regular") score += 0.2;
     } else {

@@ -1,6 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
-import { api, errorText, type Draft, type Effort, type Ingredient, type Recipe } from "@/lib/client";
+import { useMemo, useRef, useState } from "react";
+import { api, errorText, fileToSend, type Draft, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { norm } from "@/lib/words";
 import { Check } from "./Groceries";
@@ -52,11 +52,11 @@ export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, 
         )
       ) : recipes && !all.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
-          Bring in recipes from a link, or type in the ones you know by heart.
+          Bring in recipes from a link, a photo or a file, or type in the ones you know by heart.
         </EmptyState>
       ) : (
         <>
-          <Group><Row icon="plus" title="Add recipes" subtitle="From a link, or type it in" accessory="chevron" onClick={onAdd} /></Group>
+          <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
           {recent.length > 0 && <Group header="Recent">{recent.map((x) => <Row key={x} icon="search" title={x} onClick={() => onSearch(x)} accessory="chevron" />)}</Group>}
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} onOpen={onOpen} onAll={() => onSearch("favorites")} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("quick")} />
@@ -189,7 +189,13 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
   const [dup, setDup] = useState<"both" | "replace">("replace");
   const twin = (name: string) => recipes.find((r) => norm(r.name) === norm(name));
 
-  async function read(from: { link: string } | { text: string }) {
+  const photo = useRef<HTMLInputElement>(null), files = useRef<HTMLInputElement>(null);
+  async function pick(f: File | undefined) {
+    if (!f) return;
+    setBusy(true); setError(null);
+    try { await read({ file: await fileToSend(f) }); } catch (e) { setError(errorText(e)); setBusy(false); }
+  }
+  async function read(from: Parameters<typeof api.readRecipe>[0]) {
     setBusy(true); setError(null);
     try {
       const { found } = await api.readRecipe(from);
@@ -210,9 +216,12 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
     body = (
       <Group footer="Simmer shows you what it found. Nothing is added until you say so.">
         <Row icon="link" title="From a link" subtitle="A recipe page you like" accessory="chevron" onClick={() => setStep({ at: "link" })} />
+        <Row icon="camera" title="From a photo" subtitle="A recipe card, a cookbook page, or a screenshot" accessory="chevron" onClick={() => photo.current?.click()} />
+        <Row icon="book" title="From my files" subtitle="A PDF or a picture, from your phone or Drive" accessory="chevron" onClick={() => files.current?.click()} />
         <Row icon="pencil" title="Type it in" subtitle="A family recipe, or your list of meal ideas" accessory="chevron" onClick={() => setStep({ at: "text" })} />
       </Group>
     );
+    if (busy) body = <div className="py-10 text-center"><p className="t-headline">Reading it…</p><p className="t-sub mt-1 text-muted">A page full of recipes can take a minute.</p></div>;
   } else if (step.at === "link") {
     body = <Field label="Link to the recipe"><input className={FIELD} type="url" inputMode="url" autoFocus value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste the link" /></Field>;
     footer = <Button className="w-full" disabled={busy || !link.trim()} onClick={() => read({ link })}>{busy ? "Reading the page…" : "Read it"}</Button>;
@@ -254,6 +263,8 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
         {back && <button className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
         {error && <Notice>{error}</Notice>}
         {body}
+        <input ref={photo} type="file" accept="image/*" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+        <input ref={files} type="file" accept="application/pdf,image/*,text/plain,.pdf,.txt" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
     </Sheet>
   );

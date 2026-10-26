@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import type { Item, ListState, Section, Staple, Store } from "@/lib/client";
+import { dateIn, type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
+import { addDays } from "@/lib/time";
 import { Button, EmptyState, Group, IconButton, Notice, Row, Sheet, TopBar } from "./ui";
 
 export const STORE_NAMES: Record<Store, string> = { safeway: "Safeway", "trader-joes": "Trader Joe's", costco: "Costco" };
@@ -15,6 +16,26 @@ export type ListActions = {
   done: (store: Store) => void;
   need: (it: Item) => void;
   have: () => void;
+  freeze: (text: string) => void;
+  /** Out of stock: open the planned night this item was for, to swap the meal. */
+  swapFor?: (forWhat: string) => void;
+  takeOut: (f: Frozen) => void;
+};
+
+const weekday = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
+const nextDay = (from: string, wd: number) => addDays(from, (wd - weekday(from) + 7) % 7);
+const dayWord = (d: string) => (d === dateIn(0) ? "today" : d === dateIn(1) ? "tomorrow" : new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }));
+const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+/** The rhythm: Safeway orders go in on Tuesdays; Trader Joe's is a Wednesday, about two weeks after the last trip. */
+const safewayDay = () => nextDay(dateIn(0), 2);
+function traderJoesDay(last: string) {
+  const due = last ? addDays(last, 14) : dateIn(0);
+  return nextDay(due > dateIn(0) ? due : dateIn(0), 3);
+}
+const age = (added: string) => {
+  if (!added) return "";
+  const days = Math.round((Date.parse(`${dateIn(0)}T12:00:00Z`) - Date.parse(`${added}T12:00:00Z`)) / 864e5);
+  return days < 7 ? "this week" : days < 14 ? "1 week in" : days < 60 ? `${Math.floor(days / 7)} weeks in` : `${Math.floor(days / 30)} months in`;
 };
 
 /** A round check, filled when the item's in the cart. */
@@ -39,13 +60,13 @@ function ItemRow({ it, act, onMore }: { it: Item; act: ListActions; onMore: () =
 }
 
 /** One store's part of the list: fresh first, then pantry, freezer, household; checked items fall to the bottom. */
-function StoreGroup({ store, items, act, onMore }: { store: Store; items: Item[]; act: ListActions; onMore: (it: Item) => void }) {
+function StoreGroup({ store, items, act, onMore, footer }: { store: Store; items: Item[]; act: ListActions; onMore: (it: Item) => void; footer?: string }) {
   const rank = (it: Item) => (it.checked ? 10 : 0) + SECTION_ORDER.indexOf(it.section);
   const sorted = [...items].sort((a, b) => rank(a) - rank(b) || a.item.localeCompare(b.item));
   const got = items.filter((i) => i.checked).length;
   return (
     <Group
-      header={STORE_NAMES[store]}
+      header={STORE_NAMES[store]} footer={footer}
       aside={got ? <button className="t-foot font-semibold text-accent" onClick={() => act.done(store)}>Done shopping</button> : <span className="t-foot text-muted">{items.length} to get</span>}
     >
       {sorted.map((it) => <ItemRow key={it.id} it={it} act={act} onMore={() => onMore(it)} />)}
@@ -53,7 +74,8 @@ function StoreGroup({ store, items, act, onMore }: { store: Store; items: Item[]
   );
 }
 
-export function GroceriesScreen({ list, error, act, onSettings }: { list: ListState | null; error: string | null; act: ListActions; onSettings: () => void }) {
+export function GroceriesScreen({ list, kitchen, error, act, onSettings }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onSettings: () => void }) {
+  const [freezer, setFreezer] = useState(false);
   const [text, setText] = useState("");
   const [more, setMore] = useState<Item | null>(null);
   const [staples, setStaples] = useState(false);
@@ -64,7 +86,7 @@ export function GroceriesScreen({ list, error, act, onSettings }: { list: ListSt
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { act.add(text.trim()); setText(""); } };
   return (
     <div className="space-y-6">
-      <TopBar title="Groceries" subtitle={items.length ? `${items.filter((i) => !i.checked).length} to get` : "The list you share"} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
+      <TopBar title="Groceries" subtitle={`Safeway order ${dayWord(safewayDay())}`} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
       {error && <Notice>{error}</Notice>}
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add eggs, 2 lemons…" aria-label="Add to the list" enterKeyHint="done"
@@ -73,6 +95,7 @@ export function GroceriesScreen({ list, error, act, onSettings }: { list: ListSt
       </form>
       <Group>
         <Row icon="list" title="Running low?" subtitle="Add from the things you always keep" accessory="chevron" onClick={() => setStaples(true)} />
+        <Row icon="snow" title="Freezer" subtitle={kitchen?.freezer.length ? `${kitchen.freezer.length} thing${kitchen.freezer.length === 1 ? "" : "s"} · oldest: ${kitchen.freezer[0].item.toLowerCase()}` : "What's in there"} accessory="chevron" onClick={() => setFreezer(true)} />
       </Group>
       {toCheck.length > 0 && (
         <Group header="Check you have these" aside={<button className="t-foot font-semibold text-accent" onClick={act.have}>I have the rest</button>}
@@ -81,7 +104,11 @@ export function GroceriesScreen({ list, error, act, onSettings }: { list: ListSt
         </Group>
       )}
       {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
-      {stores.map((s) => <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={setMore} />)}
+      {stores.map((s) => (
+        <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={setMore}
+          footer={s === "trader-joes" ? `Next Trader Joe's trip: ${shortDate(traderJoesDay(kitchen?.trips.lastTraderJoes ?? ""))}` : undefined} />
+      ))}
+      {freezer && <FreezerSheet items={kitchen?.freezer ?? []} act={act} onClose={() => setFreezer(false)} />}
       {more && <ItemSheet it={more} act={act} onClose={() => setMore(null)} />}
       {staples && list && <StaplesSheet staples={list.staples} items={items} act={act} onClose={() => setStaples(false)} />}
     </div>
@@ -103,6 +130,11 @@ function ItemSheet({ it, act, onClose }: { it: Item; act: ListActions; onClose: 
             <Row key={s} title={SECTION_NAMES[s]} role="radio" checked={it.section === s} accessory="check" onClick={() => { act.move(it, { section: s }); onClose(); }} />
           ))}
         </Group>
+        {it.for && it.for !== "lunches" && act.swapFor && (
+          <Group header="Didn't get it?" footer={`It's for ${it.for}. Move it to another store above, or swap the meal.`}>
+            <Row icon="refresh" title="Swap the meal" accessory="chevron" onClick={() => { onClose(); act.swapFor!(it.for); }} />
+          </Group>
+        )}
         <Button variant="secondary" onClick={() => { act.remove(it); onClose(); }} className="w-full">Take it off the list</Button>
       </div>
     </Sheet>
@@ -125,6 +157,27 @@ function StaplesSheet({ staples, items, act, onClose }: { staples: Staple[]; ite
         ) : (
           <p className="t-sub text-muted">No staples yet.</p>
         )}
+      </div>
+    </Sheet>
+  );
+}
+
+/** The freezer, oldest first: planning uses what's here, and the list doesn't buy it again. */
+function FreezerSheet({ items, act, onClose }: { items: Frozen[]; act: ListActions; onClose: () => void }) {
+  const [text, setText] = useState("");
+  return (
+    <Sheet label="Freezer" title="Freezer" onClose={onClose}>
+      <div className="space-y-5 pb-2">
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { act.freeze(text.trim()); setText(""); } }}>
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add 2 salmon, chicken thighs…" aria-label="Add to the freezer"
+            className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
+          <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
+        </form>
+        {items.length ? (
+          <Group footer="Meals that use what's here come up first when the week is planned, the oldest first.">
+            {items.map((f) => <Row key={f.id} title={f.item} subtitle={[f.amount, age(f.added)].filter(Boolean).join(" · ")} value="Use one" onClick={() => act.takeOut(f)} />)}
+          </Group>
+        ) : <p className="t-sub text-center text-muted">Nothing in the freezer yet.</p>}
       </div>
     </Sheet>
   );
