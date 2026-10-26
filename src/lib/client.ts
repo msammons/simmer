@@ -2,7 +2,7 @@
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, date labels.
 import { addDays, todayIn, TZ } from "./time";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", waits: "sm.waits", list: "sm.list", me: "sm.me" };
+const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", waits: "sm.waits", list: "sm.list", me: "sm.me", recipes: "sm.recipes" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -22,6 +22,9 @@ export const store = {
   /** The list from last time, for opening offline. */
   list: () => get<ListState>(KEYS.list),
   setList: (l: ListState) => set(KEYS.list, l),
+  /** The collection from last time, for opening offline. */
+  recipes: () => get<Recipe[]>(KEYS.recipes),
+  setRecipes: (r: Recipe[]) => set(KEYS.recipes, r),
   /** Who's using the app here, for "added by". */
   me: () => get<string>(KEYS.me) ?? "",
   setMe: (name: string) => set(KEYS.me, name),
@@ -79,12 +82,18 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 /** Every request takes an optional AbortSignal, so the loading screen's Cancel can stop it. */
 import type { Item, Section, Staple, Store } from "./groceries";
 export type { Item, Section, Staple, Store };
+import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
+export type { Draft, Effort, Ingredient, Recipe };
 export type ListState = { items: Item[]; staples: Staple[] };
-type Change = { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "remove"; id: string } | { op: "done"; store: Store };
+type Change = { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store };
 
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
   change: (c: Change) => call<ListState>("/api/list", { method: "POST", body: JSON.stringify(c) }),
+  recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }),
+  saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
+  recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
+  readRecipe: (from: { link: string } | { text: string }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
 };
 

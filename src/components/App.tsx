@@ -1,18 +1,19 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, applyTheme, AuthError, errorText, store, type ListState, type Person, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, store, type Draft, type Effort, type Ingredient, type ListState, type Person, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { LoadingScreen, type WaitKind } from "./LoadingScreen";
 import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
-import { SearchScreen, WeekScreen } from "./Screens";
+import { WeekScreen } from "./Screens";
+import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, SearchScreen } from "./Recipes";
 import { Splash, TabBar, type TabDef } from "./ui";
 
 type Tab = "week" | "groceries";
-type View = "boot" | "passcode" | "loading" | Tab | "search";
+type View = "boot" | "passcode" | "loading" | Tab | "search" | "recipe";
 const TABS: [TabDef<Tab>, TabDef<Tab>] = [{ id: "week", label: "This week", icon: "calendar" }, { id: "groceries", label: "Groceries", icon: "list" }];
 /** Screens at rest: an update can reload the app on these without losing anything (see the update check below). */
-const RESTING: View[] = ["passcode", "week", "groceries", "search"];
+const RESTING: View[] = ["passcode", "week", "groceries", "search", "recipe"];
 
 /** Where to pick up after reloading into a new version (this tab only). */
 const saveResume = (view: View) => { try { sessionStorage.setItem("sm.resume", view); } catch {} };
@@ -34,6 +35,10 @@ export default function App() {
   const [waitKind, setWaitKind] = useState<WaitKind>("week");
   const [searchText, setSearchText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
+  const [recipesError, setRecipesError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
   const [lastTab, setLastTab] = useState<Tab>("week"); // where the collapsed tab button in Search goes back to
   const loaded = useRef(false); // the household has loaded from the server this session
   const inflight = useRef<AbortController | null>(null); // the wait on the loading screen, so Cancel can stop it
@@ -77,6 +82,34 @@ export default function App() {
     document.addEventListener("visibilitychange", back);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
   }, [view, refreshList]);
+
+  // The collection: loaded when Search opens (it's small), and after every change, from the server's answer.
+  const gotRecipes = useCallback((r: Recipe[]) => { setRecipes(r); store.setRecipes(r); setRecipesError(null); }, []);
+  const refreshRecipes = useCallback(async () => {
+    try { gotRecipes((await api.recipes()).recipes); }
+    catch (e) {
+      if (e instanceof AuthError) { store.setPasscode(null); setError(e.message); setView("passcode"); return; }
+      setRecipesError(errorText(e));
+    }
+  }, [gotRecipes]);
+  const inRecipes = view === "search" || view === "recipe";
+  useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, refreshRecipes]);
+  const open = recipes?.find((r) => r.id === openId) ?? null;
+  async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
+    setRecipes((rs) => rs && rs.map((r) => (r.id === c.id ? show(r) : r)));
+    try { gotRecipes((await api.recipeChange(c)).recipes); }
+    catch (e) { setRecipesError(errorText(e)); refreshRecipes(); }
+  }
+  const setEffort = (r: Recipe, effort: Effort) => recipeChange({ op: "effort", id: r.id, effort }, (x) => ({ ...x, effort }));
+  const setActive = (r: Recipe, active: boolean) => recipeChange({ op: "active", id: r.id, active }, (x) => ({ ...x, active }));
+  async function saveEdit(d: Draft) {
+    try { gotRecipes((await api.saveRecipes([d])).recipes); setSheet(null); }
+    catch (e) { setRecipesError(errorText(e)); setSheet(null); }
+  }
+  function addToList(r: Recipe, items: Ingredient[]) {
+    change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
+  }
+  function openRecipe(r: Recipe) { setOpenId(r.id); setView("recipe"); window.scrollTo(0, 0); }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState) {
@@ -174,6 +207,9 @@ export default function App() {
   }
 
   const tab = view === "week" || view === "groceries" ? view : view === "search" ? "search" : null;
+  // A recipe that's gone (removed in the Sheet by hand, or a stale resume) goes back to Search.
+  const gone = view === "recipe" && !open && recipes !== null;
+  useEffect(() => { if (gone) queueMicrotask(() => setView("search")); }, [gone]);
   function onTab(t: Tab | "search") {
     setError(null);
     window.scrollTo(0, 0);
@@ -198,7 +234,18 @@ export default function App() {
       {view === "loading" && <LoadingScreen key={waitKind} kind={waitKind} onCancel={cancelWait} />}
       {view === "week" && <WeekScreen people={people} error={error} onSettings={() => setSettings(true)} />}
       {view === "groceries" && <GroceriesScreen list={list} error={listError} act={act} onSettings={() => setSettings(true)} />}
-      {view === "search" && <SearchScreen recent={recent} onSearch={search} />}
+      {view === "search" && <SearchScreen recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
+      {view === "recipe" && open && (
+        <RecipeScreen r={open} onBack={() => { setView("search"); }} onEdit={() => setSheet("edit")} onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} />
+      )}
+      {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
+        gotRecipes(all);
+        setSheet(null);
+        if (saved.length === 1) { setOpenId(saved[0]); setView("recipe"); window.scrollTo(0, 0); }
+        else setSearchText(""); // several saved (her meal ideas): show the whole collection, where they now are
+      }} />}
+      {sheet === "edit" && open && <EditSheet r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
+      {sheet === "tolist" && open && <AddToListSheet r={open} onAdd={(items) => addToList(open, items)} onClose={() => setSheet(null)} />}
       {settings && <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />}
       {tab && (
         <TabBar
