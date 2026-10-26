@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Family meals, planned with care.",
     start_url: "/",
     display: "standalone",
-    background_color: "#F6F3EF",
-    theme_color: "#E8875A",
+    background_color: "#FFF6EC",
+    theme_color: "#FF4F8B",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png" },

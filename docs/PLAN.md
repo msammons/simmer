@@ -576,3 +576,10 @@ Answered by Matt on Oct 26, 2026:
 7. **Trader Joe's: about every two weeks**, counted from the last trip she finished, not a fixed cycle.
 8. **Seasons are tracked** (section 4.2).
 9. **Matt plans some nights** too: either of them can plan or pin, and each night shows who planned it.
+
+## Brand (Oct 26)
+
+Matt chose "Sunday supper", fun and energetic, food is love: berry and tangerine on cream. The icon is a big S of steam
+rising from a small pan (a play on the letter S that reads at every size); the name is set in hand-lettered script
+(the Pacifico typeface, drawn as a shape in `components/wordmark.ts`, so no font has to load) in berry. Simmer's default
+theme is berry buttons on a cream background, a lighter berry in dark mode.
