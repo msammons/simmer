@@ -2,7 +2,7 @@
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, date labels.
 import { addDays, todayIn, TZ } from "./time";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", waits: "sm.waits" };
+const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", waits: "sm.waits", list: "sm.list", me: "sm.me" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -11,7 +11,7 @@ function set(k: string, v: unknown) {
   try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ }
 }
 
-export type Person = { key: string; name: string };
+export type Person = { key: string; name: string; isAdult?: boolean };
 
 export const store = {
   passcode: () => get<string>(KEYS.passcode),
@@ -19,6 +19,12 @@ export const store = {
   /** The household from last time, so the app works when it opens offline. */
   people: () => get<Person[]>(KEYS.people),
   setPeople: (p: Person[]) => set(KEYS.people, p),
+  /** The list from last time, for opening offline. */
+  list: () => get<ListState>(KEYS.list),
+  setList: (l: ListState) => set(KEYS.list, l),
+  /** Who's using the app here, for "added by". */
+  me: () => get<string>(KEYS.me) ?? "",
+  setMe: (name: string) => set(KEYS.me, name),
   theme: (): Theme => {
     const t = get<string>(KEYS.theme);
     return THEMES.some((x) => x.id === t) ? (t as Theme) : "simmer";
@@ -71,7 +77,14 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 /** Every request takes an optional AbortSignal, so the loading screen's Cancel can stop it. */
+import type { Item, Section, Staple, Store } from "./groceries";
+export type { Item, Section, Staple, Store };
+export type ListState = { items: Item[]; staples: Staple[] };
+type Change = { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "remove"; id: string } | { op: "done"; store: Store };
+
 export const api = {
+  list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
+  change: (c: Change) => call<ListState>("/api/list", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
 };
 
