@@ -5,13 +5,14 @@ const FALLBACK = () => process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-li
 
 // search: Gemini may look things up with Google Search first. Search plus a JSON schema is newer API ground; if the API
 // refuses the combination, the request is repeated without the schema and the JSON is read out of the text.
+// urls: Gemini may open links named in the prompt (its URL context tool), for pages that refuse our own server.
 // sources: with search on, the web hosts Gemini's answer drew on (from its grounding metadata).
 // patient: for work that runs after the response (event search, top-up), wait out a rate limit as long as Google asks, up to 40 s.
-export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; search?: boolean; timeoutMs?: number; patient?: boolean } = {}): Promise<{ data: T; model: string; sources: string[] }> {
+export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; search?: boolean; urls?: boolean; timeoutMs?: number; patient?: boolean } = {}): Promise<{ data: T; model: string; sources: string[] }> {
   let schemaInText = false;
   const body = () => JSON.stringify({
     contents: [{ parts: [{ text: schemaInText ? `${prompt}\n\nReply with only JSON matching this schema:\n${JSON.stringify(schema)}` : prompt }] }],
-    ...(opts.search && { tools: [{ google_search: {} }] }),
+    ...((opts.search || opts.urls) && { tools: [...(opts.search ? [{ google_search: {} }] : []), ...(opts.urls ? [{ url_context: {} }] : [])] }),
     generationConfig: schemaInText ? {} : { responseMimeType: "application/json", responseSchema: schema },
   });
   const attempts = opts.light ? [FALLBACK(), FALLBACK(), MODEL()] : [MODEL(), MODEL(), FALLBACK()];
@@ -37,7 +38,7 @@ export async function generateJson<T>(prompt: string, schema: object, opts: { li
       if (i < attempts.length - 1) await new Promise((res) => setTimeout(res, wait));
       continue;
     }
-    if (r.status === 400 && opts.search && !schemaInText) {
+    if (r.status === 400 && (opts.search || opts.urls) && !schemaInText) {
       schemaInText = true;
       last = `${model}: search with a schema refused`;
       continue;
