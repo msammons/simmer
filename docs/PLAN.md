@@ -519,8 +519,12 @@ Each phase ends with something Marcela uses for a real week, then a revision wit
 sections, staples, check-off, done shopping, and the live shared list. This alone replaces her current grocery list. In
 parallel, the Safeway test from section 5, which decides how ordering gets built.
 
-**Phase 2: The collection.** The Recipes tab, search, the recipe screen, *Type it in* and *From a link*. Import her
-master list of meal ideas. Effort guesses she corrects.
+**Phase 2: The collection** (done, Oct 26). The Recipes tab, search, the recipe screen, *Type it in* and *From a link*. Import her
+master list of meal ideas. Effort guesses she corrects. Built as: `lib/recipes.ts` (reading, saving one row, ingredient
+lines, page recipe data, the model's reading checked by code), `lib/search.ts` (runs on the phone as she types),
+`components/Recipes.tsx`. Her master list comes in by pasting it into *Type it in*: one idea per line becomes a list
+to tick. Some big recipe sites (Allrecipes, Simply Recipes) turn away servers; for those the model opens the page
+itself, and if that fails too she's asked to copy the recipe into *Type it in*.
 
 **Phase 3: Planning the week.** The plan sheet (shape, pins, who's eating, trips), suggestions, the week screen, *Made
 it* and *Did you make it?*, ingredients flowing into the list with the fresh/pantry split and merging. Then the boys'

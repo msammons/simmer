@@ -8,6 +8,7 @@ import { generateJson } from "./google/gemini";
 import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { AppError } from "./errors";
 import { parseCsv, records } from "./parse";
+import { norm } from "./words";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
@@ -27,8 +28,7 @@ const asStore = (s: string): Store => {
 const asSection = (s: string): Section => (SECTIONS as readonly string[]).includes(s.toLowerCase()) ? (s.toLowerCase() as Section) : "fresh";
 const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 
-/** The words for an item, the same however it's typed ("Lemons", "lemon"), for matching and merging. */
-export const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().replace(/(?<=[a-z]{3})(es|s)$/, "");
+export { norm };
 
 /** "2 lemons" → 2, lemons; "lemons x2" → 2, lemons; "TP" → TP. */
 export function parseEntry(text: string): { item: string; quantity: string } {
@@ -77,13 +77,13 @@ export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> 
 
 /** Common things, so most items are filed without asking anyone. */
 const KNOWN: Record<string, [Store, Section]> = Object.fromEntries(([
-  ["milk egg yogurt butter cheese cream sour cream half and half banana apple orange lemon lime grape strawberr raspberr blueberr berry avocado tomato onion garlic potato carrot celery lettuce spinach broccoli cucumber pepper cilantro parsley basil herb bread tortilla ground beef ground turkey chicken salmon fish shrimp bacon ham deli turkey salad", "safeway", "fresh"],
-  ["rice pasta flour sugar salt oil olive oil vinegar cereal oat oatmeal peanut butter jam jelly honey cracker goldfish chip pretzel snack bar granola can bean broth stock soup sauce salsa ketchup mustard mayo spice coffee tea", "safeway", "pantry"],
+  ["milk egg yogurt butter cheese cream sour cream half and half banana apple orange lemon lime grape strawberr raspberr blueberr berry avocado tomato onion garlic potato carrot celery lettuce spinach broccoli cucumber pepper cilantro parsley basil herb bread tortilla ground beef ground turkey chicken salmon fish shrimp bacon ham deli turkey salad zucchini squash mushroom kale cabbage ginger jalapeno scallion green onion mint thyme rosemary dill shallot leek asparagus green bean pork sausage steak tofu mozzarella parmesan cheddar feta", "safeway", "fresh"],
+  ["rice pasta flour sugar salt oil olive oil vinegar cereal oat oatmeal peanut butter jam jelly honey cracker goldfish chip pretzel snack bar granola can bean broth stock soup sauce salsa ketchup mustard mayo spice coffee tea cumin paprika oregano chili powder cinnamon vanilla baking soda baking powder breadcrumb panko soy sauce coconut milk tomato paste tomato sauce diced tomato noodle quinoa lentil chickpea black bean pepper flake brown sugar seasoning taco seasoning", "safeway", "pantry"],
   ["frozen ice cream nugget frozen pizza frozen vegetable", "safeway", "freezer"],
   ["toilet paper tp paper towel napkin soap detergent dish soap trash bag foil plastic wrap sponge tissue shampoo toothpaste", "costco", "household"],
 ] as const).flatMap(([words, st, sec]) => words.split(" ").map((w) => [w, [st, sec]])));
 
-function known(name: string): { store: Store; section: Section } | null {
+export function known(name: string): { store: Store; section: Section } | null {
   const n = norm(name);
   // The longest word that matches wins: "goldfish crackers" is goldfish (pantry), not fish (fresh).
   const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 3 && n.includes(w)).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
@@ -132,8 +132,9 @@ const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slic
 const stamp = () => new Date().toISOString();
 
 /** Adds an item, or merges it into the same unchecked item already on the list (quantities add up when they're numbers). */
-export async function addItem(text: string, by: string, forWhat = "", filing?: { store: Store; section: Section }): Promise<Item> {
-  const { item, quantity } = parseEntry(text);
+export async function addItem(text: string, by: string, forWhat = "", filing?: { store: Store; section: Section }, amount?: string): Promise<Item> {
+  const parsed = parseEntry(text);
+  const { item, quantity } = amount === undefined ? parsed : { item: text.trim(), quantity: amount.trim() };
   if (!item) throw new AppError("Type what to add.");
   const { items } = await loadList();
   const same = items.find((x) => !x.checked && norm(x.item) === norm(item));
