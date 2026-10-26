@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, applyTheme, AuthError, errorText, store, type Person, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, store, type ListState, type Person, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { LoadingScreen, type WaitKind } from "./LoadingScreen";
 import { SettingsSheet } from "./Settings";
-import { GroceriesScreen, SearchScreen, WeekScreen } from "./Screens";
+import { GroceriesScreen, type ListActions } from "./Groceries";
+import { SearchScreen, WeekScreen } from "./Screens";
 import { Splash, TabBar, type TabDef } from "./ui";
 
 type Tab = "week" | "groceries";
@@ -27,6 +28,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
+  const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
+  const [listError, setListError] = useState<string | null>(null);
+  const [me, setMe] = useState(() => (browser ? store.me() : ""));
   const [waitKind, setWaitKind] = useState<WaitKind>("week");
   const [searchText, setSearchText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
@@ -50,6 +54,50 @@ export default function App() {
       return true;
     }
   }, []);
+
+  // The shared list: loaded when Groceries opens, then every 30 seconds while it's open and whenever the app comes back to
+  // the front, so both phones see the same list. No background work: only while someone's looking.
+  const refreshList = useCallback(async () => {
+    try {
+      const l = await api.list();
+      setList(l);
+      store.setList(l);
+      setListError(null);
+    } catch (e) {
+      if (e instanceof AuthError) { store.setPasscode(null); setError(e.message); setView("passcode"); return; }
+      setListError(errorText(e));
+    }
+  }, []);
+  useEffect(() => {
+    if (view !== "groceries") return;
+    queueMicrotask(refreshList);
+    const visible = () => document.visibilityState === "visible";
+    const t = setInterval(() => { if (visible()) refreshList(); }, 30_000);
+    const back = () => { if (visible()) refreshList(); };
+    document.addEventListener("visibilitychange", back);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
+  }, [view, refreshList]);
+
+  /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
+  async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState) {
+    if (show) setList((l) => (l ? show(l) : l));
+    try {
+      const l = await api.change(c);
+      setList(l);
+      store.setList(l);
+      setListError(null);
+    } catch (e) {
+      setListError(errorText(e));
+      refreshList();
+    }
+  }
+  const act: ListActions = {
+    add: (text, filing) => change({ op: "add", text, by: me, ...filing }),
+    check: (it, checked) => change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
+    move: (it, to) => change({ op: "move", id: it.id, ...to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, ...to } : x)) })),
+    remove: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
+    done: (s) => change({ op: "done", store: s }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
+  };
 
   // Boot reads browser-only state (localStorage), which only exists after mount.
   useEffect(() => {
@@ -149,9 +197,9 @@ export default function App() {
       )}
       {view === "loading" && <LoadingScreen key={waitKind} kind={waitKind} onCancel={cancelWait} />}
       {view === "week" && <WeekScreen people={people} error={error} onSettings={() => setSettings(true)} />}
-      {view === "groceries" && <GroceriesScreen />}
+      {view === "groceries" && <GroceriesScreen list={list} error={listError} act={act} onSettings={() => setSettings(true)} />}
       {view === "search" && <SearchScreen recent={recent} onSearch={search} />}
-      {settings && <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} />}
+      {settings && <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />}
       {tab && (
         <TabBar
           tabs={TABS}
