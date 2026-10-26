@@ -302,9 +302,11 @@ export default function App() {
       {night && <NightSheet w={night.w} n={night.n} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, night.w.lunches)}
         onOpen={(id) => { const r = recipes?.find((x) => x.id === id); if (r) openRecipe(r); }} onClose={() => setNight(null)} />}
       {view === "groceries" && <GroceriesScreen list={list} kitchen={kitchen} error={listError} act={act} onSettings={() => setSettings(true)} />}
-      {view === "search" && <SearchScreen recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
+      {view === "search" && <SearchScreen freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
       {view === "recipe" && open && (
-        <RecipeScreen r={open} onBack={() => { setView("search"); }} onEdit={() => setSheet("edit")} onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} />
+        <RecipeScreen r={open} onBack={() => { setView("search"); }} onEdit={() => setSheet("edit")} onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")}
+          tonight={(() => { const n = week?.nights.find((x) => x.date === dateIn(0)); return n && (n.meal === open.id || n.kidsMeal === open.id) ? { made: n.made === "yes" } : undefined; })()}
+          onMade={() => made(dateIn(0), true)} />
       )}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
