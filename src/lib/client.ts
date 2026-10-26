@@ -2,7 +2,7 @@
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, date labels.
 import { addDays, todayIn, TZ } from "./time";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", waits: "sm.waits", list: "sm.list", me: "sm.me", recipes: "sm.recipes", week: "sm.week" };
+const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", week: "sm.week" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -36,12 +36,7 @@ export const store = {
     return THEMES.some((x) => x.id === t) ? (t as Theme) : "simmer";
   },
   setTheme: (t: Theme) => { set(KEYS.theme, t); applyTheme(t); },
-  /** How long the last few waits of this kind took, in seconds, for the loading screen's estimate. */
-  waits: (kind: string) => get<Record<string, number[]>>(KEYS.waits)?.[kind] ?? [],
-  addWait: (kind: string, seconds: number) => {
-    const all = get<Record<string, number[]>>(KEYS.waits) ?? {};
-    set(KEYS.waits, { ...all, [kind]: [...(all[kind] ?? []), Math.round(seconds)].slice(-5) });
-  },
+
 };
 
 /** Themes (defined in globals.css): Simmer's own looks (Simmer is the default and matches the icon), then plain iOS accent colors. swatch is CSS for the picker. */
@@ -81,7 +76,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-/** Every request takes an optional AbortSignal, so the loading screen's Cancel can stop it. */
+/** Every request takes an optional AbortSignal, so it can be stopped. */
 import type { Item, Section, Staple, Store } from "./groceries";
 export type { Item, Section, Staple, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
