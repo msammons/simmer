@@ -93,3 +93,14 @@ export async function replaceTab(title: string, rows: string[][]): Promise<void>
   });
   if (!put.ok) throw new Error(`Couldn't write the "${title}" tab (${put.status})`);
 }
+
+/** Writes rows at an A1 range ("List!I5:J5"): how one row's cells change without touching anyone else's rows. */
+export async function updateRange(range: string, rows: string[][]): Promise<void> {
+  const r = await fetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
+    body: JSON.stringify({ values: rows }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new Error(`Couldn't update ${range.split("!")[0]} (${r.status})`);
+}
