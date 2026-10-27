@@ -7,6 +7,12 @@ import { Icon, type IconName } from "./icons";
 
 const PRESS = "transition active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100";
 
+/** The app's scrolling area (the page itself never scrolls; see globals.css), and moving it. */
+export const scroller = () => document.getElementById("scroller");
+export function scrollAppTo(top: number, smooth = false) {
+  scroller()?.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+}
+
 /** Primary: tinted glass, one per screen. Secondary: clear glass. Plain: accent text. */
 export function Button({ children, onClick, href, disabled, type = "button", variant = "primary", size = "lg", icon, className = "" }: {
   children: ReactNode; onClick?: () => void; href?: string; disabled?: boolean; type?: "button" | "submit";
@@ -375,11 +381,11 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
   const keyboard = useKeyboardInset(); // a sheet with a text field rides above the keyboard, like the tab bar
   useEffect(() => { body.current?.scrollTo(0, 0); }, [page]);
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden"; // the list behind shouldn't scroll
+    const behind = scroller(), prev = behind?.style.overflow ?? "";
+    if (behind) behind.style.overflow = "hidden"; // the list behind shouldn't scroll
     const esc = (e: KeyboardEvent) => e.key === "Escape" && close.current();
     window.addEventListener("keydown", esc);
-    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", esc); };
+    return () => { if (behind) behind.style.overflow = prev; window.removeEventListener("keydown", esc); };
   }, []);
   useEffect(() => {
     const p = panel.current;
