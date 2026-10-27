@@ -4,7 +4,6 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Simmer",
     short_name: "Simmer",
-    description: "Family meals, planned with care.",
     start_url: "/",
     display: "standalone",
     background_color: "#F5F6F0",
