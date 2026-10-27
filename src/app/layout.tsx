@@ -3,7 +3,6 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Simmer",
-  description: "Family meals, planned with care.",
   appleWebApp: { capable: true, title: "Simmer", statusBarStyle: "default" },
   icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon-192.png" }], apple: "/apple-touch-icon.png" },
 };
