@@ -84,9 +84,19 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
-/* No rubber-band bounce on the page itself: it drags the fixed bars with it. Scrolling inside sheets is unaffected. */
+/*
+ * The page itself never scrolls: the app scrolls inside #scroller (App.tsx), which is always at least a pixel taller
+ * than the screen so it, not the page, takes every swipe. On an iPhone a page that scrolls (or tries to) makes the
+ * browser shift its whole view, bars included; a fixed frame doesn't.
+ */
 html, body {
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
+}
+body {
+  position: fixed;
+  inset: 0;
 }
 
 body {

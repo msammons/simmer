@@ -8,7 +8,7 @@ import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, SearchScreen } from "./Recipes";
-import { Notice, Splash, TabBar, type TabDef } from "./ui";
+import { Notice, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
 type Tab = "week" | "groceries";
 type View = "boot" | "passcode" | Tab | "search" | "recipe";
@@ -147,7 +147,7 @@ export default function App() {
     try { const w = await api.made(date, yes); if (w.monday === week?.monday) gotWeek(w); else refreshWeek(); }
     catch (e) { setWeekError(errorText(e)); }
   }
-  function openRecipe(r: Recipe) { setOpenId(r.id); setView("recipe"); window.scrollTo(0, 0); }
+  function openRecipe(r: Recipe) { setOpenId(r.id); setView("recipe"); scrollAppTo(0); }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState) {
@@ -233,7 +233,7 @@ export default function App() {
   useEffect(() => { if (gone) queueMicrotask(() => setView("search")); }, [gone]);
   function onTab(t: Tab | "search") {
     setError(null);
-    window.scrollTo(0, 0);
+    scrollAppTo(0);
     if (t !== "search") setLastTab(t);
     setView(t);
   }
@@ -243,7 +243,8 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+    <div id="scroller" className="h-full overflow-y-auto overscroll-y-contain">
+    <main className="mx-auto min-h-[calc(100%+1px)] w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
       {view === "boot" && <Splash />}
       {view === "passcode" && (
         <PasscodeScreen error={error} onDone={async (code) => {
@@ -273,7 +274,7 @@ export default function App() {
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);
-        if (saved.length === 1) { setOpenId(saved[0]); setView("recipe"); window.scrollTo(0, 0); }
+        if (saved.length === 1) { setOpenId(saved[0]); setView("recipe"); scrollAppTo(0); }
         else setSearchText(""); // several saved (her meal ideas): show the whole collection, where they now are
       }} />}
       {sheet === "edit" && open && <EditSheet r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
@@ -293,5 +294,6 @@ export default function App() {
         />
       )}
     </main>
+    </div>
   );
 }
