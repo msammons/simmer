@@ -42,7 +42,7 @@ export function WeekScreen({ week, next, recipes, error, onPlan, onNight, onMade
   const saturday = [6, 0].includes(new Date(`${today}T12:00:00Z`).getUTCDay());
   return (
     <div className="space-y-6">
-      <TopBar title="This week" subtitle={week ? range(week.monday) : "What's cooking?"} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
+      <TopBar title="This week" subtitle={week ? range(week.monday) : undefined} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
       {error && <Notice>{error}</Notice>}
       {ask && (
         <div className="glass space-y-3 rounded-[22px] p-4">

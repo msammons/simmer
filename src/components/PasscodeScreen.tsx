@@ -17,7 +17,6 @@ export function PasscodeScreen({ error, onDone }: { error: string | null; onDone
     >
       <div className="flex flex-col items-center gap-4 text-center">
         <Brand size="md" />
-        <p className="t-body text-muted">Family meals, planned with care.</p>
       </div>
       <div className="space-y-3">
         {error && !busy && <Notice>{error === "Wrong passcode." ? "That passcode didn't work. Try again." : error}</Notice>}
