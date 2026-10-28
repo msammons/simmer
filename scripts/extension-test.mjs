@@ -28,32 +28,42 @@ const CATALOG = {
 
 function searchPage(q, signedIn) {
   const hits = Object.entries(CATALOG).filter(([k]) => q.toLowerCase().includes(k) || CATALOG[k].some(([, n]) => n.toLowerCase() === q.toLowerCase())).flatMap(([, v]) => v);
-  const cards = hits.map(([id, name, price]) => `
-    <div class="product-card"><div class="img"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="${name}" width="40" height="40"></div>
+  // Built like Safeway's real search tiles (read from its page code, Oct 2026): a <product-item-al-v2> with the title
+  // in [data-qa="prd-itm-pttl"] (id "pg<number>"), no link to the product's page, and an "Add <name>" button. Oatly is
+  // built the older way, with a link to its page, to keep that working too.
+  const cards = hits.map(([id, name, price]) => /Oatly/.test(name) ? `
+    <div class="product-card"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="${name}" width="40" height="40">
       <a href="/shop/product-details.${id}.html">${name}</a><span class="price">${price}</span>
-      <div class="cta"><button class="add" aria-label="Add ${name} to cart">Add</button></div></div>`).join("");
+      <div class="cta"><button class="add" aria-label="Add ${name}">Add</button></div></div>` : `
+    <product-item-al-v2 class="product-card"><div class="pc"><img id="pg${id}Img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" width="40" height="40">
+      <span class="title-xxs product-fname" data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${name}</span>
+      <div data-qa="prd-itm-prc">${price}</div>
+      <quantity-stepper-al-v2 data-qa="qty-stppr"><div class="cta"><button class="add" aria-label="Add ${name}">Add</button></div></quantity-stepper-al-v2></div></product-item-al-v2>`).join("");
   return `<!doctype html><html><body>
     <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
     <main id="grid"></main>
     <script>
       // Results arrive a moment after the page, like Safeway's.
       setTimeout(() => {
-        document.getElementById("grid").innerHTML = ${JSON.stringify(cards || "<h1>No search results for &quot;" + q + "&quot;</h1>")};
+        // Bananas come inside a component with its own hidden layer (a shadow root), as parts of Safeway's pages do.
+        const grid = document.getElementById("grid");
+        const into = ${/banana/i.test(q)} ? grid.attachShadow({ mode: "open" }) : grid;
+        into.innerHTML = ${JSON.stringify(cards || "<h1>No search results for &quot;" + q + "&quot;</h1>")};
         // The cart count at the top, kept across pages like Safeway's.
         const count = () => Number(localStorage.getItem("cart") || 0);
         const showCount = () => { const c = document.getElementById("cart"); c.setAttribute("aria-label", "Cart, " + count() + " items"); c.textContent = "Cart " + count(); };
         showCount();
-        document.querySelectorAll("button.add").forEach((b) => b.onclick = () => setTimeout(() => {
+        into.querySelectorAll("button.add").forEach((b) => b.onclick = () => setTimeout(() => {
           localStorage.setItem("cart", String(count() + 1)); showCount();
           // Most products turn Add into a quantity; organic bananas show a sign the helper doesn't know, like a
           // Safeway redesign would, so only the cart count says it went in.
           b.parentElement.innerHTML = /Organic/.test(b.getAttribute("aria-label"))
             ? '<span class="added">Added</span>'
-            : '<button aria-label="Decrement quantity">-</button><input type="number" value="1" aria-label="Quantity"><button aria-label="Increment quantity">+</button>';
+            : '<button data-qa="prdctdcrmntr" aria-label="Remove Quantity of ' + b.getAttribute("aria-label").slice(4) + '">-</button><div data-qa="prd-qty-stppr-qtybox" aria-label="Cart quantity">1</div><button data-qa="prdctincrmntr" aria-label="Increase Quantity 1 unit of ' + b.getAttribute("aria-label").slice(4) + '">+</button>';
         }, 300));
         document.addEventListener("click", (e) => {
-          const t = e.target.closest("button"); if (!t || !/Increment/.test(t.getAttribute("aria-label") || "")) return;
-          const input = t.parentElement.querySelector("input"); input.value = String(Number(input.value) + 1);
+          const t = e.composedPath().find((x) => x.tagName === "BUTTON"); if (!t || !/^Increase/.test(t.getAttribute("aria-label") || "")) return;
+          const box = t.parentElement.querySelector('[data-qa="prd-qty-stppr-qtybox"]'); box.textContent = String(Number(box.textContent) + 1);
         });
       }, 500);
     </script></body></html>`;
@@ -156,6 +166,14 @@ expect(JSON.stringify(picks.map((p) => [p.item, p.id])) === JSON.stringify([["br
 
 expect(/Copy what Safeway showed/.test(done), "offers to copy what Safeway showed when its sign wasn't recognized");
 await panel.click("text=Copy what Safeway showed").catch(() => {});
+
+// The short account of the page, for when nothing can be read, works on a page like Safeway's.
+const { readFileSync } = await import("node:fs");
+const sampleFn = readFileSync(path.join(ext, "page.js"), "utf8").replace(/^export /m, "");
+await safeway.goto("https://www.safeway.com/shop/search-results.html?q=bananas");
+await safeway.waitForTimeout(1200);
+const sample = await safeway.evaluate(`(async () => { ${sampleFn}; return safewayPage("sample"); })()`);
+expect(/add buttons \(\d+\)/.test(sample) && /cart count: \d+/.test(sample) && /around the first add: </.test(sample), "the page summary reads Add buttons inside a hidden layer, the cart count and the area around them");
 
 // Second time, with this computer's copy of the picks wiped: they come from Simmer, so only the unfindable one is
 // asked about. Stop there.

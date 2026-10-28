@@ -145,6 +145,7 @@ function render() {
     if (s.asking) {
       app.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => state.answer?.(s.asking.options[Number(b.dataset.pick)])));
       app.querySelector("#skip").onclick = () => state.answer?.("skip");
+      app.querySelector("#sample")?.addEventListener("click", async () => { await navigator.clipboard.writeText(await store.get("lastPage", "")).catch(() => {}); show({ copied: true }); });
       app.querySelector("#other").onsubmit = (e) => { e.preventDefault(); const q = app.querySelector("#q").value.trim(); if (q) state.answer?.({ search: q }); };
     }
   }
@@ -157,7 +158,7 @@ function askCard({ item, options }) {
     ${options.length ? `<div class="group">${options.map((p, i) => `
       <button class="row" data-pick="${i}">${p.image ? `<img src="${esc(p.image)}" alt="" />` : ""}
         <span class="grow">${esc(p.name)}<span class="sub" style="display:block">${esc(p.price)}${p.inCart ? " · already in the cart" : ""}</span></span></button>`).join("")}</div>`
-    : `<p class="muted">Nothing came up.</p>`}
+    : `<p class="muted">Nothing came up.</p><button class="btn" id="sample">${state.copied ? "Copied" : "Copy what Safeway showed"}</button>`}
     <form id="other"><input id="q" placeholder="Look for something else" aria-label="Look for something else" /></form>
     <button class="btn" id="skip">Skip this one</button>`;
 }
@@ -167,7 +168,7 @@ function ask(item, options, tabId, before) {
   return new Promise((resolve) => {
     let watching = true;
     state.answer = (a) => { watching = false; state.answer = null; show({ asking: null }); resolve(a); };
-    show({ asking: { item, options } });
+    show({ asking: { item, options }, copied: false });
     // Pressing Add on the Safeway page answers too: whatever goes into the cart while this is asked is the pick.
     (async () => {
       while (watching) {
@@ -236,6 +237,8 @@ async function one(tabId, item, picks) {
     page = await results(tabId);
     if (!page) return { why: "Safeway didn't load. Add it by hand." };
     if (page.signedIn === false) return { halt: "Sign in to Safeway in the window beside this, then fill the cart again." };
+    // No products read at all: keep a short account of the page, to learn what Safeway's results look like now.
+    if (!page.products.length && !page.noResults) await store.set("lastPage", (await onPage(tabId, "sample")) || "");
     choice = choose(page.products, { picked: picks[key], usual, item: query });
     if (choice.none && query !== item.item) { query = item.item; continue; }
     if (choice.pick) break;

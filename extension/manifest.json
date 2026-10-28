@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Simmer for Safeway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fills your Safeway cart from the Simmer list. You check out on Safeway yourself.",
   "permissions": ["sidePanel", "storage", "scripting", "tabs", "clipboardWrite"],
   "host_permissions": ["https://www.safeway.com/*", "https://*.vercel.app/*"],
