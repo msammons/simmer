@@ -120,7 +120,7 @@ function render() {
     const rows = s.items.map((it, i) => {
       const r = s.results[i];
       const dot = !r ? (i === s.at && s.screen === "filling" ? "now" : "") : r.ok ? "done" : r.skipped ? "" : "miss";
-      const sub = !r ? (i === s.at && s.screen === "filling" ? (s.asking ? "Which one?" : s.note || "Looking…") : "") : r.ok ? (r.qty > 1 ? `In the cart, ${r.qty}` : "In the cart") + (r.name ? ` · ${r.name}` : "") : r.skipped ? "Skipped" : r.why;
+      const sub = !r ? (i === s.at && s.screen === "filling" ? (s.asking ? "Which one?" : s.note || "Looking…") : "") : r.ok ? (r.qty > 1 ? `In the cart, ${r.qty}` : "In the cart") + (r.want > r.qty ? ` (${r.want} on the list)` : "") + (r.name ? ` · ${r.name}` : "") : r.skipped ? "Skipped" : r.why;
       const link = r && !r.ok && !r.skipped ? ` <a href="${esc(searchUrl(it.item))}" data-open>Find it</a>` : "";
       return `<div class="row"><span class="dot ${dot}"></span><div class="grow">${esc(cap(it.item))}${it.quantity ? ` <span class="muted">${esc(it.quantity)}</span>` : ""}<div class="sub">${esc(sub)}${link}</div></div></div>`;
     }).join("");
@@ -135,10 +135,12 @@ function render() {
         ${misses ? `<p class="muted">${misses === 1 ? "One thing needs" : `${misses} things need`} adding by hand.</p>` : ""}
         <button class="btn primary" id="cart">Open my Safeway cart</button>
         <p class="muted">Pick a time and check out on Safeway when it looks right.</p>
-        <button class="btn" id="back">Back to the list</button>`}`;
+        <button class="btn" id="back">Back to the list</button>
+        ${s.lastPage ? `<button class="btn" id="copy">${s.copied ? "Copied" : "Copy what Safeway showed"}</button>` : ""}`}`;
     app.querySelector("#stop")?.addEventListener("click", () => { state.stopped = true; state.answer?.("skip"); show({ note: "Stopping…" }); });
     app.querySelector("#cart")?.addEventListener("click", async () => go(await safewayTab(), CART));
     app.querySelector("#back")?.addEventListener("click", load);
+    app.querySelector("#copy")?.addEventListener("click", async () => { await navigator.clipboard.writeText(s.lastPage).catch(() => {}); show({ copied: true }); });
     app.querySelectorAll("[data-open]").forEach((a) => a.addEventListener("click", async (e) => { e.preventDefault(); go(await safewayTab(), a.href); }));
     if (s.asking) {
       app.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => state.answer?.(s.asking.options[Number(b.dataset.pick)])));
@@ -161,7 +163,7 @@ function askCard({ item, options }) {
 }
 
 /** Shows the question and waits for a tap: a product, "skip", or { search }. */
-function ask(item, options, tabId, inCartBefore) {
+function ask(item, options, tabId, before) {
   return new Promise((resolve) => {
     let watching = true;
     state.answer = (a) => { watching = false; state.answer = null; show({ asking: null }); resolve(a); };
@@ -172,8 +174,17 @@ function ask(item, options, tabId, inCartBefore) {
         await sleep(1000);
         if (!watching) return;
         const page = await onPage(tabId, "read");
-        const added = page?.products.find((p) => p.inCart && !inCartBefore.has(p.id));
-        if (added && watching) state.answer?.(added);
+        if (!page || !watching) continue;
+        // Gone in: its Add button turned into a quantity, or changed while the cart count went up.
+        const wasIn = new Set(before.products.filter((p) => p.inCart).map((p) => p.id));
+        const counted = before.cartCount !== null && page.cartCount !== null && page.cartCount > before.cartCount;
+        const changed = Object.keys(before.tiles ?? {}).filter((id) => before.tiles[id] && (page.tiles?.[id] ?? "") !== before.tiles[id]);
+        const added = page.products.find((p) => p.inCart && !wasIn.has(p.id))
+          ?? (counted && changed.length === 1 ? [...page.products, ...before.products].find((p) => p.id === changed[0]) : null);
+        // Known only by the count: keep what Safeway showed for that product, so its sign can be learned.
+        if (added && !added.inCart) await store.set("lastPage", (await onPage(tabId, "snapshot", { id: added.id })) || "");
+        if (added && watching) state.answer?.({ ...added, inCart: true });
+        else if (counted) state.answer?.({ unknown: true });
       }
     })();
   });
@@ -228,23 +239,27 @@ async function one(tabId, item, picks) {
     choice = choose(page.products, { picked: picks[key], usual, item: query });
     if (choice.none && query !== item.item) { query = item.item; continue; }
     if (choice.pick) break;
-    const answer = await ask(item, choice.ask ?? [], tabId, new Set(page.products.filter((p) => p.inCart).map((p) => p.id)));
+    const answer = await ask(item, choice.ask ?? [], tabId, page);
     if (answer === "skip") return { skipped: true };
     if (answer?.search) { query = answer.search; continue; }
+    // Something went into the cart on Safeway, but which product couldn't be told: count it, remember nothing.
+    if (answer?.unknown) return { ok: true, qty: 1, name: "" };
     choice = { pick: answer };
     break;
   }
   if (state.stopped) return { skipped: true };
   if (!choice?.pick) return { why: "Couldn't find it." };
   show({ note: `Adding ${choice.pick.name}…` });
-  const added = await onPage(tabId, "add", { id: choice.pick.id, times: howMany(item.quantity) });
+  const want = howMany(item.quantity);
+  const added = choice.pick.inCart && !(want > 1) ? { ok: true, qty: choice.pick.qty || 1, sure: true } : await onPage(tabId, "add", { id: choice.pick.id, times: want });
+  if (added?.snapshot) await store.set("lastPage", added.snapshot);
   if (!added?.ok) return { why: "Didn't go in. Add it by hand." };
   if (picks[key]?.id !== choice.pick.id) {
     picks[key] = { id: choice.pick.id, name: choice.pick.name };
     await store.set("picks", picks);
     await savePick(item.item, picks[key]);
   }
-  return { ok: true, qty: added.qty, name: choice.pick.name };
+  return { ok: true, qty: added.qty, want, name: choice.pick.name };
 }
 
 /**
@@ -266,7 +281,8 @@ const savePick = (item, p) => simmer("POST", { item, id: p.id, name: p.name }, "
 
 async function fill() {
   const items = state.items;
-  show({ screen: "filling", results: [], at: 0, stopped: false, halted: "", note: "" });
+  show({ screen: "filling", results: [], at: 0, stopped: false, halted: "", note: "", lastPage: "" });
+  await store.set("lastPage", "");
   const tabId = await safewayTab();
   const picks = await loadPicks();
   for (let i = 0; i < items.length && !state.stopped; i++) {
@@ -280,6 +296,8 @@ async function fill() {
     await sleep(PAUSE);
   }
   if (state.stopped && !state.halted) state.halted = "Stopped before the end. What's in the cart stays there.";
+  state.lastPage = await store.get("lastPage", "");
+  state.copied = false;
   show({ screen: "done", at: -1, asking: null, note: "" });
 }
 
