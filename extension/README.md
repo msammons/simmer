@@ -47,8 +47,8 @@ folder to teach `page.js` the new sign. Safeway blocks automated browsers, so a 
 - `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel.
 - `panel.html`, `panel.css`, `panel.js`: the panel, and the order of things.
 - `page.js`: what runs inside safeway.com: reads the products on screen, presses Add and +. Safeway's pages aren't
-  documented, so it finds products by their links (`/shop/product-details.<number>.html`) and their Add buttons. If
-  Safeway changes its pages, this is the file to fix.
+  documented; it finds products by Safeway's own search tiles (as read from Safeway's page code; the details are at the
+  top of `page.js`), with links to product pages as a fallback. If Safeway changes its pages, this is the file to fix.
 - `match.js`: which product to pick, with tests (`match.test.js`, run by `npm test`).
 - `../scripts/extension-test.mjs`: the whole flow against a stand-in Safeway page and a stand-in list
   (`node scripts/extension-test.mjs`). It can't tell whether the real Safeway pages still match.
