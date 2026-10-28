@@ -35,6 +35,13 @@ clear match goes in without asking.
 
 A pick can be made two ways while it asks: tap a product in the panel, or press Add on the Safeway page.
 
+## When Safeway changes its pages
+
+"In the cart" is read two ways: the product's Add button turns into a quantity, or the cart count at the top goes up.
+If only the count moved (Safeway's sign on the product wasn't recognized), the panel offers **Copy what Safeway
+showed** at the end: that product's part of the page, without pictures. Paste it into a session working on this
+folder to teach `page.js` the new sign. Safeway blocks automated browsers, so a session can't look itself.
+
 ## Files
 
 - `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel.

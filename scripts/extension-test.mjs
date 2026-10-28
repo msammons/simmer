@@ -33,14 +33,23 @@ function searchPage(q, signedIn) {
       <a href="/shop/product-details.${id}.html">${name}</a><span class="price">${price}</span>
       <div class="cta"><button class="add" aria-label="Add ${name} to cart">Add</button></div></div>`).join("");
   return `<!doctype html><html><body>
-    <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart">Cart</a></header>
+    <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
     <main id="grid"></main>
     <script>
       // Results arrive a moment after the page, like Safeway's.
       setTimeout(() => {
         document.getElementById("grid").innerHTML = ${JSON.stringify(cards || "<h1>No search results for &quot;" + q + "&quot;</h1>")};
+        // The cart count at the top, kept across pages like Safeway's.
+        const count = () => Number(localStorage.getItem("cart") || 0);
+        const showCount = () => { const c = document.getElementById("cart"); c.setAttribute("aria-label", "Cart, " + count() + " items"); c.textContent = "Cart " + count(); };
+        showCount();
         document.querySelectorAll("button.add").forEach((b) => b.onclick = () => setTimeout(() => {
-          b.parentElement.innerHTML = '<button aria-label="Decrement quantity">-</button><input type="number" value="1" aria-label="Quantity"><button aria-label="Increment quantity">+</button>';
+          localStorage.setItem("cart", String(count() + 1)); showCount();
+          // Most products turn Add into a quantity; organic bananas show a sign the helper doesn't know, like a
+          // Safeway redesign would, so only the cart count says it went in.
+          b.parentElement.innerHTML = /Organic/.test(b.getAttribute("aria-label"))
+            ? '<span class="added">Added</span>'
+            : '<button aria-label="Decrement quantity">-</button><input type="number" value="1" aria-label="Quantity"><button aria-label="Increment quantity">+</button>';
         }, 300));
         document.addEventListener("click", (e) => {
           const t = e.target.closest("button"); if (!t || !/Increment/.test(t.getAttribute("aria-label") || "")) return;
@@ -144,6 +153,9 @@ expect(/Unobtainium\nSkipped/.test(done), "the skipped item says so");
 expect(JSON.stringify(posts) === JSON.stringify([{ op: "check", id: "m", checked: true }, { op: "check", id: "b", checked: true }]), "only what went in is ticked off in Simmer");
 
 expect(JSON.stringify(picks.map((p) => [p.item, p.id])) === JSON.stringify([["bread", "960099"], ["milk", "960001"], ["bananas", "960011"]]), "the picks are kept in Simmer, this computer's old ones too");
+
+expect(/Copy what Safeway showed/.test(done), "offers to copy what Safeway showed when its sign wasn't recognized");
+await panel.click("text=Copy what Safeway showed").catch(() => {});
 
 // Second time, with this computer's copy of the picks wiped: they come from Simmer, so only the unfindable one is
 // asked about. Stop there.
