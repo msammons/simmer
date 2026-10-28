@@ -264,7 +264,7 @@ export default function App() {
       {planning && <PlanSheet w={planning} recipes={recipes ?? []} me={me} onSave={saveWeek} onClose={() => setPlanning(null)} />}
       {night && <NightSheet w={night.w} n={night.n} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, night.w.lunches)}
         onOpen={(id) => { const r = recipes?.find((x) => x.id === id); if (r) openRecipe(r); }} onClose={() => setNight(null)} />}
-      {view === "groceries" && <GroceriesScreen list={list} kitchen={kitchen} error={listError} act={act} onSettings={() => setSettings(true)} />}
+      {view === "groceries" && <GroceriesScreen list={list} kitchen={kitchen} error={listError} act={act} onSettings={() => setSettings(true)} onListChanged={refreshList} />}
       {view === "search" && <SearchScreen freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} query={searchText} recent={recent} error={recipesError} onSearch={search} onOpen={openRecipe} onAdd={() => setSheet("add")} />}
       {view === "recipe" && open && (
         <RecipeScreen r={open} onBack={() => { setView("search"); }} onEdit={() => setSheet("edit")} onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")}
