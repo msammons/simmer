@@ -23,11 +23,11 @@ const store = {
 
 class WrongPasscode extends Error {}
 
-async function simmer(method, body) {
+async function simmer(method, body, path = "/api/list") {
   const [address, passcode] = [await store.get("address", ""), await store.get("passcode", "")];
   let res;
   try {
-    res = await fetch(`${address}/api/list`, {
+    res = await fetch(`${address}${path}`, {
       method, cache: "no-store",
       headers: { "x-passcode": passcode, ...(body && { "content-type": "application/json" }) },
       ...(body && { body: JSON.stringify(body) }),
@@ -239,16 +239,36 @@ async function one(tabId, item, picks) {
   show({ note: `Adding ${choice.pick.name}…` });
   const added = await onPage(tabId, "add", { id: choice.pick.id, times: howMany(item.quantity) });
   if (!added?.ok) return { why: "Didn't go in. Add it by hand." };
-  picks[key] = { id: choice.pick.id, name: choice.pick.name };
-  await store.set("picks", picks);
+  if (picks[key]?.id !== choice.pick.id) {
+    picks[key] = { id: choice.pick.id, name: choice.pick.name };
+    await store.set("picks", picks);
+    await savePick(item.item, picks[key]);
+  }
   return { ok: true, qty: added.qty, name: choice.pick.name };
 }
+
+/**
+ * The picks, from Simmer, so every computer shares them; this computer's own copy fills in when Simmer can't be reached.
+ * Picks only this computer has (made before they were kept in Simmer) are sent to Simmer once.
+ */
+async function loadPicks() {
+  const here = await store.get("picks", {});
+  let shared;
+  try { shared = (await simmer("GET", null, "/api/safeway")).picks ?? []; } catch { return here; }
+  const picks = Object.fromEntries(shared.map((p) => [keyOf(p.item), { id: p.id, name: p.name }]));
+  for (const [key, p] of Object.entries(here)) if (!picks[key]) { picks[key] = p; await savePick(key, p); }
+  await store.set("picks", picks);
+  return picks;
+}
+
+/** Keeps a pick in Simmer. If that fails it stays on this computer, and goes to Simmer next time if Simmer has none for that item. */
+const savePick = (item, p) => simmer("POST", { item, id: p.id, name: p.name }, "/api/safeway").catch(() => {});
 
 async function fill() {
   const items = state.items;
   show({ screen: "filling", results: [], at: 0, stopped: false, halted: "", note: "" });
   const tabId = await safewayTab();
-  const picks = await store.get("picks", {});
+  const picks = await loadPicks();
   for (let i = 0; i < items.length && !state.stopped; i++) {
     show({ at: i, note: "" });
     const r = await one(tabId, items[i], picks);
