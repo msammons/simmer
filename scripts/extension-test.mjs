@@ -71,6 +71,17 @@ await ctx.route("https://simmer-test.vercel.app/api/list", async (route) => {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(LIST) });
 });
 
+const picks = [];
+await ctx.route("https://simmer-test.vercel.app/api/safeway", async (route) => {
+  const req = route.request();
+  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
+  if (req.method() === "POST") {
+    const p = JSON.parse(req.postData() ?? "{}");
+    picks.splice(0, picks.length, ...picks.filter((x) => x.item !== p.item), p);
+  }
+  return route.fulfill({ contentType: "application/json", body: JSON.stringify({ picks }) });
+});
+
 let [worker] = ctx.serviceWorkers();
 worker ??= await ctx.waitForEvent("serviceworker");
 const id = new URL(worker.url()).host;
@@ -103,6 +114,9 @@ await panel.waitForSelector("text=Sign in to Safeway", { timeout: 30_000 });
 expect(posts.length === 0, "signed out: stops, adds nothing");
 await panel.click("text=Back to the list");
 
+// A pick this computer made before picks were kept in Simmer goes to Simmer on the next fill.
+await panel.evaluate(() => chrome.storage.local.set({ picks: { bread: { id: "960099", name: "Sourdough Bread" } } }));
+
 // Signed in: milk is asked about (the half gallon and the gallon match the usual equally), then 2 go in.
 signedIn = true;
 await panel.waitForSelector("text=Fill my Safeway cart");
@@ -129,7 +143,11 @@ expect(/In the cart · Organic Bananas/.test(done), "the other bananas went in")
 expect(/Unobtainium\nSkipped/.test(done), "the skipped item says so");
 expect(JSON.stringify(posts) === JSON.stringify([{ op: "check", id: "m", checked: true }, { op: "check", id: "b", checked: true }]), "only what went in is ticked off in Simmer");
 
-// Second time: the picks are remembered, so only the unfindable one is asked about. Stop there.
+expect(JSON.stringify(picks.map((p) => [p.item, p.id])) === JSON.stringify([["bread", "960099"], ["milk", "960001"], ["bananas", "960011"]]), "the picks are kept in Simmer, this computer's old ones too");
+
+// Second time, with this computer's copy of the picks wiped: they come from Simmer, so only the unfindable one is
+// asked about. Stop there.
+await panel.evaluate(() => chrome.storage.local.remove("picks"));
 posts.length = 0;
 await panel.click("text=Back to the list");
 await panel.click("text=Fill my Safeway cart");

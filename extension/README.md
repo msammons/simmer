@@ -27,9 +27,13 @@ questions in the panel. At the end, **Open my Safeway cart**, pick a time, and c
 
 ## What it remembers
 
-On that computer only (Chrome's storage for the helper): the passcode, and which Safeway product was picked for each
-item, so the next order goes in without asking. The house's usual products in Simmer (Staples, `usual_product`) are used
-too: a clear match goes in without asking.
+Which Safeway product was picked for each item, in Simmer's Safeway tab (through `/api/safeway`), so the next order
+goes in without asking, on any computer. Each pick is also kept on that computer (Chrome's storage for the helper) in
+case Simmer can't be reached; picks only that computer has go to Simmer on the next fill. The passcode and Simmer's
+address stay on that computer only. The house's usual products in Simmer (Staples, `usual_product`) are used too: a
+clear match goes in without asking.
+
+A pick can be made two ways while it asks: tap a product in the panel, or press Add on the Safeway page.
 
 ## Files
 
