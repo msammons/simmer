@@ -434,7 +434,7 @@ services that add fees.
 
 ## 6. Screens
 
-Built only from `components/ui.tsx`, in the style the other family apps share (the Simmer lockup top left, one action
+Built only from `components/ui.tsx`, in the style the studio's other apps share (the Simmer lockup top left, one action
 top right, one large title, inset grouped lists, one sheet style).
 
 ### This week (tab)
@@ -521,7 +521,7 @@ underneath, and no device names.
   the result. Links use the page's own recipe data first.
 - **Names stay private.** As in Head Out, people's names are swapped for roles before anything goes to the model.
 - **No background work.** Every model call happens because someone tapped something, or right after (`after()`).
-- **Deployments are a budget.** The family apps share one Vercel team with a daily deployment limit (hit on Oct 26
+- **Deployments are a budget.** The studio's apps share one Vercel team with a daily deployment limit (hit on Oct 26
   while iterating on the kids' apps). Batch changes into fewer pull requests, and do branch work where pushes don't
   deploy.
 
