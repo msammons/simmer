@@ -116,7 +116,8 @@ await panel.waitForSelector("text=Which bananas?", { timeout: 30_000 });
 await panel.fill("#q", "organic bananas");
 await panel.press("#q", "Enter");
 await panel.waitForSelector("[data-pick] >> text=Organic Bananas", { timeout: 30_000 });
-await panel.locator("[data-pick]", { hasText: "Organic Bananas" }).click();
+// This time press Add on the Safeway page itself: the panel notices and moves on.
+await safeway.locator(".product-card", { hasText: "Organic Bananas" }).getByRole("button", { name: /^Add/ }).click();
 // Nothing comes up for the last one: it asks, with a box to look for something else, and she skips it.
 await panel.waitForSelector("text=Which unobtainium?", { timeout: 30_000 });
 expect(/Nothing came up/.test(await panel.locator("main").innerText()), "says when nothing came up");
