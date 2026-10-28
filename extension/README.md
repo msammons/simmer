@@ -33,7 +33,7 @@ case Simmer can't be reached; picks only that computer has go to Simmer on the n
 address stay on that computer only. The house's usual products in Simmer (Staples, `usual_product`) are used too: a
 clear match goes in without asking.
 
-A pick can be made two ways while it asks: tap a product in the panel, or press Add on the Safeway page.
+A pick can be made two ways while it asks: tap one of the three in the panel (the usual way), or, for something else, find it on the Safeway page and press Add there. Either way it's remembered.
 
 ## When Safeway changes its pages
 
@@ -47,8 +47,8 @@ folder to teach `page.js` the new sign. Safeway blocks automated browsers, so a 
 - `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel.
 - `panel.html`, `panel.css`, `panel.js`: the panel, and the order of things.
 - `page.js`: what runs inside safeway.com: reads the products on screen, presses Add and +. Safeway's pages aren't
-  documented, so it finds products by their links (`/shop/product-details.<number>.html`) and their Add buttons. If
-  Safeway changes its pages, this is the file to fix.
+  documented; it finds products by Safeway's own search tiles (as read from Safeway's page code; the details are at the
+  top of `page.js`), with links to product pages as a fallback. If Safeway changes its pages, this is the file to fix.
 - `match.js`: which product to pick, with tests (`match.test.js`, run by `npm test`).
 - `../scripts/extension-test.mjs`: the whole flow against a stand-in Safeway page and a stand-in list
   (`node scripts/extension-test.mjs`). It can't tell whether the real Safeway pages still match.
