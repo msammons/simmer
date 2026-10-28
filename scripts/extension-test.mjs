@@ -101,6 +101,21 @@ await ctx.route("https://simmer-test.vercel.app/api/safeway", async (route) => {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify({ picks }) });
 });
 
+// Simmer's order, as /api/safeway/order keeps it, for an order started on the phone.
+let order = null;
+await ctx.route("https://simmer-test.vercel.app/api/safeway/order", async (route) => {
+  const req = route.request();
+  if (req.method() === "POST") {
+    const b = JSON.parse(req.postData() ?? "{}");
+    const open = order && ["waiting", "filling", "asking"].includes(order.status);
+    if (b.op === "claim" && order?.status === "waiting") order = { ...order, status: "filling", lines: b.lines };
+    if (b.op === "report" && open) order = { ...order, lines: b.lines, note: b.note, status: order.status === "asking" ? "asking" : "filling" };
+    if (b.op === "ask" && open) order = { ...order, status: "asking", question: b.question, answer: null };
+    if (b.op === "end" && open) order = { ...order, status: b.status, note: b.note, question: null };
+  }
+  return route.fulfill({ contentType: "application/json", body: JSON.stringify({ order }) });
+});
+
 let [worker] = ctx.serviceWorkers();
 worker ??= await ctx.waitForEvent("serviceworker");
 const id = new URL(worker.url()).host;
@@ -187,6 +202,21 @@ expect(!/Which (milk|bananas)/.test(again) && /In the cart · Organic Bananas/.t
 await panel.click("text=Stop");
 await panel.waitForSelector("text=Stopped before the end", { timeout: 30_000 });
 expect(true, "Stop ends the run and says what's left");
+
+// An order started on the phone: the background picks it up, adds the remembered items without anyone at the
+// computer, asks Simmer about the one it can't find, and goes on when the phone answers.
+await panel.close();
+posts.length = 0;
+order = { id: "o1", status: "waiting", started: new Date().toISOString(), updated: "", note: "", lines: [], question: null, answer: null };
+const running = worker.evaluate(() => self.simmerCheckOrder());
+const until = async (ok, what, ms = 60_000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (ok()) return true; console.log("timed out:", what, JSON.stringify(order).slice(0, 400)); return false; };
+expect(await until(() => order.status === "asking" && order.question?.item === "unobtainium"), "a phone order: asks Simmer about what it can't pick");
+expect(order.lines.filter((l) => l.state === "in cart").map((l) => l.item).join() === "milk,bananas", "a phone order: the remembered items went in by themselves");
+order = { ...order, status: "filling", question: null, answer: { itemId: "u", skip: true } };
+await running;
+expect(order.status === "done" && order.lines.find((l) => l.itemId === "u")?.state === "skipped", "a phone order: the answer from the phone is followed, and it finishes");
+expect(order.lines.find((l) => l.item === "milk")?.qty === 2 && /^\d+$/.test(order.lines.find((l) => l.item === "milk")?.productId ?? ""), "a phone order: says how many went in, and which product");
+expect(posts.filter((p) => p.op === "check").length === 2, "a phone order: ticks off in Simmer what went in");
 
 await ctx.close();
 console.log(fails.length ? `\n${fails.length} failed` : "\nAll passed");

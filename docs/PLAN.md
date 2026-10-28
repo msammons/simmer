@@ -414,6 +414,13 @@ ticked in Simmer, which is what ticked already means ("in the cart"). Each pick 
 Safeway while it asks) is kept in the Safeway tab (section 3), so the helper asks less with every order until it adds
 everything itself.
 
+**From the phone (Oct 28).** *Fill my Safeway cart* on the Groceries tab starts an order in Simmer (the "Safeway order"
+tab: one current order, its items and how each stands, and any question). The helper, in Chrome on a computer that's
+left on with Safeway signed in, looks for one every half minute, fills the cart in a Safeway tab behind, and asks on
+the phone when it isn't sure (every product found, the likeliest first). The phone shows each item going in, and
+checkout happens in the Safeway app, which shares the cart. An item it couldn't add gets *Add it yourself*, opening
+that product (or a search) in Safeway; an item's own sheet has *Open in Safeway* for the product picked before.
+
 A small experiment, run from Sam's Mac with her account: can a program sign in to Safeway, read her past orders,
 search a product, add it to the cart, and list the cart, reliably, without being blocked? And does a cart filled that way
 show up in her Safeway app? Three outcomes:
