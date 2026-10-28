@@ -33,7 +33,7 @@ case Simmer can't be reached; picks only that computer has go to Simmer on the n
 address stay on that computer only. The house's usual products in Simmer (Staples, `usual_product`) are used too: a
 clear match goes in without asking.
 
-A pick can be made two ways while it asks: tap a product in the panel, or press Add on the Safeway page.
+A pick can be made two ways while it asks: tap one of the three in the panel (the usual way), or, for something else, find it on the Safeway page and press Add there. Either way it's remembered.
 
 ## When Safeway changes its pages
 
