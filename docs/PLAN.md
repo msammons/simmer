@@ -398,6 +398,14 @@ bot protection may push back. That's why it starts as a test (Phase 1) before an
 
 ### The test before building (Phase 1)
 
+**Result (Oct 2026): filling the cart from Simmer's server on Vercel didn't work.** Safeway's bot protection blocks
+automated sign-in, so the first outcome below is ruled out, and so is keeping her Safeway sign-in in Vercel. The route
+now proposed is a Chrome extension, desktop first, that fills the safeway.com cart from Simmer's list in a browser
+she's already signed in to, at a person's pace, asks when unsure, remembers her picks, and never checks out. It does not
+automate the sign-in or disguise itself. Matt said go ahead (Oct 27); it's built in `extension/` (how to install and
+use it is in `extension/README.md`), and waiting for its first real order on Marcela's computer. Items it adds are
+ticked in Simmer, which is what ticked already means ("in the cart").
+
 A small experiment, run from Matt's Mac with her account: can a program sign in to Safeway, read her past orders,
 search a product, add it to the cart, and list the cart, reliably, without being blocked? And does a cart filled that way
 show up in her Safeway app? Three outcomes:

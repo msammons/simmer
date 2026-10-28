@@ -1,0 +1,138 @@
+// A check of the Safeway helper (extension/) end to end, without Safeway or Simmer: run on a Mac with
+//   node scripts/extension-test.mjs
+// It loads the helper into a test browser, answers safeway.com with a stand-in search page (product links, Add
+// buttons that turn into a quantity) and Simmer's list with a stand-in list, then fills the cart and checks what
+// happened. It shows the flow works; it can't show that Safeway's real pages match the stand-in. Exits 1 on a failure.
+import { createRequire } from "node:module";
+import path from "node:path";
+import os from "node:os";
+import { mkdtempSync } from "node:fs";
+
+const { chromium } = createRequire(import.meta.url)("playwright");
+const ext = path.resolve("extension");
+
+const LIST = {
+  items: [
+    { id: "m", item: "milk", quantity: "2", store: "safeway", section: "fresh", checked: false, check: false },
+    { id: "b", item: "bananas", quantity: "", store: "safeway", section: "fresh", checked: false, check: false },
+    { id: "u", item: "unobtainium", quantity: "", store: "safeway", section: "pantry", checked: false, check: false },
+    { id: "s", item: "salt", quantity: "", store: "safeway", section: "pantry", checked: false, check: true },
+    { id: "t", item: "dressing", quantity: "", store: "trader-joes", section: "pantry", checked: false, check: false },
+  ],
+  staples: [{ item: "milk", store: "safeway", section: "fresh", quantity: "1", product: "Lucerne 2% milk half gallon" }],
+};
+const CATALOG = {
+  milk: [["960001", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", "$3.49"], ["960002", "Lucerne Milk Reduced Fat 2% - 1 Gallon", "$5.29"], ["960003", "Oatly Oat Milk - 64 Fl. Oz.", "$5.99"]],
+  bananas: [["960010", "Bananas", "$0.29 each"], ["960011", "Organic Bananas", "$0.39 each"]],
+};
+
+function searchPage(q, signedIn) {
+  const hits = Object.entries(CATALOG).filter(([k]) => q.toLowerCase().includes(k) || CATALOG[k].some(([, n]) => n.toLowerCase() === q.toLowerCase())).flatMap(([, v]) => v);
+  const cards = hits.map(([id, name, price]) => `
+    <div class="product-card"><div class="img"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="${name}" width="40" height="40"></div>
+      <a href="/shop/product-details.${id}.html">${name}</a><span class="price">${price}</span>
+      <div class="cta"><button class="add" aria-label="Add ${name} to cart">Add</button></div></div>`).join("");
+  return `<!doctype html><html><body>
+    <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart">Cart</a></header>
+    <main id="grid"></main>
+    <script>
+      // Results arrive a moment after the page, like Safeway's.
+      setTimeout(() => {
+        document.getElementById("grid").innerHTML = ${JSON.stringify(cards || "<h1>No search results for &quot;" + q + "&quot;</h1>")};
+        document.querySelectorAll("button.add").forEach((b) => b.onclick = () => setTimeout(() => {
+          b.parentElement.innerHTML = '<button aria-label="Decrement quantity">-</button><input type="number" value="1" aria-label="Quantity"><button aria-label="Increment quantity">+</button>';
+        }, 300));
+        document.addEventListener("click", (e) => {
+          const t = e.target.closest("button"); if (!t || !/Increment/.test(t.getAttribute("aria-label") || "")) return;
+          const input = t.parentElement.querySelector("input"); input.value = String(Number(input.value) + 1);
+        });
+      }, 500);
+    </script></body></html>`;
+}
+
+const fails = [];
+const expect = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fails.push(what); };
+
+const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpdir(), "simmer-ext-")), {
+  channel: "chromium", headless: true,
+  args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
+});
+const posts = [];
+let signedIn = false;
+await ctx.route("https://www.safeway.com/**", (route) => {
+  const u = new URL(route.request().url());
+  if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
+  return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
+});
+await ctx.route("https://simmer-morales.vercel.app/api/list", async (route) => {
+  const req = route.request();
+  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
+  if (req.method() === "POST") posts.push(JSON.parse(req.postData() ?? "{}"));
+  return route.fulfill({ contentType: "application/json", body: JSON.stringify(LIST) });
+});
+
+let [worker] = ctx.serviceWorkers();
+worker ??= await ctx.waitForEvent("serviceworker");
+const id = new URL(worker.url()).host;
+
+const safeway = await ctx.newPage();
+await safeway.goto("https://www.safeway.com/");
+const panel = await ctx.newPage();
+await panel.goto(`chrome-extension://${id}/panel.html`);
+
+// The passcode: a wrong one says so, the right one shows the list.
+await panel.fill("#code", "nope");
+await panel.click("text=Continue");
+await panel.waitForSelector("text=Wrong passcode.");
+expect(true, "a wrong passcode says so");
+await panel.fill("#code", "test123");
+await panel.click("text=Continue");
+await panel.waitForSelector("text=Fill my Safeway cart");
+const listText = await panel.locator("main").innerText();
+expect(/3 things/.test(listText) && /Milk/.test(listText) && !/Salt/.test(listText) && !/Dressing/.test(listText), "the list shows only what's needed from Safeway");
+
+// Signed out: it stops and asks for a sign-in instead of adding anything.
+await panel.click("text=Fill my Safeway cart");
+await panel.waitForSelector("text=Sign in to Safeway", { timeout: 30_000 });
+expect(posts.length === 0, "signed out: stops, adds nothing");
+await panel.click("text=Back to the list");
+
+// Signed in: milk is asked about (the half gallon and the gallon match the usual equally), then 2 go in.
+signedIn = true;
+await panel.waitForSelector("text=Fill my Safeway cart");
+await panel.click("text=Fill my Safeway cart");
+await panel.waitForSelector("text=Which milk?", { timeout: 30_000 });
+const options = await panel.locator("[data-pick]").allInnerTexts();
+expect(options.length === 3 && /Gallon/.test(options[0]), "asks about milk with three choices");
+await panel.locator("[data-pick]", { hasText: "1/2 Gallon" }).click();
+await panel.waitForSelector("text=Which bananas?", { timeout: 30_000 });
+// Bananas: look for something else, then pick from what comes up.
+await panel.fill("#q", "organic bananas");
+await panel.press("#q", "Enter");
+await panel.waitForSelector("[data-pick] >> text=Organic Bananas", { timeout: 30_000 });
+await panel.locator("[data-pick]", { hasText: "Organic Bananas" }).click();
+// Nothing comes up for the last one: it asks, with a box to look for something else, and she skips it.
+await panel.waitForSelector("text=Which unobtainium?", { timeout: 30_000 });
+expect(/Nothing came up/.test(await panel.locator("main").innerText()), "says when nothing came up");
+await panel.click("text=Skip this one");
+await panel.waitForSelector("text=Your cart is ready", { timeout: 30_000 });
+const done = await panel.locator("main").innerText();
+expect(/In the cart, 2 · Lucerne Milk Reduced Fat 2% - 1\/2 Gallon/.test(done), "milk went in, two of them");
+expect(/In the cart · Organic Bananas/.test(done), "the other bananas went in");
+expect(/Unobtainium\nSkipped/.test(done), "the skipped item says so");
+expect(JSON.stringify(posts) === JSON.stringify([{ op: "check", id: "m", checked: true }, { op: "check", id: "b", checked: true }]), "only what went in is ticked off in Simmer");
+
+// Second time: the picks are remembered, so only the unfindable one is asked about. Stop there.
+posts.length = 0;
+await panel.click("text=Back to the list");
+await panel.click("text=Fill my Safeway cart");
+await panel.waitForSelector("text=Which unobtainium?", { timeout: 60_000 });
+const again = await panel.locator("main").innerText();
+expect(!/Which (milk|bananas)/.test(again) && /In the cart · Organic Bananas/.test(again) && posts.length === 2, "the second time, remembered picks go in without asking");
+await panel.click("text=Stop");
+await panel.waitForSelector("text=Stopped before the end", { timeout: 30_000 });
+expect(true, "Stop ends the run and says what's left");
+
+await ctx.close();
+console.log(fails.length ? `\n${fails.length} failed` : "\nAll passed");
+process.exit(fails.length ? 1 : 0);

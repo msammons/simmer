@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Simmer for Safeway",
+  "version": "0.1.0",
+  "description": "Fills your Safeway cart from the Simmer list. You check out on Safeway yourself.",
+  "permissions": ["sidePanel", "storage", "scripting", "tabs"],
+  "host_permissions": ["https://www.safeway.com/*", "https://simmer-morales.vercel.app/*"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "panel.html" },
+  "action": { "default_title": "Simmer", "default_icon": { "128": "icon.png" } },
+  "icons": { "128": "icon.png" }
+}
