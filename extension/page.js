@@ -17,7 +17,11 @@ export async function safewayPage(action, arg) {
   const idOf = (a) => a.getAttribute("href")?.match(/product-details\.(\d+)\.html/)?.[1] ?? null;
   const buttons = (root) => [...root.querySelectorAll("button, [role=button]")].filter(visible);
   const addButton = (card) => buttons(card).find((b) => /^add\b/i.test(label(b)) && !/list|note|coupon|clip/i.test(label(b)));
-  const plusButton = (card) => buttons(card).find((b) => /increase|increment|add one|plus|^\+$/i.test(label(b)));
+  const plusButton = (card) => buttons(card).find((b) => /increase|increment|add one|add another|plus|^[+＋]$/i.test(label(b)));
+  const minusButton = (card) => buttons(card).find((b) => /decrease|decrement|remove one|minus|^[-−–]$/i.test(label(b)));
+  const qtyBox = (card) => card.querySelector('input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"]');
+  /** In the cart: the Add button has turned into a quantity (a + or - button, or a quantity box). */
+  const inCartNow = (card) => !addButton(card) && !!(plusButton(card) || minusButton(card) || qtyBox(card));
 
   /** The smallest box around a product link that holds that product and no other. */
   function cardFor(a) {
@@ -28,16 +32,17 @@ export async function safewayPage(action, arg) {
       const ids = new Set([...el.querySelectorAll('a[href*="product-details."]')].map(idOf).filter(Boolean));
       if (ids.size > 1 || !ids.has(id)) break;
       best = el;
-      if (addButton(el) || plusButton(el)) return el;
+      if (addButton(el) || inCartNow(el)) return el;
     }
     return best;
   }
 
   function qtyOf(card) {
-    const input = card.querySelector('input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i]');
-    if (input && Number(input.value) > 0) return Number(input.value);
+    const input = qtyBox(card);
+    const n = Number(input?.value || input?.getAttribute("aria-valuenow"));
+    if (n > 0) return n;
     const m = card.innerText.match(/(\d+)\s+in\s+cart/i);
-    return m ? Number(m[1]) : plusButton(card) ? 1 : 0;
+    return m ? Number(m[1]) : 1;
   }
 
   function products() {
@@ -50,10 +55,10 @@ export async function safewayPage(action, arg) {
       const img = card.querySelector("img");
       const name = (a.getAttribute("aria-label") || a.innerText || img?.alt || "").replace(/\s+/g, " ").trim();
       if (!name) continue;
-      const add = addButton(card), plus = plusButton(card);
-      if (!add && !plus) continue;
+      const add = addButton(card), inCart = inCartNow(card);
+      if (!add && !inCart) continue;
       const price = card.innerText.match(/\$\d+(?:\.\d{2})?(?:\s*(?:each|\/\s*lb|\/\s*ea|per lb))?/i)?.[0] ?? "";
-      seen.set(id, { id, name, price, image: img?.currentSrc || img?.src || "", inCart: !add && !!plus, qty: !add && plus ? qtyOf(card) : 0, card });
+      seen.set(id, { id, name, price, image: img?.currentSrc || img?.src || "", inCart, qty: inCart ? qtyOf(card) : 0, card });
     }
     return [...seen.values()];
   }

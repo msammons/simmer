@@ -151,6 +151,7 @@ function render() {
 function askCard({ item, options }) {
   return `
     <p><strong>Which ${esc(item.item)}?</strong>${item.quantity ? ` <span class="muted">${esc(item.quantity)}</span>` : ""}</p>
+    <p class="muted">Tap one here, or press Add on Safeway.</p>
     ${options.length ? `<div class="group">${options.map((p, i) => `
       <button class="row" data-pick="${i}">${p.image ? `<img src="${esc(p.image)}" alt="" />` : ""}
         <span class="grow">${esc(p.name)}<span class="sub" style="display:block">${esc(p.price)}${p.inCart ? " · already in the cart" : ""}</span></span></button>`).join("")}</div>`
@@ -160,10 +161,21 @@ function askCard({ item, options }) {
 }
 
 /** Shows the question and waits for a tap: a product, "skip", or { search }. */
-function ask(item, options) {
+function ask(item, options, tabId, inCartBefore) {
   return new Promise((resolve) => {
-    state.answer = (a) => { state.answer = null; show({ asking: null }); resolve(a); };
+    let watching = true;
+    state.answer = (a) => { watching = false; state.answer = null; show({ asking: null }); resolve(a); };
     show({ asking: { item, options } });
+    // Pressing Add on the Safeway page answers too: whatever goes into the cart while this is asked is the pick.
+    (async () => {
+      while (watching) {
+        await sleep(1000);
+        if (!watching) return;
+        const page = await onPage(tabId, "read");
+        const added = page?.products.find((p) => p.inCart && !inCartBefore.has(p.id));
+        if (added && watching) state.answer?.(added);
+      }
+    })();
   });
 }
 
@@ -216,7 +228,7 @@ async function one(tabId, item, picks) {
     choice = choose(page.products, { picked: picks[key], usual, item: query });
     if (choice.none && query !== item.item) { query = item.item; continue; }
     if (choice.pick) break;
-    const answer = await ask(item, choice.ask ?? []);
+    const answer = await ask(item, choice.ask ?? [], tabId, new Set(page.products.filter((p) => p.inCart).map((p) => p.id)));
     if (answer === "skip") return { skipped: true };
     if (answer?.search) { query = answer.search; continue; }
     choice = { pick: answer };
