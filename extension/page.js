@@ -7,8 +7,13 @@
 // the cart.
 
 /**
- * safewayPage("read") → { signedIn, loading, noResults, products: [{ id, name, price, image, inCart, qty }] }
- * safewayPage("add", { id, times }) → { ok, qty, why? }
+ * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }] }
+ *   tiles: { [id]: what that product's Add button says now ("" when there's none), for every product on the page }
+ * safewayPage("add", { id, times }) → { ok, qty, sure, snapshot? }
+ * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
+ *
+ * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
+ * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
  */
 export async function safewayPage(action, arg) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,6 +68,40 @@ export async function safewayPage(action, arg) {
     return [...seen.values()];
   }
 
+  /** The number on the cart at the top of the page, or null if there isn't one to read. */
+  function cartCount() {
+    const top = [...document.querySelectorAll("header a, header button, [aria-label*='cart' i], [data-qa*='cart' i]")].filter(visible);
+    const counts = top.filter((el) => /cart/i.test(label(el) + " " + (el.getAttribute("data-qa") ?? ""))).map((el) => label(el).match(/\b(\d{1,3})\b/)?.[1]).filter(Boolean).map(Number);
+    return counts.length ? Math.max(...counts) : null;
+  }
+
+  /** Every product on the page and what its Add button says, so a change after a tap can be seen. */
+  function tiles() {
+    const out = {};
+    for (const a of document.querySelectorAll('a[href*="product-details."]')) {
+      const id = idOf(a);
+      if (!id || id in out || !visible(a)) continue;
+      const card = cardFor(a);
+      if (card) { const add = addButton(card); out[id] = add ? label(add) : ""; }
+    }
+    return out;
+  }
+
+  function cardOf(id) {
+    const a = [...document.querySelectorAll(`a[href*="product-details.${id}."]`)].find(visible);
+    return a ? cardFor(a) : null;
+  }
+
+  /** A product's part of the page, without pictures or styling, small enough to paste. */
+  function snapshot(id) {
+    const card = cardOf(id);
+    if (!card) return "";
+    const copy = card.cloneNode(true);
+    copy.querySelectorAll("script, style, svg, img, picture, source").forEach((el) => el.replaceWith(document.createTextNode(`[${el.tagName.toLowerCase()}]`)));
+    copy.querySelectorAll("*").forEach((el) => { el.removeAttribute("style"); el.removeAttribute("srcset"); });
+    return `cart count: ${cartCount()}\n${copy.outerHTML.replace(/\s+/g, " ").slice(0, 6000)}`;
+  }
+
   const strip = (p) => ({ id: p.id, name: p.name, price: p.price, image: p.image, inCart: p.inCart, qty: p.qty });
 
   if (action === "read") {
@@ -72,6 +111,8 @@ export async function safewayPage(action, arg) {
     const list = products();
     return {
       signedIn: !signInShown,
+      cartCount: cartCount(),
+      tiles: tiles(),
       noResults: /no (search )?results for/i.test(text),
       loading: !list.length && !/no (search )?results for/i.test(text),
       products: list.slice(0, 24).map(strip),
@@ -87,11 +128,22 @@ export async function safewayPage(action, arg) {
     await sleep(600);
     if (!p.inCart) {
       const add = addButton(p.card);
-      if (!add) return { ok: false, why: "no-add" };
+      if (!add) return { ok: false, why: "no-add", snapshot: snapshot(id) };
+      const before = { count: cartCount(), add: label(add) };
       add.click();
-      // Wait for Safeway to say it's in the cart: the Add button turns into a quantity.
-      for (let i = 0; i < 20 && !(p = find())?.inCart; i++) await sleep(400);
-      if (!p?.inCart) return { ok: false, why: "not-added" };
+      // Wait for Safeway to show it's in the cart: the Add button turns into a quantity, or the cart count goes up.
+      let counted = false, changed = false;
+      for (let i = 0; i < 20; i++) {
+        await sleep(400);
+        p = find();
+        const now = cartCount();
+        counted = before.count !== null && now !== null && now > before.count;
+        changed = (tiles()[id] ?? "") !== before.add;
+        if (p?.inCart || counted) break;
+      }
+      // With no cart count to read, a changed Add button is the only sign left; trust it, but say so.
+      if (!p?.inCart && !counted && !(before.count === null && changed)) return { ok: false, why: "not-added", snapshot: snapshot(id) };
+      if (!p?.inCart) return { ok: true, qty: 1, sure: counted, snapshot: snapshot(id) };
     }
     for (let n = p.qty || 1; n < times; n++) {
       const plus = plusButton(p.card);
@@ -101,8 +153,10 @@ export async function safewayPage(action, arg) {
       p = find() ?? p;
     }
     p = find() ?? p;
-    return { ok: true, qty: p.qty || 1 };
+    return { ok: true, qty: p.qty || 1, sure: true };
   }
+
+  if (action === "snapshot") return snapshot(arg.id);
 
   return null;
 }
