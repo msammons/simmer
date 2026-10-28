@@ -1,8 +1,8 @@
 # Simmer for Safeway (the Chrome helper)
 
 Fills the Safeway cart on safeway.com from Simmer's list, in a computer's Chrome where Robin is already signed in to
-Safeway. It goes through the Safeway items one at a time: searches, adds what it's sure of, asks about the rest (three
-likeliest products, or look for something else, or skip), and ticks each item off in Simmer once Safeway shows it in the
+Safeway. It goes through the Safeway items one at a time: searches, adds what it's sure of, asks about the rest (every
+product it found, the likeliest first, or look for something else, or skip), and ticks each item off in Simmer once Safeway shows it in the
 cart. It never signs in and never checks out: when it's done, she opens the cart and checks out on Safeway as usual.
 
 Why this shape: Safeway blocks automated browsers and has no way in for apps (see `docs/PLAN.md`, section 5). This runs
@@ -33,7 +33,9 @@ case Simmer can't be reached; picks only that computer has go to Simmer on the n
 address stay on that computer only. The house's usual products in Simmer (Staples, `usual_product`) are used too: a
 clear match goes in without asking.
 
-A pick can be made two ways while it asks: tap one of the three in the panel (the usual way), or, for something else, find it on the Safeway page and press Add there. Either way it's remembered.
+Picking happens in the panel: it lists every product Safeway found, the likeliest first, with a box to look for
+something else. Nothing needs doing on the Safeway page (if someone presses Add there anyway while it asks, that counts
+as the pick). Every pick is remembered.
 
 ## When Safeway changes its pages
 

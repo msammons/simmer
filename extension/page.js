@@ -139,7 +139,7 @@ export async function safewayPage(action, arg) {
       tiles: tiles(),
       noResults: /no (search )?results for/i.test(text),
       loading: !list.length && !/no (search )?results for/i.test(text),
-      products: list.slice(0, 24).map(strip),
+      products: list.slice(0, 40).map(strip),
     };
   }
 
