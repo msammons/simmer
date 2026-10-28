@@ -17,7 +17,7 @@ const range = (monday: string) => `${monthDay(monday)} – ${monthDay(addDays(mo
 /** A meal's name: the recipe's, or the free text she typed. */
 export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;
 
-/** "Quick · Matt away · Kids separate". */
+/** "Quick · Sam away · Kids separate". */
 function nightLine(n: Night) {
   return [KIND[n.kind], ...n.away.map((a) => `${a} away`), n.split && "Kids separate"].filter(Boolean).join(" · ");
 }
@@ -96,7 +96,7 @@ function WeekGroup({ header, w, recipes, today, onNight }: { header: string; w: 
       {w.nights.map((n) => (
         <Row key={n.date}
           title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : "Not picked yet"}</span>}
-          subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== "Marcela" && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
+          subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== "Robin" && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
           value={n.pinned ? <span aria-label="Pinned" className="text-accent">●</span> : undefined}
           accessory="chevron" onClick={() => onNight(w, n)} />
       ))}

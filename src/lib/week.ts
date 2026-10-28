@@ -15,7 +15,7 @@ export type Night = {
 };
 export const emptyNight = (date: string, kind: NightKind = "regular"): Night => ({ date, kind, meal: "", kidsMeal: "", away: [], split: false, pinned: false, plannedBy: "", made: "", notes: "" });
 
-/** "no Matt, kids separate" ↔ away Matt, split. "everyone" is neither. */
+/** "no Sam, kids separate" ↔ away Sam, split. "everyone" is neither. */
 export const eatingText = (n: Pick<Night, "away" | "split">) => [...n.away.map((a) => `no ${a}`), n.split && "kids separate"].filter(Boolean).join(", ") || "everyone";
 export function readEating(s: string): Pick<Night, "away" | "split"> {
   const parts = s.split(",").map((x) => x.trim()).filter(Boolean);
@@ -113,7 +113,7 @@ export function rank(nights: Night[], at: number, ctx: Context, forKids = false)
         if (hasDislike(r, kids.flatMap((k) => k.dislikes))) score -= 3;
       } else if (r.for === "adults") { score += 2; why.push([2, "A grown-up dinner"]); }
       else if (r.kidOk === "yes") score -= 0.5; // the boys' favorites are better kept for nights everyone eats together
-      // Away nights: skip what's mostly for the person who's away ("spicy" for Matt).
+      // Away nights: skip what's mostly for the person who's away ("spicy" for Sam).
       if (away.length && away.some((p) => p.likes.some((l) => { const w = norm(l.split(" ")[0]); return w.length > 2 && (r.tags.some((t) => norm(t).includes(w)) || norm(r.name).includes(w)); }))) score -= 2.5;
       if (before && r.protein && before.protein && norm(r.protein) === norm(before.protein)) score -= 2;
       if (before && r.tags.some((t) => before.tags.includes(t))) score -= 1;

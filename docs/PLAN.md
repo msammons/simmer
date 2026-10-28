@@ -1,11 +1,11 @@
 # Simmer: design and feature plan
 
-The plan for what Simmer does, how it looks, and the order it gets built. It comes from the conversation Matt and Marcela
+The plan for what Simmer does, how it looks, and the order it gets built. It comes from the conversation Sam and Robin
 had on Oct 25, 2026 about how dinner and groceries work in this house today, and what would help. Read
 `docs/ARCHITECTURE.md` first: everything here is built on that foundation and follows its standing preferences.
 
-Simmer is for **Marcela first**. She does almost all of the planning and ordering today, so every screen is judged by one
-question: does this take less of her time and attention than what she does now? Matt is the second user (he adds to the
+Simmer is for **Robin first**. She does almost all of the planning and ordering today, so every screen is judged by one
+question: does this take less of her time and attention than what she does now? Sam is the second user (he adds to the
 list, cooks some nights, and looks at the week).
 
 ---
@@ -23,11 +23,11 @@ list, cooks some nights, and looks at the week).
    pin that and get ideas for the other nights, not have the whole week filled in at random.
 4. **Then ingredients.** She checks what's on hand, writes a grocery list, and orders. The list isn't only dinner: it's
    kid lunches, breakfasts (very consistent), snacks, eggs, milk, yogurt.
-5. **Staples are added the moment they run low.** She notices and adds them to her list right away. Matt does too.
+5. **Staples are added the moment they run low.** She notices and adds them to her list right away. Sam does too.
    Both want **one shared list** that either of them can add to.
 6. **Fresh almost always needs buying; the pantry usually doesn't.** She'd like the list split into *fresh* and
    *pantry*, so she can skim the pantry part and focus on fresh.
-7. **The freezer is a second pantry for protein:** chicken thighs, chicken nuggets (fast dinners; Matt is a little
+7. **The freezer is a second pantry for protein:** chicken thighs, chicken nuggets (fast dinners; Sam is a little
    burned out on them), salmon, ground beef, sirloin steak strips, shrimp. Things get forgotten in there ("I forgot
    about the shrimp", "I forgot about the steak strips"). Ground meat she usually buys fresh when she wants it.
 
@@ -35,9 +35,9 @@ list, cooks some nights, and looks at the week).
 
 | Store | How often | When | How | What it's for |
 | --- | --- | --- | --- | --- |
-| Safeway | Weekly | Tuesday (moving from Monday: pottery is Monday, and shelves are bare after Sunday) | Almost always online | Most things |
-| Trader Joe's | About every two weeks | Wednesday about 8:30, after school drop-off (empty and fully stocked) | In person | Snacks for the boys, the meatballs, salad dressings; some meals depend on it |
-| Costco | About once a month (she has to go for her medication anyway) | Whenever | In person | Bulk protein for the freezer, toilet paper, coffee, big staples |
+| Safeway | Weekly | Tuesday (shelves are bare after Sunday) | Almost always online | Most things |
+| Trader Joe's | About every two weeks | A weekday morning (quiet and fully stocked) | In person | Snacks for the boys, the meatballs, salad dressings; some meals depend on it |
+| Costco | About once a month | Whenever | In person | Bulk protein for the freezer, toilet paper, coffee, big staples |
 
 Delivery from the other stores (through a service like Instacart) costs extra and isn't wanted now.
 
@@ -55,7 +55,7 @@ Delivery from the other stores (through a service like Instacart) costs extra an
 
 - **Aligned:** say how many quick and regular dinners the week needs instead of syncing a calendar.
 - **Aligned:** the app becomes the shared grocery list.
-- **Needs more work:** automating Safeway ordering. Matt's action item is to find out whether it can be done. The answer
+- **Needs more work:** automating Safeway ordering. Sam's action item is to find out whether it can be done. The answer
   is in section 5.
 - **The two killer features**, in their words: Safeway ordering that saves the clicking, and a recipe collection that's
   easy to look through, search and pick from.
@@ -74,7 +74,7 @@ Delivery from the other stores (through a service like Instacart) costs extra an
    generic recipes. Labels use her language: *quick* and *regular*.
 4. **Remember so she doesn't have to.** Last made, what's in the freezer, which store has what, when the next Trader
    Joe's or Costco trip is. Forgotten favorites come back on their own.
-5. **Every list is shared and live.** Matt and Marcela see the same list. Adding takes one tap and a few words.
+5. **Every list is shared and live.** Sam and Robin see the same list. Adding takes one tap and a few words.
 6. **Fewer taps than today, or it doesn't ship.** Counted against her current routine, not against other apps.
 7. **She never has to leave Simmer.** Planning, the list, recipes, importing and ordering all happen inside Simmer. No
    working with another app open beside it, no copying and pasting between apps. Where another service is involved
@@ -89,7 +89,7 @@ Delivery from the other stores (through a service like Instacart) costs extra an
 
 ## 3. The data (Sheet tabs)
 
-The Sheet stays the place where data is managed: Marcela or Matt can fix anything by hand, and the app reads it
+The Sheet stays the place where data is managed: Robin or Sam can fix anything by hand, and the app reads it
 forgivingly (headers in any order, a bad row skipped and reported, never fatal). New tabs, added to `TABS` in
 `lib/data.ts` with a sample CSV in `data/`:
 
@@ -113,9 +113,9 @@ One row per recipe in the collection.
 | `kid_ok` | yes / some / no | For *everyone* meals: whether both boys usually eat it |
 | `make_ahead` | yes / no | A note, not a kind: it can be made earlier in the day or the night before |
 | `tags` | tacos, one-pan, salad | Free words for search |
-| `source` | URL, Drive file name, "photo", "Marcela" | Where it came from |
+| `source` | URL, Drive file name, "photo", "Robin" | Where it came from |
 | `rating` | 1 to 3 | How much they like it; optional |
-| `notes` | Double the spice for Matt | |
+| `notes` | Double the spice for Sam | |
 | `active` | yes / no | "No" keeps it but stops suggesting it |
 
 ### Plan
@@ -123,15 +123,15 @@ One row per recipe in the collection.
 One row per planned night. The app writes it; she can edit by hand.
 
 `date, meal (recipe id or free text), kids_meal (recipe id or free text, when the boys eat something different),
-effort, eating (everyone, or who's away: "no Matt"), pinned (yes/no), planned_by (Marcela/Matt), made (yes/no), notes`
+effort, eating (everyone, or who's away: "no Sam"), pinned (yes/no), planned_by (Robin/Sam), made (yes/no), notes`
 
 `made` matters: it's how "last made" stays true. Asking "did you make this?" the next day is one tap (section 4.2).
 
 ### Lunches
 
 The boys' lunch options, per boy, as parts that make a lunch: `kid, part (main / fruit / side / treat / snack),
-item, ingredients, notes`. For example Felix: *main* bean and cheese burrito; *fruit* grapes, raspberries or
-strawberries; *side* pea crackers, goldfish. Nico: *main* hummus roll-up; *fruit* strawberries, bananas or apple (with
+item, ingredients, notes`. For example Theo: *main* bean and cheese burrito; *fruit* grapes, raspberries or
+strawberries; *side* pea crackers, goldfish. Leo: *main* hummus roll-up; *fruit* strawberries, bananas or apple (with
 citrus so it doesn't brown); *side* baby carrots, goldfish. The *snack* part is the separate school snack.
 
 ### Lunch plan
@@ -172,8 +172,8 @@ tab, so the same ingredient always lands in the same place. She can fix any row.
 
 Gains household rules for planning, written as plain sentences the app turns into settings where it can:
 `household, rule, Safeway on Tuesdays`, `household, rule, Trader Joe's every other Wednesday`, `household, rule, Costco
-once a month`, `household, rule, school days Monday to Friday`, `Felix, rule, school lunch on Thursdays (pizza day)`, plus
-people's likes and dislikes (Felix: no mushrooms), which planning respects.
+once a month`, `household, rule, school days Monday to Friday`, `Theo, rule, school lunch on Thursdays (pizza day)`, plus
+people's likes and dislikes (Theo: no mushrooms), which planning respects.
 
 ---
 
@@ -204,15 +204,15 @@ code (a number of minutes is read from the recipe text, never invented).
 
 The flow, from the This week tab:
 
-1. **"Plan the week"** opens a sheet with all seven nights. Either of them can plan: Matt can plan or pin nights too,
+1. **"Plan the week"** opens a sheet with all seven nights. Either of them can plan: Sam can plan or pin nights too,
    and each night shows who planned it.
 2. For each night she taps **Quick** or **Regular** (or **Out / leftovers / skip**, common on weekends). A shortcut row
    at the top sets the common shapes in one tap: *"Weeknights 2 quick, 3 regular"*, *"All quick"*, *"Same as last
    week"*.
-3. **Who's eating.** Every night is the four of them unless she says otherwise: *Matt's away* on a night means
-   quantities for three and Matt's tastes (spicy) don't count that night. *Kids separate* splits the night into a
+3. **Who's eating.** Every night is the four of them unless she says otherwise: *Sam's away* on a night means
+   quantities for three and Sam's tastes (spicy) don't count that night. *Kids separate* splits the night into a
    grown-up dinner and a kids' dinner (from the boys' own dinners in the collection, like mac and cheese or nuggets),
-   each suggested and listed on its own. A night when Matt's away is a natural one for the kids' favorites everyone
+   each suggested and listed on its own. A night when Sam's away is a natural one for the kids' favorites everyone
    eats.
 4. **Pin anything she already knows**: tap a night, pick "Chili" from her collection (or type a free-text meal like
    "dinner with G&G"). Pinned nights are never changed by suggestions.
@@ -235,15 +235,15 @@ How suggestions are chosen (code, not the model, so they're predictable and expl
 - **Season:** each recipe can carry seasons; in season it gets a lift (soups and chili in fall and winter), out of
   season it's suggested less (but never hidden: search always finds it).
 - **Kids:** an *everyone* night favors meals the boys eat (`kid_ok`) and respects dislikes in Profile (no mushrooms
-  for Felix) unless the recipe notes a workaround. A *kids separate* night pairs an *adults* or *everyone* meal with a
+  for Theo) unless the recipe notes a workaround. A *kids separate* night pairs an *adults* or *everyone* meal with a
   *kids* meal.
-- **Who's eating:** on a night Matt's away, meals that are mostly for his tastes are skipped and quantities scale.
+- **Who's eating:** on a night Sam's away, meals that are mostly for his tastes are skipped and quantities scale.
 
 The model's job is only the friendly words: a few words on why a pick is there ("Uses the salmon in the freezer"),
 written from facts code hands it.
 
 **The week screen** (This week tab) shows the nights as rows: day, the meal (and the kids' meal underneath on a split
-night), a small tag (Quick / Regular), *Matt away* when he is, and a pin mark on pinned nights. Tap a night to swap, cook from the recipe, or mark it made. Tonight sits at the top.
+night), a small tag (Quick / Regular), *Sam away* when he is, and a pin mark on pinned nights. Tap a night to swap, cook from the recipe, or mark it made. Tonight sits at the top.
 
 **"Did you make it?"** The next time she opens the app after a planned night, a small notice asks *"Did you make the
 chili last night?"* with *Yes* / *No, we had something else*. This keeps "last made" true, and costs one tap. (No
@@ -333,14 +333,14 @@ it's open (where the browser allows). *Made it* at the bottom marks it made and 
 **What it does.** Plans each boy's packed lunch for the school days, from that boy's own options, and puts what's
 needed on the list.
 
-- **Per boy, per day.** Felix and Nico eat different lunches, so each gets his own: a main, a fruit, a side or two, a
+- **Per boy, per day.** Theo and Leo eat different lunches, so each gets his own: a main, a fruit, a side or two, a
   treat if he has one, and the separate school snack. Options come from the Lunches tab (section 3), which starts from
   what she already packs.
-- **School lunch days** come from Profile (Felix's pizza day on Thursday): no packed main that day, still a snack.
+- **School lunch days** come from Profile (Theo's pizza day on Thursday): no packed main that day, still a snack.
 - **No school** that day (a holiday, a day off): she taps the day off on the plan sheet; no lunch is planned.
 - **Rotation, not randomness.** Each part rotates through the boy's options so the week has variety (not the same fruit
   every day), and anything not in stock this week (no raspberries) is swapped for another of his options.
-- **The morning view.** On a school morning, the This week tab shows today's lunches at the top: *Felix: bean and
+- **The morning view.** On a school morning, the This week tab shows today's lunches at the top: *Theo: bean and
   cheese burrito, grapes, pea crackers, goldfish. Snack: cheese and crackers.* That's the packing list, for whoever's
   packing (and for anyone helping, like Grandma).
 - **On the list.** Lunch items land on the grocery list with *for lunches*, merged with dinner items.
@@ -357,7 +357,7 @@ needed on the list.
 
 ## 5. Safeway ordering, without leaving Simmer
 
-Matt's action item from the meeting, with two decisions made after it: **Marcela shouldn't have to jump between apps
+Sam's action item from the meeting, with two decisions made after it: **Robin shouldn't have to jump between apps
 to build the order**, and **checkout stays in the Safeway app.** So the goal is Simmer filling her Safeway cart itself
 and showing her what it did. When the cart is right, she opens the Safeway app once, picks her pickup or delivery time,
 and checks out there as she does today. That's the only step outside Simmer, and it's the one she already likes doing
@@ -391,7 +391,7 @@ bot protection may push back. That's why it starts as a test (Phase 1) before an
 ### What it needs
 
 - **Her Safeway sign-in, kept as a secret** in Vercel (like the other keys), never on screen, in the Sheet or in code.
-  Set up once, by Matt, with her. If Safeway asks for a code sent to her, Simmer asks her for it in Simmer.
+  Set up once, by Sam, with her. If Safeway asks for a code sent to her, Simmer asks her for it in Simmer.
 - **It only runs when she taps the button.** No background ordering, no schedule.
 - **Her past orders** are read once at setup, and after each order, to learn her usual products. This is also what
   makes the cart right the first time.
@@ -402,17 +402,17 @@ bot protection may push back. That's why it starts as a test (Phase 1) before an
 automated sign-in, so the first outcome below is ruled out, and so is keeping her Safeway sign-in in Vercel. The route
 now proposed is a Chrome extension, desktop first, that fills the safeway.com cart from Simmer's list in a browser
 she's already signed in to, at a person's pace, asks when unsure, remembers her picks, and never checks out. It does not
-automate the sign-in or disguise itself. Matt said go ahead (Oct 27); it's built in `extension/` (how to install and
-use it is in `extension/README.md`), and waiting for its first real order on Marcela's computer. Items it adds are
+automate the sign-in or disguise itself. Sam said go ahead (Oct 27); it's built in `extension/` (how to install and
+use it is in `extension/README.md`), and waiting for its first real order on Robin's computer. Items it adds are
 ticked in Simmer, which is what ticked already means ("in the cart").
 
-A small experiment, run from Matt's Mac with her account: can a program sign in to Safeway, read her past orders,
+A small experiment, run from Sam's Mac with her account: can a program sign in to Safeway, read her past orders,
 search a product, add it to the cart, and list the cart, reliably, without being blocked? And does a cart filled that way
 show up in her Safeway app? Three outcomes:
 
 - **Works from Simmer's server:** build it as described.
-- **Works only from a real browser** (bot protection blocks the server): run the same steps in a browser on Matt's
-  Mac, started from Simmer's button and reporting back to Simmer's review screen. Marcela still never leaves Simmer;
+- **Works only from a real browser** (bot protection blocks the server): run the same steps in a browser on Sam's
+  Mac, started from Simmer's button and reporting back to Simmer's review screen. Robin still never leaves Simmer;
   the Mac just needs to be on.
 - **Blocked or too fragile:** Simmer keeps the review-quality list and her usual products, and the fallback is filling
   the cart with as little of her attention as possible. Decide that with her at the time.
@@ -443,7 +443,7 @@ top right, one large title, inset grouped lists, one sheet style).
 ### Plan the week (sheet)
 
 Page 1, **The nights:** the shortcut shapes, then all seven nights, each with a Quick / Regular / Skip segmented
-control, a pin button, and *Who's eating* (everyone, Matt's away, kids separate). Page 2, **This week's trips:** Trader
+control, a pin button, and *Who's eating* (everyone, Sam's away, kids separate). Page 2, **This week's trips:** Trader
 Joe's and Costco toggles (pre-set by the rhythm). Page 3, **Suggestions:** each open night with its pick and two
 alternatives; *Something else*. Page 4, **Lunches:** each school day with each boy's suggested lunch, tap a part to
 swap it, and *No school* for a day off. Footer: *Save the week*. The sheet's page dots and
@@ -489,7 +489,7 @@ maintenance screens).
 
 ### Words on screen
 
-Plain and warm, never technical: *Plan the week*, *Quick*, *Regular*, *Matt's away*, *Kids separate*, *Running low?*, *Check you have
+Plain and warm, never technical: *Plan the week*, *Quick*, *Regular*, *Sam's away*, *Kids separate*, *Running low?*, *Check you have
 these*, *Didn't get it*, *Done shopping*, *Made it*, *Add recipes*, *Something else*. No mention of how things work
 underneath, and no device names.
 
@@ -521,7 +521,7 @@ underneath, and no device names.
 
 ## 8. Build order
 
-Each phase ends with something Marcela uses for a real week, then a revision with her before the next.
+Each phase ends with something Robin uses for a real week, then a revision with her before the next.
 
 **Phase 1: The shared list, and the Safeway test.** The Groceries tab with the add field, stores, fresh/pantry
 sections, staples, check-off, done shopping, and the live shared list. This alone replaces her current grocery list. In
@@ -542,7 +542,7 @@ the week runs Monday to Sunday, and from Saturday the main button plans next wee
 suggested. The few words on why a pick is there ("You haven't made this since March", "Good for fall") are written by
 code from the same facts, so no model is involved in planning. Quantities aren't scaled for who's eating yet (buying a
 pound of ground beef doesn't change much for three). A boy's school-lunch days are a rule in his Profile rows
-(`Felix, rule, School lunch on Thursdays`). Finishing a trip (*Done shopping*) is recorded in the Trips tab, which sets
+(`Theo, rule, School lunch on Thursdays`). Finishing a trip (*Done shopping*) is recorded in the Trips tab, which sets
 the Trader Joe's and Costco toggles.
 
 **Phase 4: The rest of import.** Drive files and PDFs with the pick-what-to-keep list, screenshots, photos of physical
@@ -569,12 +569,12 @@ options, with *Swap the meal* (which opens that night) beside moving it to anoth
 
 ## 9. Decided
 
-Answered by Matt on Oct 26, 2026:
+Answered by Sam on Oct 26, 2026:
 
 1. **Every night is planned**, all seven, with *skip* for loose nights.
 2. **Two kinds of dinner: quick and regular.** *Make-ahead* is a note on a recipe, not a third kind.
 3. **Dinner is for four, but not always the same food**: the boys sometimes eat something different from the adults,
-   and sometimes Matt isn't home. Each night says who's eating and can be split into a grown-up and a kids' dinner
+   and sometimes Sam isn't home. Each night says who's eating and can be split into a grown-up and a kids' dinner
    (section 4.2).
 4. **Simmer plans the boys' lunches too** (section 4.9).
 5. **Safeway sign-in: yes.** Simmer may sign in to her Safeway account to fill the cart, the sign-in kept as a secret
@@ -583,7 +583,7 @@ Answered by Matt on Oct 26, 2026:
    Safeway app) and updates her usual products.
 7. **Trader Joe's: about every two weeks**, counted from the last trip she finished, not a fixed cycle.
 8. **Seasons are tracked** (section 4.2).
-9. **Matt plans some nights** too: either of them can plan or pin, and each night shows who planned it.
+9. **Sam plans some nights** too: either of them can plan or pin, and each night shows who planned it.
 
 ## Brand (Oct 26)
 

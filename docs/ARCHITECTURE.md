@@ -1,6 +1,6 @@
 # Simmer: how it's built
 
-Simmer started from the foundation of **Head Out** (msammons/head-out), the family's day-out planner. This page is the
+Simmer started from the foundation of **Head Out** (a sibling app), the family's day-out planner. This page is the
 shape of the app and the lessons that came from building Head Out, so they don't have to be learned twice.
 
 ## The shape
@@ -16,7 +16,7 @@ shape of the app and the lessons that came from building Head Out, so they don't
   (`lib/data.ts`). The Sheet's id is in `lib/google/sheets.ts`; without the service account key, local dev reads `data/*.csv`.
 - **Code owns facts; the model writes words.** Anything checkable (dates, times, quantities, what's in the Sheet) comes from
   code. Gemini (`lib/google/gemini.ts`, structured JSON output, retries, a lighter fallback model) only writes the friendly
-  sentences. In Head Out, people's names were swapped for roles ("Adult A", "Child, 11") before anything was sent to the
+  sentences. In Head Out, people's names were swapped for roles ("Adult A", "Child, 10") before anything was sent to the
   model and swapped back after; keep doing that.
 - **Errors in plain words.** Server failures become "That didn't load. Try again in a minute." (`lib/friendly.ts`);
   problems written for people are thrown as `AppError` and shown as is. A dropped connection reads "No connection…".
@@ -62,7 +62,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   settings" instead.
 - No scheduled background jobs. Work happens while someone is using the app (or right after a response, with `after()`).
 - No maintenance screens in the app. The Sheet is where data is managed.
-- Secrets live only in Vercel and on Matt's Mac. Never print them, never commit them.
+- Secrets live only in Vercel and on Sam's Mac. Never print them, never commit them.
 - Commits and PRs never name the AI model.
 
 ## Running it

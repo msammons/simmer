@@ -17,11 +17,11 @@ describe("the grocery list", () => {
     expect(await file("goldfish crackers")).toEqual({ store: "safeway", section: "pantry" });
   });
   it("merges the same thing, checks it off, and clears a store's checked items when the trip is done", async () => {
-    const a = await addItem("2 lemons", "Marcela");
-    const b = await addItem("lemon x1", "Matt");
+    const a = await addItem("2 lemons", "Robin");
+    const b = await addItem("lemon x1", "Sam");
     expect(b.id).toBe(a.id);
     expect(b.quantity).toBe("3");
-    const tp = await addItem("toilet paper", "Matt");
+    const tp = await addItem("toilet paper", "Sam");
     await checkItem(a.id, true);
     expect(await doneShopping("safeway")).toBe(1);
     const { items, staples } = await loadList();

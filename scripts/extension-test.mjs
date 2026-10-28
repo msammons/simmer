@@ -64,7 +64,7 @@ await ctx.route("https://www.safeway.com/**", (route) => {
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
   return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
 });
-await ctx.route("https://simmer-morales.vercel.app/api/list", async (route) => {
+await ctx.route("https://simmer-test.vercel.app/api/list", async (route) => {
   const req = route.request();
   if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
   if (req.method() === "POST") posts.push(JSON.parse(req.postData() ?? "{}"));
@@ -81,6 +81,12 @@ const panel = await ctx.newPage();
 await panel.goto(`chrome-extension://${id}/panel.html`);
 
 // The passcode: a wrong one says so, the right one shows the list.
+await panel.fill("#address", "example.com");
+await panel.fill("#code", "test123");
+await panel.click("text=Continue");
+await panel.waitForSelector("text=That address doesn't look right.");
+expect(true, "an address that isn't one of the apps' says so");
+await panel.fill("#address", "simmer-test.vercel.app/");
 await panel.fill("#code", "nope");
 await panel.click("text=Continue");
 await panel.waitForSelector("text=Wrong passcode.");

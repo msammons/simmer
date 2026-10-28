@@ -1,6 +1,6 @@
 // The Safeway test, part two (docs/PLAN.md, section 5). Part one (safeway-test.mjs) showed that signing in works but
-// guessing at Safeway's pages doesn't, so this one watches instead: Marcela does each step by hand in a real browser
-// window, and the script writes down which of Safeway's own addresses each step used. Run on Matt's Mac, in this repo:
+// guessing at Safeway's pages doesn't, so this one watches instead: Robin does each step by hand in a real browser
+// window, and the script writes down which of Safeway's own addresses each step used. Run on Sam's Mac, in this repo:
 //   node scripts/safeway-watch.mjs
 // What's recorded, per address: the method, the path, the names of the query fields, the status, the names of the
 // headers sent (never their values), and the names of the fields sent and returned (never their values). No password,

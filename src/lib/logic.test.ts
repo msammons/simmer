@@ -10,15 +10,15 @@ describe("parsing", () => {
     const { profile, ignored } = parseProfile(parseCsv([
       "who,type,value",
       "household,rule,Weeknights in 30 minutes",
-      "Felix,role,\"Child, 11\"",
-      "Felix,dislike,Mushrooms",
-      "Felix,allergy,Peanuts",
-      "Matt,role,Adult A",
-      "Matt,favorite,Tacos",
+      "Theo,role,\"Child, 10\"",
+      "Theo,dislike,Mushrooms",
+      "Theo,allergy,Peanuts",
+      "Sam,role,Adult A",
+      "Sam,favorite,Tacos",
       "Ghost,like,Soup",
     ].join("\n")));
     expect(profile.household).toEqual(["Weeknights in 30 minutes"]);
-    expect(profile.people.map((p) => [p.name, p.isAdult, p.dislikes, p.allergies])).toEqual([["Felix", false, ["Mushrooms"], ["Peanuts"]], ["Matt", true, [], []]]);
+    expect(profile.people.map((p) => [p.name, p.isAdult, p.dislikes, p.allergies])).toEqual([["Theo", false, ["Mushrooms"], ["Peanuts"]], ["Sam", true, [], []]]);
     expect(ignored.map((i) => i.why[0])).toEqual(['unknown type "favorite" (use role, like, dislike, allergy, note, rule)', "no role row, so this person is left out"]);
   });
 });

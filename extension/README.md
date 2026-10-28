@@ -1,6 +1,6 @@
 # Simmer for Safeway (the Chrome helper)
 
-Fills the Safeway cart on safeway.com from Simmer's list, in a computer's Chrome where Marcela is already signed in to
+Fills the Safeway cart on safeway.com from Simmer's list, in a computer's Chrome where Robin is already signed in to
 Safeway. It goes through the Safeway items one at a time: searches, adds what it's sure of, asks about the rest (three
 likeliest products, or look for something else, or skip), and ticks each item off in Simmer once Safeway shows it in the
 cart. It never signs in and never checks out: when it's done, she opens the cart and checks out on Safeway as usual.

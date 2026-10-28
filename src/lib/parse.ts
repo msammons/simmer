@@ -33,7 +33,7 @@ const PERSON_TYPES = { role: "role", like: "likes", dislike: "dislikes", allergy
 
 /**
  * The Profile tab: who / type / value rows. "household" rows with type "rule" apply to everyone; a person's rows say
- * their role ("Adult", "Child, 8"), and what they like, dislike, can't eat (allergy), or anything else (note).
+ * their role ("Adult", "Child, 7"), and what they like, dislike, can't eat (allergy), or anything else (note).
  */
 export function parseProfile(rows: string[][]): { profile: Profile; ignored: IgnoredRow[] } {
   const ignored: IgnoredRow[] = [];
