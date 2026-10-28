@@ -82,6 +82,10 @@ export type { Item, Section, Staple, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
 import type { WeekData } from "./plan";
+import type { Order, OrderAnswer } from "./order";
+export type { Order, OrderAnswer };
+import type { Pick } from "./safeway";
+export type { Pick };
 import type { Frozen, Lunch, Night } from "./week";
 export type { Frozen, Lunch, Night, WeekData };
 export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
@@ -101,6 +105,11 @@ export const api = {
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
+  /** The exact Safeway product picked for each item before (by the Safeway helper). */
+  picks: (signal?: AbortSignal) => call<{ picks: Pick[] }>("/api/safeway", { signal }),
+  /** The Safeway order filled by the helper on a computer: start it, follow it, answer it, stop it. */
+  order: (signal?: AbortSignal) => call<{ order: Order | null }>("/api/safeway/order", { signal }),
+  orderChange: (c: { op: "start" } | { op: "answer"; id: string; answer: OrderAnswer } | { op: "stop"; id: string }) => call<{ order: Order | null }>("/api/safeway/order", { method: "POST", body: JSON.stringify(c) }),
 };
 
 /**

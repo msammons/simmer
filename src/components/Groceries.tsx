@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
-import { dateIn, type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, dateIn, errorText, type Frozen, type Item, type Kitchen, type ListState, type Order, type Pick, type Section, type Staple, type Store } from "@/lib/client";
+import { norm } from "@/lib/words";
 import { addDays } from "@/lib/time";
 import { Button, EmptyState, Group, IconButton, Notice, Row, Sheet, TopBar } from "./ui";
 
@@ -74,8 +75,22 @@ function StoreGroup({ store, items, act, onMore, footer }: { store: Store; items
   );
 }
 
-export function GroceriesScreen({ list, kitchen, error, act, onSettings }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onSettings: () => void }) {
+export function GroceriesScreen({ list, kitchen, error, act, onSettings, onListChanged }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onSettings: () => void; onListChanged: () => void }) {
   const [freezer, setFreezer] = useState(false);
+  // The Safeway order the helper fills on the computer, and the products picked before (for "Open in Safeway").
+  const [order, setOrderOnly] = useState<Order | null>(null);
+  // When the order was last heard of: drawing can't read the clock, so it's noted with each news of the order.
+  const [now, setNow] = useState(() => Date.now());
+  const setOrder = useCallback((o: Order | null) => { setOrderOnly(o); setNow(Date.now()); }, []);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [picks, setPicks] = useState<Pick[]>([]);
+  useEffect(() => {
+    const ctl = new AbortController();
+    api.picks(ctl.signal).then((r) => setPicks(r.picks), () => {});
+    api.order(ctl.signal).then((r) => setOrder(r.order), () => {});
+    return () => ctl.abort();
+  }, [setOrder]);
+  const pickFor = (it: Item) => picks.find((p) => norm(p.item) === norm(it.item));
   const [text, setText] = useState("");
   const [more, setMore] = useState<Item | null>(null);
   const [staples, setStaples] = useState(false);
@@ -104,22 +119,33 @@ export function GroceriesScreen({ list, kitchen, error, act, onSettings }: { lis
         </Group>
       )}
       {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
+      {(items.some((i) => i.store === "safeway" && !i.checked) || (order && isOpen(order))) && (
+        <Group>
+          <Row icon="list" title="Fill my Safeway cart" subtitle={orderLine(order, now)} accessory="chevron" onClick={() => setOrderOpen(true)} />
+        </Group>
+      )}
       {stores.map((s) => (
         <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={setMore}
           footer={s === "trader-joes" ? `Next Trader Joe's trip: ${shortDate(traderJoesDay(kitchen?.trips.lastTraderJoes ?? ""))}` : undefined} />
       ))}
       {freezer && <FreezerSheet items={kitchen?.freezer ?? []} act={act} onClose={() => setFreezer(false)} />}
-      {more && <ItemSheet it={more} act={act} onClose={() => setMore(null)} />}
+      {more && <ItemSheet it={more} act={act} pick={more.store === "safeway" ? pickFor(more) : undefined} onClose={() => setMore(null)} />}
+      {orderOpen && <OrderSheet order={order} now={now} onOrder={setOrder} onListChanged={onListChanged} onClose={() => setOrderOpen(false)} />}
       {staples && list && <StaplesSheet staples={list.staples} items={items} act={act} onClose={() => setStaples(false)} />}
     </div>
   );
 }
 
-/** An item's options: which store, which section, or take it off. */
-function ItemSheet({ it, act, onClose }: { it: Item; act: ListActions; onClose: () => void }) {
+/** An item's options: which store, which section, or take it off; for Safeway, its usual product there. */
+function ItemSheet({ it, act, pick, onClose }: { it: Item; act: ListActions; pick?: Pick; onClose: () => void }) {
   return (
     <Sheet label={it.item} title={it.item} onClose={onClose}>
       <div className="space-y-5 pb-2">
+        {pick && (
+          <Group footer="The one picked last time. Opens in the Safeway app, to add it there.">
+            <Row title="Open in Safeway" subtitle={pick.name} accessory="external" href={productUrl(pick.id)} />
+          </Group>
+        )}
         <Group header="Get it at">
           {(Object.keys(STORE_NAMES) as Store[]).map((s) => (
             <Row key={s} title={STORE_NAMES[s]} role="radio" checked={it.store === s} accessory="check" onClick={() => { act.move(it, { store: s }); onClose(); }} />
@@ -136,6 +162,105 @@ function ItemSheet({ it, act, onClose }: { it: Item; act: ListActions; onClose: 
           </Group>
         )}
         <Button variant="secondary" onClick={() => { act.remove(it); onClose(); }} className="w-full">Take it off the list</Button>
+      </div>
+    </Sheet>
+  );
+}
+
+const SAFEWAY = "https://www.safeway.com";
+const productUrl = (id: string) => `${SAFEWAY}/shop/product-details.${id}.html`;
+const searchUrl = (q: string) => `${SAFEWAY}/shop/search-results.html?q=${encodeURIComponent(q)}`;
+const isOpen = (o: Order | null) => Boolean(o && (o.status === "waiting" || o.status === "filling" || o.status === "asking"));
+const recent = (o: Order, now: number) => now - Date.parse(o.updated) < 12 * 3600_000;
+
+
+/** The line under "Fill my Safeway cart": what the order's doing, if there is one. */
+function orderLine(o: Order | null, now: number) {
+  if (!o || (!isOpen(o) && !recent(o, now))) return "Your usual products go in by themselves; it asks about the rest";
+  const inCart = o.lines.filter((l) => l.state === "in cart").length;
+  if (o.status === "waiting") return "Waiting to start";
+  if (o.status === "asking") return `Which ${o.question?.item ?? "one"}? Tap to answer`;
+  if (o.status === "filling") return `Filling · ${inCart} of ${o.lines.length} in the cart`;
+  if (o.status === "done") return `${inCart} of ${o.lines.length} in the cart · check out in the Safeway app`;
+  return o.note || "Stopped";
+}
+
+/**
+ * The Safeway order: start it, see each item go in, answer when the helper asks which product, stop it. The helper
+ * does the work in Chrome on a computer that's left on; the cart is the same one the Safeway app shows.
+ */
+function OrderSheet({ order, now, onOrder, onListChanged, onClose }: { order: Order | null; now: number; onOrder: (o: Order | null) => void; onListChanged: () => void; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const was = useRef(order?.status);
+  const send = async (c: Parameters<typeof api.orderChange>[0]) => {
+    setBusy(true); setErr("");
+    try { onOrder((await api.orderChange(c)).order); } catch (e) { setErr(errorText(e)); } finally { setBusy(false); }
+  };
+  // While it's open and the order's going, follow it every few seconds; refresh the list when it's over.
+  const open = isOpen(order);
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(() => { api.order().then((r) => onOrder(r.order), () => {}); }, 2500);
+    return () => clearInterval(t);
+  }, [open, onOrder]);
+  useEffect(() => {
+    if (was.current && was.current !== order?.status) onListChanged();
+    was.current = order?.status;
+  }, [order?.status, onListChanged]);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (order?.status !== "waiting") return;
+    const t = setTimeout(() => setSlow(true), Math.max(0, 45_000 - (Date.now() - Date.parse(order.started))));
+    return () => { clearTimeout(t); setSlow(false); };
+  }, [order?.status, order?.started]);
+  const q = order?.status === "asking" ? order.question : null;
+  const head = !order || (!open && !recent(order, now)) ? "Fill my Safeway cart" : order.status === "done" ? "Your cart's ready" : order.status === "stopped" ? "Stopped" : q ? `Which ${q.item}?` : "Filling your cart";
+  return (
+    <Sheet label="Safeway cart" title={head} onClose={onClose}>
+      <div className="space-y-5 pb-2">
+        {err && <Notice>{err}</Notice>}
+        {(!order || (!open && !recent(order, now))) && (
+          <>
+            <p className="t-sub text-muted">Everything on the list for Safeway goes into your Safeway cart, one thing at a time. Your usual products go in by themselves; it asks here about the rest. Then you pick a time and check out in the Safeway app.</p>
+            <Button onClick={() => send({ op: "start" })} disabled={busy} className="w-full">Fill my Safeway cart</Button>
+          </>
+        )}
+        {order?.status === "waiting" && <p className="t-sub text-muted">{slow ? "Waiting to start. It starts once the Safeway helper is running, with Safeway signed in." : "Starting…"}</p>}
+        {q && (
+          <>
+            {q.quantity && <p className="t-sub text-muted">{q.quantity} on the list. {q.options.length ? `${q.options.length} found, the likeliest first.` : ""}</p>}
+            {q.options.length ? (
+              <Group>
+                {q.options.map((o) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- a small product picture from Safeway
+                  <Row key={o.id} lead={o.image ? <img src={o.image} alt="" className="size-9 rounded-lg bg-white object-contain" /> : undefined} title={o.name} subtitle={o.price}
+                    onClick={busy ? undefined : () => send({ op: "answer", id: order!.id, answer: { itemId: q.itemId, pick: { id: o.id, name: o.name } } })} />
+                ))}
+              </Group>
+            ) : <p className="t-sub text-muted">Nothing came up.</p>}
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (search.trim()) { send({ op: "answer", id: order!.id, answer: { itemId: q.itemId, search: search.trim() } }); setSearch(""); } }}>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Not here? Look for something else" aria-label="Look for something else"
+                className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
+            </form>
+            <Button variant="secondary" disabled={busy} onClick={() => send({ op: "answer", id: order!.id, answer: { itemId: q.itemId, skip: true } })} className="w-full">Skip this one</Button>
+          </>
+        )}
+        {order && order.lines.length > 0 && (open || recent(order, now)) && (
+          <Group footer={order.status === "done" ? "Pick a time and check out in the Safeway app." : order.status === "stopped" ? order.note : undefined}>
+            {order.lines.map((l, i) => {
+              const now = open && l.state === "to do" && order.lines.findIndex((x) => x.state === "to do") === i;
+              const sub = l.state === "in cart" ? `In the cart${(l.qty ?? 1) > 1 ? `, ${l.qty}` : ""}${l.name ? ` · ${l.name}` : ""}` : l.state === "skipped" ? "Skipped" : l.state === "by hand" ? "Add it yourself" : now ? (q ? "Which one?" : order.note || "Looking…") : "";
+              return (
+                <Row key={l.itemId} lead={<Check on={l.state === "in cart"} />} title={l.item.charAt(0).toUpperCase() + l.item.slice(1)} subtitle={sub}
+                  {...(l.state === "by hand" && { href: l.productId ? productUrl(l.productId) : searchUrl(l.item), accessory: "external" as const })} />
+              );
+            })}
+          </Group>
+        )}
+        {open && <Button variant="secondary" disabled={busy} onClick={() => send({ op: "stop", id: order!.id })} className="w-full">Stop</Button>}
+        {order && !open && recent(order, now) && <Button variant="secondary" onClick={() => send({ op: "start" })} disabled={busy} className="w-full">Fill it again</Button>}
       </div>
     </Sheet>
   );
