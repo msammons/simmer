@@ -154,12 +154,12 @@ function render() {
 function askCard({ item, options }) {
   return `
     <p><strong>Which ${esc(item.item)}?</strong>${item.quantity ? ` <span class="muted">${esc(item.quantity)}</span>` : ""}</p>
-    <p class="muted">Tap one here. For something else, find it on Safeway and press Add there.</p>
+    ${options.length ? `<p class="muted">${options.length === 1 ? "One found" : `${options.length} found, the likeliest first`}.</p>` : ""}
     ${options.length ? `<div class="group">${options.map((p, i) => `
       <button class="row" data-pick="${i}">${p.image ? `<img src="${esc(p.image)}" alt="" />` : ""}
         <span class="grow">${esc(p.name)}<span class="sub" style="display:block">${esc(p.price)}${p.inCart ? " · already in the cart" : ""}</span></span></button>`).join("")}</div>`
     : `<p class="muted">Nothing came up.</p><button class="btn" id="sample">${state.copied ? "Copied" : "Copy what Safeway showed"}</button>`}
-    <form id="other"><input id="q" placeholder="Look for something else" aria-label="Look for something else" /></form>
+    <form id="other"><input id="q" placeholder="Not here? Look for something else" aria-label="Look for something else" /></form>
     <button class="btn" id="skip">Skip this one</button>`;
 }
 
@@ -169,7 +169,8 @@ function ask(item, options, tabId, before) {
     let watching = true;
     state.answer = (a) => { watching = false; state.answer = null; show({ asking: null }); resolve(a); };
     show({ asking: { item, options }, copied: false });
-    // Pressing Add on the Safeway page answers too: whatever goes into the cart while this is asked is the pick.
+    // Picking happens here, but if someone presses Add on the Safeway page anyway, whatever goes into the cart while
+    // this is asked is the pick.
     (async () => {
       while (watching) {
         await sleep(1000);

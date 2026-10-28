@@ -40,7 +40,8 @@ export function howMany(quantity) {
 
 /**
  * Which product to add, or which to ask about. A remembered pick wins when it's there. A usual product is taken
- * without asking only when one result matches it clearly. Everything else is asked, with the three likeliest.
+ * without asking only when one result matches it clearly. Everything else is asked, with every product found, the
+ * likeliest first.
  */
 export function choose(products, { picked, usual, item }) {
   const all = (products ?? []).filter((p) => p && p.id && p.name);
@@ -54,5 +55,5 @@ export function choose(products, { picked, usual, item }) {
   const target = usual || item;
   // Safeway's own order breaks ties, so a sponsored result that matches no better than the rest doesn't jump ahead.
   const ranked = all.map((p, i) => ({ p, i, s: score(p.name, target) })).sort((a, b) => b.s - a.s || a.i - b.i);
-  return { ask: ranked.slice(0, 3).map((r) => r.p) };
+  return { ask: ranked.map((r) => r.p) };
 }
