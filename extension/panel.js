@@ -154,7 +154,7 @@ function render() {
 function askCard({ item, options }) {
   return `
     <p><strong>Which ${esc(item.item)}?</strong>${item.quantity ? ` <span class="muted">${esc(item.quantity)}</span>` : ""}</p>
-    <p class="muted">Tap one here, or press Add on Safeway.</p>
+    <p class="muted">Tap one here. For something else, find it on Safeway and press Add there.</p>
     ${options.length ? `<div class="group">${options.map((p, i) => `
       <button class="row" data-pick="${i}">${p.image ? `<img src="${esc(p.image)}" alt="" />` : ""}
         <span class="grow">${esc(p.name)}<span class="sub" style="display:block">${esc(p.price)}${p.inCart ? " · already in the cart" : ""}</span></span></button>`).join("")}</div>`
