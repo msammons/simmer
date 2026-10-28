@@ -157,6 +157,12 @@ weeks)`. Breakfast items, lunch items, snacks, coffee, toilet paper. Adding a st
 and `usual_product` is the exact Safeway product she buys ("Lucerne 2% milk, half gallon"), which Simmer uses when it
 fills the cart (section 5). Most of these can be learned from her past Safeway orders rather than typed.
 
+### Safeway
+
+`item, product_id, product_name, updated`: the exact Safeway product picked for an item on the list, written by the
+Safeway helper (`extension/`) whenever one is picked, so the next order adds it without asking, on any computer. One
+row per item; fix or delete a row by hand to change what it adds.
+
 ### Freezer
 
 `item, amount, added (date), store`: chicken thighs, nuggets, salmon, ground beef, steak strips, shrimp. Planning
@@ -404,7 +410,9 @@ now proposed is a Chrome extension, desktop first, that fills the safeway.com ca
 she's already signed in to, at a person's pace, asks when unsure, remembers her picks, and never checks out. It does not
 automate the sign-in or disguise itself. Sam said go ahead (Oct 27); it's built in `extension/` (how to install and
 use it is in `extension/README.md`), and waiting for its first real order on Robin's computer. Items it adds are
-ticked in Simmer, which is what ticked already means ("in the cart").
+ticked in Simmer, which is what ticked already means ("in the cart"). Each pick (tapped in the panel, or added on
+Safeway while it asks) is kept in the Safeway tab (section 3), so the helper asks less with every order until it adds
+everything itself.
 
 A small experiment, run from Sam's Mac with her account: can a program sign in to Safeway, read her past orders,
 search a product, add it to the cart, and list the cart, reliably, without being blocked? And does a cart filled that way
