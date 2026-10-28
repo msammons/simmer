@@ -35,9 +35,9 @@ list, cooks some nights, and looks at the week).
 
 | Store | How often | When | How | What it's for |
 | --- | --- | --- | --- | --- |
-| Safeway | Weekly | Tuesday (moving from Monday: pottery is Monday, and shelves are bare after Sunday) | Almost always online | Most things |
-| Trader Joe's | About every two weeks | Wednesday about 8:30, after school drop-off (empty and fully stocked) | In person | Snacks for the boys, the meatballs, salad dressings; some meals depend on it |
-| Costco | About once a month (she has to go for her medication anyway) | Whenever | In person | Bulk protein for the freezer, toilet paper, coffee, big staples |
+| Safeway | Weekly | Tuesday (shelves are bare after Sunday) | Almost always online | Most things |
+| Trader Joe's | About every two weeks | A weekday morning (quiet and fully stocked) | In person | Snacks for the boys, the meatballs, salad dressings; some meals depend on it |
+| Costco | About once a month | Whenever | In person | Bulk protein for the freezer, toilet paper, coffee, big staples |
 
 Delivery from the other stores (through a service like Instacart) costs extra and isn't wanted now.
 
