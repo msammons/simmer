@@ -113,12 +113,12 @@ describe("the boys' lunches", () => {
   it("plans each school day for each boy, rotating his options", () => {
     const l = planLunches(monday, kids, options, ["2026-11-06"]);
     expect(l).toHaveLength(10);
-    const felix = l.filter((x) => x.kid === "Theo");
-    expect(new Set(felix.slice(0, 3).map((x) => x.fruit)).size).toBe(3);
-    const thu = felix.find((x) => x.date === "2026-11-05")!;
+    const theo = l.filter((x) => x.kid === "Theo");
+    expect(new Set(theo.slice(0, 3).map((x) => x.fruit)).size).toBe(3);
+    const thu = theo.find((x) => x.date === "2026-11-05")!;
     expect(thu).toMatchObject({ schoolLunch: true, main: "", fruit: "", snack: "Cheese and crackers" });
-    expect(felix.find((x) => x.date === "2026-11-06")).toMatchObject({ noSchool: true, main: "", snack: "" });
-    expect(nextOption(felix[0], "fruit", options)).not.toBe(felix[0].fruit);
+    expect(theo.find((x) => x.date === "2026-11-06")).toMatchObject({ noSchool: true, main: "", snack: "" });
+    expect(nextOption(theo[0], "fruit", options)).not.toBe(theo[0].fruit);
   });
 
   it("lists what the lunches need, once each", () => {

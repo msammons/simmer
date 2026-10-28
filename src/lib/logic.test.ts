@@ -10,7 +10,7 @@ describe("parsing", () => {
     const { profile, ignored } = parseProfile(parseCsv([
       "who,type,value",
       "household,rule,Weeknights in 30 minutes",
-      "Theo,role,\"Child, 11\"",
+      "Theo,role,\"Child, 10\"",
       "Theo,dislike,Mushrooms",
       "Theo,allergy,Peanuts",
       "Sam,role,Adult A",
