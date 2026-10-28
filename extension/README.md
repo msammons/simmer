@@ -20,6 +20,13 @@ shopping, with help.
 To update it after a change here: replace the folder's files, then press the reload arrow on its card in
 `chrome://extensions`.
 
+## Orders started on the phone
+
+Leave Chrome open on the computer, signed in to Safeway, with the helper set up. In Simmer on the phone, *Fill my
+Safeway cart* (Groceries tab) starts an order; every half minute the helper looks for one (`background.js`), fills the
+cart in a Safeway tab behind whatever's in front, and asks on the phone through Simmer (`/api/safeway/order`) when it
+isn't sure. Check out in the Safeway app.
+
 ## Using it
 
 Sign in to Safeway in Chrome. Click the Simmer button, check the list, and press **Fill my Safeway cart**. Answer its
@@ -46,8 +53,10 @@ folder to teach `page.js` the new sign. Safeway blocks automated browsers, so a 
 
 ## Files
 
-- `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel.
-- `panel.html`, `panel.css`, `panel.js`: the panel, and the order of things.
+- `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel, and the background fills
+  orders started on the phone.
+- `fill.js`: filling the cart, item by item, shared by the panel and the background.
+- `panel.html`, `panel.css`, `panel.js`: the panel at the computer.
 - `page.js`: what runs inside safeway.com: reads the products on screen, presses Add and +. Safeway's pages aren't
   documented; it finds products by Safeway's own search tiles (as read from Safeway's page code; the details are at the
   top of `page.js`), with links to product pages as a fallback. If Safeway changes its pages, this is the file to fix.

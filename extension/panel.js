@@ -1,79 +1,12 @@
-// The panel beside safeway.com: reads Simmer's list, then goes through the Safeway items one at a time in the Safeway
-// window, at a person's pace. It adds what it's sure of, asks about the rest, remembers what was picked, ticks each item
-// off in Simmer once it's in the cart, and stops before checkout. Signing in to Safeway is left to the person.
-import { choose, howMany, keyOf, safewayItems, searchFor, usualFor } from "./match.js";
-import { safewayPage } from "./page.js";
-
-// Simmer's address is typed once at setup, so it isn't written in this public code.
-const SAFEWAY = "https://www.safeway.com";
-const searchUrl = (q) => `${SAFEWAY}/shop/search-results.html?q=${encodeURIComponent(q)}`;
-const CART = `${SAFEWAY}/erums/cart`;
-const PAUSE = 1500; // between items, so it moves like a person and Safeway has time to catch up
+// The panel beside safeway.com, for filling the cart at the computer: reads Simmer's list, then fills the cart
+// (fill.js) and asks here when it isn't sure. Orders started from Simmer on a phone are filled in the background
+// (background.js) instead.
+import { safewayItems } from "./match.js";
+import { CART, WrongPasscode, fillCart, go, onPage, safewayTab, searchUrl, simmer, sleep, store } from "./fill.js";
 
 const app = document.getElementById("app");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const store = {
-  get: async (k, d) => (await chrome.storage.local.get(k))[k] ?? d,
-  set: (k, v) => chrome.storage.local.set({ [k]: v }),
-};
-
-// ---- Simmer
-
-class WrongPasscode extends Error {}
-
-async function simmer(method, body, path = "/api/list") {
-  const [address, passcode] = [await store.get("address", ""), await store.get("passcode", "")];
-  let res;
-  try {
-    res = await fetch(`${address}${path}`, {
-      method, cache: "no-store",
-      headers: { "x-passcode": passcode, ...(body && { "content-type": "application/json" }) },
-      ...(body && { body: JSON.stringify(body) }),
-    });
-  } catch { throw new Error("No connection. Try again in a minute."); }
-  if (res.status === 401) throw new WrongPasscode("Wrong passcode.");
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "That didn't load. Try again in a minute.");
-  return data;
-}
-
-// ---- the Safeway window
-
-async function safewayTab() {
-  const [open] = await chrome.tabs.query({ url: `${SAFEWAY}/*`, currentWindow: true });
-  if (open) return open.id;
-  return (await chrome.tabs.create({ url: SAFEWAY, active: true })).id;
-}
-
-function go(tabId, url) {
-  return new Promise((resolve) => {
-    const done = () => { chrome.tabs.onUpdated.removeListener(on); clearTimeout(t); resolve(); };
-    const on = (id, info) => { if (id === tabId && info.status === "complete") done(); };
-    const t = setTimeout(done, 30_000);
-    chrome.tabs.onUpdated.addListener(on);
-    chrome.tabs.update(tabId, { url, active: true });
-  });
-}
-
-async function onPage(tabId, action, arg = null) {
-  try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: safewayPage, args: [action, arg] });
-    return r?.result ?? null;
-  } catch { return null; }
-}
-
-/** Waits for search results (or Safeway saying there are none), up to about 20 seconds. */
-async function results(tabId) {
-  let last = null;
-  for (let i = 0; i < 25; i++) {
-    last = await onPage(tabId, "read");
-    if (last && (last.products.length || last.noResults)) return last;
-    await sleep(800);
-  }
-  return last;
-}
 
 // ---- screens
 
@@ -226,80 +159,18 @@ async function savePasscode(typedAddress, code) {
   render();
 }
 
-/** One item: search, pick (asking if unsure), add. Answers what happened. */
-async function one(tabId, item, picks) {
-  const usual = usualFor(item, state.staples);
-  const key = keyOf(item.item);
-  let query = searchFor(item, usual, picks[key]);
-  let page = null, choice = null;
-  for (let tries = 0; tries < 6 && !state.stopped; tries++) {
-    show({ note: `Looking for ${query}…` });
-    await go(tabId, searchUrl(query));
-    page = await results(tabId);
-    if (!page) return { why: "Safeway didn't load. Add it by hand." };
-    if (page.signedIn === false) return { halt: "Sign in to Safeway in the window beside this, then fill the cart again." };
-    // No products read at all: keep a short account of the page, to learn what Safeway's results look like now.
-    if (!page.products.length && !page.noResults) await store.set("lastPage", (await onPage(tabId, "sample")) || "");
-    choice = choose(page.products, { picked: picks[key], usual, item: query });
-    if (choice.none && query !== item.item) { query = item.item; continue; }
-    if (choice.pick) break;
-    const answer = await ask(item, choice.ask ?? [], tabId, page);
-    if (answer === "skip") return { skipped: true };
-    if (answer?.search) { query = answer.search; continue; }
-    // Something went into the cart on Safeway, but which product couldn't be told: count it, remember nothing.
-    if (answer?.unknown) return { ok: true, qty: 1, name: "" };
-    choice = { pick: answer };
-    break;
-  }
-  if (state.stopped) return { skipped: true };
-  if (!choice?.pick) return { why: "Couldn't find it." };
-  show({ note: `Adding ${choice.pick.name}…` });
-  const want = howMany(item.quantity);
-  const added = choice.pick.inCart && !(want > 1) ? { ok: true, qty: choice.pick.qty || 1, sure: true } : await onPage(tabId, "add", { id: choice.pick.id, times: want });
-  if (added?.snapshot) await store.set("lastPage", added.snapshot);
-  if (!added?.ok) return { why: "Didn't go in. Add it by hand." };
-  if (picks[key]?.id !== choice.pick.id) {
-    picks[key] = { id: choice.pick.id, name: choice.pick.name };
-    await store.set("picks", picks);
-    await savePick(item.item, picks[key]);
-  }
-  return { ok: true, qty: added.qty, want, name: choice.pick.name };
-}
-
-/**
- * The picks, from Simmer, so every computer shares them; this computer's own copy fills in when Simmer can't be reached.
- * Picks only this computer has (made before they were kept in Simmer) are sent to Simmer once.
- */
-async function loadPicks() {
-  const here = await store.get("picks", {});
-  let shared;
-  try { shared = (await simmer("GET", null, "/api/safeway")).picks ?? []; } catch { return here; }
-  const picks = Object.fromEntries(shared.map((p) => [keyOf(p.item), { id: p.id, name: p.name }]));
-  for (const [key, p] of Object.entries(here)) if (!picks[key]) { picks[key] = p; await savePick(key, p); }
-  await store.set("picks", picks);
-  return picks;
-}
-
-/** Keeps a pick in Simmer. If that fails it stays on this computer, and goes to Simmer next time if Simmer has none for that item. */
-const savePick = (item, p) => simmer("POST", { item, id: p.id, name: p.name }, "/api/safeway").catch(() => {});
-
 async function fill() {
   const items = state.items;
   show({ screen: "filling", results: [], at: 0, stopped: false, halted: "", note: "", lastPage: "" });
-  await store.set("lastPage", "");
-  const tabId = await safewayTab();
-  const picks = await loadPicks();
-  for (let i = 0; i < items.length && !state.stopped; i++) {
-    show({ at: i, note: "" });
-    const r = await one(tabId, items[i], picks);
-    if (r.halt) { show({ halted: r.halt }); break; }
-    state.results[i] = r;
-    // Ticked in Simmer means it's in the cart, the same as ticking it by hand.
-    if (r.ok) await simmer("POST", { op: "check", id: items[i].id, checked: true }).catch(() => {});
-    render();
-    await sleep(PAUSE);
-  }
-  if (state.stopped && !state.halted) state.halted = "Stopped before the end. What's in the cart stays there.";
+  const ui = {
+    at: (i) => show({ at: i, note: "" }),
+    note: (note) => show({ note }),
+    ask,
+    result: (i, r) => { state.results[i] = r; render(); },
+    stopped: () => state.stopped,
+  };
+  const { halted } = await fillCart({ items, staples: state.staples, ui });
+  state.halted = halted;
   state.lastPage = await store.get("lastPage", "");
   state.copied = false;
   show({ screen: "done", at: -1, asking: null, note: "" });
