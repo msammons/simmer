@@ -142,7 +142,7 @@ await panel.waitForSelector("text=Fill my Safeway cart");
 await panel.click("text=Fill my Safeway cart");
 await panel.waitForSelector("text=Which milk?", { timeout: 30_000 });
 const options = await panel.locator("[data-pick]").allInnerTexts();
-expect(options.length === 3 && /Gallon/.test(options[0]), "asks about milk with three choices");
+expect(options.length === 3 && /Gallon/.test(options[0]), "asks about milk, listing every product found");
 await panel.locator("[data-pick]", { hasText: "1/2 Gallon" }).click();
 await panel.waitForSelector("text=Which bananas?", { timeout: 30_000 });
 // Bananas: look for something else, then pick from what comes up.

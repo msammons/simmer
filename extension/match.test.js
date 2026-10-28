@@ -67,9 +67,9 @@ describe("choosing a product", () => {
     // The half gallon and the gallon match almost equally: ask.
     expect(choose([milk, milkGal], { usual: "Lucerne 2% milk", item: "milk" }).ask).toHaveLength(2);
   });
-  it("asks about the three likeliest otherwise, best match first, Safeway's order breaking ties", () => {
+  it("asks about everything found otherwise, best match first, Safeway's order breaking ties", () => {
     const r = choose([bananas, oat, milkGal, milk], { item: "2% milk" });
-    expect(r.ask.map((p) => p.id)).toEqual(["2", "1", "3"]);
+    expect(r.ask.map((p) => p.id)).toEqual(["2", "1", "3", "4"]);
   });
   it("asks even when a remembered pick has gone", () => {
     expect(choose([oat], { picked: { id: "1" }, item: "milk" }).ask).toEqual([oat]);
