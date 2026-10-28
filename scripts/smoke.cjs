@@ -31,7 +31,7 @@ const ok = (n, c, x = "") => results.push(`${c ? "PASS" : "FAIL"} ${n}${x ? " â€
       ok("plan: dinners suggested", await page.getByRole("heading", { name: "Dinners" }).isVisible() && (await page.getByText("Nothing fits this night").count()) < 7);
       await page.screenshot({ path: `${dir}/2b-dinners.png`, fullPage: true });
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300);
-      ok("plan: lunches for each boy", (await page.getByText("Felix", { exact: true }).count()) >= 4);
+      ok("plan: lunches for each boy", (await page.getByText("Theo", { exact: true }).count()) >= 4);
       await page.screenshot({ path: `${dir}/2c-lunches.png` });
       await page.getByRole("button", { name: "Save the week" }).tap();
       ok("plan: saved, and the list told", await page.getByText(/to the grocery list/).waitFor({ timeout: 10000 }).then(() => true, () => false));

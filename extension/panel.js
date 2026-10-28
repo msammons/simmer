@@ -4,7 +4,7 @@
 import { choose, howMany, keyOf, safewayItems, searchFor, usualFor } from "./match.js";
 import { safewayPage } from "./page.js";
 
-const SIMMER = "https://simmer-morales.vercel.app";
+// Simmer's address is typed once at setup, so it isn't written in this public code.
 const SAFEWAY = "https://www.safeway.com";
 const searchUrl = (q) => `${SAFEWAY}/shop/search-results.html?q=${encodeURIComponent(q)}`;
 const CART = `${SAFEWAY}/erums/cart`;
@@ -24,10 +24,10 @@ const store = {
 class WrongPasscode extends Error {}
 
 async function simmer(method, body) {
-  const passcode = await store.get("passcode", "");
+  const [address, passcode] = [await store.get("address", ""), await store.get("passcode", "")];
   let res;
   try {
-    res = await fetch(`${SIMMER}/api/list`, {
+    res = await fetch(`${address}/api/list`, {
       method, cache: "no-store",
       headers: { "x-passcode": passcode, ...(body && { "content-type": "application/json" }) },
       ...(body && { body: JSON.stringify(body) }),
@@ -85,17 +85,20 @@ function render() {
   if (s.screen === "passcode") {
     app.innerHTML = `
       <h1>Welcome</h1>
-      <p class="muted">Type the household passcode, the same one Simmer asks for.</p>
-      <form id="pc"><input id="code" type="password" autocomplete="off" aria-label="Passcode" autofocus />
+      <p class="muted">Type Simmer's address and the household passcode, the same one Simmer asks for.</p>
+      <form id="pc"><input id="address" placeholder="Simmer's address" aria-label="Simmer's address" autocomplete="off" value="${esc(s.address ?? "")}" ${s.address ? "" : "autofocus"} />
+      <p></p><input id="code" type="password" placeholder="Passcode" autocomplete="off" aria-label="Passcode" ${s.address ? "autofocus" : ""} />
       ${s.error ? `<p class="warn">${esc(s.error)}</p>` : ""}
       <button class="btn primary" ${s.busy ? "disabled" : ""}>${s.busy ? "Checking…" : "Continue"}</button></form>`;
-    app.querySelector("#pc").onsubmit = (e) => { e.preventDefault(); savePasscode(app.querySelector("#code").value); };
+    app.querySelector("#pc").onsubmit = (e) => { e.preventDefault(); savePasscode(app.querySelector("#address").value, app.querySelector("#code").value); };
     return;
   }
   if (s.screen === "start") { app.innerHTML = `<p class="muted">Loading…</p>`; return; }
   if (s.screen === "error") {
-    app.innerHTML = `<h1>Safeway</h1><p class="warn">${esc(s.error)}</p><button class="btn primary" id="again">Try again</button>`;
+    app.innerHTML = `<h1>Safeway</h1><p class="warn">${esc(s.error)}</p><button class="btn primary" id="again">Try again</button>
+      <button class="btn" id="setup">Change the address or passcode</button>`;
     app.querySelector("#again").onclick = load;
+    app.querySelector("#setup").onclick = async () => show({ screen: "passcode", address: await store.get("address", ""), error: "" });
     return;
   }
   if (s.screen === "list") {
@@ -168,17 +171,29 @@ function ask(item, options) {
 
 async function load() {
   show({ screen: "start", error: "", halted: "", stopped: false });
-  if (!(await store.get("passcode", ""))) return show({ screen: "passcode" });
+  const address = await store.get("address", "");
+  if (!address || !(await store.get("passcode", ""))) return show({ screen: "passcode", address });
   try {
     const list = await simmer("GET");
     show({ screen: "list", items: safewayItems(list), staples: list.staples ?? [] });
   } catch (e) {
-    if (e instanceof WrongPasscode) return show({ screen: "passcode", error: "Wrong passcode." });
+    if (e instanceof WrongPasscode) return show({ screen: "passcode", address, error: "Wrong passcode." });
     show({ screen: "error", error: e.message });
   }
 }
 
-async function savePasscode(code) {
+/** "simmer-x.vercel.app" or a full link → "https://simmer-x.vercel.app", or "" if it isn't one of the apps' addresses. */
+function origin(typed) {
+  try {
+    const u = new URL(/^https?:\/\//i.test(typed.trim()) ? typed.trim() : `https://${typed.trim()}`);
+    return u.hostname.endsWith(".vercel.app") ? `https://${u.hostname}` : "";
+  } catch { return ""; }
+}
+
+async function savePasscode(typedAddress, code) {
+  const address = origin(typedAddress);
+  if (!address) return show({ address: typedAddress, error: "That address doesn't look right." });
+  await store.set("address", address);
   await store.set("passcode", code.trim());
   show({ busy: true, error: "" });
   await load();

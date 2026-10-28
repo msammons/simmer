@@ -21,7 +21,7 @@ const recipes = [
 ];
 const ctx: Context = {
   recipes, lastMade: { "roast chicken": "2026-10-28", chili: "2026-03-10" },
-  people: [{ name: "Matt", isAdult: true, likes: ["Spicy food"], dislikes: [] }, { name: "Felix", isAdult: false, likes: [], dislikes: ["Mushrooms"] }],
+  people: [{ name: "Sam", isAdult: true, likes: ["Spicy food"], dislikes: [] }, { name: "Theo", isAdult: false, likes: [], dislikes: ["Mushrooms"] }],
   trips: { traderJoes: false, costco: false },
 };
 const monday = "2026-11-02";
@@ -33,7 +33,7 @@ describe("planning the week", () => {
     expect(weekOf(monday)).toBe(monday);
     const nights = applyShape(weekDates(monday).map((d) => emptyNight(d)), "2-quick-3-regular");
     expect(nights.map((n) => n.kind)).toEqual(["quick", "regular", "regular", "quick", "regular", "regular", "regular"]);
-    expect(readEating(eatingText({ away: ["Matt"], split: true }))).toEqual({ away: ["Matt"], split: true });
+    expect(readEating(eatingText({ away: ["Sam"], split: true }))).toEqual({ away: ["Sam"], split: true });
     expect(eatingText({ away: [], split: false })).toBe("everyone");
   });
 
@@ -49,7 +49,7 @@ describe("planning the week", () => {
     expect(regular).not.toContain("old soup"); // stopped suggesting
     expect(regular[0]).toBe("chili"); // a favorite, in season, not made since March
     expect(rank(nights, 2, ctx)[0].why).toBe("You haven't made this since March");
-    expect(regular.indexOf("mushroom risotto")).toBeGreaterThan(regular.indexOf("gazpacho") - 1); // Felix and mushrooms
+    expect(regular.indexOf("mushroom risotto")).toBeGreaterThan(regular.indexOf("gazpacho") - 1); // Theo and mushrooms
   });
 
   it("fills the open nights without repeats, keeping pinned and skipped ones", () => {
@@ -77,7 +77,7 @@ describe("planning the week", () => {
   });
 
   it("leaves out what's mostly for whoever is away", () => {
-    const nights = [{ ...emptyNight(monday, "regular"), away: ["Matt"] }];
+    const nights = [{ ...emptyNight(monday, "regular"), away: ["Sam"] }];
     const away = rank(nights, 0, ctx).map((o) => o.recipe.id);
     const home = rank([emptyNight(monday, "regular")], 0, ctx).map((o) => o.recipe.id);
     expect(away.indexOf("spicy noodles")).toBeGreaterThan(home.indexOf("spicy noodles"));
@@ -101,24 +101,24 @@ describe("planning the week", () => {
 
 describe("the boys' lunches", () => {
   const options: LunchOption[] = [
-    { kid: "Felix", part: "main", item: "Bean and cheese burrito", ingredients: ["tortillas", "refried beans", "shredded cheese"] },
-    ...["Grapes", "Raspberries", "Strawberries"].map((item) => ({ kid: "Felix", part: "fruit" as const, item, ingredients: [] })),
-    { kid: "Felix", part: "side", item: "Goldfish", ingredients: [] },
-    { kid: "Felix", part: "snack", item: "Cheese and crackers", ingredients: ["cheese sticks", "crackers"] },
-    { kid: "Nico", part: "main", item: "Hummus roll-up", ingredients: ["tortillas", "hummus"] },
-    { kid: "Nico", part: "fruit", item: "Strawberries", ingredients: [] },
+    { kid: "Theo", part: "main", item: "Bean and cheese burrito", ingredients: ["tortillas", "refried beans", "shredded cheese"] },
+    ...["Grapes", "Raspberries", "Strawberries"].map((item) => ({ kid: "Theo", part: "fruit" as const, item, ingredients: [] })),
+    { kid: "Theo", part: "side", item: "Goldfish", ingredients: [] },
+    { kid: "Theo", part: "snack", item: "Cheese and crackers", ingredients: ["cheese sticks", "crackers"] },
+    { kid: "Leo", part: "main", item: "Hummus roll-up", ingredients: ["tortillas", "hummus"] },
+    { kid: "Leo", part: "fruit", item: "Strawberries", ingredients: [] },
   ];
-  const kids = [{ name: "Felix", rules: ["School lunch on Thursdays (pizza day)"] }, { name: "Nico", rules: [] }];
+  const kids = [{ name: "Theo", rules: ["School lunch on Thursdays (pizza day)"] }, { name: "Leo", rules: [] }];
 
   it("plans each school day for each boy, rotating his options", () => {
     const l = planLunches(monday, kids, options, ["2026-11-06"]);
     expect(l).toHaveLength(10);
-    const felix = l.filter((x) => x.kid === "Felix");
-    expect(new Set(felix.slice(0, 3).map((x) => x.fruit)).size).toBe(3);
-    const thu = felix.find((x) => x.date === "2026-11-05")!;
+    const theo = l.filter((x) => x.kid === "Theo");
+    expect(new Set(theo.slice(0, 3).map((x) => x.fruit)).size).toBe(3);
+    const thu = theo.find((x) => x.date === "2026-11-05")!;
     expect(thu).toMatchObject({ schoolLunch: true, main: "", fruit: "", snack: "Cheese and crackers" });
-    expect(felix.find((x) => x.date === "2026-11-06")).toMatchObject({ noSchool: true, main: "", snack: "" });
-    expect(nextOption(felix[0], "fruit", options)).not.toBe(felix[0].fruit);
+    expect(theo.find((x) => x.date === "2026-11-06")).toMatchObject({ noSchool: true, main: "", snack: "" });
+    expect(nextOption(theo[0], "fruit", options)).not.toBe(theo[0].fruit);
   });
 
   it("lists what the lunches need, once each", () => {

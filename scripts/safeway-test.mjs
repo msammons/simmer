@@ -1,6 +1,6 @@
-// The Safeway test (docs/PLAN.md, section 5): can a program do what "Fill my Safeway cart" needs? Run on Matt's Mac:
+// The Safeway test (docs/PLAN.md, section 5): can a program do what "Fill my Safeway cart" needs? Run on Sam's Mac:
 //   node scripts/safeway-test.mjs
-// A real browser window opens on safeway.com. Marcela signs in herself (so no password is stored anywhere; the sign-in
+// A real browser window opens on safeway.com. Robin signs in herself (so no password is stored anywhere; the sign-in
 // is kept in .data/safeway-profile on this Mac for next time). Press Enter in the terminal once she's signed in. The
 // script then tries each step, one test item at a time, and writes what happened to .data/safeway/report.md with a
 // screenshot per step. It also lists which of Safeway's own addresses the site called for search and the cart (without
