@@ -85,16 +85,12 @@ export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }
 /** The bar at the top of every screen: the Simmer lockup at the left, at most one action at the right. */
 export function BrandBar({ trailing }: { trailing?: ReactNode }) {
   return (
-    // Fixed to the screen (with a spacer holding its place), so it stays put while the page springs at either end.
-    <>
-      <div aria-hidden className="h-11" />
-      <div className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 mx-auto flex h-11 w-full max-w-md items-center justify-between px-4">
-        {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. */}
-        <span aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-3 -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
-        <Brand />
-        <div className="flex gap-2">{trailing}</div>
-      </div>
-    </>
+    <div className="sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 flex h-11 items-center justify-between">
+      {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. */}
+      <span aria-hidden className="pointer-events-none absolute -inset-x-4 -bottom-3 -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
+      <Brand />
+      <div className="flex gap-2">{trailing}</div>
+    </div>
   );
 }
 
