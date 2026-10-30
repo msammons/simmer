@@ -1,77 +1,49 @@
 # Simmer for Safeway (the Chrome helper)
 
-**Oct 30: Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the cart through small jobs the helper
-does (`/api/safeway/jobs`).** This copy of the helper (0.6.1) doesn't do jobs yet, so until the helper's 1.0 lands,
-Find in Simmer says the computer isn't answering. Everything below still works as it did, and Simmer keeps every
-address it uses.
+Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the Safeway cart, but Safeway can only be reached
+from a real browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does
+Simmer's small Safeway jobs on safeway.com and reports back. It never signs in and never checks out.
 
-Fills the Safeway cart on safeway.com from Simmer's list, in a computer's Chrome where Robin is already signed in to
-Safeway. It goes through the Safeway items one at a time: searches, adds what it's sure of, asks about the rest (every
-product it found, the likeliest first, or look for something else, or skip), and ticks each item off in Simmer once Safeway shows it in the
-cart. It never signs in and never checks out: when it's done, she opens the cart and checks out on Safeway as usual.
+## How it works (1.0)
 
-**Most of it lives in Simmer, so most changes need no update here.** At the start of every run the helper asks Simmer
-(`/api/safeway/helper`) what to fill, what to search for, how to read Safeway's pages and how to go about it; for each
-search it asks Simmer which product to take or what to ask. All of that is `src/lib/safeway-helper.mjs`, which ships
-with Simmer. The helper itself only opens pages, reads them, presses Safeway's buttons and shows the questions. An
-update here is needed only for a new kind of step (Chrome doesn't let a helper load code from elsewhere).
+- **Jobs.** Simmer queues a job (`/api/safeway/jobs`): `search` (a search's products with picture, name, price and
+  whether each is in the cart), `setQty` (press Add / + / − on a product until the cart holds that many; 0 takes it
+  out), and `sample` / `snapshot` (a short account of a page, to learn how Safeway builds it). The background
+  (`background.js`) checks for jobs every half minute; once there's activity, or while the panel is open, it checks
+  every couple of seconds until a few minutes pass with nothing. It does each job in a Safeway tab (`safeway.js`): one
+  already open, or a new one behind, in front only when the panel is open in that window.
+- **The panel is Simmer.** After the one-time setup (Simmer's address and the household passcode, kept on this computer
+  only), the panel shows Simmer itself, opening on Shop. The passcode goes to Simmer by message, never in the address.
+  So the computer and the phone are the same experience, and both go through the same jobs.
+- **Most of it lives in Simmer.** Every job carries Simmer's page details (`PAGE` in `src/lib/safeway-helper.mjs`) and
+  pace (`SETTINGS`), so a Safeway redesign or a change of pace is a Simmer deploy. What to search for, which product is
+  the usual, the cart, the picks (with pictures) and every word on screen are Simmer's. Only a new kind of job needs
+  the helper reloaded.
 
 Why this shape: Safeway blocks automated browsers and has no way in for apps (see `docs/PLAN.md`, section 5). This runs
-in her own Chrome, pressing Safeway's own buttons at a person's pace, so it looks to Safeway like what it is: her,
-shopping, with help.
+in her own Chrome, pressing Safeway's own buttons at a person's pace.
 
-## Installing it (once per computer)
+## Installing or updating it (once per computer)
 
-1. Copy this `extension` folder to the computer (or clone the repo there).
-2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and pick the
-   folder.
-3. Pin it: the puzzle-piece button in the toolbar, then the pin next to **Simmer for Safeway**.
-4. Click the Simmer button. The panel opens beside the page and asks for the household passcode once.
-
-To update it after a change in this folder (rare; see above): replace the folder's files, then press the reload arrow
-on its card in `chrome://extensions`. Changes in Simmer reach it on its next run with nothing to do.
-
-## Orders started on the phone
-
-Leave Chrome open on the computer, signed in to Safeway, with the helper set up. In Simmer on the phone, *Fill my
-Safeway cart* (Groceries tab) starts an order; every half minute the helper looks for one (`background.js`), fills the
-cart in a Safeway tab behind whatever's in front, and asks on the phone through Simmer (`/api/safeway/order`) when it
-isn't sure. Check out in the Safeway app.
-
-## Using it
-
-Sign in to Safeway in Chrome. Click the Simmer button, check the list, and press **Fill my Safeway cart**. Answer its
-questions in the panel. At the end, **Open my Safeway cart**, pick a time, and check out.
-
-## What it remembers
-
-Which Safeway product was picked for each item, in Simmer's Safeway tab (through `/api/safeway`), so the next order
-goes in without asking, on any computer. Picks an older version kept only on that computer go to Simmer on the next
-run, and are then cleared there. The passcode and Simmer's
-address stay on that computer only. The house's usual products in Simmer (Staples, `usual_product`) are used too: a
-clear match goes in without asking.
-
-Picking happens in the panel: it lists every product Safeway found, the likeliest first, with a box to look for
-something else. Nothing needs doing on the Safeway page (if someone presses Add there anyway while it asks, that counts
-as the pick). Every pick is remembered.
-
-## When Safeway changes its pages
-
-"In the cart" is read two ways: the product's Add button turns into a quantity, or the cart count at the top goes up.
-If only the count moved (Safeway's sign on the product wasn't recognized), the panel offers **Copy what Safeway
-showed** at the end: that product's part of the page, without pictures. Paste it into a session working on this
-Simmer session to teach `PAGE` in `src/lib/safeway-helper.mjs` the new sign; once Simmer is updated, the helper reads
-Safeway the new way on its next run. Safeway blocks automated browsers, so a session can't look itself.
+1. Get this `extension` folder onto the computer (copy it, or `git pull` in a clone).
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
+   pick the folder. Update: press the reload arrow on **Simmer for Safeway**'s card (it should say 1.0.0).
+3. Pin it (the puzzle-piece button, then the pin), click the Simmer button, and type Simmer's address and the passcode
+   (once).
+4. Sign in to Safeway in that Chrome, and leave Chrome open. Simmer's Find then works from the phone too.
 
 ## Files
 
-- `manifest.json`, `background.js`: the helper itself; the toolbar button opens the panel, and the background fills
-  orders started on the phone.
-- `fill.js`: filling the cart, item by item, shared by the panel and the background.
-- `panel.html`, `panel.css`, `panel.js`: the panel at the computer.
-- `page.js`: what runs inside safeway.com: reads the products on screen, presses Add and +, using the page details
-  Simmer sends (Safeway's search tiles, with links to product pages as a fallback).
-- In Simmer, `src/lib/safeway-helper.mjs`: what to fill, which product to pick, and Safeway's page details, with tests
-  (`safeway-helper.test.ts`, run by `npm test`).
-- `../scripts/extension-test.mjs`: the whole flow against a stand-in Safeway page and a stand-in list
+- `manifest.json`, `background.js`: the helper; the toolbar button opens the panel, and the background does the jobs.
+- `safeway.js`: doing one job in a Safeway tab.
+- `page.js`: what runs inside safeway.com: reads the products on screen, presses Add / + / −, using Simmer's page details.
+- `panel.html`, `panel.css`, `panel.js`: setup, then Simmer in a frame.
+- `../scripts/extension-test.mjs`: the whole thing against a real local Simmer and a stand-in Safeway
   (`node scripts/extension-test.mjs`). It can't tell whether the real Safeway pages still match.
+
+## Not yet tried on the real safeway.com
+
+Whether Safeway's search fills in a tab nobody's looking at; whether − at one removes the product without a
+confirmation step; and the − / + buttons' labels on the real page (read from Safeway's code, not pressed). When
+something doesn't match, a `sample` or `snapshot` job's text (kept in the Sheet's "Safeway jobs" tab) shows what
+Safeway sent, to fix `PAGE` in Simmer.
