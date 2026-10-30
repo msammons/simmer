@@ -117,7 +117,7 @@ export default function App() {
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
   }, [onGroceries, visit, refreshList]);
 
-  // The collection: loaded when Search, a recipe or the week opens (the week shows meal names), and after every change,
+  // The collection: loaded when Recipes, a recipe or the week opens (the week shows meal names), and after every change,
   // from the server's answer.
   const gotRecipes = useCallback((r: Recipe[]) => { setRecipes(r); store.setRecipes(r); setRecipesError(null); }, []);
   const refreshRecipes = useCallback(async () => {

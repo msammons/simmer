@@ -19,7 +19,7 @@ function RecipeRow({ r, onOpen }: { r: Recipe; onOpen: (r: Recipe) => void }) {
   return <Row title={r.name} subtitle={summary(r)} accessory="chevron" onClick={() => onOpen(r)} />;
 }
 
-/** A few of a group, and the rest one tap away (as a search, so the list stays short). */
+/** A few of a group, and the rest one tap away, so the list stays short. */
 function Some({ header, items, onOpen }: { header: string; items: Recipe[]; onOpen: (r: Recipe) => void }) {
   const [all, setAll] = useState(false);
   if (!items.length) return null;

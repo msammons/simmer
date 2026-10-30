@@ -63,6 +63,14 @@ describe("planning the week", () => {
     expect(suggestWeek(nights, ctx)).toEqual(week); // the same week always gives the same plan
   });
 
+  it("planned mid-week, leaves the nights already over alone so they don't use up recipes", () => {
+    const nights = weekDates(monday).map((d) => emptyNight(d, "regular"));
+    const from = nights[4].date;
+    const week = suggestWeek(nights, ctx, from);
+    expect(week.slice(0, 4).every((n) => n.meal === "")).toBe(true);
+    expect(week[4].meal).toBe(rank(nights, 4, ctx)[0].recipe.id); // the best pick, as if the week started here
+  });
+
   it("avoids the same protein two nights running", () => {
     const nights = [emptyNight(monday, "quick"), emptyNight("2026-11-03", "quick")];
     nights[0].meal = "tacos";
