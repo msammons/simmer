@@ -1,5 +1,10 @@
 # Simmer for Safeway (the Chrome helper)
 
+**Oct 30: Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the cart through small jobs the helper
+does (`/api/safeway/jobs`).** This copy of the helper (0.6.1) doesn't do jobs yet, so until the helper's 1.0 lands,
+Find in Simmer says the computer isn't answering. Everything below still works as it did, and Simmer keeps every
+address it uses.
+
 Fills the Safeway cart on safeway.com from Simmer's list, in a computer's Chrome where Robin is already signed in to
 Safeway. It goes through the Safeway items one at a time: searches, adds what it's sure of, asks about the rest (every
 product it found, the likeliest first, or look for something else, or skip), and ticks each item off in Simmer once Safeway shows it in the

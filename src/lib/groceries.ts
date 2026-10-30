@@ -247,16 +247,17 @@ export async function moveItem(id: string, to: { store?: Store; section?: Sectio
 }
 
 /** Finishing a trip: the store's checked items come off the list (everything else stays, including other stores'). */
-export async function doneShopping(store: Store): Promise<number> {
+/** Bought: clears that store's checked items, and `alsoIds` (for Safeway, what's in the cart). */
+export async function doneShopping(store: Store, alsoIds: Set<string> = new Set()): Promise<number> {
   if (!sheetsConfigured()) {
     const m = await mem();
     const before = m.list.length;
-    m.list = m.list.filter((x) => !(x.store === store && x.checked));
+    m.list = m.list.filter((x) => !(x.store === store && (x.checked || alsoIds.has(x.id))));
     return before - m.list.length;
   }
   const rows = await rowsOf(LIST);
   const recs = records(rows);
-  const keep = recs.filter((r) => !(asStore(r.get("store")) === store && yes(r.get("checked"))));
+  const keep = recs.filter((r) => !(asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id")))));
   await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...keep.map((r) => rows[r.rowNumber - 1])]);
   return recs.length - keep.length;
 }

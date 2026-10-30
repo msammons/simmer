@@ -29,10 +29,11 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   button top right (`OpenSettings`, set once in `App.tsx`, so screens don't pass it), then one large title in the same
   place. Settings holds who's using the phone, Add recipes, and the look. Drill-in screens get a round back chevron
   before the title, named for the screen below; swiping right also goes back (`useSwipe`).
-- Navigation is one back stack in `App.tsx`: a tab (Meals, Groceries, or Recipes) with screens pushed on it (a
+- Navigation is one back stack in `App.tsx`: a tab (Meals, Shop, or Recipes) with screens pushed on it (a
   recipe). Back pops; a tab tap starts that tab fresh. The tab bar shows on every screen, the stack's tab lit. Sheets
   name what they show (a week, a night, an item) rather than holding a copy, so a refresh shows in them. A passcode
   turned down by any request (the client sends `SIGNED_OUT`) closes everything and asks for it again.
+- `BrandBar`'s `below` pins a switch inside the top bar, under the same blurred backing (Shop's List · Find · Cart).
 - `TabBar`: the three tabs in one Liquid Glass capsule. There is no search; the Recipes tab lists the collection by
   kind, each kind opening to all of it (the plan's recipe picker still searches).
 - `Group`/`Row` (inset grouped lists), `Button` (primary is tinted glass; no gradients on anything you tap), `Sheet`
@@ -40,6 +41,24 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - Type scale `t-*` utilities and colors as CSS variables in `app/globals.css`. Themes set `--accent` and a brand gradient
   (`--g1..g3`) used only on non-interactive brand surfaces. Simmer (calm sage, matching the icon), Apricot (the original warm orange), then plain iOS colors.
 - One line-icon set (`components/icons.tsx`). No emoji anywhere.
+
+## Shop and Safeway
+
+The Shop tab (`components/Shop.tsx`, `Safeway.tsx`, logic in `lib/shop.ts` with tests) switches between **List** (the
+shared list by store; Safeway items show "In the cart · 2" once added, and tapping one opens Find on it), **Find** (one
+Safeway item at a time: Simmer's own search words, Safeway's results with pictures and prices, the usual first, Add
+then − / +) and **Cart** (Simmer's copy of the Safeway cart, the total, and "Check out on Safeway").
+
+Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
+Chrome on a computer (`extension/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" tab,
+pruned as it goes), the helper takes it, does it on safeway.com and reports back; a quantity set on Safeway goes into
+Simmer's cart ("Safeway cart" tab, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
+product added for an item becomes that item's pick (the Safeway tab, now with the product's picture address; pictures
+are shown from Safeway, never stored). The helper's last check-in is kept too, so when the computer isn't answering
+Find says so at once rather than waiting. Simmer's cart is only what was added through Simmer: Safeway's own cart page
+isn't read (yet). Done shopping for Safeway clears what's ticked or in the cart, and empties the cart. Simmer may be
+framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the
+passcode by message from its parent, only from a Chrome helper page, never from the address.
 
 ## Lessons from Head Out (keep these)
 
