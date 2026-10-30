@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   try {
     return Response.json(await loadList(), { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
@@ -44,6 +44,6 @@ export async function POST(req: Request) {
     }
     return Response.json(await loadList(), { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }

@@ -95,17 +95,22 @@ function cells(r: Recipe): Record<string, string> {
   };
 }
 
-/** A draft as a recipe: tidied, with its ingredient lines read. */
+const str = (x: unknown) => (typeof x === "string" ? x : "");
+const strs = (x: unknown) => (Array.isArray(x) ? x.filter((l): l is string => typeof l === "string") : []);
+const positive = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x > 0 ? x : null);
+
+/** A draft as a recipe: tidied, with its ingredient lines read. Drafts come from the phone, so nothing in one is trusted to be the right type. */
 export function fromDraft(d: Draft, existing?: Recipe): Recipe {
-  const name = d.name.replace(/\s+/g, " ").trim().slice(0, 120);
+  const name = str(d.name).replace(/\s+/g, " ").trim().slice(0, 120);
   if (!name) throw new AppError("Give the recipe a name.");
+  const minutes = positive(d.minutes), serves = positive(d.serves), rating = positive(d.rating);
   return {
-    id: existing?.id ?? d.id ?? newId(name), name, effort: d.effort === "quick" ? "quick" : "regular",
-    minutes: d.minutes && d.minutes > 0 ? Math.round(d.minutes) : null, serves: d.serves && d.serves > 0 ? Math.round(d.serves) : null,
-    protein: (d.protein ?? "").trim().toLowerCase(), ingredients: d.ingredients.map((l) => l.trim()).filter(Boolean).slice(0, 80).map(parseIngredient),
-    steps: d.steps.map((s) => s.trim()).filter(Boolean).slice(0, 60), store: d.store ?? "", season: d.season ?? [], for: d.for ?? "everyone",
-    kidOk: d.kidOk ?? "", makeAhead: Boolean(d.makeAhead), tags: (d.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean), source: d.source ?? "",
-    rating: d.rating && d.rating >= 1 ? Math.min(3, Math.round(d.rating)) : null, notes: (d.notes ?? "").trim(), active: d.active ?? existing?.active ?? true,
+    id: existing?.id ?? (str(d.id).slice(0, 40) || newId(name)), name, effort: d.effort === "quick" ? "quick" : "regular",
+    minutes: minutes && Math.round(minutes), serves: serves && Math.round(serves),
+    protein: str(d.protein).trim().toLowerCase(), ingredients: strs(d.ingredients).map((l) => l.trim()).filter(Boolean).slice(0, 80).map(parseIngredient),
+    steps: strs(d.steps).map((s) => s.trim()).filter(Boolean).slice(0, 60), store: asStore(str(d.store)), season: strs(d.season), for: d.for === "kids" || d.for === "adults" ? d.for : "everyone",
+    kidOk: asKidOk(str(d.kidOk)), makeAhead: Boolean(d.makeAhead), tags: strs(d.tags).map((t) => t.trim().toLowerCase()).filter(Boolean), source: str(d.source),
+    rating: rating && rating >= 1 ? Math.min(3, Math.round(rating)) : null, notes: str(d.notes).trim(), active: d.active ?? existing?.active ?? true,
     addedAt: existing?.addedAt ?? new Date().toISOString(),
   };
 }

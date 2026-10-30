@@ -7,12 +7,11 @@ import { applyShape, choices, emptyNight, LUNCH_PARTS, nextOption, planLunches, 
 import { Check } from "./Groceries";
 import { Icon } from "./icons";
 import { summary } from "./Recipes";
-import { Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar } from "./ui";
+import { Button, EmptyState, Group, Notice, Row, Segmented, Sheet, TopBar } from "./ui";
 
 const KIND: Record<NightKind, string> = { quick: "Quick", regular: "Regular", skip: "Skip" };
 const day = (date: string, style: "long" | "short" = "long") => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: style, timeZone: "UTC" });
 const monthDay = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-const range = (monday: string) => `${monthDay(monday)} – ${monthDay(addDays(monday, 6))}`;
 
 /** A meal's name: the recipe's, or the free text she typed. */
 export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;
@@ -28,10 +27,12 @@ function contextFor(w: WeekData, recipes: Recipe[], trips = { traderJoes: w.trip
 
 // ---- This week (tab)
 
-export function WeekScreen({ week, next, recipes, error, onPlan, onNight, onMade, onOpen, onSettings }: {
-  week: WeekData | null; next: WeekData | null; recipes: Recipe[]; error: string | null;
+export function WeekScreen({ week, next, recipes, me, error, note, onNote, onPlan, onNight, onMade, onOpen }: {
+  week: WeekData | null; next: WeekData | null; recipes: Recipe[]; me: string; error: string | null;
+  /** A note after saving ("Added 6 things to the grocery list."); tapping it puts it away. */
+  note: string | null; onNote: () => void;
   onPlan: (w: WeekData) => void; onNight: (w: WeekData, n: Night) => void; onMade: (date: string, made: boolean) => void;
-  onOpen: (id: string) => void; onSettings: () => void;
+  onOpen: (id: string) => void;
 }) {
   const today = dateIn(0);
   const name = (id: string) => mealName(id, recipes);
@@ -42,8 +43,9 @@ export function WeekScreen({ week, next, recipes, error, onPlan, onNight, onMade
   const saturday = [6, 0].includes(new Date(`${today}T12:00:00Z`).getUTCDay());
   return (
     <div className="space-y-6">
-      <TopBar title="This week" subtitle={week ? range(week.monday) : undefined} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
+      <TopBar title="This week" subtitle={week ? monthDay(week.monday) : undefined} />
       {error && <Notice>{error}</Notice>}
+      {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
       {ask && (
         <div className="glass space-y-3 rounded-[22px] p-4">
           <p className="t-body">Did you make the {name(ask.meal).toLowerCase()} {ask.date === addDays(today, -1) ? "last night" : `on ${day(ask.date)}`}?</p>
@@ -76,12 +78,12 @@ export function WeekScreen({ week, next, recipes, error, onPlan, onNight, onMade
                 accessory="chevron" onClick={() => (recipes.some((r) => r.id === tonight.meal) ? onOpen(tonight.meal) : onNight(week, tonight))} />
             </Group>
           )}
-          <WeekGroup header="The week" w={week} recipes={recipes} today={today} onNight={onNight} />
+          <WeekGroup header="The week" w={week} recipes={recipes} me={me} today={today} onNight={onNight} />
           <Button variant="secondary" className="w-full" onClick={() => onPlan(week)}>Change the plan</Button>
         </>
       )}
       {saturday && next && (next.planned
-        ? <WeekGroup header="Next week" w={next} recipes={recipes} today={today} onNight={onNight} />
+        ? <WeekGroup header="Next week" w={next} recipes={recipes} me={me} today={today} onNight={onNight} />
         : week?.planned && <Button className="w-full" icon="calendar" onClick={() => onPlan(next)}>Plan next week</Button>)}
       {saturday && next?.planned && <Button variant="secondary" className="w-full" onClick={() => onPlan(next)}>Change next week</Button>}
     </div>
@@ -90,13 +92,14 @@ export function WeekScreen({ week, next, recipes, error, onPlan, onNight, onMade
 
 const lunchLine = (l: Lunch) => l.schoolLunch ? `School lunch${l.snack ? ` · Snack: ${l.snack}` : ""}` : [[l.main, l.fruit, l.side, l.treat].filter(Boolean).join(", "), l.snack && `Snack: ${l.snack}`].filter(Boolean).join(" · ");
 
-function WeekGroup({ header, w, recipes, today, onNight }: { header: string; w: WeekData; recipes: Recipe[]; today: string; onNight: (w: WeekData, n: Night) => void }) {
+/** A week's nights. "Robin planned" shows only for nights someone else planned, not the person using this phone. */
+function WeekGroup({ header, w, recipes, me, today, onNight }: { header: string; w: WeekData; recipes: Recipe[]; me: string; today: string; onNight: (w: WeekData, n: Night) => void }) {
   return (
     <Group header={header}>
       {w.nights.map((n) => (
         <Row key={n.date}
           title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : "Not picked yet"}</span>}
-          subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== "Robin" && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
+          subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== me && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
           value={n.pinned ? <span aria-label="Pinned" className="text-accent">●</span> : undefined}
           accessory="chevron" onClick={() => onNight(w, n)} />
       ))}
@@ -277,7 +280,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
                 <Row key={o.recipe.id} title={<span className="text-muted">{o.recipe.name}</span>} subtitle={o.why || summary(o.recipe)} value="Swap" onClick={() => set(i, { meal: o.recipe.id })} />
               ))}
               {n.split && (
-                <Row title={`Kids: ${n.kidsMeal ? mealName(n.kidsMeal, recipes) : "nothing yet"}`} subtitle={kidsOpts.length > 1 ? "Tap for another" : "Add the boys' own dinners in Search"}
+                <Row title={`Kids: ${n.kidsMeal ? mealName(n.kidsMeal, recipes) : "nothing yet"}`} subtitle={kidsOpts.length > 1 ? "Tap for another" : "Add kids' dinners from Search"}
                   onClick={kidsOpts.length ? () => { const ids = kidsOpts.map((o) => o.recipe.id); set(i, { kidsMeal: ids[(ids.indexOf(n.kidsMeal) + 1) % ids.length] }); } : undefined} />
               )}
             </Group>
@@ -288,7 +291,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
   } else {
     body = (
       <div className="space-y-4">
-        <p className="t-sub px-1 text-muted">Tap a part of a lunch to swap it for another of his options.</p>
+        <p className="t-sub px-1 text-muted">Tap a part of a lunch to swap it for another of their options.</p>
         {dates.slice(0, 5).filter((d) => d >= today).map((date) => (
           <Group key={date} header={day(date)} aside={<button className="t-foot font-semibold text-accent" onClick={() => dayOff(date)}>{noSchool.includes(date) ? "School day" : "No school"}</button>}>
             {noSchool.includes(date) ? <Row title="No school" subtitle="No lunches this day" /> : lunches.filter((l) => l.date === date).map((l) => (
@@ -309,7 +312,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
   return (
     <Sheet label="Plan the week" title={PAGES[page]} onClose={onClose} footer={footer} page={String(page)} pager={{ index: page, total: last + 1 }}>
       <div className="pb-2">
-        <p className="t-sub mb-3 text-center text-muted">{range(w.monday)}</p>
+        <p className="t-sub mb-3 text-center text-muted">{monthDay(w.monday)}</p>
         {body}
       </div>
       {pinAt !== null && <PinSheet kind={nights[pinAt].kind} recipes={recipes} onPick={(meal) => { set(pinAt, { meal, pinned: true, kind: nights[pinAt].kind === "skip" ? "regular" : nights[pinAt].kind }); setPinAt(null); }} onClose={() => setPinAt(null)} />}

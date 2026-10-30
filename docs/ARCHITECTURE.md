@@ -25,8 +25,14 @@ shape of the app and the lessons that came from building Head Out, so they don't
 
 Everything comes from `components/ui.tsx`, so every screen looks and behaves the same:
 
-- `TopBar` on every screen: the Simmer lockup top left (it never moves), one action top right, then one large title in
-  the same place. Drill-in screens get a round back chevron before the title; swiping right also goes back (`useSwipe`).
+- `TopBar` on every screen: the Simmer lockup top left (it never moves), at most one action then the same Settings
+  button top right (`OpenSettings`, set once in `App.tsx`, so screens don't pass it), then one large title in the same
+  place. Settings holds who's using the phone, Add recipes, and the look. Drill-in screens get a round back chevron
+  before the title, named for the screen below; swiping right also goes back (`useSwipe`).
+- Navigation is one back stack in `App.tsx`: a tab (This week, Groceries, or Search) with screens pushed on it (a
+  recipe). Back pops; a tab tap starts that tab fresh. The tab bar shows on every screen, the stack's tab lit. Sheets
+  name what they show (a week, a night, an item) rather than holding a copy, so a refresh shows in them. A passcode
+  turned down by any request (the client sends `SIGNED_OUT`) closes everything and asks for it again.
 - `TabBar`: two tabs in a Liquid Glass capsule plus a round Search button that turns into a search field. It rides
   above the keyboard only while typing (scroll and toolbar changes used to make it jump).
 - `Group`/`Row` (inset grouped lists), `Button` (primary is tinted glass; no gradients on anything you tap), `Sheet`
@@ -69,7 +75,8 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 
 - `npm run dev` for local work (no Sheet needed: it reads `data/*.csv`).
 - `npm test` (vitest), `npm run lint`, `npx tsc --noEmit`.
-- Browser smoke test: `npm run build && HOUSEHOLD_PASSCODE=test123 npm start`, then `node scripts/smoke.cjs`.
+- Browser smoke test (any day, sample data, phone and iPad sizes): start a server with `HOUSEHOLD_PASSCODE=test123`
+  (e.g. `npx next dev -p 3202`), then `URL=http://localhost:3202/ node scripts/smoke.cjs`.
 - After changing `public/icon.svg`: `npm run icons`.
 
 ## Setting up production
