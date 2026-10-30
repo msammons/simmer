@@ -4,19 +4,19 @@ import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPane
 import { addDays } from "@/lib/time";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
-import { ShopScreen, type ListActions } from "./Shop";
+import { ListScreen, ShopScreen, type ListActions } from "./Shop";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
-type Tab = "week" | "shop" | "recipes";
+type Tab = "week" | "list" | "shop" | "recipes";
 /**
  * Where you are: a tab at the bottom of a stack of screens opened from it (a recipe). Back pops one; a tab starts a new
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "shop", label: "Shop", icon: "bag" }, { id: "recipes", label: "Recipes", icon: "book" }];
-const TAB_NAMES: Record<Tab, string> = { week: "Meals", shop: "Shop", recipes: "Recipes" };
+const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }, { id: "recipes", label: "Recipes", icon: "book" }];
+const TAB_NAMES: Record<Tab, string> = { week: "Meals", list: "List", shop: "Shop", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
@@ -36,6 +36,7 @@ export default function App() {
   const top = stack[stack.length - 1];
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
+  const [shopAt, setShopAt] = useState<string | null>(null); // the list item Shop's Find opens on, from the List tab
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
   const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
@@ -109,7 +110,7 @@ export default function App() {
       if (!(e instanceof AuthError)) setListError(errorText(e));
     }
   }, []);
-  const onShop = phase === "app" && top.kind === "shop";
+  const onShop = phase === "app" && (top.kind === "list" || top.kind === "shop");
   useEffect(() => {
     if (!onShop) return;
     queueMicrotask(refreshList);
@@ -128,7 +129,7 @@ export default function App() {
     try { gotRecipes((await api.recipes()).recipes); }
     catch (e) { if (!(e instanceof AuthError)) setRecipesError(errorText(e)); }
   }, [gotRecipes]);
-  const inRecipes = phase === "app" && top.kind !== "shop";
+  const inRecipes = phase === "app" && top.kind !== "list" && top.kind !== "shop";
   useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, visit, refreshRecipes]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
@@ -276,6 +277,12 @@ export default function App() {
     scrollAppTo(0);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
+    setShopAt(null);
+  }
+  /** Shop's Find, on a list item when there's one. */
+  function openFind(id?: string) {
+    onTab("shop");
+    setShopAt(id ?? null);
   }
   function back() {
     scrollAppTo(0);
@@ -307,7 +314,8 @@ export default function App() {
         <WeekScreen key={visit} weeks={weeks} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
-      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} />}
+      {phase === "app" && top.kind === "list" && <ListScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onFind={openFind} />}
+      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} error={error ?? listError} act={act} startAt={shopAt} onList={() => onTab("list")} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
