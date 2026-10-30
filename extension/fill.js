@@ -2,15 +2,19 @@
 // Simmer on a phone). Goes through the Safeway items one at a time in the Safeway window, at a person's pace: adds
 // what it's sure of, asks about the rest through `ui`, remembers what was picked, and ticks each item off in Simmer
 // once it's in the cart. It stops before checkout, and signing in to Safeway is left to the person.
-import { choose, howMany, keyOf, searchFor, usualFor } from "./match.js";
+//
+// The thinking lives in Simmer (src/lib/safeway-helper.mjs), so it can change without reinstalling this helper: at the
+// start of each run Simmer says what to fill, how to read Safeway's pages and how to go about it (`start`), and for
+// each search it says which product to take or what to ask (`chooseIn`). This file only carries that out.
 import { safewayPage } from "./page.js";
 
 // Simmer's address is typed once at setup, so it isn't written in this public code.
 export const SAFEWAY = "https://www.safeway.com";
-export const searchUrl = (q) => `${SAFEWAY}/shop/search-results.html?q=${encodeURIComponent(q)}`;
-export const productUrl = (id) => `${SAFEWAY}/shop/product-details.${id}.html`;
-export const CART = `${SAFEWAY}/erums/cart`;
-const PAUSE = 1500; // between items, so it moves like a person and Safeway has time to catch up
+/** How Safeway's pages are read and how to go about it, from Simmer at the start of each run (see `start`). */
+let page = null, settings = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800 };
+export const searchUrl = (q) => `${page?.site ?? SAFEWAY}${page?.searchPath ?? "/shop/search-results.html?q="}${encodeURIComponent(q)}`;
+export const productUrl = (id) => `${page?.site ?? SAFEWAY}${(page?.productPath ?? "/shop/product-details.{id}.html").replace("{id}", id)}`;
+export const cartUrl = () => `${page?.site ?? SAFEWAY}${page?.cartPath ?? "/erums/cart"}`;
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const store = {
@@ -59,7 +63,7 @@ export function go(tabId, url, active = true) {
 
 export async function onPage(tabId, action, arg = null) {
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: safewayPage, args: [action, arg] });
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: safewayPage, args: [action, arg, page] });
     return r?.result ?? null;
   } catch { return null; }
 }
@@ -67,31 +71,35 @@ export async function onPage(tabId, action, arg = null) {
 /** Waits for search results (or Safeway saying there are none), up to about 20 seconds. */
 async function results(tabId) {
   let last = null;
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < settings.resultsTries; i++) {
     last = await onPage(tabId, "read");
     if (last && (last.products.length || last.noResults)) return last;
-    await sleep(800);
+    await sleep(settings.resultsWait);
   }
   return last;
 }
 
-// ---- picks
+// ---- from Simmer
 
 /**
- * The picks, from Simmer, so every computer shares them; this computer's own copy fills in when Simmer can't be reached.
- * Picks only this computer has (made before they were kept in Simmer) are sent to Simmer once.
+ * The start of a run: Simmer's Safeway items ready to fill ({ id, item, quantity, usual, picked, query, want }), and
+ * how to read Safeway and go about it. Picks only this computer has (made before they were kept in Simmer) go to
+ * Simmer first, once.
  */
-export async function loadPicks() {
+export async function start() {
   const here = await store.get("picks", {});
-  let shared;
-  try { shared = (await simmer("GET", null, "/api/safeway")).picks ?? []; } catch { return here; }
-  const picks = Object.fromEntries(shared.map((p) => [keyOf(p.item), { id: p.id, name: p.name }]));
-  for (const [key, p] of Object.entries(here)) if (!picks[key]) { picks[key] = p; await savePick(key, p); }
-  await store.set("picks", picks);
-  return picks;
+  for (const [item, p] of Object.entries(here)) await savePick(item, p);
+  if (Object.keys(here).length) await chrome.storage.local.remove("picks");
+  const s = await simmer("GET", null, "/api/safeway/helper");
+  page = s.page;
+  settings = { ...settings, ...s.settings };
+  return s.items ?? [];
 }
 
-/** Keeps a pick in Simmer. If that fails it stays on this computer, and goes to Simmer next time if Simmer has none for that item. */
+/** Which product to take from what a search found, or which to ask about: Simmer decides. */
+const chooseIn = (item, query, products) => simmer("POST", { item: { item: item.item, usual: item.usual, picked: item.picked }, query, products }, "/api/safeway/helper");
+
+/** Keeps a pick in Simmer, so every computer shares it. */
 const savePick = (item, p) => simmer("POST", { item, id: p.id, name: p.name }, "/api/safeway").catch(() => {});
 
 // ---- filling
@@ -100,23 +108,21 @@ const savePick = (item, p) => simmer("POST", { item, id: p.id, name: p.name }, "
  * One item: search, pick (asking through ui.ask if unsure), add. Answers what happened: { ok, qty, want, id, name },
  * { skipped }, { why } (add it by hand), or { halt } (stop everything, e.g. Safeway isn't signed in).
  */
-async function one(tabId, item, picks, staples, ui, active) {
-  const usual = usualFor(item, staples);
-  const key = keyOf(item.item);
-  let query = searchFor(item, usual, picks[key]);
-  let page = null, choice = null;
-  for (let tries = 0; tries < 6 && !ui.stopped(); tries++) {
+async function one(tabId, item, ui, active) {
+  let query = item.query || item.item;
+  let found = null, choice = null;
+  for (let tries = 0; tries < settings.searchTries && !ui.stopped(); tries++) {
     ui.note(`Looking for ${query}…`);
     await go(tabId, searchUrl(query), active);
-    page = await results(tabId);
-    if (!page) return { why: "Safeway didn't load. Add it by hand." };
-    if (page.signedIn === false) return { halt: "Safeway isn't signed in. Sign in to Safeway in Chrome, then fill the cart again." };
+    found = await results(tabId);
+    if (!found) return { why: "Safeway didn't load. Add it by hand." };
+    if (found.signedIn === false) return { halt: "Safeway isn't signed in. Sign in to Safeway in Chrome, then fill the cart again." };
     // No products read at all: keep a short account of the page, to learn what Safeway's results look like now.
-    if (!page.products.length && !page.noResults) await store.set("lastPage", (await onPage(tabId, "sample")) || "");
-    choice = choose(page.products, { picked: picks[key], usual, item: query });
+    if (!found.products.length && !found.noResults) await store.set("lastPage", (await onPage(tabId, "sample")) || "");
+    choice = await chooseIn(item, query, found.products).catch(() => ({ ask: found.products }));
     if (choice.none && query !== item.item) { query = item.item; continue; }
     if (choice.pick) break;
-    const answer = await ui.ask(item, choice.ask ?? [], tabId, page);
+    const answer = await ui.ask(item, choice.ask ?? [], tabId, found);
     if (answer === "skip") return { skipped: true };
     if (answer?.search) { query = answer.search; continue; }
     // Something went into the cart on Safeway, but which product couldn't be told: count it, remember nothing.
@@ -127,34 +133,32 @@ async function one(tabId, item, picks, staples, ui, active) {
   if (ui.stopped()) return { skipped: true };
   if (!choice?.pick) return { why: "Couldn't find it." };
   ui.note(`Adding ${choice.pick.name}…`);
-  const want = howMany(item.quantity);
+  const want = item.want || 1;
   const added = choice.pick.inCart && !(want > 1) ? { ok: true, qty: choice.pick.qty || 1, sure: true } : await onPage(tabId, "add", { id: choice.pick.id, times: want });
   if (added?.snapshot) await store.set("lastPage", added.snapshot);
   if (!added?.ok) return { why: "Didn't go in. Add it by hand.", id: choice.pick.id };
-  if (picks[key]?.id !== choice.pick.id) {
-    picks[key] = { id: choice.pick.id, name: choice.pick.name };
-    await store.set("picks", picks);
-    await savePick(item.item, picks[key]);
+  if (item.picked?.id !== choice.pick.id) {
+    item.picked = { id: choice.pick.id, name: choice.pick.name };
+    await savePick(item.item, item.picked);
   }
   return { ok: true, qty: added.qty, want, id: choice.pick.id, name: choice.pick.name };
 }
 
 /**
- * Every item in turn. ui: { at(i), note(text), ask(item, options, tabId, page) → answer, result(i, r), stopped() }.
+ * Every item in turn (as `start` gave them). ui: { at(i), note(text), ask(item, options, tabId, page) → answer, result(i, r), stopped() }.
  * active: whether the Safeway tab comes to the front (someone's watching) or works behind. Answers { halted }.
  */
-export async function fillCart({ items, staples, ui, active = true, tabId }) {
+export async function fillCart({ items, ui, active = true, tabId }) {
   await store.set("lastPage", "");
   tabId ??= await safewayTab(active);
-  const picks = await loadPicks();
   for (let i = 0; i < items.length && !ui.stopped(); i++) {
     ui.at(i);
-    const r = await one(tabId, items[i], picks, staples, ui, active);
+    const r = await one(tabId, items[i], ui, active);
     if (r.halt) return { halted: r.halt };
     // Ticked in Simmer means it's in the cart, the same as ticking it by hand.
     if (r.ok) await simmer("POST", { op: "check", id: items[i].id, checked: true }).catch(() => {});
     await ui.result(i, r);
-    await sleep(PAUSE);
+    await sleep(settings.pause);
   }
   return { halted: ui.stopped() ? "Stopped before the end. What's in the cart stays there." : "" };
 }
