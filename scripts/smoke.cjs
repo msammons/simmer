@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning, the tabs, Settings on every
-// screen, a recipe and back, the freezer, and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// screen, the Recipes tab, a recipe and back, the freezer, and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -58,7 +58,10 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
         else { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
       }
       await page.waitForTimeout(400);
-      ok("week: a night's recipe opens", cooked && (await page.getByRole("radio", { name: "Quick" }).isVisible()));
+      // The planned nights depend on the day and the sample recipes; on a day none has a recipe to cook, say so and move on.
+      if (!cooked) ok("week: a night's recipe opens (skipped: no night with a recipe today)", true);
+      else {
+      ok("week: a night's recipe opens", await page.getByRole("radio", { name: "Quick" }).isVisible());
       await settingsHere("a recipe from This week");
       const nav = page.getByRole("navigation", { name: "Main" });
       ok("week: This week stays lit under the recipe", (await nav.getByRole("button", { name: "This week" }).getAttribute("aria-current")) === "page");
@@ -68,6 +71,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("button", { name: /^Cook|Tonight/ }).first().waitFor({ timeout: 300 }).catch(() => {});
       await nav.getByRole("button", { name: "This week" }).tap(); await page.waitForTimeout(400);
       ok("week: the tab starts fresh", await page.getByRole("heading", { name: "This week" }).isVisible());
+      }
     }
 
     // Settings: the look, and adding recipes from there.
@@ -94,22 +98,25 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.keyboard.press("Escape"); await page.waitForTimeout(300);
     }
 
-    // Search, a recipe, and back to the results.
-    await page.getByRole("button", { name: "Search", exact: true }).tap(); await page.waitForTimeout(500);
+    // The Recipes tab, a recipe, and back.
+    const nav = page.getByRole("navigation", { name: "Main" });
+    ok(`${tag}: three tabs, no search`, (await nav.getByRole("button").count()) === 3 && (await page.getByRole("search").count()) === 0);
+    await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
+    ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
     ok(`${tag}: no plus button at the top of Recipes`, (await page.locator("header, .sticky").getByRole("button", { name: "Add recipes" }).count()) === 0);
-    await page.keyboard.type("Tacos"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
-    ok(`${tag}: search finds the recipe`, await page.getByText("1 found").isVisible());
-    await page.getByRole("button", { name: /^Tacos/ }).tap(); await page.waitForTimeout(300);
+    const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
+    for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await tacos.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
+    await tacos.tap(); await page.waitForTimeout(300);
     ok(`${tag}: recipe screen`, (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).isVisible()));
     await settingsHere("a recipe");
     await page.screenshot({ path: `${dir}/6-recipe-${tag}.png`, fullPage: true });
     await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
     await page.getByRole("button", { name: /^Add \d+ to the list/ }).tap(); await page.waitForTimeout(800);
-    await page.getByRole("button", { name: "Recipes" }).first().tap(); await page.waitForTimeout(300);
-    ok(`${tag}: back to the results`, (await page.getByRole("heading", { name: "Recipes" }).isVisible()) && (await page.getByText("1 found").isVisible()));
-    await page.getByRole("button", { name: "Back to Groceries" }).tap(); await page.waitForTimeout(500);
-    ok(`${tag}: back from search to the last tab`, await page.getByRole("heading", { name: "Groceries" }).isVisible());
+    await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
+    ok(`${tag}: back to Recipes`, await page.getByRole("heading", { name: "Recipes" }).isVisible());
+    await page.screenshot({ path: `${dir}/6b-recipes-${tag}.png` });
+    await nav.getByRole("button", { name: "Groceries" }).tap(); await page.waitForTimeout(500);
     ok(`${tag}: the recipe's ingredients are on the list`, await seen(page.getByText(/ground beef/i)));
 
     // The passcode changes while the app is open, with a sheet up: back to the passcode screen, nothing left open.

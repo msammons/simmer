@@ -201,69 +201,24 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
  * for the tab you came from; tapping that goes back. The bar rides above the keyboard.
  */
 export type TabDef<T extends string> = { id: T; label: string; icon: IconName; dot?: boolean };
-export function TabBar<T extends string>({ tabs, active, previous, onTab, query, onQuery, onSubmit, searchLabel, searchPlaceholder }: {
-  tabs: [TabDef<T>, TabDef<T>]; active: T | "search" | null; previous: T; onTab: (t: T | "search") => void;
-  query: string; onQuery: (q: string) => void; onSubmit: (q: string) => void; searchLabel: string; searchPlaceholder: string;
-}) {
-  const byId = (id: T) => tabs.find((t) => t.id === id)!;
-  const searching = active === "search";
-  const input = useRef<HTMLInputElement>(null);
-  const keyboard = useKeyboardInset();
-  // Focus in the tap itself: iOS only raises the keyboard for a focus that happens during a user gesture.
-  const openSearch = () => { input.current?.focus(); onTab("search"); };
-  const tab = ({ id, label, icon, dot }: TabDef<T>) => (
-    <button
-      key={id}
-      onClick={() => onTab(id)}
-      aria-current={active === id ? "page" : undefined}
-      className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 t-cap font-medium transition active:scale-95 ${active === id ? "bg-accent/12 text-accent" : "text-muted"}`}
-    >
-      <Icon name={icon} className="size-6" />
-      {label}
-      {dot && <span className="absolute right-[calc(50%-18px)] top-1.5 size-2 rounded-full bg-alert ring-2 ring-card" aria-label="new" />}
-    </button>
-  );
+/** The tabs at the bottom of every screen once signed in, the one you're in lit. */
+export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef<T>[]; active: T | null; onTab: (t: T) => void }) {
   return (
-    <nav
-      aria-label="Main"
-      style={keyboard ? { transform: `translateY(${-keyboard}px)`, paddingBottom: "0.5rem" } : undefined}
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] transition-transform duration-200"
-    >
+    <nav aria-label="Main" className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <span aria-hidden className="absolute inset-x-0 -top-6 bottom-0 -z-10 bg-bg/60 backdrop-blur-md [mask-image:linear-gradient(to_top,black_50%,transparent)]" />
-      <div className="pointer-events-auto mx-auto flex h-[58px] max-w-md items-stretch gap-3">
-        <div className={`glass flex shrink-0 basis-[58px] gap-1 overflow-hidden rounded-full p-1 transition-[flex-grow] duration-300 ease-out ${searching ? "grow-0" : "grow"}`}>
-          {searching ? (
-            <button onClick={() => onTab(previous)} aria-label={`Back to ${byId(previous).label}`} className="flex flex-1 items-center justify-center rounded-full text-ink transition active:scale-90">
-              <Icon name={byId(previous).icon} className="size-6" />
-            </button>
-          ) : (
-            tabs.map(tab)
-          )}
-        </div>
-        <form
-          role="search"
-          onSubmit={(e) => { e.preventDefault(); if (query.trim().length >= 2) { input.current?.blur(); onSubmit(query.trim()); } }}
-          className={`glass relative flex shrink-0 basis-[58px] items-center overflow-hidden rounded-full transition-[flex-grow] duration-300 ease-out ${searching ? "grow gap-2 px-4" : "grow-0 justify-center"}`}
-        >
-          <Icon name="search" className={`size-6 shrink-0 ${searching ? "text-muted" : ""}`} strokeWidth={2} />
-          <input
-            ref={input}
-            type="search"
-            enterKeyHint="search"
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchLabel}
-            tabIndex={searching ? 0 : -1}
-            className={`min-w-0 bg-transparent text-base outline-none [&::-webkit-search-cancel-button]:hidden ${searching ? "flex-1" : "absolute size-px opacity-0"}`}
-          />
-          {searching && query && (
-            <button type="button" onClick={() => { onQuery(""); input.current?.focus(); }} aria-label="Clear" className="-mr-1.5 flex size-8 shrink-0 items-center justify-center">
-              <span className="flex size-[18px] items-center justify-center rounded-full bg-muted/60 text-bg"><Icon name="close" className="size-3" strokeWidth={3} /></span>
-            </button>
-          )}
-          {!searching && <button type="button" onClick={openSearch} aria-label="Search" className="absolute inset-0 rounded-full active:scale-95" />}
-        </form>
+      <div className="glass pointer-events-auto mx-auto flex h-[58px] max-w-md gap-1 rounded-full p-1">
+        {tabs.map(({ id, label, icon, dot }) => (
+          <button
+            key={id}
+            onClick={() => onTab(id)}
+            aria-current={active === id ? "page" : undefined}
+            className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 t-cap font-medium transition active:scale-95 ${active === id ? "bg-accent/12 text-accent" : "text-muted"}`}
+          >
+            <Icon name={icon} className="size-6" />
+            {label}
+            {dot && <span className="absolute right-[calc(50%-18px)] top-1.5 size-2 rounded-full bg-alert ring-2 ring-card" aria-label="new" />}
+          </button>
+        ))}
       </div>
     </nav>
   );
