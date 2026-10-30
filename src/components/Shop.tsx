@@ -11,6 +11,8 @@ import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export const STORE_NAMES: Record<Store, string> = { safeway: "Safeway", "trader-joes": "Trader Joe's", costco: "Costco" };
+/** The stores Find and Cart can shop online. Just Safeway for now; each one here gets its own Find and cart. */
+export const ONLINE_STORES: Store[] = ["safeway"];
 const SECTION_NAMES: Record<Section, string> = { fresh: "Fresh", pantry: "Pantry", freezer: "Freezer", household: "Household" };
 const SECTION_ORDER: Section[] = ["fresh", "pantry", "freezer", "household"];
 
@@ -112,6 +114,7 @@ export function ShopScreen({ list, kitchen, error, act }: { list: ListState | nu
   // Done shopping at Safeway empties the cart too: show that once the list has changed.
   const here: ListActions = { ...act, done: (s) => { void Promise.resolve(act.done(s) as unknown).then(() => { if (s === "safeway") sw.refresh(); }); } };
   const [view, setView] = useState<ShopView>("list");
+  const [online, setOnline] = useState<Store>(ONLINE_STORES[0]); // the store Find and Cart are for
   const [findAt, setFindAt] = useState<string | null>(null); // the item Find shows, by id
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
   const at = findAt ? toFind.findIndex((x) => x.id === findAt) : -1;
@@ -126,10 +129,34 @@ export function ShopScreen({ list, kitchen, error, act }: { list: ListState | nu
       <h1 className="sr-only">Shop</h1>
       {error && <Notice>{error}</Notice>}
       {view === "list" && <ListView list={list} kitchen={kitchen} act={here} cart={sw.cart} picks={sw.picks} onFind={find} anyToFind={toFind.some((x) => !qtyFor(sw.cart, x.id))} />}
-      {view === "find" && <FindView items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={() => go("list")}
+      {view !== "list" && <StorePicker store={online} onPick={setOnline} />}
+      {view === "find" && <FindView store={STORE_NAMES[online]} items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={() => go("list")}
         onGot={(id) => { const x = list?.items.find((i) => i.id === id); if (x) act.check(x, true); }} />}
-      {view === "cart" && <CartView sw={sw} onFind={toFind.length ? () => find() : null} />}
+      {view === "cart" && <CartView store={STORE_NAMES[online]} sw={sw} onFind={toFind.length ? () => find() : null} />}
     </div>
+  );
+}
+
+/** Which online store Find and Cart are for: the store's name, tapped to change it. */
+function StorePicker({ store, onPick }: { store: Store; onPick: (s: Store) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} aria-label={`Shopping at ${STORE_NAMES[store]}. Change store`} className="glass -mt-2 flex h-10 items-center gap-1.5 rounded-full pl-4 pr-3 t-sub font-semibold">
+        {STORE_NAMES[store]}<Icon name="down" className="size-4 text-muted" strokeWidth={2.4} />
+      </button>
+      {open && (
+        <Sheet label="Shop at" title="Shop at" onClose={() => setOpen(false)}>
+          <div className="pb-2">
+            <Group footer="Trader Joe's and Costco stay on the list for shopping in person.">
+              {ONLINE_STORES.map((s) => (
+                <Row key={s} role="radio" checked={store === s} onClick={() => { onPick(s); setOpen(false); }} title={STORE_NAMES[s]} accessory="check" />
+              ))}
+            </Group>
+          </div>
+        </Sheet>
+      )}
+    </>
   );
 }
 
