@@ -2,8 +2,7 @@
 // In the background, while Chrome is open: every half minute, look for a Safeway order started from Simmer (on a
 // phone), and fill the cart for it in a Safeway tab behind, asking Simmer whenever it isn't sure and waiting for the
 // answer there. The cart is the same one the Safeway app shows, so checkout happens on the phone.
-import { safewayItems } from "./match.js";
-import { fillCart, simmer, sleep, store } from "./fill.js";
+import { fillCart, simmer, sleep, start, store } from "./fill.js";
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
@@ -25,8 +24,7 @@ async function checkOrder() {
   try {
     let o = await order().catch(() => null);
     if (!o) return;
-    const list = await simmer("GET");
-    const onList = safewayItems(list);
+    const onList = await start();
     let items;
     if (o.status === "waiting") {
       o = await post({ op: "claim", lines: onList.map((it) => ({ itemId: it.id, item: it.item, quantity: it.quantity, state: "to do" })) });
@@ -37,7 +35,7 @@ async function checkOrder() {
       const left = new Set(o.lines.filter((l) => l.state === "to do").map((l) => l.itemId));
       items = onList.filter((it) => left.has(it.id));
     } else return;
-    await run(o, items, list.staples ?? []);
+    await run(o, items);
   } catch (e) {
     console.error("Safeway order", e);
   } finally {
@@ -45,7 +43,7 @@ async function checkOrder() {
   }
 }
 
-async function run(o, items, staples) {
+async function run(o, items) {
   const lines = o.lines;
   let stopped = false, note = "";
   const line = (it) => lines.find((l) => l.itemId === it.id);
@@ -77,7 +75,7 @@ async function run(o, items, staples) {
       }
     },
   };
-  const { halted } = await fillCart({ items, staples, ui, active: false });
+  const { halted } = await fillCart({ items, ui, active: false });
   await post({ op: "end", id: o.id, status: halted && !stopped ? "stopped" : "done", note: stopped ? "" : halted }).catch(() => {});
 }
 

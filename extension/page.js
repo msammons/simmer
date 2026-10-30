@@ -2,11 +2,9 @@
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
 // time. It never signs in and never goes near checkout.
 //
-// Safeway's pages aren't documented and change. As of Oct 2026 (read from Safeway's own page code), each search result
-// is a <product-item-al-v2> tile: its title is [data-qa="prd-itm-pttl"] with id "pg<product number>", there's no link
-// to the product's page, and its quantity control has an "Add <product>" button that turns into "Remove/Decrease
-// Quantity…" and "Increase Quantity…" buttons around a quantity box once it's in the cart. Older pages linked each
-// product to /shop/product-details.<number>.html; that still works as a fallback.
+// How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
+// comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
+// what changes and the helper picks it up on its next run.
 
 /**
  * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }] }
@@ -17,11 +15,12 @@
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
  */
-export async function safewayPage(action, arg) {
+export async function safewayPage(action, arg, P) {
+  const re = (pattern) => new RegExp(pattern, "i");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const label = (el) => `${el.getAttribute("aria-label") ?? ""} ${el.innerText ?? el.textContent ?? ""}`.replace(/\s+/g, " ").trim();
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
-  const idOf = (a) => a.getAttribute("href")?.match(/product-details\.(\d+)\.html/)?.[1] ?? null;
+  const idOf = (a) => a.getAttribute("href")?.match(re(P.link.pattern))?.[1] ?? null;
   // Safeway builds parts of its pages from components that keep their insides in a separate layer (a shadow root),
   // which plain lookups don't see, so every lookup here goes into those layers too, and climbs back out of them.
   function deepAll(root, sel) {
@@ -33,11 +32,11 @@ export async function safewayPage(action, arg) {
   }
   const parentOf = (el) => el.parentElement ?? (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
   const buttons = (root) => deepAll(root, "button, [role=button]").filter(visible);
-  const addButton = (card) => buttons(card).find((b) => /^add\b/i.test(label(b)) && !/list|note|coupon|clip/i.test(label(b)));
-  const plusButton = (card) => buttons(card).find((b) => /increase|increment|add one|add another|plus|^[+＋]$/i.test(label(b)));
-  const minusButton = (card) => buttons(card).find((b) => /decrease|decrement|remove one|remove quantity|minus|^[-−–]$/i.test(label(b)));
-  const qtyBox = (card) => deepAll(card, '[data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"]')[0];
-  const links = (root) => deepAll(root, 'a[href*="product-details."]');
+  const addButton = (card) => buttons(card).find((b) => re(P.add.label).test(label(b)) && !re(P.add.not).test(label(b)));
+  const plusButton = (card) => buttons(card).find((b) => re(P.plus).test(label(b)));
+  const minusButton = (card) => buttons(card).find((b) => re(P.minus).test(label(b)));
+  const qtyBox = (card) => deepAll(card, P.qtyBox)[0];
+  const links = (root) => deepAll(root, P.link.selector);
   /** In the cart: the Add button has turned into a quantity (a + or - button, or a quantity box). */
   const inCartNow = (card) => !addButton(card) && !!(plusButton(card) || minusButton(card) || qtyBox(card));
 
@@ -59,12 +58,12 @@ export async function safewayPage(action, arg) {
     const input = qtyBox(card);
     const n = Number(input?.value || input?.getAttribute("aria-valuenow") || (input?.textContent ?? "").trim());
     if (n > 0) return n;
-    const m = card.innerText.match(/(\d+)\s+in\s+cart/i);
+    const m = card.innerText.match(re(P.inCartText));
     return m ? Number(m[1]) : 1;
   }
 
-  const TILE = "product-item-al-v2, product-item-al-v1";
-  const TITLE = '[data-qa="prd-itm-pttl"]';
+  const TILE = P.tile;
+  const TITLE = P.title;
   /** Every product tile on the page: { id, card, title } — Safeway's tiles first, then old-style product links. */
   function cards() {
     const out = new Map();
@@ -73,7 +72,7 @@ export async function safewayPage(action, arg) {
       let up = t;
       while (up && !tiles.includes(up)) up = parentOf(up);
       if (!up) { up = t; for (let i = 0; i < 8 && parentOf(up) && deepAll(parentOf(up), TITLE).length === 1; i++) up = parentOf(up); }
-      const id = deepAll(up, "[id^='pg']").map((x) => x.id.match(/^pg(\d+)/)?.[1]).find(Boolean);
+      const id = deepAll(up, P.tileId.selector).map((x) => x.id.match(re(P.tileId.pattern))?.[1]).find(Boolean);
       if (id && !out.has(id) && visible(t)) out.set(id, { id, card: up, title: (t.innerText || t.textContent || "").replace(/\s+/g, " ").trim() });
     }
     for (const a of links(document)) {
@@ -94,7 +93,7 @@ export async function safewayPage(action, arg) {
       if (!name) continue;
       const add = addButton(card), inCart = inCartNow(card);
       if (!add && !inCart) continue;
-      const price = (deepAll(card, '[data-qa="prd-itm-prc"]')[0]?.innerText ?? card.innerText).match(/\$\d+(?:\.\d{2})?(?:\s*(?:each|\/\s*lb|\/\s*ea|per lb))?/i)?.[0] ?? "";
+      const price = (deepAll(card, P.price.selector)[0]?.innerText ?? card.innerText).match(re(P.price.pattern))?.[0] ?? "";
       seen.set(id, { id, name, price, image: img?.currentSrc || img?.src || "", inCart, qty: inCart ? qtyOf(card) : 0, card });
     }
     return [...seen.values()];
@@ -102,8 +101,8 @@ export async function safewayPage(action, arg) {
 
   /** The number on the cart at the top of the page, or null if there isn't one to read. */
   function cartCount() {
-    const top = deepAll(document, "header a, header button, [aria-label*='cart' i], [data-qa*='cart' i]").filter(visible);
-    const counts = top.filter((el) => /cart/i.test(label(el) + " " + (el.getAttribute("data-qa") ?? ""))).map((el) => label(el).match(/\b(\d{1,3})\b/)?.[1]).filter(Boolean).map(Number);
+    const top = deepAll(document, P.cart.selector).filter(visible);
+    const counts = top.filter((el) => re(P.cart.label).test(label(el) + " " + (el.getAttribute("data-qa") ?? ""))).map((el) => label(el).match(/\b(\d{1,3})\b/)?.[1]).filter(Boolean).map(Number);
     return counts.length ? Math.max(...counts) : null;
   }
 
@@ -130,15 +129,15 @@ export async function safewayPage(action, arg) {
 
   if (action === "read") {
     const header = document.querySelector("header") ?? document.body;
-    const signInShown = buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && /^sign in$/i.test(label(el)));
+    const signInShown = buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
     const text = document.body.innerText;
     const list = products();
     return {
       signedIn: !signInShown,
       cartCount: cartCount(),
       tiles: tiles(),
-      noResults: /no (search )?results for/i.test(text),
-      loading: !list.length && !/no (search )?results for/i.test(text),
+      noResults: re(P.noResults).test(text),
+      loading: !list.length && !re(P.noResults).test(text),
       products: list.slice(0, 40).map(strip),
     };
   }
@@ -199,9 +198,9 @@ export async function safewayPage(action, arg) {
       `layers: ${deepAll(document, "*").filter((x) => x.shadowRoot).length}`,
       `tiles: ${deepAll(document, TILE).length}, titles: ${deepAll(document, TITLE).length}, products read: ${products().length}`,
       `cart count: ${cartCount()}`,
-      `cart: ${deepAll(document, "[aria-label*='cart' i], [data-qa*='cart' i], a[href*='cart']").filter(visible).slice(0, 4).map((x) => tidy(x).slice(0, 300)).join(" | ")}`,
+      `cart: ${deepAll(document, P.cart.links).filter(visible).slice(0, 4).map((x) => tidy(x).slice(0, 300)).join(" | ")}`,
       `add buttons (${adds.length}): ${adds.slice(0, 8).map(label).join(" | ")}`,
-      `product links: ${deepAll(document, "a[href*='product']").slice(0, 5).map((a) => a.getAttribute("href")).join(" | ")}`,
+      `product links: ${deepAll(document, P.productLinks).slice(0, 5).map((a) => a.getAttribute("href")).join(" | ")}`,
       `around the first add: ${around ? tidy(around).slice(0, 5000) : "none"}`,
     ].join("\n");
   }
