@@ -55,8 +55,6 @@ export async function readTab(tab: string): Promise<string[][]> {
   return ((await r.json()).values ?? []) as string[][];
 }
 
-export const appendRow = (tab: string, row: string[]) => appendRows(tab, [row]);
-
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (!rows.length) return;
   const r = await fetch(`${base()}/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {

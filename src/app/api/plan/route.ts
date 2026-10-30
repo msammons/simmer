@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   try {
     return Response.json(await loadWeek(weekOf(DATE.test(w) ? w : todayIn())), { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
@@ -50,6 +50,6 @@ export async function POST(req: Request) {
     } else return Response.json({ error: "Unknown change." }, { status: 400 });
     return Response.json({ ...(await loadWeek(weekOf(week))), added }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }

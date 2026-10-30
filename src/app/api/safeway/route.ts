@@ -1,3 +1,4 @@
+import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { loadPicks, savePick } from "@/lib/safeway";
@@ -10,7 +11,7 @@ export async function GET(req: Request) {
   try {
     return Response.json({ picks: await loadPicks() }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
@@ -24,6 +25,6 @@ export async function POST(req: Request) {
     await savePick({ item, id, name });
     return Response.json({ picks: await loadPicks() }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
