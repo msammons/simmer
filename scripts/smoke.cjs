@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning, the tabs, Settings on every
-// screen, Shop's List / Find / Cart, the Recipes tab, a recipe and back, the freezer, and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// screen, the List tab, Shop's store picker and Find / Cart, the Recipes tab, a recipe and back, the freezer, and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -97,13 +97,15 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: Add recipes from Settings`, await page.getByRole("dialog", { name: "Add recipes" }).isVisible());
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
-    await page.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
-    await settingsHere("Shop");
-    ok(`${tag}: Shop opens on List`, (await page.getByRole("radio", { name: "List" }).getAttribute("aria-checked")) === "true");
-    await page.screenshot({ path: `${dir}/5-shop-list-${tag}.png`, fullPage: true });
-    // Find and Cart. With no Safeway helper running, Find says so plainly (and quickly); the cart is empty.
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
+    await settingsHere("List");
+    ok(`${tag}: List has the add field`, await page.getByLabel("Add to the list").isVisible());
+    await page.screenshot({ path: `${dir}/5-list-${tag}.png`, fullPage: true });
+    // Shop: Find and Cart for one store. With no Safeway helper running, Find says so plainly (and quickly); the cart is empty.
     if (!(await page.getByRole("button", { name: /^More for / }).count())) { await page.getByLabel("Add to the list").fill("eggs"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500); }
-    await page.getByRole("radio", { name: "Find" }).tap();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
+    await settingsHere("Shop");
+    ok(`${tag}: Shop opens on Find`, (await page.getByRole("radio", { name: "Find" }).getAttribute("aria-checked")) === "true");
     ok(`${tag}: Find says when the computer isn't answering`, await seen(page.getByText(/It's not answering right now/), 10000));
     await page.screenshot({ path: `${dir}/5b-shop-find-${tag}.png` });
     // The store picker: Safeway, the one online store for now, ticked in its sheet.
@@ -115,7 +117,15 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByRole("radio", { name: /^Cart/ }).tap(); await page.waitForTimeout(500);
     ok(`${tag}: an empty cart says so`, await seen(page.getByText("The cart is empty")));
     await page.screenshot({ path: `${dir}/5c-shop-cart-${tag}.png` });
-    await page.getByRole("radio", { name: "List" }).tap(); await page.waitForTimeout(400);
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(600);
+    // A Safeway item on the list opens Shop's Find on it.
+    const swItem = page.getByRole("button", { name: /^(Ground turkey|Eggs)/ }).first();
+    if (await swItem.count()) {
+      const what = ((await swItem.innerText()).split("\n")[0] || "").trim();
+      await swItem.tap(); await page.waitForTimeout(600);
+      ok(`${tag}: a Safeway item opens Find on it`, await seen(page.getByRole("heading", { name: what })));
+      await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(600);
+    }
     await page.getByRole("button", { name: /^Freezer/ }).tap(); await page.waitForTimeout(400);
     await page.getByLabel("Add to the freezer").fill(`2 shrimp ${tag}`); await page.keyboard.press("Enter");
     ok(`${tag}: freezer add`, await seen(page.getByText(`shrimp ${tag}`)));
@@ -129,7 +139,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
-    ok(`${tag}: three tabs (Meals, Shop, Recipes), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Meals,Shop,Recipes" && (await page.getByRole("search").count()) === 0);
+    ok(`${tag}: four tabs (Meals, List, Shop, Recipes), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Meals,List,Shop,Recipes" && (await page.getByRole("search").count()) === 0);
     await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
@@ -145,7 +155,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
     ok(`${tag}: back to Recipes`, await page.getByRole("heading", { name: "Recipes" }).isVisible());
     await page.screenshot({ path: `${dir}/6b-recipes-${tag}.png` });
-    await nav.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(500);
+    await nav.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(500);
     ok(`${tag}: the recipe's ingredients are on the list`, await seen(page.getByText(/ground beef/i)));
 
     // The passcode changes while the app is open, with a sheet up: back to the passcode screen, nothing left open.
