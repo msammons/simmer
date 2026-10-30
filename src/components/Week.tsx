@@ -4,7 +4,7 @@ import { dateIn, hourNow, type Lunch, type Night, type Recipe, type WeekData } f
 import { searchRecipes } from "@/lib/search";
 import { addDays } from "@/lib/time";
 import { applyShape, choices, emptyNight, LUNCH_PARTS, nextOption, planLunches, suggestWeek, weekDates, type Context, type NightKind, type Shape } from "@/lib/week";
-import { Check } from "./Groceries";
+import { Check } from "./Shop";
 import { Icon } from "./icons";
 import { summary } from "./Recipes";
 import { Button, EmptyState, Group, Notice, Row, Segmented, Sheet, TopBar } from "./ui";

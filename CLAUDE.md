@@ -7,7 +7,7 @@ changing anything: it covers the shape of the app, the interface building blocks
 standing preferences (no technical words on screen, no background jobs, no maintenance screens, secrets only in Vercel
 and on Sam's Mac, no model names in commits or PRs).
 
-The screens: `components/Week.tsx` (This week, planning), `Groceries.tsx` (the shared list), `Recipes.tsx` (Search and the
+The screens: `components/Week.tsx` (This week, planning), `Shop.tsx` and `Safeway.tsx` (the Shop tab: the shared list, Find at Safeway, the cart), `Recipes.tsx` (Search and the
 collection). The planning rules are plain code in `lib/week.ts`, with tests; keep them there.
 
 The Safeway helper is a Chrome extension in `extension/` (its own README); it isn't part of the web app or its build.
