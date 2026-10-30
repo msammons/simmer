@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   try {
     return Response.json({ recipes: await loadRecipes() }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     let saved: string[] = [];
     switch (b?.op) {
       case "save": {
-        const drafts: Draft[] = Array.isArray(b.recipes) ? b.recipes.slice(0, 300) : [];
+        const drafts: Draft[] = (Array.isArray(b.recipes) ? b.recipes.slice(0, 300) : []).filter((d: unknown) => d !== null && typeof d === "object");
         if (!drafts.length) throw new AppError("Nothing to save.");
         const all = await loadRecipes();
         for (const d of drafts) {
@@ -48,6 +48,6 @@ export async function POST(req: Request) {
     }
     return Response.json({ recipes: await loadRecipes(), saved }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }

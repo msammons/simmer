@@ -75,7 +75,7 @@ function StoreGroup({ store, items, act, onMore, footer }: { store: Store; items
   );
 }
 
-export function GroceriesScreen({ list, kitchen, error, act, onSettings, onListChanged }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onSettings: () => void; onListChanged: () => void }) {
+export function GroceriesScreen({ list, kitchen, error, act, onListChanged }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onListChanged: () => void }) {
   const [freezer, setFreezer] = useState(false);
   // The Safeway order the helper fills on the computer, and the products picked before (for "Open in Safeway").
   const [order, setOrderOnly] = useState<Order | null>(null);
@@ -92,7 +92,9 @@ export function GroceriesScreen({ list, kitchen, error, act, onSettings, onListC
   }, [setOrder]);
   const pickFor = (it: Item) => picks.find((p) => norm(p.item) === norm(it.item));
   const [text, setText] = useState("");
-  const [more, setMore] = useState<Item | null>(null);
+  // The item whose options are open, by id: the sheet shows it as the list is now (another phone may have moved it).
+  const [moreId, setMoreId] = useState<string | null>(null);
+  const more = list?.items.find((i) => i.id === moreId) ?? null;
   const [staples, setStaples] = useState(false);
   const all = list?.items ?? [];
   const toCheck = all.filter((i) => i.check && !i.checked);
@@ -101,7 +103,7 @@ export function GroceriesScreen({ list, kitchen, error, act, onSettings, onListC
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { act.add(text.trim()); setText(""); } };
   return (
     <div className="space-y-6">
-      <TopBar title="Groceries" subtitle={`Safeway order ${dayWord(safewayDay())}`} trailing={<IconButton icon="sliders" label="Settings" onClick={onSettings} />} />
+      <TopBar title="Groceries" subtitle={`Safeway order ${dayWord(safewayDay())}`} />
       {error && <Notice>{error}</Notice>}
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add eggs, 2 lemons…" aria-label="Add to the list" enterKeyHint="done"
@@ -125,11 +127,11 @@ export function GroceriesScreen({ list, kitchen, error, act, onSettings, onListC
         </Group>
       )}
       {stores.map((s) => (
-        <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={setMore}
+        <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={(it) => setMoreId(it.id)}
           footer={s === "trader-joes" ? `Next Trader Joe's trip: ${shortDate(traderJoesDay(kitchen?.trips.lastTraderJoes ?? ""))}` : undefined} />
       ))}
       {freezer && <FreezerSheet items={kitchen?.freezer ?? []} act={act} onClose={() => setFreezer(false)} />}
-      {more && <ItemSheet it={more} act={act} pick={more.store === "safeway" ? pickFor(more) : undefined} onClose={() => setMore(null)} />}
+      {more && <ItemSheet key={more.id} it={more} act={act} pick={more.store === "safeway" ? pickFor(more) : undefined} onClose={() => setMoreId(null)} />}
       {orderOpen && <OrderSheet order={order} now={now} onOrder={setOrder} onListChanged={onListChanged} onClose={() => setOrderOpen(false)} />}
       {staples && list && <StaplesSheet staples={list.staples} items={items} act={act} onClose={() => setStaples(false)} />}
     </div>
@@ -233,9 +235,9 @@ function OrderSheet({ order, now, onOrder, onListChanged, onClose }: { order: Or
             {q.quantity && <p className="t-sub text-muted">{q.quantity} on the list. {q.options.length ? `${q.options.length} found, the likeliest first.` : ""}</p>}
             {q.options.length ? (
               <Group>
-                {q.options.map((o) => (
+                {q.options.map((o, i) => (
                   // eslint-disable-next-line @next/next/no-img-element -- a small product picture from Safeway
-                  <Row key={o.id} lead={o.image ? <img src={o.image} alt="" className="size-9 rounded-lg bg-white object-contain" /> : undefined} title={o.name} subtitle={o.price}
+                  <Row key={`${i}|${o.id}`} lead={o.image ? <img src={o.image} alt="" className="size-9 rounded-lg bg-white object-contain" /> : undefined} title={o.name} subtitle={o.price}
                     onClick={busy ? undefined : () => send({ op: "answer", id: order!.id, answer: { itemId: q.itemId, pick: { id: o.id, name: o.name } } })} />
                 ))}
               </Group>
@@ -250,8 +252,8 @@ function OrderSheet({ order, now, onOrder, onListChanged, onClose }: { order: Or
         {order && order.lines.length > 0 && (open || recent(order, now)) && (
           <Group footer={order.status === "done" ? "Pick a time and check out in the Safeway app." : order.status === "stopped" ? order.note : undefined}>
             {order.lines.map((l, i) => {
-              const now = open && l.state === "to do" && order.lines.findIndex((x) => x.state === "to do") === i;
-              const sub = l.state === "in cart" ? `In the cart${(l.qty ?? 1) > 1 ? `, ${l.qty}` : ""}${l.name ? ` · ${l.name}` : ""}` : l.state === "skipped" ? "Skipped" : l.state === "by hand" ? "Add it yourself" : now ? (q ? "Which one?" : order.note || "Looking…") : "";
+              const current = open && l.state === "to do" && order.lines.findIndex((x) => x.state === "to do") === i;
+              const sub = l.state === "in cart" ? `In the cart${(l.qty ?? 1) > 1 ? `, ${l.qty}` : ""}${l.name ? ` · ${l.name}` : ""}` : l.state === "skipped" ? "Skipped" : l.state === "by hand" ? "Add it yourself" : current ? (q ? "Which one?" : order.note || "Looking…") : "";
               return (
                 <Row key={l.itemId} lead={<Check on={l.state === "in cart"} />} title={l.item.charAt(0).toUpperCase() + l.item.slice(1)} subtitle={sub}
                   {...(l.state === "by hand" && { href: l.productId ? productUrl(l.productId) : searchUrl(l.item), accessory: "external" as const })} />
@@ -274,9 +276,9 @@ function StaplesSheet({ staples, items, act, onClose }: { staples: Staple[]; ite
       <div className="pb-2">
         {staples.length ? (
           <Group footer="These are the things you always keep, from your staples list.">
-            {staples.map((s) => (
-              <Row key={s.item} title={s.item} subtitle={STORE_NAMES[s.store]} value={onList(s) ? "On the list" : "Add"}
-                onClick={onList(s) ? undefined : () => act.add(s.quantity ? `${s.item}` : s.item, { store: s.store, section: s.section })} />
+            {staples.map((s, i) => (
+              <Row key={`${i}|${s.item}`} title={s.item} subtitle={STORE_NAMES[s.store]} value={onList(s) ? "On the list" : "Add"}
+                onClick={onList(s) ? undefined : () => act.add(s.item, { store: s.store, section: s.section })} />
             ))}
           </Group>
         ) : (

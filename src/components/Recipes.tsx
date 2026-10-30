@@ -6,7 +6,7 @@ import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Groceries";
 import { Icon } from "./icons";
-import { Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar } from "./ui";
+import { Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 
 const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
@@ -41,7 +41,7 @@ export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, 
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
   return (
     <div className="space-y-6">
-      <TopBar title="Recipes" subtitle={all.length ? `${all.length} in your collection` : "Your collection"} trailing={<IconButton icon="plus" label="Add recipes" onClick={onAdd} />} />
+      <TopBar title="Recipes" subtitle={all.length ? `${all.length} in your collection` : "Your collection"} />
       {error && <Notice>{error}</Notice>}
       {query.trim() ? (
         found.length ? (
@@ -72,11 +72,13 @@ export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, 
 }
 
 /** A recipe (drill-in from Search): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, onBack, onEdit, onEffort, onActive, onAddToList, tonight, onMade }: {
-  r: Recipe; onBack: () => void; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, tonight, onMade }: {
+  r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's tonight's dinner: cooking it, so the screen stays on and Made it is one tap. */
   tonight?: { made: boolean }; onMade?: () => void;
 }) {
+  const screen = useRef<HTMLDivElement>(null);
+  useSwipe(screen, { onRight: onBack }); // swipe right to go back
   useEffect(() => {
     // Keep the screen awake while cooking, where the browser allows it.
     let lock: { release: () => Promise<void> } | null = null;
@@ -89,9 +91,10 @@ export function RecipeScreen({ r, onBack, onEdit, onEffort, onActive, onAddToLis
   const fresh = r.ingredients.filter((i) => i.section === "fresh"), rest = r.ingredients.filter((i) => i.section !== "fresh");
   const link = /^https?:\/\//.test(r.source) ? r.source : "";
   return (
-    <div className="space-y-6">
-      <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel="Recipes"
+    <div ref={screen} className="space-y-6">
+      <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel={backLabel}
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
+      {error && <Notice>{error}</Notice>}
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
       <Group header="How long it takes" footer="Quick nights get quick dinners when the week is planned.">
         <div className="p-3"><Segmented label="How long it takes" value={r.effort} onChange={onEffort} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }]} /></div>

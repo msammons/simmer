@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
@@ -57,7 +57,7 @@ export function IconButton({ icon, label, onClick, href, tone = "ink" }: { icon:
 
 /**
  * The top of every screen, identical everywhere so nothing jumps between pages: a bar that stays put while the page
- * scrolls, with the Simmer lockup at the left and at most one action at the right, then one large title in the same
+ * scrolls, with the Simmer lockup at the left and Settings at the right, then one large title in the same
  * place and size on every screen, with an optional line under it. On screens you drill into, a round back button sits
  * just before the title (swiping right also goes back), so the lockup never moves.
  */
@@ -69,11 +69,7 @@ export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }
       <BrandBar trailing={trailing} />
       <header className="space-y-1 pt-3">
         <div className="flex items-center gap-2.5">
-          {onBack && (
-            <button onClick={onBack} aria-label={backLabel} className="glass -ml-1 flex size-9 shrink-0 items-center justify-center self-start rounded-full text-ink transition active:scale-90 mt-[3px]">
-              <Icon name="left" className="size-[18px]" strokeWidth={2.4} />
-            </button>
-          )}
+          {onBack && <BackButton onBack={onBack} label={backLabel} className="self-start mt-[3px]" />}
           <h1 className="min-w-0 text-[32px] font-bold leading-[1.15] tracking-tight">{title}</h1>
         </div>
         {subtitle && <p className="t-sub text-muted">{subtitle}</p>}
@@ -82,14 +78,27 @@ export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }
   );
 }
 
-/** The bar at the top of every screen: the Simmer lockup at the left, at most one action at the right. */
+/** The round back button at the start of a screen's title; its label names the screen it goes back to. */
+function BackButton({ onBack, label, className = "" }: { onBack: () => void; label: string; className?: string }) {
+  return (
+    <button onClick={onBack} aria-label={label} className={`glass -ml-1 flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition active:scale-90 ${className}`}>
+      <Icon name="left" className="size-[18px]" strokeWidth={2.4} />
+    </button>
+  );
+}
+
+/** Opens Settings; set by the app so every screen's top bar has the same Settings button at the right. */
+export const OpenSettings = createContext<(() => void) | null>(null);
+
+/** The bar at the top of every screen: the Simmer lockup at the left; at the right, at most one action, then Settings. */
 export function BrandBar({ trailing }: { trailing?: ReactNode }) {
+  const settings = useContext(OpenSettings);
   return (
     <div className="sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 flex h-11 items-center justify-between">
       {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. */}
       <span aria-hidden className="pointer-events-none absolute -inset-x-4 -bottom-3 -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
       <Brand />
-      <div className="flex gap-2">{trailing}</div>
+      <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
     </div>
   );
 }
@@ -163,17 +172,6 @@ export function Notice({ children, tone = "warn", onClick }: { children: ReactNo
   const cls = `flex w-full items-start gap-2.5 rounded-[1.375rem] px-4 py-3 text-left t-sub ${tone === "warn" ? "bg-warn-bg text-warn-ink" : "bg-card text-ink"}`;
   const inner = <><Icon name="info" className="mt-px size-[18px]" />{<span className="min-w-0 flex-1">{children}</span>}</>;
   return onClick ? <button onClick={onClick} className={cls}>{inner}</button> : <div role={tone === "warn" ? "alert" : undefined} className={cls}>{inner}</div>;
-}
-
-/** Small read-only facts in a row: "52–66°", "10% rain". */
-export function Tags({ items, onAccent }: { items: string[]; onAccent?: boolean }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((t) => (
-        <span key={t} className={`rounded-full px-2.5 py-1 t-foot font-medium ${onAccent ? "bg-white/18 text-on-accent" : "bg-sunk text-ink"}`}>{t}</span>
-      ))}
-    </div>
-  );
 }
 
 /** Pick one, iOS-style. */

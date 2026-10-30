@@ -1,5 +1,5 @@
 "use client";
-// Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, date labels.
+// Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, dates.
 import { addDays, todayIn, TZ } from "./time";
 
 const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", week: "sm.week" };
@@ -60,6 +60,8 @@ export function applyTheme(t: Theme) {
 }
 
 export class AuthError extends Error {}
+/** Sent on the window whenever the server turns the passcode down, so the app goes back to the passcode screen from any request. */
+export const SIGNED_OUT = "sm:signed-out";
 
 /** An error as a person should read it: a dropped connection (fetch's TypeError) in plain words, anything else as the server wrote it. */
 export const errorText = (e: unknown) =>
@@ -71,12 +73,11 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: { "content-type": "application/json", "x-passcode": store.passcode() ?? "", ...(init.headers ?? {}) },
   });
   const body = await r.json().catch(() => ({}));
-  if (r.status === 401) throw new AuthError(body.error ?? "Wrong passcode.");
+  if (r.status === 401) { window.dispatchEvent(new Event(SIGNED_OUT)); throw new AuthError(body.error ?? "Wrong passcode."); }
   if (!r.ok) throw new Error(body.error ?? `Something went wrong (${r.status}).`);
   return body as T;
 }
 
-/** Every request takes an optional AbortSignal, so it can be stopped. */
 import type { Item, Section, Staple, Store } from "./groceries";
 export type { Item, Section, Staple, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
@@ -92,6 +93,7 @@ export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
 export type ListState = { items: Item[]; staples: Staple[] };
 type Change = { op: "need"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store };
 
+/** Every request takes an optional AbortSignal, so it can be stopped. */
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
   change: (c: Change) => call<ListState>("/api/list", { method: "POST", body: JSON.stringify(c) }),
@@ -133,25 +135,7 @@ export async function fileToSend(f: File): Promise<{ name: string; type: string;
   return { name: f.name, type: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : /\.txt$/i.test(f.name) ? "text/plain" : ""), data: await b64(f) };
 }
 
-/*
- * Dates read the same everywhere: today and tomorrow are words, later days get the weekday.
- * weekday: "Today", "Tomorrow", "Sunday". dayLabel: "Today", "Tomorrow", "Sunday, Oct 25". shortDay: "Today", "Sat 26".
- */
 /** The date offsetDays from today, by the calendar. */
 export const dateIn = (offsetDays: number) => addDays(todayIn(), offsetDays);
 /** 0-23; hourCycle h23 because some browsers write midnight as 24. */
 export const hourNow = () => Number(new Date().toLocaleString("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }));
-export const weekday = (date: string) =>
-  date === dateIn(0) ? "Today" : date === dateIn(1) ? "Tomorrow" : new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
-/** "Sunday, Oct 25": for anything that will be read later, where "Tomorrow" would go stale. */
-export const fullDate = (date: string) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
-export const dayLabel = (date: string) => (date === dateIn(0) || date === dateIn(1) ? weekday(date) : fullDate(date));
-export const shortDay = (date: string) => {
-  if (date === dateIn(0)) return "Today";
-  if (date === dateIn(1)) return "Tomorrow";
-  const d = new Date(`${date}T12:00:00Z`);
-  return `${d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })} ${d.getUTCDate()}`;
-};
-/** "A", "A & B", "A, B & C". */
-export const list = (xs: string[]) => (xs.length <= 2 ? xs.join(" & ") : `${xs.slice(0, -1).join(", ")} & ${xs[xs.length - 1]}`);
