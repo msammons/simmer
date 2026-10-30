@@ -101,7 +101,7 @@ export const api = {
   saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
   recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
   readRecipe: (from: { link: string } | { text: string } | { file: { name: string; type: string; data: string } }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
-  week: (date: string, signal?: AbortSignal) => call<WeekData>(`/api/plan?week=${date}`, { signal }),
+  week: (date: string, signal?: AbortSignal) => call<WeekData & { added?: number }>(`/api/plan?week=${date}`, { signal }),
   saveWeek: (nights: Night[], lunches: Lunch[], by: string) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "save", nights, lunches, by }) }),
   made: (date: string, made: boolean) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "made", date, made }) }),
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),

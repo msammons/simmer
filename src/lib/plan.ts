@@ -16,11 +16,11 @@ import { eatingText, emptyNight, freezerMatch, LUNCH_PARTS, lunchShopping, readE
 
 const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer";
 const HEADERS: Record<string, string[]> = {
-  [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes"],
+  [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes", "groceries"],
   [MADE]: ["date", "recipe"],
   [TRIPS]: ["date", "store"],
   [LUNCHES]: ["kid", "part", "item", "ingredients", "notes"],
-  [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school"],
+  [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school", "groceries"],
   [FREEZER]: ["id", "item", "amount", "added", "store"],
 };
 
@@ -150,45 +150,89 @@ export async function loadWeek(monday: string): Promise<WeekData> {
 const dayName = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
 
 /**
+ * How far ahead a plan's groceries go on the list: nights planned further out are marked "later" (the `groceries`
+ * column) and their groceries go on the list once they're this close (`shopDue`), so planning weeks ahead doesn't put
+ * fresh things on today's list. Rows saved before the column existed had theirs added already.
+ */
+const SHOP_AHEAD = 7;
+const LATER = "later";
+
+/** What a meal needs from the store: everything but what's in the freezer (used from there instead). */
+const needFor = (r: Recipe, forWhat: string, freezer: Frozen[]) =>
+  r.ingredients.filter((i) => !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" }));
+const forNight = (date: string, r: Recipe) => `${dayName(date)}'s ${r.name.toLowerCase()}`;
+
+/**
  * Saves the week: each night's row and each lunch's row. What the newly planned meals need goes on the list, merged
  * with what's there: fresh things to buy, pantry things to check. A night whose meal didn't change adds nothing again.
+ * Nights more than SHOP_AHEAD days out wait: theirs go on the list when they come close.
  */
 export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): Promise<{ added: number }> {
   const [plan, lunchPlan, recipes, options, freezer] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN), loadRecipes(), rows(LUNCHES), loadFreezer()]);
   const old = toNights(plan);
   const was = (d: string) => old.filter((n) => n.date === d).pop();
+  const shopping = new Map(records(plan).map((r) => [r.get("date"), r.get("groceries")]));
+  const lunchShoppingWas = new Map(records(lunchPlan).map((r) => [`${r.get("date")}|${r.get("kid").toLowerCase()}`, r.get("groceries")]));
+  const today = todayIn(), soon = addDays(today, SHOP_AHEAD);
+  const changed = (n: Night) => { const w = was(n.date); return !w || w.meal !== n.meal || w.kidsMeal !== n.kidsMeal; };
   await upsert(PLAN, nights.map((n) => {
     const w = was(n.date);
     const same = w && w.meal === n.meal && w.kidsMeal === n.kidsMeal;
+    const later = n.date > soon && (n.meal || n.kidsMeal) && (changed(n) || shopping.get(n.date) === LATER);
     return {
       date: n.date, meal: n.meal, kids_meal: n.kidsMeal, effort: n.kind, eating: eatingText(n), pinned: n.pinned ? "yes" : "",
       planned_by: same && w.plannedBy ? w.plannedBy : n.kind === "skip" && !n.meal ? "" : by, made: n.made, notes: n.notes,
+      groceries: later ? LATER : n.date > soon ? shopping.get(n.date) ?? "" : "",
     };
   }), ["date"]);
   await upsert(LUNCH_PLAN, lunches.map((l) => ({
     date: l.date, kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), school_lunch: l.schoolLunch ? "yes" : "", no_school: l.noSchool ? "yes" : "",
+    groceries: l.date > soon ? LATER : "",
   })), ["date", "kid"]);
 
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const need: { item: string; quantity: string; for: string; check: boolean }[] = [];
-  const today = todayIn();
   for (const n of nights) {
-    if (n.kind === "skip" || n.date < today || n.made) continue;
-    const w = was(n.date);
+    if (n.kind === "skip" || n.date < today || n.date > soon || n.made) continue;
+    const w = was(n.date), waited = shopping.get(n.date) === LATER;
     for (const [id, before] of [[n.meal, w?.meal], [n.kidsMeal, w?.kidsMeal]] as const) {
       const r: Recipe | undefined = byId.get(id);
-      if (!r || id === before) continue;
-      const forWhat = `${dayName(n.date)}'s ${r.name.toLowerCase()}`;
-      // What's in the freezer isn't bought again: it's used from there (and counted down when the meal is made).
-      for (const i of r.ingredients) if (!freezer.some((f) => freezerMatch(f.item, i.item))) need.push({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" });
+      if (!r || (id === before && !waited)) continue;
+      need.push(...needFor(r, forNight(n.date, r), freezer));
     }
   }
-  // Lunches: only what's new since the last save of this week.
+  // Lunches: only what's new since the last save of this week, and only the coming days'.
   const opts = toOptions(options);
-  const oldLunches = toLunches(lunchPlan).filter((l) => lunches.some((x) => x.date === l.date));
+  const near = (l: Lunch) => l.date >= today && l.date <= soon;
+  const oldLunches = toLunches(lunchPlan).filter((l) => near(l) && lunches.some((x) => x.date === l.date) && lunchShoppingWas.get(`${l.date}|${l.kid.toLowerCase()}`) !== LATER);
   const had = new Set(lunchShopping(oldLunches, opts).map((x) => x.toLowerCase()));
-  for (const it of lunchShopping(lunches.filter((l) => l.date >= today), opts)) if (!had.has(it.toLowerCase())) need.push({ item: it, quantity: "", for: "lunches", check: false });
+  for (const it of lunchShopping(lunches.filter(near), opts)) if (!had.has(it.toLowerCase())) need.push({ item: it, quantity: "", for: "lunches", check: false });
   return { added: need.length ? await addItems(need, by) : 0 };
+}
+
+/**
+ * Nights and lunches planned weeks ahead whose groceries waited ("later") and are now close: their groceries go on the
+ * list, once. Run whenever this week is looked at. Answers how many things went on the list.
+ */
+export async function shopDue(): Promise<number> {
+  const [plan, lunchPlan] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN)]);
+  const today = todayIn(), soon = addDays(today, SHOP_AHEAD);
+  const due = (r: { get: (k: string) => string }) => r.get("groceries") === LATER && r.get("date") <= soon;
+  const nights = records(plan).filter(due), lunchRows = records(lunchPlan).filter(due);
+  if (!nights.length && !lunchRows.length) return 0;
+  const [recipes, options, freezer] = await Promise.all([loadRecipes(), rows(LUNCHES), loadFreezer()]);
+  const byId = new Map(recipes.map((r) => [r.id, r]));
+  const need: { item: string; quantity: string; for: string; check: boolean }[] = [];
+  for (const row of nights) {
+    if (row.get("date") < today || yes(row.get("made"))) continue;
+    for (const id of [row.get("meal"), row.get("kids_meal")]) { const r = byId.get(id); if (r) need.push(...needFor(r, forNight(row.get("date"), r), freezer)); }
+  }
+  const dueLunches = toLunches([lunchPlan[0] ?? [], ...lunchRows.map((r) => lunchPlan[r.rowNumber - 1] ?? [])]).filter((l) => l.date >= today);
+  for (const it of lunchShopping(dueLunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
+  // Marked first, so two phones opening at once don't both add them.
+  await upsert(PLAN, nights.map((r) => ({ date: r.get("date"), groceries: "" })), ["date"]);
+  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), groceries: "" })), ["date", "kid"]);
+  return need.length ? addItems(need, "") : 0;
 }
 
 /** "Did you make it?": yes logs it (so "last made" stays true); no just says so. */
