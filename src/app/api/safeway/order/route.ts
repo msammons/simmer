@@ -1,3 +1,4 @@
+import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { answerOrder, askOrder, claimOrder, endOrder, loadOrder, reportOrder, startOrder, type OrderAnswer, type OrderLine, type OrderQuestion } from "@/lib/order";
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
   try {
     return Response.json({ order: await loadOrder() }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
@@ -55,6 +56,6 @@ export async function POST(req: Request) {
     }
     return Response.json({ order }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }

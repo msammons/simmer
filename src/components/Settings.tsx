@@ -2,17 +2,22 @@
 import { THEMES, type Person, type Theme } from "@/lib/client";
 import { Group, Row, Sheet } from "./ui";
 
-export function SettingsSheet({ theme, onTheme, onClose, people = [], me = "", onMe }: { theme: Theme; onTheme: (t: Theme) => void; onClose: () => void; people?: Person[]; me?: string; onMe?: (name: string) => void }) {
+export function SettingsSheet({ theme, onTheme, onAddRecipes, onClose, people, me, onMe }: {
+  theme: Theme; onTheme: (t: Theme) => void; onAddRecipes: () => void; onClose: () => void; people: Person[]; me: string; onMe: (name: string) => void;
+}) {
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        {onMe && people.some((p) => p.isAdult) && (
+        {people.some((p) => p.isAdult) && (
           <Group header="Who's using this?" footer="So the list shows who added what.">
             {people.filter((p) => p.isAdult).map((p) => (
               <Row key={p.key} role="radio" checked={me === p.name} onClick={() => onMe(p.name)} title={p.name} accessory="check" />
             ))}
           </Group>
         )}
+        <Group header="Recipes">
+          <Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAddRecipes} />
+        </Group>
         <Group header="Look" footer="Light or dark follows your settings.">
           {THEMES.map((t) => (
             <Row

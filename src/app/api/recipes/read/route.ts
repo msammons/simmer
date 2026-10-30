@@ -19,6 +19,6 @@ export async function POST(req: Request) {
     if (!found.length) throw new AppError("Couldn't find a recipe in that. Try adding the ingredients, one per line.");
     return Response.json({ found });
   } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: 502 });
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
