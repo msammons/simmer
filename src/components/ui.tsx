@@ -23,7 +23,7 @@ export function Button({ children, onClick, href, disabled, type = "button", var
   const cls = `inline-flex items-center justify-center gap-2 rounded-full ${box} ${look} ${PRESS} ${className}`;
   const inner = <>{icon && <Icon name={icon} className="size-5" strokeWidth={2} />}{children}</>;
   return href
-    ? <a href={href} className={cls}>{inner}</a>
+    ? <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer" className={cls}>{inner}</a>
     : <button type={type} onClick={onClick} disabled={disabled} className={cls}>{inner}</button>;
 }
 
@@ -90,15 +90,23 @@ function BackButton({ onBack, label, className = "" }: { onBack: () => void; lab
 /** Opens Settings; set by the app so every screen's top bar has the same Settings button at the right. */
 export const OpenSettings = createContext<(() => void) | null>(null);
 
-/** The bar at the top of every screen: the Simmer lockup at the left; at the right, at most one action, then Settings. */
-export function BrandBar({ trailing }: { trailing?: ReactNode }) {
+/**
+ * The bar at the top of every screen: the Simmer lockup at the left; at the right, at most one action, then Settings.
+ * `below` (Shop's List / Find / Cart switch) is pinned inside the same bar, under one blurred backing (two stacked
+ * blurred layers shudder on the iPad).
+ */
+export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: ReactNode }) {
   const settings = useContext(OpenSettings);
   return (
-    <div className="sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 flex h-11 items-center justify-between">
-      {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. */}
-      <span aria-hidden className="pointer-events-none absolute -inset-x-4 -bottom-3 -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
-      <Brand />
-      <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
+    <div className="sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10">
+      {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. With something below the row,
+          the backing stays solid behind it and fades only at the very bottom. */}
+      <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
+      <div className="flex h-11 items-center justify-between">
+        <Brand />
+        <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
+      </div>
+      {below && <div className="pb-2 pt-3">{below}</div>}
     </div>
   );
 }
