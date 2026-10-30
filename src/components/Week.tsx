@@ -127,7 +127,7 @@ export function NightSheet({ w, n, recipes, onSave, onOpen, onClose }: {
           <>
             <Group header={`${KIND[kind]} ideas`}>
               {ideas.map((o) => <Row key={o.recipe.id} title={o.recipe.name} subtitle={o.why || summary(o.recipe)} accessory="chevron" onClick={() => put({ meal: o.recipe.id, kind, pinned: false, made: "" })} />)}
-              {!ideas.length && <Row title="No more ideas for this night" subtitle="Add recipes from Search" />}
+              {!ideas.length && <Row title="No more ideas for this night" subtitle="Add recipes from Recipes" />}
             </Group>
             <Button variant="secondary" className="w-full" icon="refresh" onClick={() => setSwap(swap + 1)}>Something else</Button>
           </>
@@ -203,7 +203,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
       return { ...n, meal: keep ? n.meal : "", kidsMeal: n.split ? n.kidsMeal : "" };
     });
     // Nights already past are left as they were: nothing is suggested for them.
-    setNights(suggestWeek(fit, ctx).map((n, i) => (n.date < today ? fit[i] : n)));
+    setNights(suggestWeek(fit, ctx, today));
     setPage(2);
   }
   function another(i: number) {
@@ -280,7 +280,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
                 <Row key={o.recipe.id} title={<span className="text-muted">{o.recipe.name}</span>} subtitle={o.why || summary(o.recipe)} value="Swap" onClick={() => set(i, { meal: o.recipe.id })} />
               ))}
               {n.split && (
-                <Row title={`Kids: ${n.kidsMeal ? mealName(n.kidsMeal, recipes) : "nothing yet"}`} subtitle={kidsOpts.length > 1 ? "Tap for another" : "Add kids' dinners from Search"}
+                <Row title={`Kids: ${n.kidsMeal ? mealName(n.kidsMeal, recipes) : "nothing yet"}`} subtitle={kidsOpts.length > 1 ? "Tap for another" : "Add kids' dinners from Recipes"}
                   onClick={kidsOpts.length ? () => { const ids = kidsOpts.map((o) => o.recipe.id); set(i, { kidsMeal: ids[(ids.indexOf(n.kidsMeal) + 1) % ids.length] }); } : undefined} />
               )}
             </Group>

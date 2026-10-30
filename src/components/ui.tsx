@@ -195,11 +195,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   );
 }
 
-/**
- * The floating tab bar, as in current iOS: two tabs in a glass capsule, and Search as its own round button.
- * Tapping Search turns that button into a search field (keyboard up at once) and shrinks the tabs to one round button
- * for the tab you came from; tapping that goes back. The bar rides above the keyboard.
- */
+/** One tab in the floating tab bar (as in current iOS: the tabs in one glass capsule). */
 export type TabDef<T extends string> = { id: T; label: string; icon: IconName; dot?: boolean };
 /** The tabs at the bottom of every screen once signed in, the one you're in lit. */
 export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef<T>[]; active: T | null; onTab: (t: T) => void }) {
