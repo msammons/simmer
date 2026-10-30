@@ -123,12 +123,16 @@ export function useSafeway() {
 export type Safeway = ReturnType<typeof useSafeway>;
 
 /** A product's picture from Safeway, or a quiet placeholder. */
-export function ProductImage({ src }: { src?: string }) {
+const searchLink = (q: string) => `${PAGE.site}${PAGE.searchPath}${encodeURIComponent(q)}`;
+const productLink = (id: string) => `${PAGE.site}${PAGE.productPath.replace("{id}", id)}`;
+
+export function ProductImage({ src, small }: { src?: string; small?: boolean }) {
   const [broken, setBroken] = useState("");
+  const size = small ? "size-10 rounded-lg" : "size-14 rounded-xl";
   return src && broken !== src
     // eslint-disable-next-line @next/next/no-img-element -- Safeway's own picture, shown from Safeway
-    ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} className="size-14 shrink-0 rounded-xl bg-white object-contain p-1" />
-    : <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-sunk text-muted"><Icon name="bag" className="size-6" /></span>;
+    ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} className={`${size} shrink-0 bg-white object-contain p-1`} />
+    : <span className={`flex ${size} shrink-0 items-center justify-center bg-sunk text-muted`}><Icon name="bag" className={small ? "size-5" : "size-6"} /></span>;
 }
 
 /** − qty +, with a trash in place of − at one. */
@@ -166,8 +170,10 @@ type Search = { query: string; state: "loading" | "done" | "failed"; products: P
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
  * the item), the usual first, Add puts the wanted number in the cart, − / + after that. Skip or Next moves on.
  */
-export function FindView({ items, index, onIndex, sw, onCart, onList }: {
+export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
   items: FindItem[]; index: number; onIndex: (i: number) => void; sw: Safeway; onCart: () => void; onList: () => void;
+  /** Got it some other way (added on Safeway by hand): ticked off the list. */
+  onGot: (id: string) => void;
 }) {
   const it = items[index] ?? null;
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -235,10 +241,24 @@ export function FindView({ items, index, onIndex, sw, onCart, onList }: {
         </Group>
       )}
       {s?.state === "failed" && (
-        <Notice>
-          {s.problem}{" "}
-          <button className="font-semibold text-accent" onClick={() => search(query, true)}>Try again</button>
-        </Notice>
+        <>
+          <Notice>
+            {s.problem}{" "}
+            <button className="font-semibold text-accent" onClick={() => search(query, true)}>Try again</button>
+          </Notice>
+          {/* Without the computer: the usual product, and Safeway's own search, to add it there; then tick it off here. */}
+          <Group header="Add it on Safeway instead" footer="Opens Safeway. Once it's in the cart there, tap Got it.">
+            {it.picked && (
+              <ProductRow p={{ name: it.picked.name, image: it.picked.image }} sub={<span className="font-semibold text-accent">Your usual</span>}
+                control={<a href={productLink(it.picked.id)} target="_blank" rel="noreferrer" className="glass flex h-10 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent">Open</a>} />
+            )}
+            <a href={searchLink(query || it.item)} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-4 py-3 active:bg-sunk">
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-sunk text-accent"><Icon name="search" className="size-6" /></span>
+              <span className="min-w-0 flex-1"><span className="block t-body">Search Safeway for &ldquo;{query || it.item}&rdquo;</span></span>
+              <Icon name="external" className="size-4 text-muted/70" strokeWidth={2.2} />
+            </a>
+          </Group>
+        </>
       )}
       {s?.state === "done" && !s.signedIn && <Notice>Safeway isn&apos;t signed in on the computer. Sign in there to add things.</Notice>}
       {s?.state === "done" && (results.length ? (
@@ -255,10 +275,13 @@ export function FindView({ items, index, onIndex, sw, onCart, onList }: {
         </Group>
       ) : <EmptyState icon="search" title="Nothing came up">Try other words.</EmptyState>)}
       <div className="flex gap-3">
-        <Button variant="secondary" className="flex-1" disabled={index === 0} onClick={() => move(index - 1)}>Back</Button>
+        {index > 0 && <Button variant="secondary" className="flex-1" onClick={() => move(index - 1)}>Back</Button>}
         {inCartForIt
           ? <Button className="flex-1" onClick={() => (last ? onCart() : move(index + 1))}>{last ? "See the cart" : "Next item"}</Button>
-          : <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
+          : s?.state === "failed"
+            ? <Button className="flex-1" onClick={() => { onGot(it.id); if (!last) move(index + 1); }}>Got it</Button>
+            : <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
+        {s?.state === "failed" && !inCartForIt && <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
       </div>
     </div>
   );
