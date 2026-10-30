@@ -7,37 +7,34 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
-import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, SearchScreen } from "./Recipes";
+import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
-type Tab = "week" | "groceries";
-/** The first screen of a stack: one of the two tabs, or Search (its own round button in the tab bar). */
-type Root = Tab | "search";
+type Tab = "week" | "groceries" | "recipes";
 /**
  * Where you are: a tab at the bottom of a stack of screens opened from it (a recipe). Back pops one; a tab starts a new
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
-type Screen = { kind: Root } | { kind: "recipe"; id: string };
-const TABS: [TabDef<Tab>, TabDef<Tab>] = [{ id: "week", label: "This week", icon: "calendar" }, { id: "groceries", label: "Groceries", icon: "list" }];
-const ROOT_NAMES: Record<Root, string> = { week: "This week", groceries: "Groceries", search: "Recipes" };
-const isRoot = (v: unknown): v is Root => typeof v === "string" && Object.hasOwn(ROOT_NAMES, v);
+type Screen = { kind: Tab } | { kind: "recipe"; id: string };
+const TABS: TabDef<Tab>[] = [{ id: "week", label: "This week", icon: "calendar" }, { id: "groceries", label: "Groceries", icon: "list" }, { id: "recipes", label: "Recipes", icon: "book" }];
+const TAB_NAMES: Record<Tab, string> = { week: "This week", groceries: "Groceries", recipes: "Recipes" };
+const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
-const saveResume = (root: Root) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
-function takeResume(): Root {
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isRoot(v) ? v : "week"; } catch { return "week"; }
+const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
+function takeResume(): Tab {
+  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : "week"; } catch { return "week"; }
 }
-/** Nothing would be lost by reloading now: no sheet open and nothing typed (the search field keeps its words anyway). */
+/** Nothing would be lost by reloading now: no sheet open and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]')
-  && ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input:not([type=search]), textarea")].some((el) => el.value);
+  && ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].some((el) => el.value);
 
 export default function App() {
   const [phase, setPhase] = useState<"boot" | "passcode" | "app">("boot");
   const [stack, setStack] = useState<Screen[]>([{ kind: "week" }]);
   const top = stack[stack.length - 1];
-  const root = stack[0].kind as Root;
+  const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
-  const [lastTab, setLastTab] = useState<Tab>("week"); // where Search's round tab button goes back to
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
   const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
@@ -48,8 +45,6 @@ export default function App() {
   const [listError, setListError] = useState<string | null>(null);
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const [me, setMe] = useState(() => (browser ? store.me() : ""));
-  const [searchText, setSearchText] = useState("");
-  const [recent, setRecent] = useState<string[]>([]);
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
@@ -233,7 +228,6 @@ export default function App() {
       if (!store.passcode()) setPhase("passcode");
       else loadHousehold().then((ok) => {
         if (!ok) return;
-        if (resume !== "search") setLastTab(resume);
         setStack([{ kind: resume }]);
         setPhase("app");
       });
@@ -244,8 +238,8 @@ export default function App() {
   // A new version shipped while the app sat open (an iPhone can keep it in memory for days): when it's next brought to the
   // front on a screen at rest (a tab's first screen, or the passcode, with nothing open or typed), reload into the new
   // version and come back to the same tab.
-  const here = useRef({ resting: false, root: "week" as Root });
-  useEffect(() => { here.current = { resting: phase === "passcode" || (phase === "app" && stack.length === 1), root: stack[0].kind as Root }; }, [phase, stack]);
+  const here = useRef({ resting: false, root: "week" as Tab });
+  useEffect(() => { here.current = { resting: phase === "passcode" || (phase === "app" && stack.length === 1), root: stack[0].kind as Tab }; }, [phase, stack]);
   useEffect(() => {
     let checked = 0;
     const check = async () => {
@@ -264,10 +258,9 @@ export default function App() {
   const gone = top.kind === "recipe" && !open && recipes !== null;
   useEffect(() => { if (gone) queueMicrotask(() => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st))); }, [gone]);
 
-  function onTab(t: Root) {
+  function onTab(t: Tab) {
     setError(null);
     scrollAppTo(0);
-    if (t !== "search") setLastTab(t);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
   }
@@ -282,14 +275,7 @@ export default function App() {
     setStack((st) => [...(st[st.length - 1].kind === "recipe" ? st.slice(0, -1) : st), { kind: "recipe", id }]);
   }
   const below = stack[stack.length - 2];
-  const backLabel = !below ? "Back" : below.kind === "recipe" ? recipeOf(below.id)?.name ?? "Back" : ROOT_NAMES[below.kind];
-  /** Typing in Search shows the results, from a recipe opened from them too. */
-  const toResults = () => { if (stack.length > 1) { scrollAppTo(0); setStack([{ kind: "search" }]); } };
-  function search(q: string) {
-    setSearchText(q);
-    setRecent((r) => [q, ...r.filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 6));
-    toResults();
-  }
+  const backLabel = !below ? "Back" : below.kind === "recipe" ? recipeOf(below.id)?.name ?? "Back" : TAB_NAMES[below.kind];
   const tonight = week?.nights.find((x) => x.date === dateIn(0));
 
   return (
@@ -300,7 +286,7 @@ export default function App() {
         <PasscodeScreen error={error} onDone={async (code) => {
           setError(null);
           store.setPasscode(code);
-          if (await loadHousehold()) { setLastTab("week"); setStack([{ kind: "week" }]); setPhase("app"); }
+          if (await loadHousehold()) { setStack([{ kind: "week" }]); setPhase("app"); }
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
@@ -309,9 +295,9 @@ export default function App() {
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
       {phase === "app" && top.kind === "groceries" && <GroceriesScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onListChanged={refreshList} />}
-      {phase === "app" && top.kind === "search" && (
-        <SearchScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} query={searchText} recent={recent} error={error ?? recipesError}
-          onSearch={search} onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
+      {phase === "app" && top.kind === "recipes" && (
+        <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
+          onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
@@ -329,7 +315,7 @@ export default function App() {
         gotRecipes(all);
         setSheet(null);
         if (saved.length === 1) { const id = saved[0]; scrollAppTo(0); setStack((st) => [...(st[st.length - 1].kind === "recipe" ? st.slice(0, -1) : st), { kind: "recipe", id }]); }
-        else { setSearchText(""); onTab("search"); } // several saved (her meal ideas): show the whole collection, where they now are
+        else onTab("recipes"); // several saved (her meal ideas): show the whole collection, where they now are
       }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
       {sheet === "tolist" && open && <AddToListSheet key={open.id} r={open} onAdd={(items) => addToList(open, items)} onClose={() => setSheet(null)} />}
@@ -338,17 +324,7 @@ export default function App() {
           people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />
       )}
       {phase === "app" && (
-        <TabBar
-          tabs={TABS}
-          active={root}
-          previous={lastTab}
-          onTab={onTab}
-          query={searchText}
-          onQuery={(q) => { setSearchText(q); toResults(); }}
-          onSubmit={search}
-          searchLabel="Search recipes"
-          searchPlaceholder="Find a recipe"
-        />
+        <TabBar tabs={TABS} active={root} onTab={onTab} />
       )}
     </main>
     </div>
