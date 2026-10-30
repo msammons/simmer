@@ -7,7 +7,7 @@ import type { CartLine, Pick } from "./safeway";
 
 export type Product = { id: string; name: string; price: string; image: string; inCart?: boolean; qty?: number };
 /** One list item to find: what to search for first, how many, and its remembered product. */
-export type FindItem = { id: string; item: string; quantity: string; usual: string; picked: { id: string; name: string } | null; query: string; want: number };
+export type FindItem = { id: string; item: string; quantity: string; usual: string; picked: { id: string; name: string; image?: string } | null; query: string; want: number };
 
 /** The Safeway items Find goes through, in the list's order: unchecked, leaving out the "check you have these" ones. */
 export function findItems(items: Item[], staples: Staple[], picks: Pick[]): FindItem[] {
