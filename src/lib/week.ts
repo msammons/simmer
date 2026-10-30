@@ -147,12 +147,16 @@ export function choices(nights: Night[], at: number, ctx: Context, seed = 0, for
   return [...all.slice(start), ...all.slice(0, start)].slice(0, 3);
 }
 
-/** Fills every open night (not skipped, no meal yet) in order, each pick shaping the next night's variety. */
-export function suggestWeek(nights: Night[], ctx: Context): Night[] {
+/**
+ * Fills every open night (not skipped, no meal yet) in order, each pick shaping the next night's variety. Nights before
+ * `from` (already over, when planning mid-week) are left as they are, so they don't use up recipes the rest of the
+ * week could have.
+ */
+export function suggestWeek(nights: Night[], ctx: Context, from = ""): Night[] {
   const out = nights.map((n) => ({ ...n }));
   for (let i = 0; i < out.length; i++) {
     const n = out[i];
-    if (n.kind === "skip") continue;
+    if (n.kind === "skip" || n.date < from) continue;
     if (!n.meal) n.meal = choices(out, i, ctx)[0]?.recipe.id ?? "";
     if (n.split && !n.kidsMeal) n.kidsMeal = choices(out, i, ctx, 0, true)[0]?.recipe.id ?? "";
   }
