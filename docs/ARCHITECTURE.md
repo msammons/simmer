@@ -29,7 +29,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   button top right (`OpenSettings`, set once in `App.tsx`, so screens don't pass it), then one large title in the same
   place. Settings holds who's using the phone, Add recipes, and the look. Drill-in screens get a round back chevron
   before the title, named for the screen below; swiping right also goes back (`useSwipe`).
-- Navigation is one back stack in `App.tsx`: a tab (This week, Groceries, or Recipes) with screens pushed on it (a
+- Navigation is one back stack in `App.tsx`: a tab (Meals, Groceries, or Recipes) with screens pushed on it (a
   recipe). Back pops; a tab tap starts that tab fresh. The tab bar shows on every screen, the stack's tab lit. Sheets
   name what they show (a week, a night, an item) rather than holding a copy, so a refresh shows in them. A passcode
   turned down by any request (the client sends `SIGNED_OUT`) closes everything and asks for it again.

@@ -30,27 +30,25 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByLabel("Household passcode").fill("nope"); await page.getByRole("button", { name: "Get started" }).tap();
     ok(`${tag}: wrong passcode message`, await seen(page.getByText("That passcode didn't work")));
     await page.getByLabel("Household passcode").fill("test123"); await page.getByRole("button", { name: "Get started" }).tap();
-    ok(`${tag}: reaches This week`, await seen(page.getByRole("heading", { name: "This week" }), 8000));
+    ok(`${tag}: reaches Meals`, await seen(page.getByRole("heading", { name: "Meals" }), 8000));
     await page.waitForTimeout(800);
-    await settingsHere("This week");
-    const sub = await page.locator("header p").first().textContent().catch(() => "");
-    ok(`${tag}: the week reads as its start date`, /^[A-Z][a-z]{2} \d{1,2}$/.test(sub ?? ""), sub ?? "");
+    await settingsHere("Meals");
     await page.screenshot({ path: `${dir}/1-week-${tag}.png` });
 
     if (tag === "phone-light") {
       // Plan the week: page through and save (the number of pages depends on the day).
-      await page.getByRole("button", { name: /^(Plan (the|next) week|Change the plan)/ }).first().tap(); await page.waitForTimeout(500);
+      await page.getByRole("button", { name: /^(Plan this week|Change)$/ }).first().tap(); await page.waitForTimeout(500);
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300);
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
       ok("plan: dinners suggested", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
       if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
       await page.getByRole("button", { name: "Save the week" }).tap();
-      ok("plan: saved, and the week shows", await seen(page.getByRole("heading", { name: /^(The|Next) week$/ }), 10000));
+      ok("plan: saved, and the week shows", await seen(page.getByRole("heading", { name: "This week" }), 10000));
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // A night with a recipe: Cook opens it on top of This week; Back says where it goes and goes there.
-      const nights = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(The|Next) week$/ }) }).first().getByRole("button");
+      const nights = page.locator("section").filter({ has: page.getByRole("heading", { name: "This week" }) }).first().getByRole("button").filter({ hasNotText: /^Change$/ });
       let cooked = false;
       for (let i = 0; i < (await nights.count()) && !cooked; i++) {
         await nights.nth(i).tap(); await page.waitForTimeout(300);
@@ -62,16 +60,31 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       if (!cooked) ok("week: a night's recipe opens (skipped: no night with a recipe today)", true);
       else {
       ok("week: a night's recipe opens", await page.getByRole("radio", { name: "Quick" }).isVisible());
-      await settingsHere("a recipe from This week");
+      await settingsHere("a recipe from Meals");
       const nav = page.getByRole("navigation", { name: "Main" });
-      ok("week: This week stays lit under the recipe", (await nav.getByRole("button", { name: "This week" }).getAttribute("aria-current")) === "page");
+      ok("week: Meals stays lit under the recipe", (await nav.getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
       await page.screenshot({ path: `${dir}/3-recipe-from-week.png` });
-      await page.locator("header").getByRole("button", { name: "This week" }).tap(); await page.waitForTimeout(400);
-      ok("week: back goes to This week", await page.getByRole("heading", { name: "This week" }).isVisible());
+      await page.locator("header").getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(400);
+      ok("week: back goes to Meals", await page.getByRole("heading", { name: "Meals" }).isVisible());
       await page.getByRole("button", { name: /^Cook|Tonight/ }).first().waitFor({ timeout: 300 }).catch(() => {});
-      await nav.getByRole("button", { name: "This week" }).tap(); await page.waitForTimeout(400);
-      ok("week: the tab starts fresh", await page.getByRole("heading", { name: "This week" }).isVisible());
+      await nav.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(400);
+      ok("week: the tab starts fresh", await page.getByRole("heading", { name: "Meals" }).isVisible());
       }
+    }
+
+    if (tag === "phone-light") {
+      // Weeks ahead: next week, then the one after, each planned the same way, and the one after that offered.
+      for (const [button, heading] of [["Plan next week", "Next week"], [/^Plan the week of /, null]]) {
+        const plan = page.getByRole("button", { name: button }).first();
+        ok(`weeks ahead: "${button}" offered`, await seen(plan, 8000));
+        await plan.tap(); await page.waitForTimeout(500);
+        for (let k = 0; k < 3 && await page.getByRole("button", { name: "Next", exact: true }).isVisible(); k++) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
+        await page.getByRole("button", { name: "Save the week" }).tap(); await page.waitForTimeout(1500);
+        if (heading) ok(`weeks ahead: ${heading} shows`, await seen(page.getByRole("heading", { name: heading }), 8000));
+      }
+      ok("weeks ahead: a week further out is offered next", await seen(page.getByRole("button", { name: /^Plan the week of / }), 8000));
+      ok("weeks ahead: three weeks show", (await page.getByRole("button", { name: /^Change$/ }).count()) === 3);
+      await page.screenshot({ path: `${dir}/2-weeks-ahead.png`, fullPage: true });
     }
 
     // Settings: the look, and adding recipes from there.
