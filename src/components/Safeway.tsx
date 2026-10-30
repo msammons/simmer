@@ -60,19 +60,27 @@ export function useSafeway() {
    * job nobody takes is given up by Simmer after about 35 seconds.
    */
   const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal): Promise<JobOutcome> => {
-    let job: Job;
+    let job: Job, heard = true;
     try {
       const q = await api.queueJob(kind, args);
+      heard = q.answering;
       setAnswering(q.answering);
-      if (!q.answering) { api.cancelJob(q.job.id).catch(() => {}); return { ok: false, problem: NOT_ANSWERING }; }
       job = q.job;
     } catch (e) { return { ok: false, problem: errorText(e) }; }
+    // Not heard from lately: give it a few seconds (the panel may have just opened), then say so rather than wait on.
+    let quiet = heard ? 0 : Date.now() + 5000;
     for (const end = Date.now() + 120_000; Date.now() < end;) {
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, quiet ? 800 : 1200));
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
         const s = await api.job(job.id, signal);
         if (!s.job) return { ok: false, problem: problemText("") };
+        if (quiet && s.job.status === "waiting" && !s.answering && Date.now() > quiet) {
+          api.cancelJob(job.id).catch(() => {});
+          setAnswering(false);
+          return { ok: false, problem: NOT_ANSWERING };
+        }
+        if (s.job.status !== "waiting" || s.answering) quiet = 0;
         if (s.job.status === "done") { setAnswering(true); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
           const error = String(s.job.result?.error ?? "");

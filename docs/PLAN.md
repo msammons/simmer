@@ -421,6 +421,11 @@ the phone when it isn't sure (every product found, the likeliest first). The pho
 checkout happens in the Safeway app, which shares the cart. An item it couldn't add gets *Add it yourself*, opening
 that product (or a search) in Safeway; an item's own sheet has *Open in Safeway* for the product picked before.
 
+**Jobs and the Shop tab (Oct 30).** The helper (1.0) no longer runs whole orders: Simmer's Shop tab queues small jobs
+(search, set a product's quantity, read a page) and the helper does them in Chrome and reports back; its panel is
+Simmer itself. See ARCHITECTURE.md ("Shop and Safeway") and `extension/README.md`. The order endpoints stay for
+older installed helpers.
+
 A small experiment, run from Sam's Mac with her account: can a program sign in to Safeway, read her past orders,
 search a product, add it to the cart, and list the cart, reliably, without being blocked? And does a cart filled that way
 show up in her Safeway app? Three outcomes:
