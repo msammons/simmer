@@ -1,28 +1,30 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, applyTheme, AuthError, dateIn, errorText, SIGNED_OUT, store, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
+import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
-import { GroceriesScreen, type ListActions } from "./Groceries";
+import { ShopScreen, type ListActions } from "./Shop";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
-type Tab = "week" | "groceries" | "recipes";
+type Tab = "week" | "shop" | "recipes";
 /**
  * Where you are: a tab at the bottom of a stack of screens opened from it (a recipe). Back pops one; a tab starts a new
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "groceries", label: "Groceries", icon: "list" }, { id: "recipes", label: "Recipes", icon: "book" }];
-const TAB_NAMES: Record<Tab, string> = { week: "Meals", groceries: "Groceries", recipes: "Recipes" };
+const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "shop", label: "Shop", icon: "bag" }, { id: "recipes", label: "Recipes", icon: "book" }];
+const TAB_NAMES: Record<Tab, string> = { week: "Meals", shop: "Shop", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
 const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
 function takeResume(): Tab {
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : "week"; } catch { return "week"; }
+  // The Safeway helper's panel opens Simmer on Shop (?open=shop).
+  const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
+  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "week"; } catch { return isTab(asked) ? asked : "week"; }
 }
 /** Nothing would be lost by reloading now: no sheet open and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]')
@@ -66,6 +68,7 @@ export default function App() {
   // out, including ones running in the background, so the client announces it and this listens.
   const signOut = useCallback(() => {
     store.setPasscode(null);
+    tellPanelSignedOut();
     setError("Wrong passcode.");
     setSettings(false); setSheet(null); setPlanningFor(null); setNightAt(null);
     setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
@@ -94,7 +97,7 @@ export default function App() {
     }
   }, []);
 
-  // The shared list: loaded when Groceries opens, then every 30 seconds while it's open and whenever the app comes back to
+  // The shared list: loaded when Shop opens, then every 30 seconds while it's open and whenever the app comes back to
   // the front, so both phones see the same list. No background work: only while someone's looking.
   const refreshList = useCallback(async () => {
     try {
@@ -106,9 +109,9 @@ export default function App() {
       if (!(e instanceof AuthError)) setListError(errorText(e));
     }
   }, []);
-  const onGroceries = phase === "app" && top.kind === "groceries";
+  const onShop = phase === "app" && top.kind === "shop";
   useEffect(() => {
-    if (!onGroceries) return;
+    if (!onShop) return;
     queueMicrotask(refreshList);
     api.kitchen().then(setKitchen, () => {});
     const visible = () => document.visibilityState === "visible";
@@ -116,7 +119,7 @@ export default function App() {
     const back = () => { if (visible()) refreshList(); };
     document.addEventListener("visibilitychange", back);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
-  }, [onGroceries, visit, refreshList]);
+  }, [onShop, visit, refreshList]);
 
   // The collection: loaded when Recipes, a recipe or the week opens (the week shows meal names), and after every change,
   // from the server's answer.
@@ -125,7 +128,7 @@ export default function App() {
     try { gotRecipes((await api.recipes()).recipes); }
     catch (e) { if (!(e instanceof AuthError)) setRecipesError(errorText(e)); }
   }, [gotRecipes]);
-  const inRecipes = phase === "app" && top.kind !== "groceries";
+  const inRecipes = phase === "app" && top.kind !== "shop";
   useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, visit, refreshRecipes]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
@@ -233,7 +236,8 @@ export default function App() {
     window.addEventListener("online", on);
     // Started from a microtask: the first screen comes from storage and the network, not from this effect directly.
     const resume = takeResume();
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
+      if (framed() && !store.passcode()) await passcodeFromPanel();
       if (!store.passcode()) setPhase("passcode");
       else loadHousehold().then((ok) => {
         if (!ok) return;
@@ -303,7 +307,7 @@ export default function App() {
         <WeekScreen key={visit} weeks={weeks} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
-      {phase === "app" && top.kind === "groceries" && <GroceriesScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onListChanged={refreshList} />}
+      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
-import { Check } from "./Groceries";
+import { Check } from "./Shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 

@@ -13,9 +13,19 @@ function set(k: string, v: unknown) {
 
 export type Person = { key: string; name: string; isAdult?: boolean };
 
+/**
+ * Inside the Safeway helper's panel, Simmer runs in a frame and the helper hands it the passcode by message (never in
+ * the address). It's kept for this visit only.
+ */
+let framedPasscode: string | null = null;
+export const framed = () => typeof window !== "undefined" && window.parent !== window;
+
 export const store = {
-  passcode: () => get<string>(KEYS.passcode),
-  setPasscode: (p: string | null) => (p === null ? (() => { try { localStorage.removeItem(KEYS.passcode); } catch {} })() : set(KEYS.passcode, p)),
+  passcode: () => framedPasscode ?? get<string>(KEYS.passcode),
+  setPasscode: (p: string | null) => {
+    if (framed()) { framedPasscode = p; return; }
+    if (p === null) { try { localStorage.removeItem(KEYS.passcode); } catch {} } else set(KEYS.passcode, p);
+  },
   /** The household from last time, so the app works when it opens offline. */
   people: () => get<Person[]>(KEYS.people),
   setPeople: (p: Person[]) => set(KEYS.people, p),
@@ -85,8 +95,10 @@ export type { Draft, Effort, Ingredient, Recipe };
 import type { WeekData } from "./plan";
 import type { Order, OrderAnswer } from "./order";
 export type { Order, OrderAnswer };
-import type { Pick } from "./safeway";
-export type { Pick };
+import type { CartLine, Pick } from "./safeway";
+export type { CartLine, Pick };
+import type { Job, JobKind } from "./jobs";
+export type { Job, JobKind };
 import type { Frozen, Lunch, Night } from "./week";
 export type { Frozen, Lunch, Night, WeekData };
 export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
@@ -112,7 +124,36 @@ export const api = {
   /** The Safeway order filled by the helper on a computer: start it, follow it, answer it, stop it. */
   order: (signal?: AbortSignal) => call<{ order: Order | null }>("/api/safeway/order", { signal }),
   orderChange: (c: { op: "start" } | { op: "answer"; id: string; answer: OrderAnswer } | { op: "stop"; id: string }) => call<{ order: Order | null }>("/api/safeway/order", { method: "POST", body: JSON.stringify(c) }),
+  /** The Safeway cart as Simmer knows it, the picks, and whether the computer is answering. */
+  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean }>("/api/safeway/cart", { signal }),
+  /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
+  queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args }) }),
+  job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}`, { signal }),
+  cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };
+
+/**
+ * Framed in the helper's panel: ask the panel for the passcode and wait for it (a moment at most). Only a message from
+ * the frame's own parent, and only from a Chrome helper's page, is taken.
+ */
+export function passcodeFromPanel(ms = 3000): Promise<string | null> {
+  if (!framed()) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const done = (v: string | null) => { window.removeEventListener("message", on); clearTimeout(t); resolve(v); };
+    const on = (e: MessageEvent) => {
+      if (e.source !== window.parent || !/^chrome-extension:\/\/[a-p]{32}$/.test(e.origin)) return;
+      if (e.data?.type === "simmer:passcode" && typeof e.data.passcode === "string") { panelOrigin = e.origin; framedPasscode = e.data.passcode; done(e.data.passcode); }
+    };
+    const t = setTimeout(() => done(null), ms);
+    window.addEventListener("message", on);
+    window.parent.postMessage({ type: "simmer:ready" }, "*"); // carries nothing private
+  });
+}
+let panelOrigin = "";
+/** Framed: tell the panel the passcode was turned down, so it asks for it again itself. */
+export function tellPanelSignedOut() {
+  if (framed() && panelOrigin) window.parent.postMessage({ type: "simmer:signed-out" }, panelOrigin);
+}
 
 /**
  * A picked file, ready to send: pictures are made smaller first (a phone photo is several megabytes; the recipe reads

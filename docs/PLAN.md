@@ -467,7 +467,17 @@ alternatives; *Something else*. Page 4, **Lunches:** each school day with each b
 swap it, and *No school* for a day off. Footer: *Save the week*. The sheet's page dots and
 back/forward follow the shared `Sheet` component.
 
-### Groceries (tab)
+### Shop (tab, Oct 30; was Groceries)
+
+A List · Find · Cart switch pinned in the top bar (see ARCHITECTURE.md, "Shop and Safeway"). **List**: the add box,
+compact Running low / Freezer / Check you have these buttons, *Find them at Safeway*, then each store's group (Safeway
+items in the cart dimmed, "In the cart · 2"; Done shopping per store). **Find**: one Safeway item at a time ("3 of 8"),
+Safeway's products with picture, name and price, *Your usual* first, Add / − / +, Back and Skip or Next item. **Cart**:
+what's in the Safeway cart from Simmer, − / + / remove, the total, *Check out on Safeway*. Searches and cart changes
+run through the helper on the computer; when it isn't answering, Find says so and List and Cart still work. The old
+"Fill my Safeway cart" order is no longer started from Simmer (its endpoints stay for older helpers).
+
+### Groceries (tab, before Oct 30)
 
 - Title *Groceries*, subtitle with the next trip ("Safeway order Tuesday").
 - An add field at the top.

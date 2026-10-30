@@ -6,9 +6,11 @@
 /**
  * How the helper goes about it. `pause`: between items, so it moves like a person and Safeway can catch up.
  * `usualClear`/`usualGap`: a usual product is taken without asking only when one result matches it this well, this far
- * ahead of the next. `mostOfOne`: the most of one thing a plain count can ask for.
+ * ahead of the next. `mostOfOne`: the most of one thing a plain count can ask for. For the helper's jobs (1.0 on):
+ * `fastPoll`, how often it checks for jobs once there's activity or the panel is open, and `idleAfter`, how long after
+ * the last job it goes back to checking every half minute. `stepWait`: how long to wait for Safeway after a tap.
  */
-export const SETTINGS = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12 };
+export const SETTINGS = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, fastPoll: 2000, idleAfter: 180_000, stepWait: 10_000 };
 
 /**
  * Safeway's pages, as data the helper reads them with (patterns are matched without regard to case). Safeway's pages
