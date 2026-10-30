@@ -5,7 +5,7 @@ import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { findItems, firstToFind, pickFor, qtyFor } from "@/lib/shop";
 import { Icon } from "./icons";
-import { CartView, FindView, useSafeway } from "./Safeway";
+import { CartView, FindView, ProductImage, useSafeway } from "./Safeway";
 import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, scrollAppTo } from "./ui";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -65,17 +65,16 @@ function ItemRow({ it, act, onMore }: { it: Item; act: ListActions; onMore: () =
   );
 }
 
-/** A Safeway item: the check (bought or in the cart), and the rest of the row opens Find on it. */
-function SafewayRow({ it, act, inCart, onFind, onMore }: { it: Item; act: ListActions; inCart: number; onFind: () => void; onMore: () => void }) {
-  const done = it.checked || inCart > 0;
-  const details = inCart ? `In the cart · ${inCart}` : [it.quantity, it.for ? `for ${it.for}` : it.addedBy && `${it.addedBy} added`].filter(Boolean).join(" · ");
+/**
+ * A Safeway item: its usual product's picture (when one's known), and where it stands, which comes from the cart (no
+ * tick to keep in step). Tapping it opens Find on it.
+ */
+function SafewayRow({ it, inCart, image, onFind, onMore }: { it: Item; inCart: number; image?: string; onFind: () => void; onMore: () => void }) {
+  const details = it.checked ? "Got it" : inCart ? `In the cart · ${inCart}` : [it.quantity, it.for ? `for ${it.for}` : it.addedBy && `${it.addedBy} added`].filter(Boolean).join(" · ");
   return (
-    <div className={`flex items-center ${inCart && !it.checked ? "opacity-60" : ""}`}>
-      <button className="flex h-11 w-12 shrink-0 items-center pl-[22px]" role="checkbox" aria-checked={it.checked} aria-label={`Got ${it.item}`} onClick={() => act.check(it, !it.checked)}>
-        <Check on={done} />
-      </button>
+    <div className={`flex items-center ${inCart || it.checked ? "opacity-60" : ""}`}>
       <div className="min-w-0 flex-1">
-        <Row title={<span className={it.checked ? "text-muted line-through" : ""}>{cap(it.item)}</span>} subtitle={details} onClick={onFind} />
+        <Row lead={<ProductImage src={image} small />} title={cap(it.item)} subtitle={details} onClick={onFind} />
       </div>
       <div className="pr-2"><IconButton icon="more" label={`More for ${it.item}`} onClick={onMore} /></div>
     </div>
@@ -83,8 +82,8 @@ function SafewayRow({ it, act, inCart, onFind, onMore }: { it: Item; act: ListAc
 }
 
 /** One store's part of the list: fresh first, then pantry, freezer, household; what's got falls to the bottom. */
-function StoreGroup({ store, items, act, onMore, footer, cart, onFind }: {
-  store: Store; items: Item[]; act: ListActions; onMore: (it: Item) => void; footer?: string; cart: CartLine[]; onFind?: (it: Item) => void;
+function StoreGroup({ store, items, act, onMore, footer, cart, picks, onFind }: {
+  store: Store; items: Item[]; act: ListActions; onMore: (it: Item) => void; footer?: string; cart: CartLine[]; picks: Pick[]; onFind?: (it: Item) => void;
 }) {
   const got = (it: Item) => it.checked || (store === "safeway" && qtyFor(cart, it.id) > 0);
   const rank = (it: Item) => (got(it) ? 10 : 0) + SECTION_ORDER.indexOf(it.section);
@@ -96,7 +95,7 @@ function StoreGroup({ store, items, act, onMore, footer, cart, onFind }: {
       aside={left < items.length ? <button className="t-foot font-semibold text-accent" onClick={() => act.done(store)}>Done shopping</button> : <span className="t-foot text-muted">{items.length} to get</span>}
     >
       {sorted.map((it) => (store === "safeway" && onFind
-        ? <SafewayRow key={it.id} it={it} act={act} inCart={qtyFor(cart, it.id)} onFind={() => onFind(it)} onMore={() => onMore(it)} />
+        ? <SafewayRow key={it.id} it={it} inCart={qtyFor(cart, it.id)} image={cart.find((l) => l.itemId === it.id)?.image ?? pickFor(picks, it.item)?.image} onFind={() => onFind(it)} onMore={() => onMore(it)} />
         : <ItemRow key={it.id} it={it} act={act} onMore={() => onMore(it)} />))}
     </Group>
   );
@@ -127,7 +126,8 @@ export function ShopScreen({ list, kitchen, error, act }: { list: ListState | nu
       <h1 className="sr-only">Shop</h1>
       {error && <Notice>{error}</Notice>}
       {view === "list" && <ListView list={list} kitchen={kitchen} act={here} cart={sw.cart} picks={sw.picks} onFind={find} anyToFind={toFind.some((x) => !qtyFor(sw.cart, x.id))} />}
-      {view === "find" && <FindView items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={() => go("list")} />}
+      {view === "find" && <FindView items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={() => go("list")}
+        onGot={(id) => { const x = list?.items.find((i) => i.id === id); if (x) act.check(x, true); }} />}
       {view === "cart" && <CartView sw={sw} onFind={toFind.length ? () => find() : null} />}
     </div>
   );
@@ -158,12 +158,14 @@ function ListView({ list, kitchen, act, cart, picks, onFind, anyToFind }: {
       <div className="flex flex-wrap gap-2">
         <button className={chip} onClick={() => setSheet("staples")}><Icon name="list" className="size-[18px]" />Running low</button>
         <button className={chip} onClick={() => setSheet("freezer")}><Icon name="snow" className="size-[18px]" />Freezer{frozen ? ` · ${frozen}` : ""}</button>
-        {toCheck.length > 0 && <button className={chip} onClick={() => setSheet("check")}><Icon name="check" className="size-[18px]" />Check you have these · {toCheck.length}</button>}
       </div>
+      {toCheck.length > 0 && (
+        <Group><Row icon="check" title="Check you have these" subtitle={`${toCheck.length} pantry thing${toCheck.length === 1 ? "" : "s"} from the plan`} value={String(toCheck.length)} accessory="chevron" onClick={() => setSheet("check")} /></Group>
+      )}
       {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
       {anyToFind && <Button icon="search" onClick={() => onFind()} className="w-full">Find them at Safeway</Button>}
       {stores.map((s) => (
-        <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={(it) => setMoreId(it.id)} cart={cart}
+        <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={(it) => setMoreId(it.id)} cart={cart} picks={picks}
           onFind={s === "safeway" ? (it) => onFind(it.id) : undefined}
           footer={s === "trader-joes" ? `Next Trader Joe's trip: ${shortDate(traderJoesDay(kitchen?.trips.lastTraderJoes ?? ""))}` : s === "safeway" ? `Safeway order ${dayWord(safewayDay())}` : undefined} />
       ))}

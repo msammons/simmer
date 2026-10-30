@@ -52,10 +52,10 @@ export const helperStart = (list, picks) => ({ page: PAGE, settings: SETTINGS, i
  */
 /**
  * @param {{ items?: ListItem[], staples?: Staple[] } | null | undefined} list
- * @param {{ item: string, id: string, name: string }[]} [picks]
+ * @param {{ item: string, id: string, name: string, image?: string }[]} [picks]
  */
 export function prepare(list, picks = []) {
-  const byKey = new Map(picks.map((p) => [keyOf(p.item), { id: p.id, name: p.name }]));
+  const byKey = new Map(picks.map((p) => [keyOf(p.item), { id: p.id, name: p.name, ...(p.image && { image: p.image }) }]));
   return safewayItems(list).map((it) => {
     const usual = usualFor(it, list?.staples), picked = byKey.get(keyOf(it.item)) ?? null;
     return { id: it.id, item: it.item, quantity: it.quantity ?? "", usual, picked, query: searchFor(it, usual, picked), want: howMany(it.quantity) };
