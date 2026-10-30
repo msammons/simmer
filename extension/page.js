@@ -10,6 +10,7 @@
  * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }] }
  *   tiles: { [id]: what that product's Add button says now ("" when there's none), for every product on the page }
  * safewayPage("add", { id, times }) → { ok, qty, sure, snapshot? }
+ * safewayPage("setQty", { id, qty, wait }) → { ok, qty, name, price, image }
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
@@ -177,6 +178,37 @@ export async function safewayPage(action, arg, P) {
     }
     p = find() ?? p;
     return { ok: true, qty: p.qty || 1, sure: true };
+  }
+
+  // Sets how many of a product are in the cart (0 takes it out), pressing Add, + or − one at a time and waiting for
+  // Safeway to show each change. Answers { ok, qty, name, price, image }, qty being what the page shows at the end.
+  if (action === "setQty") {
+    const { id, qty: want, wait = 10000 } = arg;
+    const find = () => products().find((p) => p.id === id);
+    let p = find();
+    if (!p) return { ok: false, why: "not-found" };
+    p.card.scrollIntoView({ block: "center" });
+    await sleep(500);
+    const settle = async (changed) => { for (let t = 0; t < wait; t += 400) { await sleep(400); p = find(); if (changed(p)) return true; } return false; };
+    const now = () => (p?.inCart ? p.qty || 1 : 0);
+    const about = { name: p.name, price: p.price, image: p.image };
+    if (!p.inCart && want > 0) {
+      const add = addButton(p.card);
+      if (!add) return { ok: false, why: "no-add", qty: 0, ...about };
+      const count = cartCount();
+      add.click();
+      await settle((x) => x?.inCart || (count !== null && (cartCount() ?? 0) > count));
+      if (!p?.inCart) return { ok: false, why: "not-added", qty: 0, ...about };
+    }
+    for (let n = 0; n < 40 && p && now() !== want; n++) {
+      const before = now();
+      const button = before < want ? plusButton(p.card) : minusButton(p.card);
+      if (!button) break;
+      button.click();
+      if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
+    }
+    p = find();
+    return { ok: now() === want, qty: now(), ...about };
   }
 
   if (action === "snapshot") return snapshot(arg.id);

@@ -1,244 +1,197 @@
-// A check of the Safeway helper (extension/) end to end, without Safeway or Simmer: run on a Mac with
+// A check of the Safeway helper 1.0 (extension/) end to end, with a real Simmer and a stand-in Safeway: run on a Mac with
 //   node scripts/extension-test.mjs
-// It loads the helper into a test browser, answers safeway.com with a stand-in search page (product links, Add
-// buttons that turn into a quantity) and Simmer's list with a stand-in list, then fills the cart and checks what
-// happened. It shows the flow works; it can't show that Safeway's real pages match the stand-in. Exits 1 on a failure.
+// It builds and starts Simmer locally (memory store, passcode test123, port 3205; or uses SIMMER_URL if one's running
+// with a fresh memory store), loads the
+// helper into a test browser, sends the helper's Simmer address (simmer-test.vercel.app) to that local Simmer, and
+// answers safeway.com with a stand-in search page (Safeway's tiles, Add turning into − / quantity / +, a cart that
+// remembers). It shows the flow works; it can't show that Safeway's real pages match the stand-in. Exits 1 on a failure.
 import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
 
-import { choose, helperStart, PAGE } from "../src/lib/safeway-helper.mjs";
-
 const { chromium } = createRequire(import.meta.url)("playwright");
 const ext = path.resolve("extension");
+const ADDRESS = "https://simmer-test.vercel.app";
+const LOCAL = process.env.SIMMER_URL || "http://localhost:3205";
+const PASS = "test123";
 
-const LIST = {
-  items: [
-    { id: "m", item: "milk", quantity: "2", store: "safeway", section: "fresh", checked: false, check: false },
-    { id: "b", item: "bananas", quantity: "", store: "safeway", section: "fresh", checked: false, check: false },
-    { id: "u", item: "unobtainium", quantity: "", store: "safeway", section: "pantry", checked: false, check: false },
-    { id: "s", item: "salt", quantity: "", store: "safeway", section: "pantry", checked: false, check: true },
-    { id: "t", item: "dressing", quantity: "", store: "trader-joes", section: "pantry", checked: false, check: false },
-  ],
-  staples: [{ item: "milk", store: "safeway", section: "fresh", quantity: "1", product: "Lucerne 2% milk half gallon" }],
-};
+const fails = [];
+const expect = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fails.push(what); };
+const until = async (ok, ms = 30_000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (await ok()) return true; return false; };
+
+// ---- Simmer, started here unless one's given
+// A production build: the dev server's page waits on its live-reload connection, which can't be reached through the
+// stand-in address. SKIP_BUILD=1 uses the last build.
+let server = null;
+if (!process.env.SIMMER_URL) {
+  const env = { ...process.env, HOUSEHOLD_PASSCODE: PASS, GOOGLE_SERVICE_ACCOUNT_JSON: "", GEMINI_API_KEY: "" };
+  if (!process.env.SKIP_BUILD) await new Promise((ok, bad) => spawn("npx", ["next", "build"], { env, stdio: "ignore" }).on("exit", (c) => (c ? bad(new Error("build failed")) : ok())));
+  server = spawn("npx", ["next", "start", "-p", "3205"], { env, stdio: "ignore", detached: true });
+  const up = await until(() => fetch(`${LOCAL}/api/version`).then((r) => r.ok, () => false), 90_000);
+  if (!up) { console.log("Simmer didn't start"); process.kill(-server.pid); process.exit(1); }
+}
+const api = (p, body) => fetch(`${LOCAL}${p}`, { method: body ? "POST" : "GET", headers: { "x-passcode": PASS, "content-type": "application/json" }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.json());
+// The list: milk (two wanted), bananas.
+for (const text of ["2 milk", "bananas"]) await api("/api/list", { op: "add", text, by: "Sam" });
+const list = await api("/api/list");
+const milkId = list.items.find((i) => i.item === "milk")?.id;
+
+// ---- the stand-in Safeway
 const CATALOG = {
-  milk: [["960001", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", "$3.49"], ["960002", "Lucerne Milk Reduced Fat 2% - 1 Gallon", "$5.29"], ["960003", "Oatly Oat Milk - 64 Fl. Oz.", "$5.99"]],
+  milk: [["960001", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", "$3.49"], ["960002", "Lucerne Milk Reduced Fat 2% - 1 Gallon", "$5.29"]],
   bananas: [["960010", "Bananas", "$0.29 each"], ["960011", "Organic Bananas", "$0.39 each"]],
 };
-
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 function searchPage(q, signedIn) {
   const hits = Object.entries(CATALOG).filter(([k]) => q.toLowerCase().includes(k) || CATALOG[k].some(([, n]) => n.toLowerCase() === q.toLowerCase())).flatMap(([, v]) => v);
-  // Built like Safeway's real search tiles (read from its page code, Oct 2026): a <product-item-al-v2> with the title
-  // in [data-qa="prd-itm-pttl"] (id "pg<number>"), no link to the product's page, and an "Add <name>" button. Oatly is
-  // built the older way, with a link to its page, to keep that working too.
-  const cards = hits.map(([id, name, price]) => /Oatly/.test(name) ? `
-    <div class="product-card"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="${name}" width="40" height="40">
-      <a href="/shop/product-details.${id}.html">${name}</a><span class="price">${price}</span>
-      <div class="cta"><button class="add" aria-label="Add ${name}">Add</button></div></div>` : `
-    <product-item-al-v2 class="product-card"><div class="pc"><img id="pg${id}Img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" width="40" height="40">
-      <span class="title-xxs product-fname" data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${name}</span>
-      <div data-qa="prd-itm-prc">${price}</div>
-      <quantity-stepper-al-v2 data-qa="qty-stppr"><div class="cta"><button class="add" aria-label="Add ${name}">Add</button></div></quantity-stepper-al-v2></div></product-item-al-v2>`).join("");
+  // Built like Safeway's real search tiles (read from its page code, Oct 2026).
+  const tiles = hits.map(([id, name, price]) => `
+    <product-item-al-v2 class="product-card" data-id="${id}" data-name="${name}"><div class="pc"><img id="pg${id}Img" src="https://www.safeway.com/img/${id}.png" alt="" width="40" height="40">
+      <span data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${name}</span><div data-qa="prd-itm-prc">${price}</div>
+      <quantity-stepper-al-v2 class="cta"></quantity-stepper-al-v2></div></product-item-al-v2>`).join("");
   return `<!doctype html><html><body>
     <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
     <main id="grid"></main>
     <script>
+      const cart = () => JSON.parse(localStorage.getItem("cart") || "{}");
+      const put = (id, n) => { const c = cart(); if (n > 0) c[id] = n; else delete c[id]; localStorage.setItem("cart", JSON.stringify(c)); };
+      const draw = (tile) => {
+        const id = tile.dataset.id, name = tile.dataset.name, n = cart()[id] || 0, cta = tile.querySelector(".cta");
+        cta.innerHTML = n ? '<button aria-label="' + (n === 1 ? "Remove" : "Decrease") + ' Quantity of ' + name + '">-</button><div data-qa="prd-qty-stppr-qtybox">' + n + '</div><button aria-label="Increase Quantity 1 unit of ' + name + '">+</button>'
+          : '<button aria-label="Add ' + name + '">Add</button>';
+        const total = Object.values(cart()).reduce((a, b) => a + b, 0);
+        document.getElementById("cart").textContent = "Cart " + total;
+        cta.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
+          const l = b.getAttribute("aria-label");
+          put(id, /^Add|^Increase/.test(l) ? n + 1 : n - 1); draw(tile);
+        }, 250));
+      };
       // Results arrive a moment after the page, like Safeway's.
-      setTimeout(() => {
-        // Bananas come inside a component with its own hidden layer (a shadow root), as parts of Safeway's pages do.
-        const grid = document.getElementById("grid");
-        const into = ${/banana/i.test(q)} ? grid.attachShadow({ mode: "open" }) : grid;
-        into.innerHTML = ${JSON.stringify(cards || "<h1>No search results for &quot;" + q + "&quot;</h1>")};
-        // The cart count at the top, kept across pages like Safeway's.
-        const count = () => Number(localStorage.getItem("cart") || 0);
-        const showCount = () => { const c = document.getElementById("cart"); c.setAttribute("aria-label", "Cart, " + count() + " items"); c.textContent = "Cart " + count(); };
-        showCount();
-        into.querySelectorAll("button.add").forEach((b) => b.onclick = () => setTimeout(() => {
-          localStorage.setItem("cart", String(count() + 1)); showCount();
-          // Most products turn Add into a quantity; organic bananas show a sign the helper doesn't know, like a
-          // Safeway redesign would, so only the cart count says it went in.
-          b.parentElement.innerHTML = /Organic/.test(b.getAttribute("aria-label"))
-            ? '<span class="added">Added</span>'
-            : '<button data-qa="prdctdcrmntr" aria-label="Remove Quantity of ' + b.getAttribute("aria-label").slice(4) + '">-</button><div data-qa="prd-qty-stppr-qtybox" aria-label="Cart quantity">1</div><button data-qa="prdctincrmntr" aria-label="Increase Quantity 1 unit of ' + b.getAttribute("aria-label").slice(4) + '">+</button>';
-        }, 300));
-        document.addEventListener("click", (e) => {
-          const t = e.composedPath().find((x) => x.tagName === "BUTTON"); if (!t || !/^Increase/.test(t.getAttribute("aria-label") || "")) return;
-          const box = t.parentElement.querySelector('[data-qa="prd-qty-stppr-qtybox"]'); box.textContent = String(Number(box.textContent) + 1);
-        });
-      }, 500);
+      setTimeout(() => { document.getElementById("grid").innerHTML = ${JSON.stringify(tiles || "<h1>No search results for &quot;" + q + "&quot;</h1>")}; document.querySelectorAll("product-item-al-v2").forEach(draw); }, 400);
     </script></body></html>`;
 }
-
-const fails = [];
-const expect = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fails.push(what); };
 
 const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpdir(), "simmer-ext-")), {
   channel: "chromium", headless: true,
   args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
 });
-const posts = [];
-let signedIn = false;
+let signedIn = true;
 await ctx.route("https://www.safeway.com/**", (route) => {
   const u = new URL(route.request().url());
+  if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
   return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
 });
-await ctx.route("https://simmer-test.vercel.app/api/list", async (route) => {
+// The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
+await ctx.route(`${ADDRESS}/**`, async (route) => {
   const req = route.request();
-  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
-  if (req.method() === "POST") posts.push(JSON.parse(req.postData() ?? "{}"));
-  return route.fulfill({ contentType: "application/json", body: JSON.stringify(LIST) });
+  const { origin: _o, referer: _r, host: _h, ...headers } = req.headers();
+  void _o; void _r; void _h;
+  try {
+    const res = await route.fetch({ url: req.url().replace(ADDRESS, LOCAL), headers });
+    return route.fulfill({ response: res });
+  } catch { return route.abort(); }
 });
-
-const picks = [];
-await ctx.route("https://simmer-test.vercel.app/api/safeway", async (route) => {
-  const req = route.request();
-  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
-  if (req.method() === "POST") {
-    const p = JSON.parse(req.postData() ?? "{}");
-    picks.splice(0, picks.length, ...picks.filter((x) => x.item !== p.item), p);
-  }
-  return route.fulfill({ contentType: "application/json", body: JSON.stringify({ picks }) });
-});
-
-// What the helper asks Simmer: how to start a run, and which product to take. Answered with Simmer's own logic
-// (src/lib/safeway-helper.mjs), from the stand-in list and the picks kept above.
-const chosen = [];
-await ctx.route("https://simmer-test.vercel.app/api/safeway/helper", async (route) => {
-  const req = route.request();
-  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
-  if (req.method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify(helperStart(LIST, picks)) });
-  const b = JSON.parse(req.postData() ?? "{}");
-  chosen.push(b.query);
-  return route.fulfill({ contentType: "application/json", body: JSON.stringify(choose(b.products, { picked: b.item.picked, usual: b.item.usual, item: b.query || b.item.item })) });
-});
-
-// Simmer's order, as /api/safeway/order keeps it, for an order started on the phone.
-let order = null;
-await ctx.route("https://simmer-test.vercel.app/api/safeway/order", async (route) => {
-  const req = route.request();
-  if (req.method() === "POST") {
-    const b = JSON.parse(req.postData() ?? "{}");
-    const open = order && ["waiting", "filling", "asking"].includes(order.status);
-    if (b.op === "claim" && order?.status === "waiting") order = { ...order, status: "filling", lines: b.lines };
-    if (b.op === "report" && open) order = { ...order, lines: b.lines, note: b.note, status: order.status === "asking" ? "asking" : "filling" };
-    if (b.op === "ask" && open) order = { ...order, status: "asking", question: b.question, answer: null };
-    if (b.op === "end" && open) order = { ...order, status: b.status, note: b.note, question: null };
-  }
-  return route.fulfill({ contentType: "application/json", body: JSON.stringify({ order }) });
-});
+// Another site trying to show Simmer in a frame.
+await ctx.route("https://elsewhere.test/**", (route) => route.fulfill({ contentType: "text/html", body: `<html><body><iframe id="f" src="${ADDRESS}/"></iframe></body></html>` }));
 
 let [worker] = ctx.serviceWorkers();
 worker ??= await ctx.waitForEvent("serviceworker");
 const id = new URL(worker.url()).host;
+const safewayQty = async (pid) => (await safeway.evaluate(() => localStorage.getItem("cart") || "{}").then(JSON.parse))[pid] ?? 0;
+const cartQty = async (pid) => (await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.qty ?? 0;
 
 const safeway = await ctx.newPage();
 await safeway.goto("https://www.safeway.com/");
-const panel = await ctx.newPage();
-await panel.goto(`chrome-extension://${id}/panel.html`);
 
-// The passcode: a wrong one says so, the right one shows the list.
+// Before the helper's set up, Simmer on the phone says plainly that the computer isn't answering.
+const phone = await ctx.newPage();
+await phone.setViewportSize({ width: 390, height: 844 });
+await phone.goto(`${ADDRESS}/`);
+await phone.getByLabel("Household passcode").fill(PASS);
+await phone.getByRole("button", { name: "Get started" }).click();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+await phone.getByRole("radio", { name: "Find" }).click();
+expect(await phone.getByText(/It's not answering right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
+
+// Setup in the panel: a wrong address and a wrong passcode say so; then the panel is Simmer, open on Shop.
+const panel = await ctx.newPage();
+await panel.setViewportSize({ width: 400, height: 900 });
+await panel.goto(`chrome-extension://${id}/panel.html`);
 await panel.fill("#address", "example.com");
-await panel.fill("#code", "test123");
+await panel.fill("#code", PASS);
 await panel.click("text=Continue");
-await panel.waitForSelector("text=That address doesn't look right.");
-expect(true, "an address that isn't one of the apps' says so");
+expect(await panel.getByText("That address doesn't look right.").waitFor({ timeout: 5000 }).then(() => true, () => false), "setup: an address that isn't one of the apps' says so");
 await panel.fill("#address", "simmer-test.vercel.app/");
 await panel.fill("#code", "nope");
 await panel.click("text=Continue");
-await panel.waitForSelector("text=Wrong passcode.");
-expect(true, "a wrong passcode says so");
-await panel.fill("#code", "test123");
+expect(await panel.getByText("Wrong passcode.").waitFor({ timeout: 10_000 }).then(() => true, () => false), "setup: a wrong passcode says so");
+await panel.fill("#code", PASS);
 await panel.click("text=Continue");
-await panel.waitForSelector("text=Fill my Safeway cart");
-const listText = await panel.locator("main").innerText();
-expect(/3 things/.test(listText) && /Milk/.test(listText) && !/Salt/.test(listText) && !/Dressing/.test(listText), "the list shows only what's needed from Safeway");
+const sim = panel.frameLocator("#simmer");
+expect(await sim.getByRole("radio", { name: "List" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop (passcode passed by message)");
+expect(!(await panel.locator("#simmer").getAttribute("src")).includes(PASS), "the passcode isn't in the frame's address");
 
-// Something added in Simmer while the panel is open shows up by itself.
-LIST.items.push({ id: "p", item: "pop tarts", quantity: "", store: "safeway", section: "pantry", checked: false, check: false });
-await panel.waitForSelector("text=4 things", { timeout: 30_000 }).then(() => expect(true, "the list keeps itself current"), () => expect(false, "the list keeps itself current"));
-LIST.items.pop();
-await panel.waitForSelector("text=3 things", { timeout: 30_000 });
+const t0 = Date.now();
+const heard = await until(async () => (await api("/api/safeway/jobs")).answering, 30_000);
+console.log(`(the helper checked in ${heard ? `after ${Date.now() - t0} ms` : "not at all"})`);
+// Find: Simmer's search, done by the helper on the stand-in Safeway, with pictures.
+await sim.getByRole("radio", { name: "Find" }).click();
+const add = sim.getByRole("button", { name: "Add", exact: true });
+const found = await add.first().waitFor({ timeout: 30_000 }).then(() => true, () => false);
+expect(found, "Find: a search comes back with products");
+if (!found) console.log("Find showed:", (await sim.locator("main").innerText()).slice(0, 400), "| tabs:", ctx.pages().map((p) => p.url()).join(" "));
+const imgs = await sim.locator("img[src^='https://www.safeway.com/img/']").count();
+expect(imgs >= 2, "Find: products show Safeway's pictures");
+// Add milk: two wanted, so two go in, on Safeway and in Simmer's cart.
+const firstName = await sim.locator("p.line-clamp-2").first().innerText();
+const pid = firstName.includes("1/2") ? "960001" : "960002";
+await add.first().click();
+expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "Add puts the wanted number in the Safeway cart and in Simmer's cart");
+expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.itemId === milkId, "Simmer's cart knows which list item it's for");
+await sim.getByRole("button", { name: /^One more/ }).first().click();
+expect(await until(async () => (await safewayQty(pid)) === 3 && (await cartQty(pid)) === 3), "+ adds one on Safeway");
+await sim.getByRole("button", { name: /^One less/ }).first().click();
+expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "− takes one off on Safeway");
+expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id === pid && /^https:/.test(p.image ?? "")), "the pick is kept, with its picture");
 
-// Signed out: it stops and asks for a sign-in instead of adding anything.
-await panel.click("text=Fill my Safeway cart");
-await panel.waitForSelector("text=Sign in to Safeway", { timeout: 30_000 });
-expect(posts.length === 0, "signed out: stops, adds nothing");
-await panel.click("text=Back to the list");
+// Cart: shows it, and the trash at one takes it out.
+await sim.getByRole("radio", { name: /^Cart · 1/ }).click();
+expect(await sim.getByText("Check out on Safeway").waitFor({ timeout: 10_000 }).then(() => true, () => false), "Cart shows what's in it, with checkout on Safeway");
+await sim.getByRole("button", { name: /^One less/ }).click();
+await until(async () => (await safewayQty(pid)) === 1);
+await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
+expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(pid)) === 0), "the trash takes it out of the Safeway cart");
 
-// A pick this computer made before picks were kept in Simmer goes to Simmer on the next fill.
-await panel.evaluate(() => chrome.storage.local.set({ picks: { bread: { id: "960099", name: "Sourdough Bread" } } }));
-
-// Signed in: milk is asked about (the half gallon and the gallon match the usual equally), then 2 go in.
-signedIn = true;
-await panel.waitForSelector("text=Fill my Safeway cart");
-await panel.click("text=Fill my Safeway cart");
-await panel.waitForSelector("text=Which milk?", { timeout: 30_000 });
-const options = await panel.locator("[data-pick]").allInnerTexts();
-expect(options.length === 3 && /Gallon/.test(options[0]), "asks about milk, listing every product found");
-await panel.locator("[data-pick]", { hasText: "1/2 Gallon" }).click();
-await panel.waitForSelector("text=Which bananas?", { timeout: 30_000 });
-// Bananas: look for something else, then pick from what comes up.
-await panel.fill("#q", "organic bananas");
-await panel.press("#q", "Enter");
-await panel.waitForSelector("[data-pick] >> text=Organic Bananas", { timeout: 30_000 });
-// This time press Add on the Safeway page itself: the panel notices and moves on.
-await safeway.locator(".product-card", { hasText: "Organic Bananas" }).getByRole("button", { name: /^Add/ }).click();
-// Nothing comes up for the last one: it asks, with a box to look for something else, and she skips it.
-await panel.waitForSelector("text=Which unobtainium?", { timeout: 30_000 });
-expect(/Nothing came up/.test(await panel.locator("main").innerText()), "says when nothing came up");
-await panel.click("text=Skip this one");
-await panel.waitForSelector("text=Your cart is ready", { timeout: 30_000 });
-const done = await panel.locator("main").innerText();
-expect(/In the cart, 2 · Lucerne Milk Reduced Fat 2% - 1\/2 Gallon/.test(done), "milk went in, two of them");
-expect(/In the cart · Organic Bananas/.test(done), "the other bananas went in");
-expect(/Unobtainium\nSkipped/.test(done), "the skipped item says so");
-expect(JSON.stringify(posts) === JSON.stringify([{ op: "check", id: "m", checked: true }, { op: "check", id: "b", checked: true }]), "only what went in is ticked off in Simmer");
-
-expect(JSON.stringify(picks.map((p) => [p.item, p.id])) === JSON.stringify([["bread", "960099"], ["milk", "960001"], ["bananas", "960011"]]), "the picks are kept in Simmer, this computer's old ones too");
-expect(chosen.length >= 3 && chosen[0] === "Lucerne 2% milk half gallon", "Simmer decides what to search for and which product to take");
-
-expect(/Copy what Safeway showed/.test(done), "offers to copy what Safeway showed when its sign wasn't recognized");
-await panel.click("text=Copy what Safeway showed").catch(() => {});
-
-// The short account of the page, for when nothing can be read, works on a page like Safeway's.
-const { readFileSync } = await import("node:fs");
-const sampleFn = readFileSync(path.join(ext, "page.js"), "utf8").replace(/^export /m, "");
-await safeway.goto("https://www.safeway.com/shop/search-results.html?q=bananas");
-await safeway.waitForTimeout(1200);
-const sample = await safeway.evaluate(`(async () => { ${sampleFn}; return safewayPage("sample", null, ${JSON.stringify(PAGE)}); })()`);
-expect(/add buttons \(\d+\)/.test(sample) && /cart count: \d+/.test(sample) && /around the first add: </.test(sample), "the page summary reads Add buttons inside a hidden layer, the cart count and the area around them");
-
-// Second time, with this computer's copy of the picks wiped: they come from Simmer, so only the unfindable one is
-// asked about. Stop there.
-await panel.evaluate(() => chrome.storage.local.remove("picks"));
-posts.length = 0;
-await panel.click("text=Back to the list");
-await panel.click("text=Fill my Safeway cart");
-await panel.waitForSelector("text=Which unobtainium?", { timeout: 60_000 });
-const again = await panel.locator("main").innerText();
-expect(!/Which (milk|bananas)/.test(again) && /In the cart · Organic Bananas/.test(again) && posts.length === 2, "the second time, remembered picks go in without asking");
-await panel.click("text=Stop");
-await panel.waitForSelector("text=Stopped before the end", { timeout: 30_000 });
-expect(true, "Stop ends the run and says what's left");
-
-// An order started on the phone: the background picks it up, adds the remembered items without anyone at the
-// computer, asks Simmer about the one it can't find, and goes on when the phone answers.
+// The phone path: with the panel closed, a search and an add from a plain page are done by the background.
 await panel.close();
-posts.length = 0;
-order = { id: "o1", status: "waiting", started: new Date().toISOString(), updated: "", note: "", lines: [], question: null, answer: null };
-const running = worker.evaluate(() => self.simmerCheckOrder());
-const until = async (ok, what, ms = 60_000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (ok()) return true; console.log("timed out:", what, JSON.stringify(order).slice(0, 400)); return false; };
-expect(await until(() => order.status === "asking" && order.question?.item === "unobtainium"), "a phone order: asks Simmer about what it can't pick");
-expect(order.lines.filter((l) => l.state === "in cart").map((l) => l.item).join() === "milk,bananas", "a phone order: the remembered items went in by themselves");
-order = { ...order, status: "filling", question: null, answer: { itemId: "u", skip: true } };
-await running;
-expect(order.status === "done" && order.lines.find((l) => l.itemId === "u")?.state === "skipped", "a phone order: the answer from the phone is followed, and it finishes");
-expect(order.lines.find((l) => l.item === "milk")?.qty === 2 && /^\d+$/.test(order.lines.find((l) => l.item === "milk")?.productId ?? ""), "a phone order: says how many went in, and which product");
-expect(posts.filter((p) => p.op === "check").length === 2, "a phone order: ticks off in Simmer what went in");
+await phone.reload();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+await phone.getByRole("button", { name: /^Bananas/ }).click();
+// The background stays quick for a few minutes after activity; nudge it as the half-minute alarm would.
+worker.evaluate(() => self.simmerCheck()).catch(() => {});
+const padd = phone.getByRole("button", { name: "Add", exact: true });
+expect(await padd.first().waitFor({ timeout: 45_000 }).then(() => true, () => false), "phone: a search is done by the background, panel closed");
+await padd.first().click();
+expect(await until(async () => (await safewayQty("960010")) + (await safewayQty("960011")) === 1, 45_000), "phone: Add goes into the Safeway cart from the background");
+expect(await phone.getByRole("radio", { name: "Cart · 1" }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "phone: Simmer's cart shows it");
+
+// Signed out of Safeway: an add says so in plain words.
+signedIn = false;
+await phone.getByRole("button", { name: /^One more/ }).first().click();
+expect(await phone.getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
+signedIn = true;
+
+// Framing: another site can't show Simmer.
+const other = await ctx.newPage();
+await other.goto("https://elsewhere.test/");
+await other.waitForTimeout(2500);
+const framedOk = await other.frames().find((f) => f !== other.mainFrame())?.evaluate(() => !!document.querySelector("main, #scroller")).catch(() => false);
+expect(!framedOk, "another site can't frame Simmer");
 
 await ctx.close();
+if (server) { try { process.kill(-server.pid); } catch { /* already gone */ } }
 console.log(fails.length ? `\n${fails.length} failed` : "\nAll passed");
 process.exit(fails.length ? 1 : 0);

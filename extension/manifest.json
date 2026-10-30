@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Simmer for Safeway",
-  "version": "0.6.1",
-  "description": "Fills your Safeway cart from the Simmer list, here or for an order started on your phone. You check out on Safeway yourself.",
+  "version": "1.0.0",
+  "description": "Does Simmer's Safeway searches and cart changes on safeway.com, for the phone and for Simmer in this panel. You check out on Safeway yourself.",
   "permissions": [
     "sidePanel",
     "storage",
     "scripting",
     "tabs",
-    "clipboardWrite",
     "alarms"
   ],
   "host_permissions": [
