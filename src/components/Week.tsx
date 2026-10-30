@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { dateIn, hourNow, type Lunch, type Night, type Recipe, type WeekData } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { addDays } from "@/lib/time";
@@ -25,25 +25,34 @@ function contextFor(w: WeekData, recipes: Recipe[], trips = { traderJoes: w.trip
   return { recipes, lastMade: w.lastMade, people: w.people, trips, freezer: w.freezer ?? [] };
 }
 
-// ---- This week (tab)
+// ---- Meals (tab)
 
-export function WeekScreen({ week, next, recipes, me, error, note, onNote, onPlan, onNight, onMade, onOpen }: {
-  week: WeekData | null; next: WeekData | null; recipes: Recipe[]; me: string; error: string | null;
+/**
+ * The Meals tab: tonight, this week, and every week after it that's planned, as far ahead as anyone likes; then a way to
+ * plan the next one.
+ */
+export function WeekScreen({ weeks, recipes, me, error, note, onNote, onPlan, onNight, onMade, onOpen }: {
+  /** This week, then the following weeks while planned, then the first that isn't. */
+  weeks: WeekData[]; recipes: Recipe[]; me: string; error: string | null;
   /** A note after saving ("Added 6 things to the grocery list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
   onPlan: (w: WeekData) => void; onNight: (w: WeekData, n: Night) => void; onMade: (date: string, made: boolean) => void;
   onOpen: (id: string) => void;
 }) {
   const today = dateIn(0);
+  const week = weeks[0] ?? null;
+  const ahead = weeks.slice(1).filter((w) => w.planned);
+  const toPlan = weeks.slice(1).find((w) => !w.planned);
+  const weekName = (w: WeekData) => (w.monday === addDays(week?.monday ?? "", 7) ? "Next week" : monthDay(w.monday));
+  const change = (w: WeekData) => <button className="t-foot font-semibold text-accent" onClick={() => onPlan(w)}>Change</button>;
   const name = (id: string) => mealName(id, recipes);
   // The most recent planned night that's past and not yet answered, within the last three days.
   const ask = week && [...week.nights, ...(week.lastWeek ?? [])].filter((n) => n.date < today && n.date >= addDays(today, -3) && n.meal && n.kind !== "skip" && !n.made).sort((a, b) => b.date.localeCompare(a.date))[0];
   const tonight = week?.nights.find((n) => n.date === today);
   const schoolMorning = hourNow() < 10 ? (week?.lunches ?? []).filter((l) => l.date === today && !l.noSchool) : [];
-  const saturday = [6, 0].includes(new Date(`${today}T12:00:00Z`).getUTCDay());
   return (
     <div className="space-y-6">
-      <TopBar title="This week" subtitle={week ? monthDay(week.monday) : undefined} />
+      <TopBar title="Meals" />
       {error && <Notice>{error}</Notice>}
       {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
       {ask && (
@@ -60,14 +69,8 @@ export function WeekScreen({ week, next, recipes, me, error, note, onNote, onPla
           {schoolMorning.map((l) => <Row key={l.kid} title={l.kid} subtitle={lunchLine(l)} />)}
         </Group>
       )}
-      {!week ? null : !week.planned && saturday && next ? (
-        next.planned ? null : (
-          <EmptyState icon="pot" title="Nothing planned yet" action={<Button onClick={() => onPlan(next)} icon="calendar">Plan next week</Button>}>
-            Say which nights are quick and which are regular, and Simmer fills in dinners from your recipes.
-          </EmptyState>
-        )
-      ) : !week.planned ? (
-        <EmptyState icon="pot" title="Nothing planned yet" action={<Button onClick={() => onPlan(week)} icon="calendar">Plan the week</Button>}>
+      {!week ? null : !week.planned ? (
+        <EmptyState icon="pot" title="Nothing planned this week" action={<Button onClick={() => onPlan(week)} icon="calendar">Plan this week</Button>}>
           Say which nights are quick and which are regular, and Simmer fills in dinners from your recipes.
         </EmptyState>
       ) : (
@@ -78,14 +81,15 @@ export function WeekScreen({ week, next, recipes, me, error, note, onNote, onPla
                 accessory="chevron" onClick={() => (recipes.some((r) => r.id === tonight.meal) ? onOpen(tonight.meal) : onNight(week, tonight))} />
             </Group>
           )}
-          <WeekGroup header="The week" w={week} recipes={recipes} me={me} today={today} onNight={onNight} />
-          <Button variant="secondary" className="w-full" onClick={() => onPlan(week)}>Change the plan</Button>
+          <WeekGroup header="This week" aside={change(week)} w={week} recipes={recipes} me={me} today={today} onNight={onNight} />
         </>
       )}
-      {saturday && next && (next.planned
-        ? <WeekGroup header="Next week" w={next} recipes={recipes} me={me} today={today} onNight={onNight} />
-        : week?.planned && <Button className="w-full" icon="calendar" onClick={() => onPlan(next)}>Plan next week</Button>)}
-      {saturday && next?.planned && <Button variant="secondary" className="w-full" onClick={() => onPlan(next)}>Change next week</Button>}
+      {ahead.map((w) => <WeekGroup key={w.monday} header={weekName(w)} aside={change(w)} w={w} recipes={recipes} me={me} today={today} onNight={onNight} />)}
+      {toPlan && (
+        <Button variant={week?.planned ? "primary" : "secondary"} className="w-full" icon="calendar" onClick={() => onPlan(toPlan)}>
+          {weekName(toPlan) === "Next week" ? "Plan next week" : `Plan the week of ${monthDay(toPlan.monday)}`}
+        </Button>
+      )}
     </div>
   );
 }
@@ -93,9 +97,9 @@ export function WeekScreen({ week, next, recipes, me, error, note, onNote, onPla
 const lunchLine = (l: Lunch) => l.schoolLunch ? `School lunch${l.snack ? ` · Snack: ${l.snack}` : ""}` : [[l.main, l.fruit, l.side, l.treat].filter(Boolean).join(", "), l.snack && `Snack: ${l.snack}`].filter(Boolean).join(" · ");
 
 /** A week's nights. "Robin planned" shows only for nights someone else planned, not the person using this phone. */
-function WeekGroup({ header, w, recipes, me, today, onNight }: { header: string; w: WeekData; recipes: Recipe[]; me: string; today: string; onNight: (w: WeekData, n: Night) => void }) {
+function WeekGroup({ header, aside, w, recipes, me, today, onNight }: { header: string; aside?: ReactNode; w: WeekData; recipes: Recipe[]; me: string; today: string; onNight: (w: WeekData, n: Night) => void }) {
   return (
-    <Group header={header}>
+    <Group header={header} aside={aside}>
       {w.nights.map((n) => (
         <Row key={n.date}
           title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : "Not picked yet"}</span>}

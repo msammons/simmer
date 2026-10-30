@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadList } from "./groceries";
-import { addFrozen, loadFreezer, loadWeek, markMade, saveWeek } from "./plan";
+import { addFrozen, loadFreezer, loadWeek, markMade, saveWeek, shopDue } from "./plan";
 import { addDays, todayIn } from "./time";
 import { planLunches, weekOf } from "./week";
 
@@ -28,7 +28,7 @@ describe("saving the week", () => {
   });
 
   it("uses the freezer instead of buying, and counts it down when made", async () => {
-    const later = addDays(todayIn(), 9);
+    const later = addDays(todayIn(), 5);
     await addFrozen("2 salmon");
     await addFrozen("1 salmon");
     expect((await loadFreezer()).find((f) => f.item === "salmon")?.amount).toBe("3");
@@ -39,5 +39,20 @@ describe("saving the week", () => {
     expect(items.find((i) => i.item === "broccoli")?.for).toMatch(/salmon and broccoli/);
     await markMade(later, true);
     expect((await loadFreezer()).find((f) => f.item === "salmon")?.amount).toBe("2");
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+  it("plans weeks ahead without putting their groceries on today's list; they go on once the night is close", async () => {
+    const far = addDays(todayIn(), 20);
+    const week = await loadWeek(weekOf(far));
+    const saved = await saveWeek(week.nights.map((n) => (n.date === far ? { ...n, kind: "quick" as const, meal: "tacos-1" } : n)), [], "Robin");
+    expect(saved.added).toBe(0);
+    expect((await loadList()).items.some((i) => /tacos/.test(i.for))).toBe(false);
+    expect(await shopDue()).toBe(0); // not close yet
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + 15 * 86_400_000));
+    expect(await shopDue()).toBeGreaterThan(0);
+    expect((await loadList()).items.some((i) => /tacos/.test(i.for))).toBe(true);
+    expect(await shopDue()).toBe(0); // once
   });
 });
