@@ -106,6 +106,11 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByRole("radio", { name: "Find" }).tap();
     ok(`${tag}: Find says when the computer isn't answering`, await seen(page.getByText(/It's not answering right now/), 10000));
     await page.screenshot({ path: `${dir}/5b-shop-find-${tag}.png` });
+    // The store picker: Safeway, the one online store for now, ticked in its sheet.
+    await page.getByRole("button", { name: /Shopping at Safeway/ }).tap();
+    ok(`${tag}: the store picker lists Safeway, ticked`, await seen(page.getByRole("radio", { name: "Safeway", checked: true })));
+    await page.screenshot({ path: `${dir}/5b-shop-store-${tag}.png` });
+    await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(300);
     ok(`${tag}: the switch stays at the top`, (await page.getByRole("radio", { name: "Find" }).boundingBox()).y < 140);
     await page.getByRole("radio", { name: /^Cart/ }).tap(); await page.waitForTimeout(500);
     ok(`${tag}: an empty cart says so`, await seen(page.getByText("The cart is empty")));

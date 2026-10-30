@@ -170,7 +170,9 @@ type Search = { query: string; state: "loading" | "done" | "failed"; products: P
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
  * the item), the usual first, Add puts the wanted number in the cart, − / + after that. Skip or Next moves on.
  */
-export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
+export function FindView({ store, items, index, onIndex, sw, onCart, onList, onGot }: {
+  /** The online store being shopped, by name. */
+  store: string;
   items: FindItem[]; index: number; onIndex: (i: number) => void; sw: Safeway; onCart: () => void; onList: () => void;
   /** Got it some other way (added on Safeway by hand): ticked off the list. */
   onGot: (id: string) => void;
@@ -206,10 +208,10 @@ export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
   useEffect(() => () => ctl.current?.abort(), []);
 
   if (!items.length) {
-    return <EmptyState icon="bag" title="Nothing to find" action={<Button variant="secondary" onClick={onList}>Back to the list</Button>}>There&apos;s nothing on the list for Safeway.</EmptyState>;
+    return <EmptyState icon="bag" title="Nothing to find" action={<Button variant="secondary" onClick={onList}>Back to the list</Button>}>There&apos;s nothing on the list for {store}.</EmptyState>;
   }
   if (!it) {
-    return <EmptyState icon="check" title="That's everything" action={<Button onClick={onCart}>See the cart</Button>}>You&apos;ve been through the whole list for Safeway.</EmptyState>;
+    return <EmptyState icon="check" title="That's everything" action={<Button onClick={onCart}>See the cart</Button>}>You&apos;ve been through the whole list for {store}.</EmptyState>;
   }
   const s = searches[query];
   const results = s?.state === "done" ? rankResults(s.products, { picked: it.picked, usual: it.usual, item: it.item }) : [];
@@ -224,7 +226,7 @@ export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
         <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : it.quantity && `${it.quantity} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const q = query.trim(); if (q) search(q, true); }}>
-        <input value={query} onChange={(e) => setTyped((t) => ({ ...t, [it.id]: e.target.value }))} aria-label="Search Safeway" placeholder="Search Safeway" enterKeyHint="search"
+        <input value={query} onChange={(e) => setTyped((t) => ({ ...t, [it.id]: e.target.value }))} aria-label={`Search ${store}`} placeholder={`Search ${store}`} enterKeyHint="search"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" variant="secondary" disabled={!query.trim() || s?.state === "loading"} className="shrink-0 px-5">Search</Button>
       </form>
@@ -237,7 +239,7 @@ export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
               <span className="flex-1 space-y-2"><span className="block h-3.5 w-3/4 animate-pulse rounded-full bg-sunk" /><span className="block h-3 w-1/4 animate-pulse rounded-full bg-sunk" /></span>
             </div>
           ))}
-          <p className="sr-only" role="status">Looking on Safeway</p>
+          <p className="sr-only" role="status">Looking on {store}</p>
         </Group>
       )}
       {s?.state === "failed" && (
@@ -247,20 +249,20 @@ export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
             <button className="font-semibold text-accent" onClick={() => search(query, true)}>Try again</button>
           </Notice>
           {/* Without the computer: the usual product, and Safeway's own search, to add it there; then tick it off here. */}
-          <Group header="Add it on Safeway instead" footer="Opens Safeway. Once it's in the cart there, tap Got it.">
+          <Group header={`Add it on ${store} instead`} footer={`Opens ${store}. Once it's in the cart there, tap Got it.`}>
             {it.picked && (
               <ProductRow p={{ name: it.picked.name, image: it.picked.image }} sub={<span className="font-semibold text-accent">Your usual</span>}
                 control={<a href={productLink(it.picked.id)} target="_blank" rel="noreferrer" className="glass flex h-10 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent">Open</a>} />
             )}
             <a href={searchLink(query || it.item)} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-4 py-3 active:bg-sunk">
               <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-sunk text-accent"><Icon name="search" className="size-6" /></span>
-              <span className="min-w-0 flex-1"><span className="block t-body">Search Safeway for &ldquo;{query || it.item}&rdquo;</span></span>
+              <span className="min-w-0 flex-1"><span className="block t-body">Search {store} for &ldquo;{query || it.item}&rdquo;</span></span>
               <Icon name="external" className="size-4 text-muted/70" strokeWidth={2.2} />
             </a>
           </Group>
         </>
       )}
-      {s?.state === "done" && !s.signedIn && <Notice>Safeway isn&apos;t signed in on the computer. Sign in there to add things.</Notice>}
+      {s?.state === "done" && !s.signedIn && <Notice>{store} isn&apos;t signed in on the computer. Sign in there to add things.</Notice>}
       {s?.state === "done" && (results.length ? (
         <Group>
           {results.map(({ product: p, usual }) => {
@@ -287,14 +289,14 @@ export function FindView({ items, index, onIndex, sw, onCart, onList, onGot }: {
   );
 }
 
-/** The Safeway cart as Simmer knows it: change quantities, take things out, and check out on Safeway. */
-export function CartView({ sw, onFind }: { sw: Safeway; onFind: (() => void) | null }) {
+/** A store's cart as Simmer knows it: change quantities, take things out, and check out on Safeway. */
+export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; onFind: (() => void) | null }) {
   const { total, estimate } = cartTotal(sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })));
   if (sw.loaded && !sw.cart.length) {
     return (
       <div className="space-y-5">
         {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
-        <EmptyState icon="cart" title="The cart is empty" action={onFind && <Button onClick={onFind}>Find them at Safeway</Button>}>
+        <EmptyState icon="cart" title="The cart is empty" action={onFind && <Button onClick={onFind}>Find them at {store}</Button>}>
           What you add from the list shows here.
         </EmptyState>
       </div>
@@ -304,7 +306,7 @@ export function CartView({ sw, onFind }: { sw: Safeway; onFind: (() => void) | n
     <div className="space-y-5">
       {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
       {sw.answering === false && <Notice tone="info">{NOT_ANSWERING} Changes here wait until it is.</Notice>}
-      <Group footer="Only what was added here shows. Anything added on Safeway itself is in the cart there too.">
+      <Group footer={`Only what was added here shows. Anything added on ${store} itself is in the cart there too.`}>
         {sw.cart.map((l) => {
           const qty = sw.qtyOf(l.productId, l.qty);
           const p = { id: l.productId, name: l.name, price: l.price, image: l.image };
@@ -318,7 +320,7 @@ export function CartView({ sw, onFind }: { sw: Safeway; onFind: (() => void) | n
           <span className="t-headline tabular-nums">{money(total)}</span>
         </div>
       </Group>
-      <Button href={cartUrl()} icon="external" className="w-full">Check out on Safeway</Button>
+      <Button href={cartUrl()} icon="external" className="w-full">Check out on {store}</Button>
     </div>
   );
 }
