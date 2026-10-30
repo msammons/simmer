@@ -176,4 +176,20 @@ async function fill() {
   show({ screen: "done", at: -1, asking: null, note: "" });
 }
 
+/**
+ * The list keeps itself current while it's showing: when the panel is looked at again, and every 20 seconds, so
+ * something added in Simmer shows up without pressing anything. Quietly: no "Loading…", and only while nothing's
+ * being filled.
+ */
+async function freshen() {
+  if (state.screen !== "list" || document.visibilityState !== "visible") return;
+  try {
+    const items = await start();
+    if (state.screen === "list" && JSON.stringify(items.map((i) => [i.id, i.item, i.quantity])) !== JSON.stringify(state.items.map((i) => [i.id, i.item, i.quantity]))) show({ items });
+  } catch { /* keep what's showing; the next try may work */ }
+}
+document.addEventListener("visibilitychange", freshen);
+window.addEventListener("focus", freshen);
+setInterval(freshen, 20_000);
+
 load();
