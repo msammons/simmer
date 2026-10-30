@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
-import { searchRecipes } from "@/lib/search";
 import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Groceries";
@@ -21,57 +20,47 @@ function RecipeRow({ r, onOpen }: { r: Recipe; onOpen: (r: Recipe) => void }) {
 }
 
 /** A few of a group, and the rest one tap away (as a search, so the list stays short). */
-function Some({ header, items, onOpen, onAll }: { header: string; items: Recipe[]; onOpen: (r: Recipe) => void; onAll: () => void }) {
+function Some({ header, items, onOpen }: { header: string; items: Recipe[]; onOpen: (r: Recipe) => void }) {
+  const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
-    <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={onAll}>All {items.length}</button> : undefined}>
-      {items.slice(0, 6).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}
+    <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
+      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}
     </Group>
   );
 }
 
-/** Search (the round button): her collection, searched as she types; before typing, the collection by kind. */
-export function SearchScreen({ recipes, query, recent, error, onSearch, onOpen, onAdd, freezer = [] }: {
-  recipes: Recipe[] | null; query: string; recent: string[]; error: string | null; freezer?: Frozen[];
-  onSearch: (q: string) => void; onOpen: (r: Recipe) => void; onAdd: () => void;
+/** The Recipes tab: her collection by kind, each kind opening to all of it. */
+export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
+  recipes: Recipe[] | null; error: string | null; freezer?: Frozen[]; onOpen: (r: Recipe) => void; onAdd: () => void;
 }) {
   const all = useMemo(() => recipes ?? [], [recipes]);
-  const found = useMemo(() => (query.trim() ? searchRecipes(all, query) : []), [all, query]);
   const active = all.filter((r) => r.active);
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
   return (
     <div className="space-y-6">
       <TopBar title="Recipes" subtitle={all.length ? `${all.length} in your collection` : "Your collection"} />
       {error && <Notice>{error}</Notice>}
-      {query.trim() ? (
-        found.length ? (
-          <Group header={`${found.length} found`}>{found.map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}</Group>
-        ) : (
-          <EmptyState icon="search" title="Nothing found" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
-            Nothing in your collection matches &ldquo;{query.trim()}&rdquo;.
-          </EmptyState>
-        )
-      ) : recipes && !all.length ? (
+      {recipes && !all.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
           Bring in recipes from a link, a photo or a file, or type in the ones you know by heart.
         </EmptyState>
       ) : (
         <>
           <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
-          {recent.length > 0 && <Group header="Recent">{recent.map((x) => <Row key={x} icon="search" title={x} onClick={() => onSearch(x)} accessory="chevron" />)}</Group>}
-          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} onOpen={onOpen} onAll={() => onSearch(freezer[0]?.item ?? "")} />
-          <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} onOpen={onOpen} onAll={() => onSearch("favorites")} />
-          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("quick")} />
-          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("regular")} />
-          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} onOpen={onOpen} onAll={() => onSearch("kids")} />
-          <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} onOpen={onOpen} onAll={() => onSearch("not suggested")} />
+          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} onOpen={onOpen} />
+          <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} onOpen={onOpen} />
+          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} onOpen={onOpen} />
+          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} onOpen={onOpen} />
+          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} onOpen={onOpen} />
+          <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} onOpen={onOpen} />
         </>
       )}
     </div>
   );
 }
 
-/** A recipe (drill-in from Search): what it is, what's in it, how it's made, and her one-tap corrections. */
+/** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
 export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, tonight, onMade }: {
   r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's tonight's dinner: cooking it, so the screen stays on and Made it is one tap. */
