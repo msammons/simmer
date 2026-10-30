@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Simmer for Safeway",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Fills your Safeway cart from the Simmer list, here or for an order started on your phone. You check out on Safeway yourself.",
   "permissions": [
     "sidePanel",

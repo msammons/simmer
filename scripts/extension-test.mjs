@@ -8,6 +8,8 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
 
+import { choose, helperStart, PAGE } from "../src/lib/safeway-helper.mjs";
+
 const { chromium } = createRequire(import.meta.url)("playwright");
 const ext = path.resolve("extension");
 
@@ -101,6 +103,18 @@ await ctx.route("https://simmer-test.vercel.app/api/safeway", async (route) => {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify({ picks }) });
 });
 
+// What the helper asks Simmer: how to start a run, and which product to take. Answered with Simmer's own logic
+// (src/lib/safeway-helper.mjs), from the stand-in list and the picks kept above.
+const chosen = [];
+await ctx.route("https://simmer-test.vercel.app/api/safeway/helper", async (route) => {
+  const req = route.request();
+  if (req.headers()["x-passcode"] !== "test123") return route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Wrong passcode."}' });
+  if (req.method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify(helperStart(LIST, picks)) });
+  const b = JSON.parse(req.postData() ?? "{}");
+  chosen.push(b.query);
+  return route.fulfill({ contentType: "application/json", body: JSON.stringify(choose(b.products, { picked: b.item.picked, usual: b.item.usual, item: b.query || b.item.item })) });
+});
+
 // Simmer's order, as /api/safeway/order keeps it, for an order started on the phone.
 let order = null;
 await ctx.route("https://simmer-test.vercel.app/api/safeway/order", async (route) => {
@@ -178,6 +192,7 @@ expect(/Unobtainium\nSkipped/.test(done), "the skipped item says so");
 expect(JSON.stringify(posts) === JSON.stringify([{ op: "check", id: "m", checked: true }, { op: "check", id: "b", checked: true }]), "only what went in is ticked off in Simmer");
 
 expect(JSON.stringify(picks.map((p) => [p.item, p.id])) === JSON.stringify([["bread", "960099"], ["milk", "960001"], ["bananas", "960011"]]), "the picks are kept in Simmer, this computer's old ones too");
+expect(chosen.length >= 3 && chosen[0] === "Lucerne 2% milk half gallon", "Simmer decides what to search for and which product to take");
 
 expect(/Copy what Safeway showed/.test(done), "offers to copy what Safeway showed when its sign wasn't recognized");
 await panel.click("text=Copy what Safeway showed").catch(() => {});
@@ -187,7 +202,7 @@ const { readFileSync } = await import("node:fs");
 const sampleFn = readFileSync(path.join(ext, "page.js"), "utf8").replace(/^export /m, "");
 await safeway.goto("https://www.safeway.com/shop/search-results.html?q=bananas");
 await safeway.waitForTimeout(1200);
-const sample = await safeway.evaluate(`(async () => { ${sampleFn}; return safewayPage("sample"); })()`);
+const sample = await safeway.evaluate(`(async () => { ${sampleFn}; return safewayPage("sample", null, ${JSON.stringify(PAGE)}); })()`);
 expect(/add buttons \(\d+\)/.test(sample) && /cart count: \d+/.test(sample) && /around the first add: </.test(sample), "the page summary reads Add buttons inside a hidden layer, the cart count and the area around them");
 
 // Second time, with this computer's copy of the picks wiped: they come from Simmer, so only the unfindable one is

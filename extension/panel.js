@@ -1,8 +1,7 @@
 // The panel beside safeway.com, for filling the cart at the computer: reads Simmer's list, then fills the cart
 // (fill.js) and asks here when it isn't sure. Orders started from Simmer on a phone are filled in the background
 // (background.js) instead.
-import { safewayItems } from "./match.js";
-import { CART, WrongPasscode, fillCart, go, onPage, safewayTab, searchUrl, simmer, sleep, store } from "./fill.js";
+import { WrongPasscode, cartUrl, fillCart, go, onPage, safewayTab, searchUrl, sleep, start, store } from "./fill.js";
 
 const app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -71,7 +70,7 @@ function render() {
         <button class="btn" id="back">Back to the list</button>
         ${s.lastPage ? `<button class="btn" id="copy">${s.copied ? "Copied" : "Copy what Safeway showed"}</button>` : ""}`}`;
     app.querySelector("#stop")?.addEventListener("click", () => { state.stopped = true; state.answer?.("skip"); show({ note: "Stopping…" }); });
-    app.querySelector("#cart")?.addEventListener("click", async () => go(await safewayTab(), CART));
+    app.querySelector("#cart")?.addEventListener("click", async () => go(await safewayTab(), cartUrl()));
     app.querySelector("#back")?.addEventListener("click", load);
     app.querySelector("#copy")?.addEventListener("click", async () => { await navigator.clipboard.writeText(s.lastPage).catch(() => {}); show({ copied: true }); });
     app.querySelectorAll("[data-open]").forEach((a) => a.addEventListener("click", async (e) => { e.preventDefault(); go(await safewayTab(), a.href); }));
@@ -132,8 +131,7 @@ async function load() {
   const address = await store.get("address", "");
   if (!address || !(await store.get("passcode", ""))) return show({ screen: "passcode", address });
   try {
-    const list = await simmer("GET");
-    show({ screen: "list", items: safewayItems(list), staples: list.staples ?? [] });
+    show({ screen: "list", items: await start() });
   } catch (e) {
     if (e instanceof WrongPasscode) return show({ screen: "passcode", address, error: "Wrong passcode." });
     show({ screen: "error", error: e.message });
@@ -160,8 +158,10 @@ async function savePasscode(typedAddress, code) {
 }
 
 async function fill() {
-  const items = state.items;
-  show({ screen: "filling", results: [], at: 0, stopped: false, halted: "", note: "", lastPage: "" });
+  // Asked again at the start of the run, so the list, the picks and how to read Safeway are Simmer's latest.
+  let items;
+  try { items = await start(); } catch (e) { return e instanceof WrongPasscode ? load() : show({ screen: "error", error: e.message }); }
+  show({ screen: "filling", items, results: [], at: 0, stopped: false, halted: "", note: "", lastPage: "" });
   const ui = {
     at: (i) => show({ at: i, note: "" }),
     note: (note) => show({ note }),
@@ -169,7 +169,7 @@ async function fill() {
     result: (i, r) => { state.results[i] = r; render(); },
     stopped: () => state.stopped,
   };
-  const { halted } = await fillCart({ items, staples: state.staples, ui });
+  const { halted } = await fillCart({ items, ui });
   state.halted = halted;
   state.lastPage = await store.get("lastPage", "");
   state.copied = false;

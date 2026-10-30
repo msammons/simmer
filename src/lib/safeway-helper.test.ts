@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choose, howMany, keyOf, safewayItems, score, searchFor, usualFor, words } from "./match.js";
+import { choose, howMany, keyOf, PAGE, prepare, safewayItems, score, searchFor, usualFor, words } from "./safeway-helper.mjs";
 
 const milk = { id: "1", name: "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", price: "$3.49" };
 const milkGal = { id: "2", name: "Lucerne Milk Reduced Fat 2% - 1 Gallon", price: "$5.29" };
@@ -69,9 +69,32 @@ describe("choosing a product", () => {
   });
   it("asks about everything found otherwise, best match first, Safeway's order breaking ties", () => {
     const r = choose([bananas, oat, milkGal, milk], { item: "2% milk" });
-    expect(r.ask.map((p) => p.id)).toEqual(["2", "1", "3", "4"]);
+    expect(r.ask?.map((p) => p.id)).toEqual(["2", "1", "3", "4"]);
   });
   it("asks even when a remembered pick has gone", () => {
     expect(choose([oat], { picked: { id: "1" }, item: "milk" }).ask).toEqual([oat]);
+  });
+});
+
+describe("prepare", () => {
+  it("gets the list's Safeway items ready: the search, how many, the remembered pick", () => {
+    const list = {
+      items: [
+        { id: "m", item: "milk", quantity: "2", store: "safeway", checked: false, check: false },
+        { id: "b", item: "bananas", quantity: "", store: "safeway", checked: false, check: false },
+        { id: "s", item: "salt", quantity: "", store: "safeway", checked: false, check: true },
+        { id: "t", item: "dressing", quantity: "", store: "trader-joes", checked: false, check: false },
+      ],
+      staples: [{ item: "milk", product: "Lucerne 2% milk half gallon" }],
+    };
+    const items = prepare(list, [{ item: "Bananas", id: "960011", name: "Organic Bananas" }]);
+    expect(items.map((i) => i.id)).toEqual(["m", "b"]);
+    expect(items[0]).toMatchObject({ query: "Lucerne 2% milk half gallon", usual: "Lucerne 2% milk half gallon", want: 2, picked: null });
+    expect(items[1]).toMatchObject({ query: "Organic Bananas", picked: { id: "960011", name: "Organic Bananas" }, want: 1 });
+  });
+  it("every page pattern is a working pattern", () => {
+    const pats = [PAGE.tileId.pattern, PAGE.link.pattern, PAGE.price.pattern, PAGE.add.label, PAGE.add.not, PAGE.plus, PAGE.minus, PAGE.inCartText, PAGE.signIn, PAGE.noResults];
+    for (const p of pats) expect(() => new RegExp(p, "i")).not.toThrow();
+    expect(new RegExp(PAGE.price.pattern, "i").exec("Now $3.49 each")?.[0]).toBe("$3.49 each");
   });
 });
