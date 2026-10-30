@@ -103,36 +103,62 @@ function StoreGroup({ store, items, act, onMore, footer, cart, picks, onFind }: 
   );
 }
 
-export type ShopView = "list" | "find" | "cart";
+export type ShopView = "find" | "cart";
 
 /**
- * The Shop tab: the list, finding things at Safeway, and the Safeway cart, switched at the top. Find goes through the
- * list's Safeway items one at a time; the cart is the real Safeway cart, changed through the computer.
+ * The List tab: everything to get, from every store. A Safeway item opens Shop's Find on it (`onFind`), as does the
+ * button for all of them.
  */
-export function ShopScreen({ list, kitchen, error, act }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions }) {
+export function ListScreen({ list, kitchen, error, act, onFind }: {
+  list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onFind: (id?: string) => void;
+}) {
   const sw = useSafeway();
   // Done shopping at Safeway empties the cart too: show that once the list has changed.
   const here: ListActions = { ...act, done: (s) => { void Promise.resolve(act.done(s) as unknown).then(() => { if (s === "safeway") sw.refresh(); }); } };
-  const [view, setView] = useState<ShopView>("list");
+  const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
+  return (
+    <div className="space-y-6">
+      <BrandBar />
+      <h1 className="sr-only">List</h1>
+      {error && <Notice>{error}</Notice>}
+      <ListView list={list} kitchen={kitchen} act={here} cart={sw.cart} picks={sw.picks} onFind={onFind} anyToFind={toFind.some((x) => !qtyFor(sw.cart, x.id))} />
+    </div>
+  );
+}
+
+/**
+ * The Shop tab: one online store at a time (picked at the top), finding the list's items there and its cart, switched
+ * beside it. Find goes through the list's items for that store one at a time; the cart is the store's real cart,
+ * changed through the computer. `startAt` opens Find on a list item.
+ */
+export function ShopScreen({ list, error, act, startAt, onList }: {
+  list: ListState | null; error: string | null; act: ListActions; startAt: string | null; onList: () => void;
+}) {
+  const sw = useSafeway();
+  const [view, setView] = useState<ShopView>("find");
   const [online, setOnline] = useState<Store>(ONLINE_STORES[0]); // the store Find and Cart are for
-  const [findAt, setFindAt] = useState<string | null>(null); // the item Find shows, by id
+  const [findAt, setFindAt] = useState<string | null>(startAt); // the item Find shows, by id
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
   const at = findAt ? toFind.findIndex((x) => x.id === findAt) : -1;
   const index = at >= 0 ? at : findAt === "end" ? toFind.length : firstToFind(toFind, sw.cart);
   const go = (v: ShopView) => { scrollAppTo(0); setView(v); };
-  const find = (id?: string) => { setFindAt(id ?? toFind[firstToFind(toFind, sw.cart)]?.id ?? null); go("find"); };
+  const find = () => { setFindAt(toFind[firstToFind(toFind, sw.cart)]?.id ?? null); go("find"); };
   const count = sw.cart.length;
-  const options: { value: ShopView; label: string }[] = [{ value: "list", label: "List" }, { value: "find", label: "Find" }, { value: "cart", label: count ? `Cart · ${count}` : "Cart" }];
+  const options: { value: ShopView; label: string }[] = [{ value: "find", label: "Find" }, { value: "cart", label: count ? `Cart · ${count}` : "Cart" }];
+  const name = STORE_NAMES[online];
   return (
     <div className="space-y-6">
-      <BrandBar below={<Segmented label="Show" value={view} options={options} onChange={(v) => (v === "find" && view !== "find" ? find(findAt && at >= 0 ? findAt : undefined) : go(v))} />} />
-      <h1 className="sr-only">Shop</h1>
+      <BrandBar below={
+        <div className="flex items-center gap-2">
+          <StorePicker store={online} onPick={setOnline} />
+          <div className="min-w-0 flex-1"><Segmented label="Show" value={view} options={options} onChange={go} /></div>
+        </div>
+      } />
+      <h1 className="sr-only">Shop at {name}</h1>
       {error && <Notice>{error}</Notice>}
-      {view === "list" && <ListView list={list} kitchen={kitchen} act={here} cart={sw.cart} picks={sw.picks} onFind={find} anyToFind={toFind.some((x) => !qtyFor(sw.cart, x.id))} />}
-      {view !== "list" && <StorePicker store={online} onPick={setOnline} />}
-      {view === "find" && <FindView store={STORE_NAMES[online]} items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={() => go("list")}
+      {view === "find" && <FindView store={name} items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={onList}
         onGot={(id) => { const x = list?.items.find((i) => i.id === id); if (x) act.check(x, true); }} />}
-      {view === "cart" && <CartView store={STORE_NAMES[online]} sw={sw} onFind={toFind.length ? () => find() : null} />}
+      {view === "cart" && <CartView store={name} sw={sw} onFind={toFind.length ? find : null} />}
     </div>
   );
 }
@@ -142,7 +168,7 @@ function StorePicker({ store, onPick }: { store: Store; onPick: (s: Store) => vo
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button onClick={() => setOpen(true)} aria-label={`Shopping at ${STORE_NAMES[store]}. Change store`} className="glass -mt-2 flex h-10 items-center gap-1.5 rounded-full pl-4 pr-3 t-sub font-semibold">
+      <button onClick={() => setOpen(true)} aria-label={`Shopping at ${STORE_NAMES[store]}. Change store`} className="glass flex h-10 shrink-0 items-center gap-1.5 rounded-full pl-4 pr-3 t-sub font-semibold">
         {STORE_NAMES[store]}<Icon name="down" className="size-4 text-muted" strokeWidth={2.4} />
       </button>
       {open && (
