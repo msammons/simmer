@@ -208,7 +208,7 @@ code (a number of minutes is read from the recipe text, never invented).
 
 **What it does.** She says what the week looks like; Simmer fills in the rest with meals from her collection.
 
-The flow, from the This week tab:
+The flow, from the Meals tab:
 
 1. **"Plan the week"** opens a sheet with all seven nights. Either of them can plan: Sam can plan or pin nights too,
    and each night shows who planned it.
@@ -248,7 +248,7 @@ How suggestions are chosen (code, not the model, so they're predictable and expl
 The model's job is only the friendly words: a few words on why a pick is there ("Uses the salmon in the freezer"),
 written from facts code hands it.
 
-**The week screen** (This week tab) shows the nights as rows: day, the meal (and the kids' meal underneath on a split
+**The week screen** (Meals tab) shows the nights as rows: day, the meal (and the kids' meal underneath on a split
 night), a small tag (Quick / Regular), *Sam away* when he is, and a pin mark on pinned nights. Tap a night to swap, cook from the recipe, or mark it made. Tonight sits at the top.
 
 **"Did you make it?"** The next time she opens the app after a planned night, a small notice asks *"Did you make the
@@ -346,7 +346,7 @@ needed on the list.
 - **No school** that day (a holiday, a day off): she taps the day off on the plan sheet; no lunch is planned.
 - **Rotation, not randomness.** Each part rotates through the boy's options so the week has variety (not the same fruit
   every day), and anything not in stock this week (no raspberries) is swapped for another of his options.
-- **The morning view.** On a school morning, the This week tab shows today's lunches at the top: *Theo: bean and
+- **The morning view.** On a school morning, the Meals tab shows today's lunches at the top: *Theo: bean and
   cheese burrito, grapes, pea crackers, goldfish. Snack: cheese and crackers.* That's the packing list, for whoever's
   packing (and for anyone helping, like Grandma).
 - **On the list.** Lunch items land on the grocery list with *for lunches*, merged with dinner items.
@@ -444,16 +444,19 @@ services that add fees.
 Built only from `components/ui.tsx`, in the style the studio's other apps share (the Simmer lockup top left, one action
 top right, one large title, inset grouped lists, one sheet style).
 
-### This week (tab)
+### Meals (tab)
 
-- Title *This week*, subtitle with the dates. Top right: Settings.
-- If nothing is planned: an empty state with one button, *Plan the week*.
+- Title *Meals*. Top right: Settings.
+- If nothing is planned this week: an empty state with one button, *Plan this week*.
 - **Today's lunches** group on school mornings (until about 9): each boy's lunch and snack, as a packing list.
 - **Tonight** group: tonight's meal, large, with its tag (and the kids' meal on a split night); tap to cook. On a planned night that's past: the *Did you make
   it?* notice.
-- **The week** group: one row per night (day, meal, Quick/Regular tag, pin mark). Tap a row for a sheet: *Cook*,
-  *Swap* (three suggestions), *Pin*, *Made it*, *Clear*.
-- At the bottom: *Plan next week* once it's Saturday or later.
+- **This week** group: one row per night (day, meal, Quick/Regular tag, pin mark), *Change* beside its heading. Tap a
+  row for a sheet: *Cook*, *Swap* (three suggestions), *Pin*, *Made it*, *Clear*.
+- Then every later week that's planned (*Next week*, then each by its first day, "Nov 9"), as far ahead as anyone
+  likes, each with *Change*; then *Plan next week* (or *Plan the week of Nov 16*) for the first one that isn't.
+- Groceries for nights more than a week out wait, and go on the list once the night is a week away (the `groceries`
+  column in the Plan and Lunch plan tabs says "later" until then), so planning ahead doesn't fill today's list.
 
 ### Plan the week (sheet)
 

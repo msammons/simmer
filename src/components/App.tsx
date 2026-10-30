@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, applyTheme, AuthError, dateIn, errorText, SIGNED_OUT, store, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { addDays } from "@/lib/time";
-import { weekOf } from "@/lib/week";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { GroceriesScreen, type ListActions } from "./Groceries";
@@ -16,8 +15,8 @@ type Tab = "week" | "groceries" | "recipes";
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-const TABS: TabDef<Tab>[] = [{ id: "week", label: "This week", icon: "calendar" }, { id: "groceries", label: "Groceries", icon: "list" }, { id: "recipes", label: "Recipes", icon: "book" }];
-const TAB_NAMES: Record<Tab, string> = { week: "This week", groceries: "Groceries", recipes: "Recipes" };
+const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "groceries", label: "Groceries", icon: "list" }, { id: "recipes", label: "Recipes", icon: "book" }];
+const TAB_NAMES: Record<Tab, string> = { week: "Meals", groceries: "Groceries", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
@@ -48,14 +47,16 @@ export default function App() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
-  const [week, setWeek] = useState<WeekData | null>(() => (browser ? store.week() : null)); // last time's, for opening offline
-  const [next, setNext] = useState<WeekData | null>(null);
+  // This week first, then the weeks after it that are planned, then the first one that isn't (to plan it). This week is
+  // last time's at first, for opening offline.
+  const [weeks, setWeeks] = useState<WeekData[]>(() => { const w = browser ? store.week() : null; return w ? [w] : []; });
+  const week = weeks[0] ?? null;
   const [weekError, setWeekError] = useState<string | null>(null);
   const [weekNote, setWeekNote] = useState<string | null>(null);
   // Open sheets name their week (and night) rather than holding a copy, so they show the plan as it is now.
   const [planningFor, setPlanningFor] = useState<string | null>(null);
   const [nightAt, setNightAt] = useState<{ monday: string; date: string } | null>(null);
-  const weekBy = (monday: string) => [week, next].find((w) => w?.monday === monday) ?? null;
+  const weekBy = (monday: string) => weeks.find((w) => w.monday === monday) ?? null;
   const planning = planningFor ? weekBy(planningFor) : null;
   const nightWeek = nightAt ? weekBy(nightAt.monday) : null;
   const night = nightAt && nightWeek?.nights.find((n) => n.date === nightAt.date);
@@ -144,36 +145,44 @@ export default function App() {
     change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
   }
 
-  // The week: this one, and next week from Saturday on (for "Plan next week").
+  /**
+   * The weeks: this one, then each following week while it's planned, up to and including the first that isn't (so it
+   * can be planned), as far ahead as anyone has planned. Loading this week also puts on the list the groceries of nights
+   * planned long ago that are now close.
+   */
   const refreshWeek = useCallback(async () => {
     try {
-      const today = dateIn(0);
-      const [w, n] = await Promise.all([api.week(today), [6, 0].includes(new Date(`${today}T12:00:00Z`).getUTCDay()) ? api.week(addDays(weekOf(today), 7)) : Promise.resolve(null)]);
-      setWeek(w); store.setWeek(w); setNext(n); setWeekError(null);
+      const w = await api.week(dateIn(0));
+      const all: WeekData[] = [w];
+      // Four weeks at a time, for at most half a year ahead.
+      for (let ahead = 1; ahead <= 26; ahead += 4) {
+        const batch = await Promise.all([0, 1, 2, 3].map((k) => api.week(addDays(w.monday, 7 * (ahead + k)))));
+        const stop = batch.findIndex((x) => !x.planned);
+        all.push(...(stop < 0 ? batch : batch.slice(0, stop + 1)));
+        if (stop >= 0) break;
+      }
+      setWeeks(all); store.setWeek(w); setWeekError(null);
+      if (w.added) setWeekNote(`Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list for the coming days.`);
     } catch (e) {
       if (!(e instanceof AuthError)) setWeekError(errorText(e));
     }
   }, []);
   const onWeek = phase === "app" && top.kind === "week";
   useEffect(() => { if (onWeek) queueMicrotask(refreshWeek); }, [onWeek, visit, refreshWeek]);
-  /** A saved week comes back from the server as it is now; it replaces this week or next, whichever it is. */
-  function gotWeek(w: WeekData) {
-    if (week && w.monday === week.monday) { setWeek(w); store.setWeek(w); }
-    else if (w.monday === weekOf(dateIn(0))) { setWeek(w); store.setWeek(w); }
-    else setNext(w);
-  }
   async function saveWeek(nights: Night[], lunches: Lunch[]) {
     try {
       const w = await api.saveWeek(nights, lunches, me);
-      gotWeek(w);
+      setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x)));
       setWeekError(null);
+      refreshWeek(); // a newly planned week brings the one after it, to plan next
       setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
     } catch (e) { failed(setWeekError)(e); }
     setPlanningFor(null);
   }
   async function made(date: string, yes: boolean) {
-    setWeek((w) => w && { ...w, nights: w.nights.map((n) => (n.date === date ? { ...n, made: yes ? "yes" : "no" } : n)), lastWeek: w.lastWeek.map((n) => (n.date === date ? { ...n, made: yes ? "yes" : "no" } : n)) });
-    try { const w = await api.made(date, yes); if (w.monday === week?.monday) gotWeek(w); else refreshWeek(); }
+    const mark = (n: Night) => (n.date === date ? { ...n, made: yes ? "yes" as const : "no" as const } : n);
+    setWeeks((all) => all.map((w, i) => (i ? w : { ...w, nights: w.nights.map(mark), lastWeek: w.lastWeek.map(mark) })));
+    try { const w = await api.made(date, yes); setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x))); if (w.monday === week?.monday) store.setWeek(w); }
     catch (e) { failed(setWeekError)(e); }
   }
 
@@ -199,10 +208,10 @@ export default function App() {
     need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     have: () => change({ op: "have" }, (l) => ({ ...l, items: l.items.filter((x) => !(x.check && !x.checked)) })),
     swapFor: (forWhat) => {
-      // "Tuesday's turkey chili" → that night, in this week or next.
+      // "Tuesday's turkey chili" → that night, in the weeks planned.
       const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
       onTab("week");
-      for (const w of [week, next]) {
+      for (const w of weeks) {
         const n = w?.nights.find((x) => x.date >= dateIn(0) && x.meal && forWhat.toLowerCase().includes(`${dayName(x.date)}'s ${(recipeOf(x.meal)?.name ?? x.meal).toLowerCase()}`.toLowerCase()));
         if (w && n) { setNightAt({ monday: w.monday, date: n.date }); return; }
       }
@@ -291,7 +300,7 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <WeekScreen key={visit} week={week} next={next} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
+        <WeekScreen key={visit} weeks={weeks} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
       {phase === "app" && top.kind === "groceries" && <GroceriesScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onListChanged={refreshList} />}

@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { loadWeek, markMade, saveWeek } from "@/lib/plan";
+import { loadWeek, markMade, saveWeek, shopDue } from "@/lib/plan";
 import { todayIn } from "@/lib/time";
 import { LUNCH_PARTS, weekOf, type Lunch, type Night } from "@/lib/week";
 
@@ -21,12 +21,18 @@ function lunch(x: Record<string, unknown>): Lunch | null {
   return { date: String(x.date), kid: text(x.kid, 20), schoolLunch: Boolean(x.schoolLunch), noSchool: Boolean(x.noSchool), ...(Object.fromEntries(LUNCH_PARTS.map((p) => [p, text(x[p])])) as Record<(typeof LUNCH_PARTS)[number], string>) };
 }
 
-/** GET ?week=YYYY-MM-DD (any day of it; this week by default): the week's nights and lunches, and what planning needs. */
+/**
+ * GET ?week=YYYY-MM-DD (any day of it; this week by default): the week's nights and lunches, and what planning needs.
+ * Asked for this week, it also puts on the list the groceries of nights planned weeks ago that are now close
+ * (`added`: how many things).
+ */
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   const w = new URL(req.url).searchParams.get("week") ?? "";
   try {
-    return Response.json(await loadWeek(weekOf(DATE.test(w) ? w : todayIn())), { headers: { "cache-control": "no-store" } });
+    const monday = weekOf(DATE.test(w) ? w : todayIn());
+    const added = monday === weekOf(todayIn()) ? await shopDue() : 0;
+    return Response.json({ ...(await loadWeek(monday)), added }, { headers: { "cache-control": "no-store" } });
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
