@@ -156,6 +156,12 @@ await panel.waitForSelector("text=Fill my Safeway cart");
 const listText = await panel.locator("main").innerText();
 expect(/3 things/.test(listText) && /Milk/.test(listText) && !/Salt/.test(listText) && !/Dressing/.test(listText), "the list shows only what's needed from Safeway");
 
+// Something added in Simmer while the panel is open shows up by itself.
+LIST.items.push({ id: "p", item: "pop tarts", quantity: "", store: "safeway", section: "pantry", checked: false, check: false });
+await panel.waitForSelector("text=4 things", { timeout: 30_000 }).then(() => expect(true, "the list keeps itself current"), () => expect(false, "the list keeps itself current"));
+LIST.items.pop();
+await panel.waitForSelector("text=3 things", { timeout: 30_000 });
+
 // Signed out: it stops and asks for a sign-in instead of adding anything.
 await panel.click("text=Fill my Safeway cart");
 await panel.waitForSelector("text=Sign in to Safeway", { timeout: 30_000 });
