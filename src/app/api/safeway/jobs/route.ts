@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { cancelJob, finishJob, helperStatus, jobStatus, JOB_KINDS, queueJob, takeJob, type JobKind } from "@/lib/jobs";
+import { cancelJob, finishJob, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, takeJob, type JobKind } from "@/lib/jobs";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 
 const text = (s: unknown, max = 160) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -26,19 +26,22 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * GET ?id=…: how a job stands, and whether the helper is answering. GET with no id: just whether it's answering.
+ * GET ?id=…: how a job stands, and whether the helper is answering. GET ?recent=1: the panel's activity log. GET with
+ * neither: just whether it's answering.
  */
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
-    const id = text(new URL(req.url).searchParams.get("id"), 40);
+    const params = new URL(req.url).searchParams;
+    if (params.get("recent")) return Response.json({ jobs: await recentJobs(), ...(await helperStatus()) }, noStore);
+    const id = text(params.get("id"), 40);
     if (!id) return Response.json(await helperStatus(), noStore);
     return Response.json(await jobStatus(id), noStore);
   } catch (e) { return failed(e); }
 }
 
 /**
- * POST { op, ... }. From Simmer: queue { kind, ...args } → { job, answering }, cancel { id }. From the helper: next
+ * POST { op, ... }. From Simmer: queue { kind, from, ...args } → { job, answering }, cancel { id }. From the helper: next
  * { version, panel } → { job (with Simmer's page details and settings) | null }, done { id, result }, failed { id, error }.
  */
 export async function POST(req: Request) {
@@ -51,7 +54,7 @@ export async function POST(req: Request) {
         const args = argsFor(b.kind, b);
         if (!args) return Response.json({ error: "What should it look for?" }, { status: 400 });
         const { answering } = await helperStatus();
-        return Response.json({ job: await queueJob(b.kind, args), answering }, noStore);
+        return Response.json({ job: await queueJob(b.kind, { ...args, from: b.from === "panel" ? "panel" : "app" }), answering }, noStore);
       }
       case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
       case "next": {

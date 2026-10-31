@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, queueJob, resetJobs, takeJob } from "./jobs";
+import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, queueJob, recentJobs, resetJobs, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -74,5 +74,21 @@ describe("helperOutdated", () => {
     expect(helperOutdated(h(HELPER_VERSION))).toBe(false);
     expect(helperOutdated(h("9.0.0"))).toBe(false);
     expect(helperOutdated(null)).toBe(false);
+  });
+});
+
+describe("recentJobs", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); });
+  it("tells the panel's log what was done, newest first, and where it was asked for", async () => {
+    const a = await queueJob("search", { query: "bananas", from: "app" });
+    await new Promise((r) => setTimeout(r, 5));
+    await queueJob("setQty", { ...milk, qty: 2, from: "panel" });
+    let log = await recentJobs();
+    expect(log.map((j) => [j.kind, j.from, j.status])).toEqual([["setQty", "panel", "waiting"], ["search", "app", "waiting"]]);
+    expect(log[0]).toMatchObject({ what: milk.name, qty: 2 });
+    await takeJob("1.1.0", true);
+    await finishJob(a.id, true, { products: [], signedIn: false });
+    log = await recentJobs();
+    expect(log[1]).toMatchObject({ what: "bananas", status: "done", signedIn: false });
   });
 });
