@@ -56,13 +56,13 @@ describe("jobs for the Safeway helper", () => {
     expect(await takeJob("1.0.0", false)).toBeNull();
   });
 
-  it("a search keeps the cart in step with what Safeway shows", async () => {
+  it("a search can raise a quantity but never takes a product out (search results miss what's in the cart)", async () => {
     await setCartLine({ ...milk, qty: 2 });
     await setCartLine({ productId: "5", qty: 1, name: "Bread" });
     const s = await queueJob("search", { query: "milk" });
     await takeJob("1.0.0", false);
     await finishJob(s.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 3 }, { id: "5", name: "Bread", inCart: false }], signedIn: true });
-    expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 3]]);
+    expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 3], ["5", 1]]);
   });
 });
 
@@ -88,7 +88,22 @@ describe("showing Safeway's cart", () => {
     await setCartLine({ productId: "5", qty: 1, name: "Bread" });
     await takeJob("1.2.0", true);
     await finishJob(a.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 1 }], signedIn: true });
-    expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 1], ["5", 1]]); // what isn't seen stays
+    // The cart page decides: milk takes its quantity and bread, no longer there, goes.
+    expect((await loadCart()).map((l) => [l.productId, l.qty, l.item])).toEqual([["960001", 1, "milk"]]);
+  });
+  it("brings in what was added on Safeway, keeps item links, and an empty read changes nothing", async () => {
+    await setCartLine({ ...milk, qty: 2 });
+    const a = await queueJob("cart", {});
+    await takeJob("1.2.0", true);
+    await finishJob(a.id, true, { products: [
+      { id: "960001", name: milk.name, inCart: true, qty: 2 },
+      { id: "777", name: "O Organics Eggs - 18 Count", price: "$10.99", image: "https://images.example/eggs.jpg", inCart: true, qty: 1 },
+    ], signedIn: true });
+    expect((await loadCart()).map((l) => [l.productId, l.qty, l.item])).toEqual([["960001", 2, "milk"], ["777", 1, ""]]);
+    const b = await queueJob("cart", {});
+    await takeJob("1.2.0", true);
+    await finishJob(b.id, true, { products: [], signedIn: true });
+    expect((await loadCart()).length).toBe(2);
   });
 });
 
