@@ -39,7 +39,9 @@ export const PAGE = {
   tileId: { selector: "[id^='pg']", pattern: "^pg(\\d+)" },
   link: { selector: 'a[href*="product-details."]', pattern: "product-details\\.(\\d+)\\.html" },
   price: { selector: '[data-qa="prd-itm-prc"]', pattern: "\\$\\d+(?:\\.\\d{2})?(?:\\s*(?:each|/\\s*lb|/\\s*ea|per lb))?" },
-  qtyBox: '[data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"]',
+  // The cart page's count is words in a button-like box (".stepper-amount", "3 - click to specify a quantity"), with a
+  // hidden copy for small screens (".stepper-qty-round"); read from a capture of the real page, Oct 31.
+  qtyBox: '[data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"], .stepper-amount, .stepper-qty-round',
   add: { label: "^add\\b", not: "list|note|coupon|clip" },
   plus: "increase|increment|add one|add another|plus|^[+＋]$",
   minus: "decrease|decrement|remove one|remove quantity|minus|^[-−–]$",
