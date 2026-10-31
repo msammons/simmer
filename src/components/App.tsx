@@ -15,7 +15,7 @@ type Tab = "week" | "list" | "shop" | "recipes";
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-// Recipes first (Matt, Oct 30); Simmer still opens on Meals.
+// Recipes first, and Simmer opens on it (Matt, Oct 30).
 const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }];
 const TAB_NAMES: Record<Tab, string> = { week: "Meals", list: "List", shop: "Shop", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
@@ -25,7 +25,7 @@ const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", ro
 function takeResume(): Tab {
   // The Safeway helper's panel opens Simmer on Shop (?open=shop).
   const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "week"; } catch { return isTab(asked) ? asked : "week"; }
+  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "recipes"; } catch { return isTab(asked) ? asked : "recipes"; }
 }
 /** Nothing would be lost by reloading now: no sheet open and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]')
@@ -33,7 +33,7 @@ const atRest = () => !document.querySelector('[role="dialog"]')
 
 export default function App() {
   const [phase, setPhase] = useState<"boot" | "passcode" | "app">("boot");
-  const [stack, setStack] = useState<Screen[]>([{ kind: "week" }]);
+  const [stack, setStack] = useState<Screen[]>([{ kind: "recipes" }]); // Simmer opens on Recipes (Matt, Oct 30)
   const top = stack[stack.length - 1];
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
@@ -253,7 +253,7 @@ export default function App() {
   // A new version shipped while the app sat open (an iPhone can keep it in memory for days): when it's next brought to the
   // front on a screen at rest (a tab's first screen, or the passcode, with nothing open or typed), reload into the new
   // version and come back to the same tab.
-  const here = useRef({ resting: false, root: "week" as Tab });
+  const here = useRef({ resting: false, root: "recipes" as Tab });
   useEffect(() => { here.current = { resting: phase === "passcode" || (phase === "app" && stack.length === 1), root: stack[0].kind as Tab }; }, [phase, stack]);
   useEffect(() => {
     let checked = 0;
@@ -307,7 +307,7 @@ export default function App() {
         <PasscodeScreen error={error} onDone={async (code) => {
           setError(null);
           store.setPasscode(code);
-          if (await loadHousehold()) { setStack([{ kind: "week" }]); setPhase("app"); }
+          if (await loadHousehold()) { setStack([{ kind: "recipes" }]); setPhase("app"); }
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
