@@ -46,14 +46,22 @@ async function accessToken(): Promise<string> {
 
 const base = () => `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}/values`;
 
+export class ReadFailed extends Error { constructor(tab: string, public status: number) { super(`Couldn't read the "${tab}" tab (${status})`); } }
+
 export async function readTab(tab: string): Promise<string[][]> {
-  const r = await fetch(`${base()}/${encodeURIComponent(tab)}`, {
+  const get = async () => fetch(`${base()}/${encodeURIComponent(tab)}`, {
     headers: { authorization: `Bearer ${await accessToken()}` },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!r.ok) throw new Error(`Couldn't read the "${tab}" tab (${r.status})`);
+  let r = await get();
+  // Over the Sheet's reads-a-minute limit: one more try a moment later.
+  if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
+  if (!r.ok) throw new ReadFailed(tab, r.status);
   return ((await r.json()).values ?? []) as string[][];
 }
+
+/** A tab's rows, or none when the tab doesn't exist yet. Any other failure throws (it isn't an empty tab). */
+export const readTabIfAny = (tab: string) => readTab(tab).catch((e) => { if (e instanceof ReadFailed && e.status === 400) return [] as string[][]; throw e; });
 
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (!rows.length) return;

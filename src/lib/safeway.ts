@@ -5,7 +5,7 @@
 // - The cart: what was put in the Safeway cart through Simmer, one row per product, in the "Safeway cart" tab. Safeway's
 //   own cart page can't be read yet, so anything added on Safeway directly doesn't show here. The `cart` column says
 //   which cart a row belongs to ("safeway" for now), so more than one can be kept later.
-import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 import { norm } from "./words";
 
@@ -39,7 +39,7 @@ export async function savePick(p: Pick): Promise<void> {
     return;
   }
   await ensureTab(TAB);
-  const rows = await readTab(TAB).catch(() => [] as string[][]);
+  const rows = await readTabIfAny(TAB);
   const at = records(rows).find((r) => norm(r.get("item")) === n);
   const keep = image || (at && at.get("product_id") === p.id ? at.get("product_image") : "");
   const row = [p.item, p.id, p.name, new Date().toISOString().slice(0, 10), keep];
@@ -63,7 +63,8 @@ export async function loadCart(cart = "safeway"): Promise<CartLine[]> {
 }
 
 async function allCart(): Promise<CartLine[]> {
-  const rows = await readTab(CART).catch(() => [] as string[][]);
+  // A failed read throws rather than reading as an empty cart (a change written after it would lose the rest).
+  const rows = await readTabIfAny(CART);
   return records(rows).flatMap((r) => {
     const qty = Number(r.get("qty"));
     return /^\d+$/.test(r.get("product_id")) && qty > 0 ? [{
