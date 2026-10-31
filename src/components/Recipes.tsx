@@ -119,7 +119,16 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
 }
 
 /** Which of a recipe's ingredients go on the list: fresh ones ticked, pantry ones left for her to check she has. */
-export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items: Ingredient[]) => void; onClose: () => void }) {
+export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items: Ingredient[]) => Promise<string | null>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // Closes once added; if adding fails, the ticks stay and the problem shows above the button.
+  async function add() {
+    setBusy(true); setProblem(null);
+    const p = await onAdd(r.ingredients.filter((_, n) => on.has(n)));
+    if (!p) return onClose();
+    setProblem(p); setBusy(false);
+  }
   const [on, setOn] = useState(() => new Set(r.ingredients.flatMap((i, n) => (i.section === "fresh" ? [n] : []))));
   const flip = (n: number) => setOn((s) => { const t = new Set(s); if (t.has(n)) t.delete(n); else t.add(n); return t; });
   const row = (i: Ingredient, n: number) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => flip(n)} />;
@@ -127,7 +136,10 @@ export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items
   const rest = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section !== "fresh");
   return (
     <Sheet label="Add to the list" title={r.name} onClose={onClose}
-      footer={<Button className="w-full" disabled={!on.size} onClick={() => { onAdd(r.ingredients.filter((_, n) => on.has(n))); onClose(); }}>{on.size ? `Add ${on.size} to the list` : "Nothing ticked"}</Button>}>
+      footer={<div className="space-y-3">
+        {problem && <Notice>{problem}</Notice>}
+        <Button className="w-full" disabled={busy || !on.size} onClick={add}>{busy ? "Adding…" : on.size ? `Add ${on.size} to the list` : "Nothing ticked"}</Button>
+      </div>}>
       <div className="space-y-5">
         {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => row(i, n))}</Group>}
         {rest.length > 0 && <Group header="Check you have these" footer="Tick any you're out of.">{rest.map(([i, n]) => row(i, n))}</Group>}
@@ -171,12 +183,23 @@ function Editor({ d, onChange }: { d: Draft; onChange: (d: Draft) => void }) {
 const tidy = (d: Draft): Draft => ({ ...d, ingredients: d.ingredients.filter((l) => l.trim()), steps: d.steps.filter((s) => s.trim()), tags: d.tags.map((t) => t.trim()).filter(Boolean) });
 
 /** Editing a saved recipe. */
-export function EditSheet({ r, onSave, onClose }: { r: Recipe; onSave: (d: Draft) => Promise<void>; onClose: () => void }) {
+export function EditSheet({ r, onSave, onClose }: { r: Recipe; onSave: (d: Draft) => Promise<string | null>; onClose: () => void }) {
   const [d, setD] = useState(() => draftOf(r));
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  // Closes once saved; if the save fails, the edits stay, the problem shows above the button, and it can be tried again.
+  async function save() {
+    setBusy(true); setProblem(null);
+    const p = await onSave(tidy(d));
+    if (!p) return onClose();
+    setProblem(p); setBusy(false);
+  }
   return (
     <Sheet label={`Edit ${r.name}`} title="Edit" onClose={onClose}
-      footer={<Button className="w-full" disabled={busy || !d.name.trim()} onClick={async () => { setBusy(true); await onSave(tidy(d)); setBusy(false); }}>{busy ? "Saving…" : "Save"}</Button>}>
+      footer={<div className="space-y-3">
+        {problem && <Notice>{problem}</Notice>}
+        <Button className="w-full" disabled={busy || !d.name.trim()} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
+      </div>}>
       <Editor d={d} onChange={setD} />
     </Sheet>
   );

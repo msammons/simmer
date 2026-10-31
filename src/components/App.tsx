@@ -147,13 +147,16 @@ export default function App() {
   }
   const setEffort = (r: Recipe, effort: Effort) => recipeChange({ op: "effort", id: r.id, effort }, (x) => ({ ...x, effort }));
   const setActive = (r: Recipe, active: boolean) => recipeChange({ op: "active", id: r.id, active }, (x) => ({ ...x, active }));
-  async function saveEdit(d: Draft) {
+  // Saves from a sheet answer with the problem, if any, so the sheet stays open with what was entered and says what went
+  // wrong; on success (null) the sheet closes itself. A turned-down passcode has already closed everything, so it answers null.
+  const problemOf = (e: unknown) => (e instanceof AuthError ? null : errorText(e));
+  async function saveEdit(d: Draft): Promise<string | null> {
     try { gotRecipes((await api.saveRecipes([d])).recipes); }
-    catch (e) { failed(setRecipesError)(e); }
-    setSheet(null);
+    catch (e) { return problemOf(e); }
+    return null;
   }
   function addToList(r: Recipe, items: Ingredient[]) {
-    change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
+    return change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
   }
 
   /**
@@ -184,7 +187,8 @@ export default function App() {
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [onWeek, visit, refreshWeek]);
-  async function saveWeek(nights: Night[], lunches: Lunch[]) {
+  /** Saves a week from the plan or night sheet; the sheet closes itself on success (null) and shows the problem otherwise. */
+  async function saveWeek(nights: Night[], lunches: Lunch[]): Promise<string | null> {
     try {
       const wasPlanned = weeks.find((x) => x.monday === nights[0]?.date)?.planned ?? false;
       ++weekChanges.current;
@@ -194,8 +198,8 @@ export default function App() {
       setWeekError(null);
       if (!wasPlanned) refreshWeek(); // a newly planned week brings the one after it, to plan next
       setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
-    } catch (e) { failed(setWeekError)(e); }
-    setPlanningFor(null);
+      return null;
+    } catch (e) { return problemOf(e); }
   }
   async function made(date: string, yes: boolean) {
     const mark = (n: Night) => (n.date === date ? { ...n, made: yes ? "yes" as const : "no" as const } : n);
@@ -206,19 +210,21 @@ export default function App() {
   }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
-  async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState) {
+  async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState): Promise<string | null> {
     const mine = ++listChanges.current;
     if (show) setList((l) => (l ? show(l) : l));
     try {
       const l = await api.change(c);
-      if (mine !== listChanges.current) return; // a later change's answer is newer
+      if (mine !== listChanges.current) return null; // a later change's answer is newer
       setList(l);
       store.setList(l);
       setListError(null);
+      return null;
     } catch (e) {
-      if (e instanceof AuthError) return;
+      if (e instanceof AuthError) return null;
       setListError(errorText(e));
       refreshList();
+      return errorText(e);
     }
   }
   const act: ListActions = {
