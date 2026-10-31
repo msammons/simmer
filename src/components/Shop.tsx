@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { dateIn, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
@@ -141,6 +141,10 @@ export function ShopScreen({ list, error, act, startAt, onList }: {
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
   const at = findAt ? toFind.findIndex((x) => x.id === findAt) : -1;
   const index = at >= 0 ? at : findAt === "end" ? toFind.length : firstToFind(toFind, sw.cart);
+  // The item showing stays put once it's shown: without this, adding it to the cart (or the cart reloading) moved Find
+  // to another item under the finger, and the next Add could land on the wrong item.
+  const shownId = sw.loaded && view === "find" ? toFind[index]?.id ?? null : null;
+  useEffect(() => { if (shownId && (findAt === null || at < 0) && findAt !== "end") queueMicrotask(() => setFindAt(shownId)); }, [shownId, findAt, at]);
   const go = (v: ShopView) => { scrollAppTo(0); setView(v); };
   const find = () => { setFindAt(toFind[firstToFind(toFind, sw.cart)]?.id ?? null); go("find"); };
   const count = sw.cart.length;

@@ -33,23 +33,28 @@ if (!process.env.SIMMER_URL) {
   if (!up) { console.log("Simmer didn't start"); process.kill(-server.pid); process.exit(1); }
 }
 const api = (p, body) => fetch(`${LOCAL}${p}`, { method: body ? "POST" : "GET", headers: { "x-passcode": PASS, "content-type": "application/json" }, ...(body && { body: JSON.stringify(body) }) }).then((r) => r.json());
-// The list: milk (two wanted), bananas.
-for (const text of ["2 milk", "bananas"]) await api("/api/list", { op: "add", text, by: "Sam" });
+// The list: milk (two wanted), and bananas as a recipe might put them ("bag bananas"; Safeway's searched for "bananas").
+await api("/api/list", { op: "add", text: "2 milk", by: "Sam" });
+await api("/api/list", { op: "many", items: [{ item: "bag bananas", quantity: "1" }], by: "Sam" });
 const list = await api("/api/list");
 const milkId = list.items.find((i) => i.item === "milk")?.id;
 
 // ---- the stand-in Safeway
 const CATALOG = {
   milk: [["960001", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", "$3.49"], ["960002", "Lucerne Milk Reduced Fat 2% - 1 Gallon", "$5.29"]],
+  // Safeway shortens long titles on screen; the whole name is in the buttons' labels.
   bananas: [["960010", "Bananas", "$0.29 each"], ["960011", "Organic Bananas", "$0.39 each"]],
 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const shown = (name) => (name.length > 36 ? `${name.slice(0, 24)}...${name.slice(-8)}` : name);
+const queries = [];
 function searchPage(q, signedIn) {
+  queries.push(q);
   const hits = Object.entries(CATALOG).filter(([k]) => q.toLowerCase().includes(k) || CATALOG[k].some(([, n]) => n.toLowerCase() === q.toLowerCase())).flatMap(([, v]) => v);
   // Built like Safeway's real search tiles (read from its page code, Oct 2026).
   const tiles = hits.map(([id, name, price]) => `
     <product-item-al-v2 class="product-card" data-id="${id}" data-name="${name}"><div class="pc"><img id="pg${id}Img" src="https://www.safeway.com/img/${id}.png" alt="" width="40" height="40">
-      <span data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${name}</span><div data-qa="prd-itm-prc">${price}</div>
+      <span data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${id === "960002" ? shown(name) : name}</span><div data-qa="prd-itm-prc">${price}</div>
       <quantity-stepper-al-v2 class="cta"></quantity-stepper-al-v2></div></product-item-al-v2>`).join("");
   return `<!doctype html><html><body>
     <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
@@ -73,6 +78,28 @@ function searchPage(q, signedIn) {
     </script></body></html>`;
 }
 
+// Safeway's cart page, as a stand-in: each product a row linking to its page, with − / quantity / + (not search tiles).
+function cartPage(signedIn) {
+  const names = Object.fromEntries(Object.values(CATALOG).flat().map(([id, name, price]) => [id, [name, price]]));
+  return `<!doctype html><html><body>
+    <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/erums/cart" id="cart" aria-label="Cart">Cart</a></header>
+    <main id="rows"></main>
+    <script>
+      const names = ${JSON.stringify(names)};
+      const cart = () => JSON.parse(localStorage.getItem("cart") || "{}");
+      const put = (id, n) => { const c = cart(); if (n > 0) c[id] = n; else delete c[id]; localStorage.setItem("cart", JSON.stringify(c)); };
+      const draw = () => {
+        const c = cart(), ids = Object.keys(c);
+        document.getElementById("rows").innerHTML = ids.length ? ids.map((id) => '<div class="row" data-id="' + id + '"><div><a href="/shop/product-details.' + id + '.html">' + names[id][0] + '</a><span>' + names[id][1] + '</span></div>'
+          + '<div class="qty"><button aria-label="Decrease quantity">-</button><input type="number" value="' + c[id] + '" aria-label="Quantity"><button aria-label="Increase quantity">+</button></div></div>').join("") : "<p>Your cart is empty</p>";
+        document.querySelectorAll(".row").forEach((r) => r.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
+          const id = r.dataset.id; put(id, (cart()[id] || 0) + (/Increase/.test(b.getAttribute("aria-label")) ? 1 : -1)); draw();
+        }, 250)));
+      };
+      setTimeout(draw, 400);
+    </script></body></html>`;
+}
+
 const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpdir(), "simmer-ext-")), {
   channel: "chromium", headless: true,
   args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
@@ -82,6 +109,7 @@ await ctx.route("https://www.safeway.com/**", (route) => {
   const u = new URL(route.request().url());
   if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
+  if (u.pathname === "/erums/cart") return route.fulfill({ contentType: "text/html", body: cartPage(signedIn) });
   return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
 });
 // The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
@@ -145,6 +173,7 @@ expect(found, "Find: a search comes back with products");
 if (!found) console.log("Find showed:", (await sim.locator("main").innerText()).slice(0, 400), "| tabs:", ctx.pages().map((p) => p.url()).join(" "));
 const imgs = await sim.locator("img[src^='https://www.safeway.com/img/']").count();
 expect(imgs >= 2, "Find: products show Safeway's pictures");
+expect(await sim.getByText("Lucerne Milk Reduced Fat 2% - 1 Gallon", { exact: true }).count() === 1, "Find: a name Safeway shortened on screen shows whole");
 // Add milk: two wanted, so two go in, on Safeway and in Simmer's cart.
 const firstName = await sim.locator("p.line-clamp-2").first().innerText();
 const pid = firstName.includes("1/2") ? "960001" : "960002";
@@ -159,8 +188,11 @@ expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id =
 // tried here.)
 await sim.getByRole("radio", { name: /^Cart · 1/ }).click();
 expect(await sim.getByText("Check out on Safeway").waitFor({ timeout: 10_000 }).then(() => true, () => false), "Cart shows what's in it, with checkout on Safeway");
+expect(await until(() => new URL(safeway.url()).pathname === "/erums/cart", 20_000), "Cart in the panel: the Safeway tab shows Safeway's cart");
+const searchesBefore = queries.length;
 await sim.getByRole("button", { name: /^One less/ }).click();
 expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "− takes one off on Safeway");
+expect(queries.length === searchesBefore && new URL(safeway.url()).pathname === "/erums/cart", "Cart changes are made on Safeway's cart page, which stays showing");
 await sim.getByRole("button", { name: /^One less/ }).click();
 await until(async () => (await safewayQty(pid)) === 1);
 await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
@@ -170,7 +202,7 @@ expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(p
 await panel.close();
 await phone.reload();
 await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).click();
-await phone.getByRole("button", { name: /^Bananas/ }).click();
+await phone.getByRole("button", { name: /^Bag bananas/ }).click();
 // The background stays quick for a few minutes after activity; nudge it as the half-minute alarm would.
 worker.evaluate(() => self.simmerCheck()).catch(() => {});
 const padd = phone.getByRole("button", { name: "Add", exact: true });
@@ -178,6 +210,7 @@ expect(await padd.first().waitFor({ timeout: 45_000 }).then(() => true, () => fa
 await padd.first().click();
 expect(await until(async () => (await safewayQty("960010")) + (await safewayQty("960011")) === 1, 45_000), "phone: Add goes into the Safeway cart from the background");
 expect(await phone.getByRole("radio", { name: "Cart · 1" }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "phone: Simmer's cart shows it");
+expect(queries.includes("bananas") && !queries.some((q) => /bag|\.\.\./.test(q)), `searches use the item's name only (searched: ${[...new Set(queries)].join(", ")})`);
 
 // Signed out of Safeway: an add says so in plain words.
 signedIn = false;

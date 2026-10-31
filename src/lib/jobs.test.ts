@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, queueJob, recentJobs, resetJobs, takeJob } from "./jobs";
+import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -63,6 +63,32 @@ describe("jobs for the Safeway helper", () => {
     await takeJob("1.0.0", false);
     await finishJob(s.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 3 }, { id: "5", name: "Bread", inCart: false }], signedIn: true });
     expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 3]]);
+  });
+});
+
+describe("the jobs tab", () => {
+  const H = ["id", "kind", "status", "args", "result", "created", "updated"];
+  const check = (seen: string) => ["helper", "check-in", "", "", '{"version":"1.1.0","panel":true}', "", seen];
+  it("reads the latest check-in when stray copies were added, and counts the strays to clear", () => {
+    const t = parseTab([H, check("2026-10-31T20:16:42.415Z"), ["a1", "search", "done", '{"query":"milk"}', "", "2026-10-31T20:00:00Z", "2026-10-31T20:00:01Z"], H, check("2026-10-31T20:13:39.170Z"), H, check("2026-10-31T20:17:00.000Z")]);
+    expect(t.helper?.seen).toBe("2026-10-31T20:17:00.000Z");
+    expect(t.helperRow).toBe(7);
+    expect(t.jobs.map((j) => j.id)).toEqual(["a1"]);
+    expect(t.junk).toBe(4);
+    expect(parseTab([H, check("2026-10-31T20:16:42.415Z")]).junk).toBe(0);
+  });
+});
+
+describe("showing Safeway's cart", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); });
+  it("one waiting is enough, and the cart page keeps quantities in step", async () => {
+    const a = await queueJob("cart", {});
+    expect((await queueJob("cart", {})).id).toBe(a.id);
+    await setCartLine({ ...milk, qty: 2 });
+    await setCartLine({ productId: "5", qty: 1, name: "Bread" });
+    await takeJob("1.2.0", true);
+    await finishJob(a.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 1 }], signedIn: true });
+    expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 1], ["5", 1]]); // what isn't seen stays
   });
 });
 
