@@ -115,12 +115,22 @@ function WeekGroup({ header, aside, w, recipes, me, today, onNight }: { header: 
 // ---- One night (tap a row)
 
 export function NightSheet({ w, n, recipes, onSave, onOpen, onClose }: {
-  w: WeekData; n: Night; recipes: Recipe[]; onSave: (nights: Night[]) => void; onOpen: (id: string) => void; onClose: () => void;
+  w: WeekData; n: Night; recipes: Recipe[]; onSave: (nights: Night[]) => Promise<string | null>; onOpen: (id: string) => void; onClose: () => void;
 }) {
   const [swap, setSwap] = useState<number | null>(null);
   const [pin, setPin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const at = w.nights.findIndex((x) => x.date === n.date);
-  const put = (change: Partial<Night>) => { onSave(w.nights.map((x, i) => (i === at ? { ...x, ...change } : x))); onClose(); };
+  // Closes once saved; if the save fails, the sheet (and the ideas or pick it came from) stays open to try again.
+  async function put(change: Partial<Night>) {
+    if (busy) return;
+    setBusy(true); setProblem(null);
+    const p = await onSave(w.nights.map((x, i) => (i === at ? { ...x, ...change } : x)));
+    if (!p) return onClose();
+    setProblem(p); setBusy(false);
+  }
+  const status = busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>;
   const recipe = recipes.find((r) => r.id === n.meal);
   const ctx = contextFor(w, recipes);
   const kind: NightKind = n.kind === "skip" ? "regular" : n.kind;
@@ -128,6 +138,7 @@ export function NightSheet({ w, n, recipes, onSave, onOpen, onClose }: {
   return (
     <Sheet label={day(n.date)} title={`${day(n.date)}${n.meal ? `: ${mealName(n.meal, recipes)}` : ""}`} onClose={onClose}>
       <div className="space-y-5 pb-2">
+        {!pin && status}
         {swap !== null ? (
           <>
             <Group header={`${KIND[kind]} ideas`}>
@@ -146,18 +157,19 @@ export function NightSheet({ w, n, recipes, onSave, onOpen, onClose }: {
           </Group>
         )}
       </div>
-      {pin && <PinSheet kind={kind} recipes={recipes} onPick={(meal) => put({ meal, pinned: true, kind: n.kind === "skip" ? "regular" : n.kind })} onClose={() => setPin(false)} />}
+      {pin && <PinSheet kind={kind} recipes={recipes} status={status} onPick={(meal) => put({ meal, pinned: true, kind: n.kind === "skip" ? "regular" : n.kind })} onClose={() => setPin(false)} />}
     </Sheet>
   );
 }
 
 /** Pin a meal she already knows: from her recipes, or typed ("Dinner with G&G"). */
-function PinSheet({ kind, recipes, onPick, onClose }: { kind: NightKind; recipes: Recipe[]; onPick: (meal: string) => void; onClose: () => void }) {
+function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: NightKind; recipes: Recipe[]; status?: React.ReactNode; onPick: (meal: string) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && r.for !== "kids" && (kind === "skip" || r.effort === kind)).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
   return (
     <Sheet label="Pick a meal" title="Pick a meal" onClose={onClose}>
       <div className="space-y-4 pb-2">
+        {status}
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type a meal" aria-label="Find a recipe"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
@@ -181,7 +193,7 @@ function Chip({ on, children, onClick }: { on: boolean; children: React.ReactNod
 
 const PAGES = ["The nights", "This week's trips", "Dinners", "Lunches"] as const;
 
-export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; recipes: Recipe[]; me: string; onSave: (nights: Night[], lunches: Lunch[]) => Promise<void>; onClose: () => void }) {
+export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; recipes: Recipe[]; me: string; onSave: (nights: Night[], lunches: Lunch[]) => Promise<string | null>; onClose: () => void }) {
   const dates = weekDates(w.monday);
   const [page, setPage] = useState(0);
   const [nights, setNights] = useState<Night[]>(() => (w.planned ? w.nights : applyShape(dates.map((d) => emptyNight(d)), "2-quick-3-regular")));
@@ -192,6 +204,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
   const [lunches, setLunches] = useState<Lunch[]>(() => (w.lunches.length ? w.lunches : planLunches(w.monday, kids, w.lunchOptions)));
   const [pinAt, setPinAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const adults = w.people.filter((p) => p.isAdult);
   const ctx = contextFor(w, recipes, trips);
   const today = dateIn(0);
@@ -225,12 +238,22 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
   }
 
   const last = kids.length && dates.slice(0, 5).some((d) => d >= today) ? 3 : 2;
+  // Closes once saved; if the save fails, everything planned stays here, the problem shows above the button, and it can be tried again.
+  async function save() {
+    setBusy(true); setProblem(null);
+    const p = await onSave(nights.map((n) => ({ ...n, plannedBy: n.plannedBy || me })), lunches);
+    if (!p) return onClose();
+    setProblem(p); setBusy(false);
+  }
   const footer = (
-    <div className="flex gap-2">
-      {page > 0 && <Button variant="secondary" onClick={() => setPage(page - 1)}>Back</Button>}
-      {page < last
-        ? <Button className="flex-1" onClick={() => (page === 1 ? toDinners() : setPage(page + 1))}>Next</Button>
-        : <Button className="flex-1" disabled={busy} onClick={async () => { setBusy(true); await onSave(nights.map((n) => ({ ...n, plannedBy: n.plannedBy || me })), lunches); setBusy(false); }}>{busy ? "Saving…" : "Save the week"}</Button>}
+    <div className="space-y-3">
+      {problem && page === last && <Notice>{problem}</Notice>}
+      <div className="flex gap-2">
+        {page > 0 && <Button variant="secondary" onClick={() => setPage(page - 1)}>Back</Button>}
+        {page < last
+          ? <Button className="flex-1" onClick={() => (page === 1 ? toDinners() : setPage(page + 1))}>Next</Button>
+          : <Button className="flex-1" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save the week"}</Button>}
+      </div>
     </div>
   );
 

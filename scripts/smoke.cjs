@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning, the tabs, Settings on every
-// screen, the List tab, Shop's store picker and Find / Cart, the Recipes tab, a recipe and back, the freezer, and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// screen, the List tab, Shop's store picker and Find / Cart, the Recipes tab, a recipe and back, the freezer, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -45,6 +45,19 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("plan: dinners suggested", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
       if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
+      // A save that fails (the connection drops): the sheet stays with everything planned, says so inside it, and saves on a retry.
+      const planSheet = page.getByRole("dialog").last();
+      const planned = await planSheet.innerText();
+      await page.route("**/api/plan", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
+      await page.getByRole("button", { name: "Save the week" }).tap(); await page.waitForTimeout(800);
+      ok("plan: a failed save keeps the sheet open", await planSheet.isVisible());
+      ok("plan: and says what went wrong inside it", await seen(planSheet.getByRole("alert").filter({ hasText: "No connection. Check your signal and try again." })));
+      ok("plan: and keeps what was planned", (await planSheet.innerText()).includes(planned.split("\n").slice(0, 12).join("\n")));
+      ok("plan: and the save button works again", await page.getByRole("button", { name: "Save the week" }).isEnabled());
+      ok("plan: and nothing shows on the screen behind", (await page.getByText("No connection. Check your signal and try again.").count()) === 1);
+      await page.screenshot({ path: `${dir}/2-plan-failed-save.png` });
+      if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
+      await page.unroute("**/api/plan");
       await page.getByRole("button", { name: "Save the week" }).tap();
       ok("plan: saved, and the week shows", await seen(page.getByRole("heading", { name: "This week" }), 10000));
       await page.waitForTimeout(400);
@@ -152,6 +165,28 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: recipe screen`, (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).isVisible()));
     await settingsHere("a recipe");
     await page.screenshot({ path: `${dir}/6-recipe-${tag}.png`, fullPage: true });
+    if (tag === "phone-light") {
+      // Editing a recipe, and adding it to the list, when the save fails: the sheet stays with what was typed or ticked.
+      await page.getByRole("button", { name: "Edit", exact: true }).tap(); await page.waitForTimeout(400);
+      const edit = page.getByRole("dialog", { name: "Edit Tacos" });
+      await edit.getByPlaceholder("Double the spice for Sam").fill("A note that must survive");
+      await page.route("**/api/recipes", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
+      await edit.getByRole("button", { name: "Save", exact: true }).tap(); await page.waitForTimeout(800);
+      ok("edit: a failed save keeps the sheet and what was typed", (await edit.isVisible()) && (await edit.getByPlaceholder("Double the spice for Sam").inputValue()) === "A note that must survive");
+      ok("edit: and says what went wrong inside it", await seen(edit.getByRole("alert").filter({ hasText: "No connection" })));
+      ok("edit: and the save button works again", await edit.getByRole("button", { name: "Save", exact: true }).isEnabled());
+      await page.unroute("**/api/recipes");
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
+      const toList = page.getByRole("dialog", { name: "Add to the list" });
+      const ticked = await toList.getByRole("checkbox", { checked: true }).count();
+      await page.route("**/api/list", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
+      await toList.getByRole("button", { name: /^Add \d+ to the list/ }).tap(); await page.waitForTimeout(800);
+      ok("add to list: a failed add keeps the sheet and its ticks", (await toList.isVisible()) && (await toList.getByRole("checkbox", { checked: true }).count()) === ticked);
+      ok("add to list: and says what went wrong inside it", await seen(toList.getByRole("alert").filter({ hasText: "No connection" })));
+      await page.unroute("**/api/list");
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    }
     await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
     await page.getByRole("button", { name: /^Add \d+ to the list/ }).tap(); await page.waitForTimeout(800);
     await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
