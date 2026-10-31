@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cartTotal, findItems, firstToFind, inCartLine, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, cartTotal, findItems, firstToFind, inCartLine, nextToFind, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -13,8 +13,18 @@ describe("Find", () => {
   it("goes through the Safeway items still needed, with Simmer's own search", () => {
     const f = findItems(items, staples, [{ item: "Pop Tarts", id: "77", name: "Pop-Tarts Frosted Strawberry" }]);
     expect(f.map((x) => x.item)).toEqual(["milk", "pop tarts", "eggs"]);
-    expect(f[0]).toMatchObject({ query: "Lucerne 2% milk half gallon", want: 2 });
-    expect(f[1]).toMatchObject({ query: "Pop-Tarts Frosted Strawberry", picked: { id: "77" } });
+    expect(f[0]).toMatchObject({ query: "milk", usual: "Lucerne 2% milk half gallon", want: 2 });
+    expect(f[1]).toMatchObject({ query: "pop tarts", picked: { id: "77" } });
+  });
+
+  it("puts a product in the cart for the item showing only when it's plausibly that item", () => {
+    const [, pop] = findItems(items, staples, [{ item: "Pop Tarts", id: "77", name: "Pop-Tarts Frosted Strawberry" }]);
+    const eggs = { id: "9", name: "O Organics Organic Eggs Large Brown - 18 Count", price: "", image: "" };
+    const tarts = { id: "8", name: "Pop-Tarts Toaster Pastries Frosted", price: "", image: "" };
+    expect(addedFor(tarts, pop, "toaster pastries")?.id).toBe("b");
+    expect(addedFor(eggs, pop, "pop tarts")?.id).toBe("b"); // its own search: whatever it found
+    expect(addedFor(eggs, pop, "eggs")).toBeNull(); // something else typed in its search box
+    expect(addedFor({ ...eggs, id: "77" }, pop, "eggs")?.id).toBe("b"); // its remembered product
   });
 
   it("starts on the first item with nothing in the cart, and moves on to the next", () => {

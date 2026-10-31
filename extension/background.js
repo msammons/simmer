@@ -30,6 +30,7 @@ async function check() {
     for (;;) {
       const r = await simmer("POST", { op: "next", version: VERSION, panel: panels.size > 0 }, "/api/safeway/jobs");
       const job = r?.job;
+      if (r?.settings) pace = { ...pace, ...r.settings }; // Simmer's pace, even with nothing to do (1.2 on)
       if (job) {
         pace = { ...pace, ...job.settings };
         lastJob = Date.now();

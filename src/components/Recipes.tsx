@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
-import { norm } from "@/lib/words";
+import { isSpice, norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
 import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
@@ -15,25 +15,38 @@ export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhea
   return [EFFORT[r.effort], r.minutes && (long ? `${r.minutes} minutes` : `${r.minutes} min`), r.for !== "everyone" && FOR[r.for], r.makeAhead && "Make ahead"].filter(Boolean).join(" · ");
 }
 
-function RecipeRow({ r, onOpen }: { r: Recipe; onOpen: (r: Recipe) => void }) {
-  return <Row title={r.name} subtitle={summary(r)} accessory="chevron" onClick={() => onOpen(r)} />;
+type Opens = { onOpen: (r: Recipe) => void; onAddToList: (r: Recipe) => void };
+
+/** A recipe in the collection: tap to open it, or the list button beside it to put its ingredients on the list. */
+function RecipeRow({ r, onOpen, onAddToList }: { r: Recipe } & Opens) {
+  if (!r.ingredients.length) return <Row title={r.name} subtitle={summary(r)} accessory="chevron" onClick={() => onOpen(r)} />;
+  return (
+    <div className="flex items-center">
+      <div className="min-w-0 flex-1"><Row title={r.name} subtitle={summary(r)} onClick={() => onOpen(r)} /></div>
+      <button onClick={() => onAddToList(r)} aria-label={`Add ${r.name} to the list`}
+        className="mr-3 flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent transition active:scale-90">
+        <Icon name="list" className="size-[18px]" strokeWidth={2} />
+      </button>
+    </div>
+  );
 }
 
 /** A few of a group, and the rest one tap away, so the list stays short. */
-function Some({ header, items, onOpen }: { header: string; items: Recipe[]; onOpen: (r: Recipe) => void }) {
+function Some({ header, items, onOpen, onAddToList }: { header: string; items: Recipe[] } & Opens) {
   const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
     <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
-      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}
+      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} onAddToList={onAddToList} />)}
     </Group>
   );
 }
 
 /** The Recipes tab: her collection by kind, each kind opening to all of it. */
-export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
-  recipes: Recipe[] | null; error: string | null; freezer?: Frozen[]; onOpen: (r: Recipe) => void; onAdd: () => void;
-}) {
+export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, freezer = [] }: {
+  recipes: Recipe[] | null; error: string | null; freezer?: Frozen[]; onAdd: () => void;
+} & Opens) {
+  const opens = { onOpen, onAddToList };
   const all = useMemo(() => recipes ?? [], [recipes]);
   const active = all.filter((r) => r.active);
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
@@ -49,12 +62,12 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
       ) : (
         <>
           <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
-          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} onOpen={onOpen} />
-          <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} onOpen={onOpen} />
-          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} onOpen={onOpen} />
-          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} onOpen={onOpen} />
-          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} onOpen={onOpen} />
-          <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} onOpen={onOpen} />
+          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
+          <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
+          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
+          <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} {...opens} />
         </>
       )}
     </div>
@@ -86,6 +99,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
       {error && <Notice>{error}</Notice>}
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
+      {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>}
       <Group header="How long it takes" footer="Quick nights get quick dinners when the week is planned.">
         <div className="p-3"><Segmented label="How long it takes" value={r.effort} onChange={onEffort} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }]} /></div>
       </Group>
@@ -93,7 +107,6 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
         <>
           {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
           {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
-          <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>
         </>
       ) : (
         <Group><Row icon="pencil" title="Add the ingredients" subtitle="So they can go on the grocery list" accessory="chevron" onClick={onEdit} /></Group>
@@ -118,7 +131,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
   );
 }
 
-/** Which of a recipe's ingredients go on the list: fresh ones ticked, pantry ones left for her to check she has. */
+/** Which of a recipe's ingredients go on the list: fresh ones ticked, pantry ones and spices left for her to check she has. */
 export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items: Ingredient[]) => Promise<string | null>; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -129,11 +142,13 @@ export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items
     if (!p) return onClose();
     setProblem(p); setBusy(false);
   }
-  const [on, setOn] = useState(() => new Set(r.ingredients.flatMap((i, n) => (i.section === "fresh" ? [n] : []))));
+  const all = r.ingredients.map((i, n) => [i, n] as const);
+  const spices = all.filter(([i]) => isSpice(i.item));
+  const fresh = all.filter(([i]) => i.section === "fresh" && !isSpice(i.item));
+  const rest = all.filter(([i]) => i.section !== "fresh" && !isSpice(i.item));
+  const [on, setOn] = useState(() => new Set(fresh.map(([, n]) => n)));
   const flip = (n: number) => setOn((s) => { const t = new Set(s); if (t.has(n)) t.delete(n); else t.add(n); return t; });
   const row = (i: Ingredient, n: number) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => flip(n)} />;
-  const fresh = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section === "fresh");
-  const rest = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section !== "fresh");
   return (
     <Sheet label="Add to the list" title={r.name} onClose={onClose}
       footer={<div className="space-y-3">
@@ -142,7 +157,8 @@ export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items
       </div>}>
       <div className="space-y-5">
         {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => row(i, n))}</Group>}
-        {rest.length > 0 && <Group header="Check you have these" footer="Tick any you're out of.">{rest.map(([i, n]) => row(i, n))}</Group>}
+        {rest.length > 0 && <Group header="Check you have these" footer={spices.length ? undefined : "Tick any you're out of."}>{rest.map(([i, n]) => row(i, n))}</Group>}
+        {spices.length > 0 && <Group header="Spices" footer="Usually on hand. Tick any you're out of.">{spices.map(([i, n]) => row(i, n))}</Group>}
       </div>
     </Sheet>
   );

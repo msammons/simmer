@@ -4,11 +4,14 @@ Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the Safewa
 from a real browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does
 Simmer's small Safeway jobs on safeway.com and reports back. It never signs in and never checks out.
 
-## How it works (1.0)
+## How it works (1.0; 1.2 adds the cart page)
 
 - **Jobs.** Simmer queues a job (`/api/safeway/jobs`): `search` (a search's products with picture, name, price and
   whether each is in the cart), `setQty` (press Add / + / − on a product until the cart holds that many; 0 takes it
-  out), and `sample` / `snapshot` (a short account of a page, to learn how Safeway builds it). The background
+  out), `cart` (1.2: show Safeway's cart page in the Safeway tab, and read it), and `sample` / `snapshot` (a short
+  account of a page, to learn how Safeway builds it; `on: "cart"` for the cart page). From Cart, `setQty` is done on
+  Safeway's cart page first (where the product is listed), then by searching Simmer's words, other words, and the
+  product's name. Long names Safeway shortens on screen ("…") are read whole from the product's buttons. The background
   (`background.js`) checks for jobs every half minute; once there's activity, or while the panel is open, it checks
   every couple of seconds until a few minutes pass with nothing. It does each job in a Safeway tab (`safeway.js`): one
   already open, or a new one behind, in front only when the panel is open in that window.
@@ -32,7 +35,7 @@ older, Find and Cart say so and link the zip. Bump the version here whenever the
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
-   **Simmer**'s card (it should say 1.1.0). Keeping the same folder keeps the setup.
+   **Simmer**'s card (it should say 1.2.0). Keeping the same folder keeps the setup.
 3. Pin it (the puzzle-piece button, then the pin), click the Simmer button, and type Simmer's address and the passcode
    (once).
 4. Sign in to Safeway in that Chrome, and leave Chrome open. Simmer's Find then works from the phone too.
@@ -49,6 +52,9 @@ older, Find and Cart say so and link the zip. Bump the version here whenever the
 ## Not yet tried on the real safeway.com
 
 Whether Safeway's search fills in a tab nobody's looking at; whether − at one removes the product without a
-confirmation step; and the − / + buttons' labels on the real page (read from Safeway's code, not pressed). When
+confirmation step; the − / + buttons' labels on the real page (read from Safeway's code, not pressed); and anything
+about the cart page (1.2): its address (`PAGE.cartPath`), whether its products read like search tiles, and its
+buttons. If they don't, cart changes fall back to searching, and a `sample` job with `on: "cart"` shows what to put in
+`PAGE.cartItems`. Also unseen: whether the whole name of a shortened title is in the product's button labels. When
 something doesn't match, a `sample` or `snapshot` job's text (kept in the Sheet's "Safeway jobs" tab) shows what
 Safeway sent, to fix `PAGE` in Simmer.
