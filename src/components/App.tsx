@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
-import { addDays } from "@/lib/time";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ListScreen, ShopScreen, type ListActions } from "./Shop";
@@ -102,9 +101,14 @@ export default function App() {
 
   // The shared list: loaded when Shop opens, then every 30 seconds while it's open and whenever the app comes back to
   // the front, so both phones see the same list. No background work: only while someone's looking.
+  // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
+  // (otherwise a poll answering just after a tap would undo the tap on screen until the change's own answer came).
+  const listChanges = useRef(0);
   const refreshList = useCallback(async () => {
+    const at = listChanges.current;
     try {
       const l = await api.list();
+      if (at !== listChanges.current) return;
       setList(l);
       store.setList(l);
       setListError(null);
@@ -116,12 +120,13 @@ export default function App() {
   useEffect(() => {
     if (!onShop) return;
     queueMicrotask(refreshList);
-    api.kitchen().then(setKitchen, () => {});
+    if (top.kind === "list") api.kitchen().then(setKitchen, () => {}); // the freezer and trips: only List shows them
     const visible = () => document.visibilityState === "visible";
     const t = setInterval(() => { if (visible()) refreshList(); }, 30_000);
     const back = () => { if (visible()) refreshList(); };
     document.addEventListener("visibilitychange", back);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- top.kind only decides the one kitchen read; onShop and visit restart it
   }, [onShop, visit, refreshList]);
 
   // The collection: loaded when Recipes, a recipe or the week opens (the week shows meal names), and after every change,
@@ -156,31 +161,38 @@ export default function App() {
    * can be planned), as far ahead as anyone has planned. Loading this week also puts on the list the groceries of nights
    * planned long ago that are now close.
    */
+  // One request for all of them (the server reads the Sheet once). Saves and Made count up too, so an answer that
+  // started before one of them doesn't put the old plan back.
+  const weekChanges = useRef(0);
   const refreshWeek = useCallback(async () => {
+    const at = ++weekChanges.current;
     try {
-      const w = await api.week(dateIn(0));
-      const all: WeekData[] = [w];
-      // Four weeks at a time, for at most half a year ahead.
-      for (let ahead = 1; ahead <= 26; ahead += 4) {
-        const batch = await Promise.all([0, 1, 2, 3].map((k) => api.week(addDays(w.monday, 7 * (ahead + k)))));
-        const stop = batch.findIndex((x) => !x.planned);
-        all.push(...(stop < 0 ? batch : batch.slice(0, stop + 1)));
-        if (stop >= 0) break;
-      }
-      setWeeks(all); store.setWeek(w); setWeekError(null);
-      if (w.added) setWeekNote(`Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list for the coming days.`);
+      const { weeks: all, added } = await api.weeks();
+      if (at !== weekChanges.current) return;
+      setWeeks(all); store.setWeek(all[0]); setWeekError(null);
+      if (added) setWeekNote(`Added ${added} thing${added === 1 ? "" : "s"} to the grocery list for the coming days.`);
     } catch (e) {
       if (!(e instanceof AuthError)) setWeekError(errorText(e));
     }
   }, []);
   const onWeek = phase === "app" && top.kind === "week";
-  useEffect(() => { if (onWeek) queueMicrotask(refreshWeek); }, [onWeek, visit, refreshWeek]);
+  useEffect(() => {
+    if (!onWeek) return;
+    queueMicrotask(refreshWeek);
+    // Brought back to the front (an iPhone keeps the app open for days): the plan as it is now, and "tonight" as of today.
+    const back = () => { if (document.visibilityState === "visible") refreshWeek(); };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [onWeek, visit, refreshWeek]);
   async function saveWeek(nights: Night[], lunches: Lunch[]) {
     try {
+      const wasPlanned = weeks.find((x) => x.monday === nights[0]?.date)?.planned ?? false;
+      ++weekChanges.current;
       const w = await api.saveWeek(nights, lunches, me);
       setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x)));
+      if (w.monday === weeks[0]?.monday) store.setWeek(w);
       setWeekError(null);
-      refreshWeek(); // a newly planned week brings the one after it, to plan next
+      if (!wasPlanned) refreshWeek(); // a newly planned week brings the one after it, to plan next
       setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
     } catch (e) { failed(setWeekError)(e); }
     setPlanningFor(null);
@@ -188,15 +200,18 @@ export default function App() {
   async function made(date: string, yes: boolean) {
     const mark = (n: Night) => (n.date === date ? { ...n, made: yes ? "yes" as const : "no" as const } : n);
     setWeeks((all) => all.map((w, i) => (i ? w : { ...w, nights: w.nights.map(mark), lastWeek: w.lastWeek.map(mark) })));
+    ++weekChanges.current;
     try { const w = await api.made(date, yes); setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x))); if (w.monday === week?.monday) store.setWeek(w); }
     catch (e) { failed(setWeekError)(e); }
   }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState) {
+    const mine = ++listChanges.current;
     if (show) setList((l) => (l ? show(l) : l));
     try {
       const l = await api.change(c);
+      if (mine !== listChanges.current) return; // a later change's answer is newer
       setList(l);
       store.setList(l);
       setListError(null);
