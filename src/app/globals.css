@@ -2,27 +2,27 @@
 
 /*
  * Colors follow iOS: system grouped backgrounds and labels, warmed slightly. A theme sets the accent (tint) and the brand
- * gradient (--g1 → --g2 → --g3). Simmer's own looks are Simmer (calm sage, the default, matching the icon) and Apricot
+ * gradient (--g1 → --g2 → --g3). Simmer's own looks are Simmer (tomato, the default, matching the icon) and Apricot
  * (the warm orange it started with). The gradient is for brand surfaces (a feature card, the loading ring), never for
  * things you tap. The plain accent themes get a gradient made from
  * their one color. Set by data-theme on <html> (see the script in layout.tsx).
  */
 :root {
-  --bg: #F5F6F0;
+  --bg: #FAF6F1;
   --card: #FFFFFF;
-  --sunk: #E6E9DF;
+  --sunk: #EFE7DF;
   --ink: #000000;
   --muted: #8A8A8E;
-  --line: #DFE4D7;
+  --line: #E8DED4;
   --on-accent: #FFFFFF;
   --warn-bg: #FFF4D6;
   --warn-ink: #8A5A00;
   --alert: #FF3B30;
-  /* Simmer (the default), matching the icon: calm sage. */
-  --accent: #5F7F59;
-  --g1: #B5C9A8;
-  --g2: #94B08A;
-  --g3: #7E9C76;
+  /* Simmer (the default), matching the icon: tomato. */
+  --accent: #C2462B;
+  --g1: #EE6A45;
+  --g2: #D9512F;
+  --g3: #B5381F;
 }
 :root[data-theme="apricot"] { --accent: #C9532C; --g1: #F6B25C; --g2: #E8803F; --g3: #C9532C; }
 :root[data-theme="blue"] { --accent: #007AFF; }
@@ -34,18 +34,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0C0E0B;
-    --card: #1A1D18;
-    --sunk: #282C25;
+    --bg: #110D0B;
+    --card: #1E1815;
+    --sunk: #2C2420;
     --ink: #FFFFFF;
     --muted: #8D8D93;
-    --line: #353A31;
+    --line: #3A302B;
     --warn-bg: #3A2E10;
     --warn-ink: #FFD60A;
     --alert: #FF453A;
-    /* Simmer in dark mode: a lighter sage, with dark text on it. */
-    --accent: #A9C79C;
-    --on-accent: #10140F;
+    /* Simmer in dark mode: a lighter tomato, with dark text on it. */
+    --accent: #F07A5C;
+    --on-accent: #1A0E09;
   }
   :root[data-theme="apricot"] { --accent: #F28A55; }
   :root[data-theme]:not([data-theme="simmer"]) { --on-accent: #FFFFFF; }
