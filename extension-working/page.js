@@ -224,6 +224,15 @@ export async function safewayPage(action, arg, P) {
       const button = before < want ? plusButton(p.card) : minusButton(p.card);
       if (!button) break;
       button.click();
+      // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
+      if (before === 1 && P.confirmRemove) {
+        for (let t = 0; t < 3000; t += 250) {
+          await sleep(250);
+          const yes = buttons(document).find((b) => re(P.confirmRemove).test(label(b)));
+          if (yes) { yes.click(); break; }
+          if (!find()) break;
+        }
+      }
       if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
     }
     p = find();
