@@ -96,7 +96,18 @@ function cartPage(signedIn) {
           + '<div class="qty"><button aria-label="Decrease quantity" class="stepper-decrease">-</button><div role="button" class="stepper-amount"><span>' + c[id] + ' </span><span class="sr-only">- click to specify a quantity</span></div>'
           + '<button aria-label="Increase quantity" class="stepper-increase">+</button><div style="display:none"><div role="button" class="stepper-qty-round"><span>' + c[id] + ' </span><span class="sr-only">- click to specify a quantity</span></div></div></div></div>').join("") : "<p>Your cart is empty</p>";
         document.querySelectorAll(".row").forEach((r) => r.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
-          const id = r.dataset.id; put(id, (cart()[id] || 0) + (/Increase/.test(b.getAttribute("aria-label")) ? 1 : -1)); draw();
+          const id = r.dataset.id, step = /Increase/.test(b.getAttribute("aria-label")) ? 1 : -1, c = cart();
+          // As the real cart page (Oct 31): emptying the cart asks first, and only "Yes, remove" takes it out.
+          if (step < 0 && c[id] === 1 && Object.keys(c).length === 1) {
+            const box = document.createElement("div");
+            box.innerHTML = '<p>Empty Safeway cart</p><p>Are you sure you want to remove all the items from your order?</p><button type="button">No, don\\'t remove</button><button type="button">Yes, remove</button>';
+            document.body.append(box);
+            const [no, yes] = box.querySelectorAll("button");
+            no.onclick = () => box.remove();
+            yes.onclick = () => { box.remove(); put(id, 0); draw(); };
+            return;
+          }
+          put(id, (c[id] || 0) + step); draw();
         }, 250)));
       };
       setTimeout(draw, 400);

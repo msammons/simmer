@@ -43,6 +43,9 @@ export const PAGE = {
   // hidden copy for small screens (".stepper-qty-round"); read from a capture of the real page, Oct 31.
   qtyBox: '[data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"], .stepper-amount, .stepper-qty-round',
   add: { label: "^add\\b", not: "list|note|coupon|clip" },
+  // Taking the last product out of the cart asks "Empty Safeway cart ... Are you sure?" with "No, don't remove" / "Yes,
+  // remove" (seen Oct 31). The helper answers yes only right after its own − at one, which Sam asked for with the trash.
+  confirmRemove: "^yes,?\\s+remove$",
   plus: "increase|increment|add one|add another|plus|^[+＋]$",
   minus: "decrease|decrement|remove one|remove quantity|minus|^[-−–]$",
   inCartText: "(\\d+)\\s+in\\s+cart",
