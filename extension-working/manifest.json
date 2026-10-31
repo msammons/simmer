@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Simmer",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Simmer's hands in this Chrome: does Simmer's store searches and cart changes, for the phone and for Simmer in this panel. You check out yourself.",
   "permissions": [
     "sidePanel",
