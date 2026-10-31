@@ -7,7 +7,7 @@ import { applyShape, choices, emptyNight, LUNCH_PARTS, nextOption, planLunches, 
 import { Check } from "./Shop";
 import { Icon } from "./icons";
 import { summary } from "./Recipes";
-import { Button, EmptyState, Group, Notice, Row, Segmented, Sheet, TopBar } from "./ui";
+import { BrandBar, Button, EmptyState, Group, Notice, Row, Segmented, Sheet } from "./ui";
 
 const KIND: Record<NightKind, string> = { quick: "Quick", regular: "Regular", skip: "Skip" };
 const day = (date: string, style: "long" | "short" = "long") => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: style, timeZone: "UTC" });
@@ -52,7 +52,8 @@ export function WeekScreen({ weeks, recipes, me, error, note, onNote, onPlan, on
   const schoolMorning = hourNow() < 10 ? (week?.lunches ?? []).filter((l) => l.date === today && !l.noSchool) : [];
   return (
     <div className="space-y-6">
-      <TopBar title="Meals" />
+      <BrandBar />
+      <h1 className="sr-only">Meals</h1>
       {error && <Notice>{error}</Notice>}
       {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
       {ask && (
