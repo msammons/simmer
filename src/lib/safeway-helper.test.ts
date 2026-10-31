@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choose, howMany, keyOf, PAGE, prepare, safewayItems, score, searchFor, usualFor, words } from "./safeway-helper.mjs";
+import { choose, howMany, keyOf, nameWords, PAGE, prepare, safewayItems, score, searchFor, searchWords, usualFor, words } from "./safeway-helper.mjs";
 
 const milk = { id: "1", name: "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", price: "$3.49" };
 const milkGal = { id: "2", name: "Lucerne Milk Reduced Fat 2% - 1 Gallon", price: "$5.29" };
@@ -34,10 +34,23 @@ describe("the list", () => {
     expect(usualFor({ item: "milk" }, staples)).toBe("Lucerne 2% milk, half gallon");
     expect(usualFor({ item: "eggs" }, staples)).toBe("");
   });
-  it("searches for the remembered product, then the usual one, then the item", () => {
-    expect(searchFor({ item: "milk" }, "Lucerne 2%", { id: "1", name: milk.name })).toBe(milk.name);
-    expect(searchFor({ item: "milk" }, "Lucerne 2%", null)).toBe("Lucerne 2%");
-    expect(searchFor({ item: "milk" }, "", null)).toBe("milk");
+  it("searches for the item's own name, whatever's remembered or usual", () => {
+    expect(searchFor({ item: "milk" }, "Lucerne 2%", { id: "1", name: milk.name })).toBe("milk");
+    expect(searchFor({ item: "2 lb ground beef" }, "", null)).toBe("ground beef");
+  });
+  it("takes amounts, sizes and containers out of the search words", () => {
+    const cases: [string, string][] = [
+      ["2 lb ground beef", "ground beef"], ["lb ground beef", "ground beef"], ["ground beef 2 lb", "ground beef"],
+      ["can canned pumpkin", "canned pumpkin"], ["1 (15 ounce) can canned pumpkin", "canned pumpkin"],
+      ["9-inch homemade pie crust", "pie crust"], ["a bag of spinach", "spinach"], ["2 cans black beans", "black beans"],
+      ["eggs 1 dozen", "eggs"], ["dozen eggs", "eggs"], ["lemons x3", "lemons"], ["onion, diced", "onion"], ["1/2 gallon milk", "milk"],
+      ["2% milk", "2% milk"], ["chopped pecans", "chopped pecans"], ["Pop tarts", "Pop tarts"], ["apples", "apples"], ["oz", "oz"],
+    ];
+    for (const [item, want] of cases) expect(searchWords(item), item).toBe(want);
+  });
+  it("searches a product by the part of its name Safeway didn't shorten", () => {
+    expect(nameWords("Pop-Tarts Toaster Pastries Fro...s 12 Count - 20.3 Oz")).toBe("Pop-Tarts Toaster Pastries");
+    expect(nameWords("O Organics Canned Pumpkin - 15 Oz")).toBe("O Organics Canned Pumpkin");
   });
   it("remembers picks by the item as written", () => {
     expect(keyOf("  Fresh Bananas ")).toBe("bananas");
@@ -89,12 +102,16 @@ describe("prepare", () => {
     };
     const items = prepare(list, [{ item: "Bananas", id: "960011", name: "Organic Bananas" }]);
     expect(items.map((i) => i.id)).toEqual(["m", "b"]);
-    expect(items[0]).toMatchObject({ query: "Lucerne 2% milk half gallon", usual: "Lucerne 2% milk half gallon", want: 2, picked: null });
-    expect(items[1]).toMatchObject({ query: "Organic Bananas", picked: { id: "960011", name: "Organic Bananas" }, want: 1 });
+    expect(items[0]).toMatchObject({ query: "milk", usual: "Lucerne 2% milk half gallon", want: 2, picked: null });
+    expect(items[1]).toMatchObject({ query: "bananas", picked: { id: "960011", name: "Organic Bananas" }, want: 1 });
   });
   it("every page pattern is a working pattern", () => {
-    const pats = [PAGE.tileId.pattern, PAGE.link.pattern, PAGE.price.pattern, PAGE.add.label, PAGE.add.not, PAGE.plus, PAGE.minus, PAGE.inCartText, PAGE.signIn, PAGE.noResults];
+    const pats = [PAGE.tileId.pattern, PAGE.link.pattern, PAGE.price.pattern, PAGE.add.label, PAGE.add.not, PAGE.plus, PAGE.minus, PAGE.inCartText, PAGE.signIn, PAGE.noResults, PAGE.emptyCart, PAGE.fullName];
     for (const p of pats) expect(() => new RegExp(p, "i")).not.toThrow();
     expect(new RegExp(PAGE.price.pattern, "i").exec("Now $3.49 each")?.[0]).toBe("$3.49 each");
+    const full = new RegExp(PAGE.fullName, "i");
+    expect("Increase Quantity 1 unit of Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
+    expect("Remove Quantity of Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
+    expect("Add Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
   });
 });

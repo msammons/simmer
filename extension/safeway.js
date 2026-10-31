@@ -55,17 +55,21 @@ async function onPage(tabId, action, arg, page) {
   } catch { return null; }
 }
 
-/** Opens a search and waits for its results (or Safeway saying there are none). */
-async function search(tabId, query, page, settings) {
-  await go(tabId, `${page.site}${page.searchPath}${encodeURIComponent(query)}`);
+/** Opens a page and waits for its products (or Safeway saying there are none). */
+async function open(tabId, url, page, settings, tries = settings.resultsTries ?? 25) {
+  await go(tabId, url);
   let last = null;
-  for (let i = 0; i < (settings.resultsTries ?? 25); i++) {
+  for (let i = 0; i < tries; i++) {
     last = await onPage(tabId, "read", null, page);
-    if (last && (last.products.length || last.noResults)) return last;
+    if (last && (last.products.length || last.noResults || last.signedIn === false)) return last;
     await sleep(settings.resultsWait ?? 800);
   }
   return last;
 }
+const search = (tabId, query, page, settings) => open(tabId, `${page.site}${page.searchPath}${encodeURIComponent(query)}`, page, settings);
+/** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
+const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults });
+const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
 
 /**
  * Does one job. Answers { ok: true, result } or { ok: false, error } with an error word Simmer turns into plain words
@@ -80,20 +84,39 @@ export async function runJob(job, windowId) {
     if (!r) return { ok: false, error: "not-loaded" };
     return { ok: true, result: { products: r.products, signedIn: r.signedIn, noResults: r.noResults } };
   }
-  if (job.kind === "setQty") {
-    let r = await search(tabId, args.query || args.name, page, settings);
+  if (job.kind === "cart") {
+    const r = await openCart(tabId, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
-    if (r.signedIn === false) return { ok: false, error: "signed-out" };
-    if (!r.products.some((p) => p.id === args.productId) && args.name && args.name !== args.query) r = await search(tabId, args.name, page, settings);
-    if (!r?.products.some((p) => p.id === args.productId)) return { ok: false, error: "not-found" };
-    const x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, page);
-    if (!x) return { ok: false, error: "failed" };
-    if (!x.ok && x.why === "not-found") return { ok: false, error: "not-found" };
-    return { ok: true, result: { ok: x.ok, qty: x.qty, name: x.name, price: x.price, image: x.image } };
+    return { ok: true, result: { products: r.products, signedIn: r.signedIn } };
+  }
+  if (job.kind === "setQty") {
+    // Where the product can be changed: Safeway's cart page first when asked (from Cart, where it's listed), then
+    // searches for it: Simmer's words, other words, its name (unless Safeway shortened it).
+    const tries = [];
+    if (args.on === "cart") tries.push({ cart: true });
+    for (const q of [args.query, args.alt, /\.{3}|…/.test(args.name ?? "") ? "" : args.name]) if (q && !tries.some((t) => t.q === q)) tries.push({ q });
+    let loaded = false, done = null;
+    for (const t of tries) {
+      const p = t.cart ? cartPage(page) : page;
+      const r = t.cart ? await openCart(tabId, page, settings) : await search(tabId, t.q, page, settings);
+      if (!r) continue;
+      loaded = true;
+      if (r.signedIn === false) return { ok: false, error: "signed-out" };
+      if (!r.products.some((x) => x.id === args.productId)) continue;
+      const x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
+      if (!x || (!x.ok && x.why === "not-found")) continue;
+      done = x;
+      // Not all the way on the cart page (its buttons may differ): try a search page too, from where it stopped.
+      if (x.ok || !t.cart) break;
+    }
+    if (args.on === "cart") await openCart(tabId, page, settings).catch(() => {}); // the cart stays showing
+    if (!done) return { ok: false, error: loaded ? "not-found" : "not-loaded" };
+    return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image } };
   }
   if (job.kind === "sample" || job.kind === "snapshot") {
-    await search(tabId, args.query, page, settings);
-    const text = await onPage(tabId, job.kind, { id: args.productId }, page);
+    const onCart = args.on === "cart";
+    if (onCart) await openCart(tabId, page, settings); else await search(tabId, args.query, page, settings);
+    const text = await onPage(tabId, job.kind, { id: args.productId }, onCart ? cartPage(page) : page);
     return { ok: true, result: { text: text || "" } };
   }
   return { ok: false, error: "failed" };

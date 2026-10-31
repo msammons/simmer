@@ -14,6 +14,17 @@ export function findItems(items: Item[], staples: Staple[], picks: Pick[]): Find
   return prepare({ items, staples }, picks) as FindItem[];
 }
 
+/**
+ * Which list item a product added from Find is for: the item showing, unless the words searched were typed in for
+ * something else (the product shares no word with the item or its usual product and isn't its remembered one). Then
+ * it goes in the cart for no item, and doesn't become the item's usual.
+ */
+export function addedFor<I extends { id: string; item: string; usual: string; query: string; picked: { id: string } | null }>(p: { id: string; name: string }, it: I, query: string): I | null {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  if (same(query, it.query) || it.picked?.id === p.id) return it;
+  return score(p.name, it.item) > 0 || (it.usual && score(p.name, it.usual) > 0) ? it : null;
+}
+
 /** What's in the cart for a list item (by the item it was added for). */
 export const cartFor = (cart: CartLine[], itemId: string) => cart.filter((l) => l.itemId === itemId);
 export const qtyFor = (cart: CartLine[], itemId: string) => cartFor(cart, itemId).reduce((n, l) => n + l.qty, 0);
