@@ -97,8 +97,8 @@ import type { Order, OrderAnswer } from "./order";
 export type { Order, OrderAnswer };
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
-import type { Job, JobKind } from "./jobs";
-export type { Job, JobKind };
+import type { Activity, Job, JobKind } from "./jobs";
+export type { Activity, Job, JobKind };
 import type { Frozen, Lunch, Night } from "./week";
 export type { Frozen, Lunch, Night, WeekData };
 export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
@@ -127,7 +127,9 @@ export const api = {
   /** The Safeway cart as Simmer knows it, the picks, whether the computer is answering, and whether its Simmer needs an update. */
   cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean; outdated?: boolean }>("/api/safeway/cart", { signal }),
   /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
-  queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args }) }),
+  queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) }),
+  /** The helper's recent searches and cart changes, for the panel's activity log. */
+  activity: (signal?: AbortSignal) => call<{ jobs: Activity[]; answering: boolean }>("/api/safeway/jobs?recent=1", { signal }),
   job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}`, { signal }),
   cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };

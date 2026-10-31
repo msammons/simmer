@@ -13,7 +13,6 @@ import { Button, EmptyState, Group, Notice } from "./ui";
 export const cartUrl = () => `${PAGE.site}${PAGE.cartPath}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Plain words for why a job didn't happen. */
 /** Simmer on the computer is older than this one: where to get the new one. */
 export function UpdateNotice() {
   return (
@@ -25,6 +24,7 @@ export function UpdateNotice() {
 }
 
 export const NOT_ANSWERING = "Safeway searches run on the computer with Chrome open. It's not answering right now.";
+/** Plain words for why a job didn't happen. */
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
   if (error === "signed-out") return "Safeway isn't signed in on the computer. Sign in there, then try again.";
