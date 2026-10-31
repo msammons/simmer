@@ -30,12 +30,16 @@ export async function simmer(method, body, path) {
   return data;
 }
 
-/** A Safeway tab to work in: in the panel's window when it's open there (and then in front), else any, else a new one behind. */
+/**
+ * A Safeway tab to work in: one in the panel's window when it's open there, else any, else a new one. It's never brought
+ * to the front, and a new one opens behind (Sam brings it forward when he wants to, Oct 31).
+ */
 async function safewayTab(windowId) {
-  const front = windowId != null;
-  const [open] = await chrome.tabs.query(front ? { url: `${SAFEWAY}/*`, windowId } : { url: `${SAFEWAY}/*` });
-  if (open) { if (front && !open.active) await chrome.tabs.update(open.id, { active: true }); return open.id; }
-  return (await chrome.tabs.create({ url: SAFEWAY, active: front, ...(front && { windowId }) })).id;
+  const inPanel = windowId != null;
+  const [here] = inPanel ? await chrome.tabs.query({ url: `${SAFEWAY}/*`, windowId }) : [];
+  const [open] = here ? [here] : await chrome.tabs.query({ url: `${SAFEWAY}/*` });
+  if (open) return open.id;
+  return (await chrome.tabs.create({ url: SAFEWAY, active: false, ...(inPanel && { windowId }) })).id;
 }
 
 function go(tabId, url) {

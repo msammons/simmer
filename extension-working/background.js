@@ -10,7 +10,7 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === "jobs") check(); });
 chrome.runtime.onStartup.addListener(() => check());
 chrome.runtime.onInstalled.addListener(() => check());
 
-// Open panels, each with its window: Safeway's tab comes to the front only in a window where the panel is open.
+// Open panels, each with its window: jobs use a Safeway tab in a window where the panel is open (never brought forward).
 const panels = new Map();
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "panel") return;
