@@ -74,6 +74,13 @@ const search = (tabId, query, page, settings) => open(tabId, `${page.site}${page
 /** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
 const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults });
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
+/** The cart page as it is: read where it stands when the tab is already showing it (no reload), else opened. */
+async function cartHere(tabId, page, settings) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab?.url || new URL(tab.url).pathname !== page.cartPath) return openCart(tabId, page, settings);
+  const r = await onPage(tabId, "read", null, cartPage(page));
+  return r && (r.products.length || r.noResults) ? r : openCart(tabId, page, settings);
+}
 
 /**
  * Does one job. Answers { ok: true, result } or { ok: false, error } with an error word Simmer turns into plain words
@@ -89,7 +96,7 @@ export async function runJob(job, windowId) {
     return { ok: true, result: { products: r.products, signedIn: r.signedIn, noResults: r.noResults } };
   }
   if (job.kind === "cart") {
-    const r = await openCart(tabId, page, settings);
+    const r = await cartHere(tabId, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
     return { ok: true, result: { products: r.products, signedIn: r.signedIn } };
   }
@@ -102,18 +109,23 @@ export async function runJob(job, windowId) {
     let loaded = false, done = null;
     for (const t of tries) {
       const p = t.cart ? cartPage(page) : page;
-      const r = t.cart ? await openCart(tabId, page, settings) : await search(tabId, t.q, page, settings);
+      // On the cart page already: change it where it stands (no reload).
+      const r = t.cart ? await cartHere(tabId, page, settings) : await search(tabId, t.q, page, settings);
       if (!r) continue;
       loaded = true;
       if (r.signedIn === false) return { ok: false, error: "signed-out" };
       if (!r.products.some((x) => x.id === args.productId)) continue;
-      const x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
+      let x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
       if (!x || (!x.ok && x.why === "not-found")) continue;
+      // The count may not have caught up on screen (Oct 31: + took on Safeway, the page still read 1): read the cart
+      // once more, fresh, before saying it didn't take. Never press again from a search page after a press here.
+      if (t.cart && !x.ok) {
+        const again = (await openCart(tabId, page, settings))?.products.find((y) => y.id === args.productId);
+        x = { ...x, qty: again?.inCart ? again.qty || 1 : 0, ok: (again?.inCart ? again.qty || 1 : 0) === args.qty };
+      }
       done = x;
-      // Not all the way on the cart page (its buttons may differ): try a search page too, from where it stopped.
-      if (x.ok || !t.cart) break;
+      break;
     }
-    if (args.on === "cart") await openCart(tabId, page, settings).catch(() => {}); // the cart stays showing
     if (!done) return { ok: false, error: loaded ? "not-found" : "not-loaded" };
     return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image } };
   }

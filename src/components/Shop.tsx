@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { dateIn, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
+import { dateIn, framed, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { findItems, firstToFind, pickFor, qtyFor } from "@/lib/shop";
@@ -135,7 +135,8 @@ export function ShopScreen({ list, error, act, startAt, onList }: {
   list: ListState | null; error: string | null; act: ListActions; startAt: string | null; onList: () => void;
 }) {
   const sw = useSafeway();
-  const [view, setView] = useState<ShopView>("find");
+  // In the helper's panel, beside Safeway, Shop opens on Cart (Sam, Oct 31); opened for a list item, on Find.
+  const [view, setView] = useState<ShopView>(() => (!startAt && framed() ? "cart" : "find"));
   const [online, setOnline] = useState<Store>(ONLINE_STORES[0]); // the store Find and Cart are for
   const [findAt, setFindAt] = useState<string | null>(startAt); // the item Find shows, by id
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
