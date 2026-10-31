@@ -159,7 +159,8 @@ expect(await panel.getByText("Wrong passcode.").waitFor({ timeout: 10_000 }).the
 await panel.fill("#code", PASS);
 await panel.click("text=Continue");
 const sim = panel.frameLocator("#simmer");
-expect(await sim.getByRole("radio", { name: "Find" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop's Find (passcode passed by message)");
+expect(await sim.getByRole("radio", { name: "Find" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop (passcode passed by message)");
+expect(await sim.getByRole("radio", { name: /^Cart/ }).getAttribute("aria-checked") === "true", "the panel's Shop opens on Cart");
 expect(!(await panel.locator("#simmer").getAttribute("src")).includes(PASS), "the passcode isn't in the frame's address");
 
 const t0 = Date.now();
