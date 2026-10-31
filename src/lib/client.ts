@@ -49,9 +49,9 @@ export const store = {
 
 };
 
-/** Themes (defined in globals.css): Simmer's own looks (Simmer is the default and matches the icon), then plain iOS accent colors. swatch is CSS for the picker. */
+/** Themes (defined in globals.css): Simmer's own looks (Simmer, tomato, is the default and matches the icon), then plain iOS accent colors. swatch is CSS for the picker. */
 export const THEMES = [
-  { id: "simmer", label: "Simmer", swatch: "linear-gradient(160deg, #B5C9A8, #94B08A 55%, #7E9C76)" },
+  { id: "simmer", label: "Simmer", swatch: "linear-gradient(160deg, #EE6A45, #D9512F 55%, #B5381F)" },
   { id: "apricot", label: "Apricot", swatch: "linear-gradient(160deg, #F6B25C, #E8803F 55%, #C9532C)" },
   { id: "blue", label: "Blue", swatch: "#007AFF" },
   { id: "indigo", label: "Indigo", swatch: "#5856D6" },
