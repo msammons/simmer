@@ -1,4 +1,4 @@
-// A check of the Safeway helper 1.0 (extension/) end to end, with a real Simmer and a stand-in Safeway: run on a Mac with
+// A check of the Safeway helper 1.0 (extension-working/) end to end, with a real Simmer and a stand-in Safeway: run on a Mac with
 //   node scripts/extension-test.mjs
 // It builds and starts Simmer locally (memory store, passcode test123, port 3205; or uses SIMMER_URL if one's running
 // with a fresh memory store), loads the
@@ -12,7 +12,7 @@ import os from "node:os";
 import { mkdtempSync } from "node:fs";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
-const ext = path.resolve("extension");
+const ext = path.resolve("extension-working");
 const ADDRESS = "https://simmer-test.vercel.app";
 const LOCAL = process.env.SIMMER_URL || "http://localhost:3205";
 const PASS = "test123";

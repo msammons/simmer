@@ -50,7 +50,7 @@ Safeway item at a time: Simmer's own search words, Safeway's results with pictur
 then − / +) and **Cart** (Simmer's copy of the Safeway cart, the total, and "Check out on Safeway").
 
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
-Chrome on a computer (`extension/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" tab,
+Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" tab,
 pruned as it goes), the helper takes it, does it on safeway.com and reports back; a quantity set on Safeway goes into
 Simmer's cart ("Safeway cart" tab, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway tab, now with the product's picture address; pictures
