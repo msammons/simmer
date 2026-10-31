@@ -1,4 +1,4 @@
-// Small jobs for the Safeway helper (extension/), queued by Simmer and done by the helper in Chrome on a computer:
+// Small jobs for the Safeway helper (extension-working/), queued by Simmer and done by the helper in Chrome on a computer:
 // search Safeway, set a product's quantity in the cart, or read a page to learn how Safeway builds it. Simmer queues a
 // job; the helper's background checks for jobs (every half minute, every couple of seconds once there's activity),
 // does the oldest, and reports back. The phone and the panel at the computer use the same path, so they behave the
@@ -6,7 +6,7 @@
 // row of the same tab (id "helper"), so Simmer can say plainly when the computer isn't answering.
 import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
-import manifest from "../../extension/manifest.json";
+import manifest from "../../extension-working/manifest.json";
 import { loadCart, savePick, setCartLine } from "./safeway";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
@@ -116,7 +116,7 @@ const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > JOB_TIME
 
 export const helperAnswering = (h: Helper | null) => Boolean(h && age(h.seen) < JOB_TIMES.alive);
 
-/** The helper's version as this Simmer ships it (extension/manifest.json). */
+/** The helper's version as this Simmer ships it (extension-working/manifest.json). */
 export const HELPER_VERSION: string = manifest.version;
 const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
 /** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
