@@ -30,9 +30,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByLabel("Household passcode").fill("nope"); await page.getByRole("button", { name: "Get started" }).tap();
     ok(`${tag}: wrong passcode message`, await seen(page.getByText("That passcode didn't work")));
     await page.getByLabel("Household passcode").fill("test123"); await page.getByRole("button", { name: "Get started" }).tap();
-    ok(`${tag}: opens on Recipes`, await seen(page.getByRole("heading", { name: "Recipes" }), 8000));
-    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Meals" }).tap();
-    ok(`${tag}: reaches Meals`, await seen(page.getByRole("heading", { name: "Meals" }), 8000));
+    ok(`${tag}: opens on Meals`, await seen(page.getByRole("heading", { name: "Meals" }), 8000));
+    ok(`${tag}: Meals lit`, (await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
     await page.waitForTimeout(800);
     await settingsHere("Meals");
     await page.screenshot({ path: `${dir}/1-week-${tag}.png` });
@@ -116,6 +115,10 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await settingsHere("List");
     ok(`${tag}: List has the add field`, await page.getByLabel("Add to the list").isVisible());
     await page.screenshot({ path: `${dir}/5-list-${tag}.png`, fullPage: true });
+    if (!(await page.getByRole("button", { name: /^More for / }).count())) { await page.getByLabel("Add to the list").fill("eggs"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500); }
+    const findAll = page.getByRole("button", { name: "Find at Safeway" });
+    const findBox = (await findAll.count()) ? await findAll.boundingBox() : null;
+    ok(`${tag}: Find at Safeway is a small button beside Running low`, Boolean(findBox) && findBox.height <= 44 && findBox.width < width / 2, JSON.stringify(findBox));
     // Shop: Find and Cart for one store. With no Safeway helper running, Find says so plainly (and quickly); the cart is empty.
     if (!(await page.getByRole("button", { name: /^More for / }).count())) { await page.getByLabel("Add to the list").fill("eggs"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500); }
     await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
@@ -154,15 +157,30 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
-    ok(`${tag}: four tabs (Recipes, Meals, List, Shop), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Recipes,Meals,List,Shop" && (await page.getByRole("search").count()) === 0);
+    ok(`${tag}: four tabs (Meals, Recipes, List, Shop), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Meals,Recipes,List,Shop" && (await page.getByRole("search").count()) === 0);
     await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
     ok(`${tag}: no plus button at the top of Recipes`, (await page.locator("header, .sticky").getByRole("button", { name: "Add recipes" }).count()) === 0);
+    // A recipe's ingredients onto the list straight from its row: the same sheet, spices unticked below the things to buy.
+    const chiliRow = page.getByRole("button", { name: "Add Turkey chili to the list" }).first();
+    for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await chiliRow.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
+    ok(`${tag}: each recipe row has an add-to-list button`, await chiliRow.isVisible());
+    if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6a-recipes-overview-${tag}.png` });
+    await chiliRow.tap(); await page.waitForTimeout(400);
+    const chiliSheet = page.getByRole("dialog", { name: "Add to the list" });
+    ok(`${tag}: it opens the add-to-list sheet for that recipe`, (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
+    const cumin = chiliSheet.getByRole("checkbox", { name: "1 tsp cumin" }), turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
+    ok(`${tag}: spices start unticked`, (await cumin.getAttribute("aria-checked")) === "false" && (await chiliSheet.getByRole("checkbox", { name: "2 tbsp chili powder" }).getAttribute("aria-checked")) === "false");
+    ok(`${tag}: and sit below the things to buy, under Spices`, (await turkey.getAttribute("aria-checked")) === "true" && (await cumin.boundingBox()).y > (await turkey.boundingBox()).y && await chiliSheet.getByText("Spices", { exact: true }).isVisible());
+    if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6c-add-to-list-${tag}.png` });
+    await page.keyboard.press("Escape"); await page.waitForTimeout(400);
     const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
     for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await tacos.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
     await tacos.tap(); await page.waitForTimeout(300);
     ok(`${tag}: recipe screen`, (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).isVisible()));
+    const addBtn = await page.getByRole("button", { name: "Add to the list" }).boundingBox();
+    ok(`${tag}: Add to the list at the top of the recipe, without scrolling`, Boolean(addBtn) && addBtn.y + addBtn.height < height - 100 && addBtn.y < (await page.getByRole("radio", { name: "Quick" }).boundingBox()).y);
     await settingsHere("a recipe");
     await page.screenshot({ path: `${dir}/6-recipe-${tag}.png`, fullPage: true });
     if (tag === "phone-light") {

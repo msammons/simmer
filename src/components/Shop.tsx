@@ -107,7 +107,7 @@ export type ShopView = "find" | "cart";
 
 /**
  * The List tab: everything to get, from every store. A Safeway item opens Shop's Find on it (`onFind`), as does the
- * button for all of them.
+ * Find at Safeway chip for all of them.
  */
 export function ListScreen({ list, kitchen, error, act, onFind }: {
   list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onFind: (id?: string) => void;
@@ -212,12 +212,12 @@ function ListView({ list, kitchen, act, cart, picks, onFind, anyToFind }: {
       <div className="flex flex-wrap gap-2">
         <button className={chip} onClick={() => setSheet("staples")}><Icon name="list" className="size-[18px]" />Running low</button>
         <button className={chip} onClick={() => setSheet("freezer")}><Icon name="snow" className="size-[18px]" />Freezer{frozen ? ` · ${frozen}` : ""}</button>
+        {anyToFind && <button className={chip} onClick={() => onFind()}><Icon name="search" className="size-[18px]" />Find at Safeway</button>}
       </div>
       {toCheck.length > 0 && (
         <Group><Row icon="check" title="Check you have these" subtitle={`${toCheck.length} pantry thing${toCheck.length === 1 ? "" : "s"} from the plan`} value={String(toCheck.length)} accessory="chevron" onClick={() => setSheet("check")} /></Group>
       )}
       {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
-      {anyToFind && <Button icon="search" onClick={() => onFind()} className="w-full">Find them at Safeway</Button>}
       {stores.map((s) => (
         <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={(it) => setMoreId(it.id)} cart={cart} picks={picks}
           onFind={s === "safeway" ? (it) => onFind(it.id) : undefined}

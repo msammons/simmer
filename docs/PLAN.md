@@ -475,7 +475,7 @@ back/forward follow the shared `Sheet` component.
 ### Shop (tab, Oct 30; was Groceries)
 
 A List · Find · Cart switch pinned in the top bar (see ARCHITECTURE.md, "Shop and Safeway"). **List**: the add box,
-compact Running low / Freezer / Check you have these buttons, *Find them at Safeway*, then each store's group (Safeway
+compact Running low / Freezer / *Find at Safeway* buttons (Oct 31: Find was a big button), Check you have these, then each store's group (Safeway
 items in the cart dimmed, "In the cart · 2"; Done shopping per store). **Find**: one Safeway item at a time ("3 of 8"),
 Safeway's products with picture, name and price, *Your usual* first, Add / − / +, Back and Skip or Next item. **Cart**:
 what's in the Safeway cart from Simmer, − / + / remove, the total, *Check out on Safeway*. Searches and cart changes

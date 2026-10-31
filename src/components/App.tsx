@@ -15,8 +15,8 @@ type Tab = "week" | "list" | "shop" | "recipes";
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-// Recipes first, and Simmer opens on it (Matt, Oct 30).
-const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }];
+// Meals first, then Recipes, and Simmer opens on Meals (Matt, Oct 31).
+const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "recipes", label: "Recipes", icon: "book" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }];
 const TAB_NAMES: Record<Tab, string> = { week: "Meals", list: "List", shop: "Shop", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
@@ -25,7 +25,7 @@ const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", ro
 function takeResume(): Tab {
   // The Safeway helper's panel opens Simmer on Shop (?open=shop).
   const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "recipes"; } catch { return isTab(asked) ? asked : "recipes"; }
+  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "week"; } catch { return isTab(asked) ? asked : "week"; }
 }
 /** Nothing would be lost by reloading now: no sheet open (the panel's activity log doesn't count) and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
@@ -33,7 +33,7 @@ const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest]
 
 export default function App() {
   const [phase, setPhase] = useState<"boot" | "passcode" | "app">("boot");
-  const [stack, setStack] = useState<Screen[]>([{ kind: "recipes" }]); // Simmer opens on Recipes (Matt, Oct 30)
+  const [stack, setStack] = useState<Screen[]>([{ kind: "week" }]); // Simmer opens on Meals (Matt, Oct 31)
   const top = stack[stack.length - 1];
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
@@ -51,6 +51,7 @@ export default function App() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
+  const [listing, setListing] = useState<string | null>(null); // the recipe going on the list from the Recipes tab
   // This week first, then the weeks after it that are planned, then the first one that isn't (to plan it). This week is
   // last time's at first, for opening offline.
   const [weeks, setWeeks] = useState<WeekData[]>(() => { const w = browser ? store.week() : null; return w ? [w] : []; });
@@ -140,6 +141,7 @@ export default function App() {
   useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, visit, refreshRecipes]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
+  const toList = open ?? (listing ? recipeOf(listing) : null); // the add-to-list sheet's recipe: the page you're on, or a row on Recipes
   async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
     setRecipes((rs) => rs && rs.map((r) => (r.id === c.id ? show(r) : r)));
     try { gotRecipes((await api.recipeChange(c)).recipes); }
@@ -275,7 +277,7 @@ export default function App() {
   // A new version shipped while the app sat open (an iPhone can keep it in memory for days): when it's next brought to the
   // front (or, in the helper's panel, every few minutes) on a screen at rest (a tab's first screen, or the passcode, with nothing open or typed), reload into the new
   // version and come back to the same tab.
-  const here = useRef({ resting: false, root: "recipes" as Tab });
+  const here = useRef({ resting: false, root: "week" as Tab });
   useEffect(() => { here.current = { resting: phase === "passcode" || (phase === "app" && stack.length === 1), root: stack[0].kind as Tab }; }, [phase, stack]);
   useEffect(() => {
     let checked = 0;
@@ -333,7 +335,7 @@ export default function App() {
         <PasscodeScreen error={error} onDone={async (code) => {
           setError(null);
           store.setPasscode(code);
-          if (await loadHousehold()) { setStack([{ kind: "recipes" }]); setPhase("app"); }
+          if (await loadHousehold()) { setStack([{ kind: "week" }]); setPhase("app"); }
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
@@ -345,7 +347,7 @@ export default function App() {
       {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} error={error ?? listError} act={act} startAt={shopAt} onList={() => onTab("list")} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
-          onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
+          onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} onAddToList={(r) => { setListing(r.id); setSheet("tolist"); }} />
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
@@ -367,7 +369,7 @@ export default function App() {
         else onTab("recipes"); // several saved (her meal ideas): show the whole collection, where they now are
       }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
-      {sheet === "tolist" && open && <AddToListSheet key={open.id} r={open} onAdd={(items) => addToList(open, items)} onClose={() => setSheet(null)} />}
+      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(items) => addToList(toList, items)} onClose={() => { setSheet(null); setListing(null); }} />}
       {settings && (
         <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)}
           people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />
