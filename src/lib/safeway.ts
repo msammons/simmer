@@ -102,6 +102,29 @@ export async function setCartLine(change: { productId: string; qty: number; name
   return all.filter((l) => l.cart === cart);
 }
 
+/**
+ * Safeway's cart page, read by the helper: Simmer's copy becomes what's there, in one save. Products seen keep the list
+ * item they were for; products added on Safeway itself come in with no item; products no longer there go. An empty read
+ * changes nothing (a page that didn't load reads the same as an empty cart).
+ */
+export async function matchCart(seen: { id: string; name: string; price: string; image: string; qty: number }[], cart = "safeway"): Promise<CartLine[]> {
+  const all = sheetsConfigured() ? await allCart() : cartMemory.map((l) => ({ ...l }));
+  const mine = all.filter((l) => l.cart === cart);
+  if (!seen.length) return mine;
+  const now = new Date().toISOString();
+  const lines: CartLine[] = seen.filter((p) => p.qty > 0).map((p) => {
+    const before = mine.find((l) => l.productId === p.id);
+    // The cart page's name is whole; a search's may have been shortened ("Pop-Tarts Toaster Pastries Fro...s").
+    return {
+      cart, productId: p.id, qty: Math.min(99, p.qty), updated: before && before.qty === p.qty ? before.updated : now,
+      name: p.name || before?.name || "", price: before?.price || p.price, image: before?.image || safeImage(p.image) || "",
+      itemId: before?.itemId || "", item: before?.item || "",
+    };
+  });
+  await saveAll([...all.filter((l) => l.cart !== cart), ...lines]);
+  return lines;
+}
+
 /** Checked out (Done shopping for Safeway): the cart starts empty again. */
 export async function clearCart(cart = "safeway"): Promise<void> {
   const all = sheetsConfigured() ? await allCart() : cartMemory;
