@@ -1,4 +1,4 @@
-// A Safeway order started from Simmer and filled by the Safeway helper (extension/) in Chrome on a computer that's
+// A Safeway order started from Simmer and filled by the Safeway helper (extension-working/) in Chrome on a computer that's
 // left on. Simmer keeps the one current order in the "Safeway order" tab: the phone starts it and answers questions,
 // the helper picks it up, fills the cart, reports each item, and asks when it isn't sure. Without the Sheet (local dev)
 // it lives in memory.

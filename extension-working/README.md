@@ -26,9 +26,17 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
 Why this shape: Safeway blocks automated browsers and has no way in for apps (see `docs/PLAN.md`, section 5). This runs
 in her own Chrome, pressing Safeway's own buttons at a person's pace.
 
+## Where it lives
+
+The code is edited here, in `extension-working/`. Chrome never loads this folder. On the Safeway computer (Sam's Mac,
+where this repo is checked out) Chrome loads `extension/` next to it: git ignores that folder, and
+`node scripts/release-helper.mjs` fills it with `extension-working/` as released on origin/main. So switching branches
+or a half-done edit never reaches the helper in use. After a helper change ships, run the script and press reload on
+Simmer in `chrome://extensions`. Other computers use the zip below.
+
 ## Installing or updating it (once per computer)
 
-Simmer knows the version it ships (`extension/manifest.json`) and the one that last checked in; when the computer's is
+Simmer knows the version it ships (`extension-working/manifest.json`) and the one that last checked in; when the computer's is
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change.
 
 1. Get the helper: Simmer serves it at `/simmer-helper.zip`, rebuilt from this folder on every deploy

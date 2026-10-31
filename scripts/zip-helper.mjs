@@ -1,9 +1,9 @@
-// Packs the Chrome helper (extension/) into public/simmer-helper.zip before every build, so Simmer always offers the
+// Packs the Chrome helper (extension-working/) into public/simmer-helper.zip before every build, so Simmer always offers the
 // helper that matches it (Simmer says when the computer's copy is older). The zip holds one folder, "Simmer".
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 
-const dir = new URL("../extension/", import.meta.url);
+const dir = new URL("../extension-working/", import.meta.url);
 const names = (await readdir(dir, { withFileTypes: true })).filter((d) => d.isFile() && !d.name.startsWith(".")).map((d) => d.name).sort();
 
 const table = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
