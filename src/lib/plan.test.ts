@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadList } from "./groceries";
-import { addFrozen, loadFreezer, loadWeek, markMade, saveWeek, shopDue } from "./plan";
+import { addFrozen, loadFreezer, loadWeek, loadWeeks, markMade, saveWeek, shopDue } from "./plan";
 import { addDays, todayIn } from "./time";
 import { planLunches, weekOf } from "./week";
 
@@ -54,5 +54,20 @@ describe("saving the week", () => {
     expect(await shopDue()).toBeGreaterThan(0);
     expect((await loadList()).items.some((i) => /tacos/.test(i.for))).toBe(true);
     expect(await shopDue()).toBe(0); // once
+  });
+});
+
+describe("the Meals screen's weeks", () => {
+  it("is this week, then each planned week after it, then the first that isn't, the same as week by week", async () => {
+    const today = todayIn();
+    const ahead = addDays(weekOf(today), 14);
+    const w = await loadWeek(ahead);
+    await saveWeek(w.nights.map((n) => ({ ...n, meal: "turkey-chili-1" })), [], "Sam");
+    const { weeks } = await loadWeeks(today);
+    expect(weeks[0].monday).toBe(weekOf(today));
+    const last = weeks[weeks.length - 1];
+    expect(last.planned).toBe(false);
+    expect(weeks.slice(1, -1).every((x) => x.planned)).toBe(true);
+    for (const x of weeks) expect(x).toEqual(await loadWeek(x.monday));
   });
 });
