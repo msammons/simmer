@@ -36,7 +36,8 @@ export async function safewayPage(action, arg, P) {
   const addButton = (card) => buttons(card).find((b) => re(P.add.label).test(label(b)) && !re(P.add.not).test(label(b)));
   const plusButton = (card) => buttons(card).find((b) => re(P.plus).test(label(b)));
   const minusButton = (card) => buttons(card).find((b) => re(P.minus).test(label(b)));
-  const qtyBox = (card) => deepAll(card, P.qtyBox)[0];
+  // A page can hold a hidden copy of the quantity box (one per screen size) that doesn't change: the one showing counts.
+  const qtyBox = (card) => { const all = deepAll(card, P.qtyBox); return all.find(visible) ?? all[0]; };
   const links = (root) => deepAll(root, P.link.selector);
   /** In the cart: the Add button has turned into a quantity (a + or - button, or a quantity box). */
   const inCartNow = (card) => !addButton(card) && !!(plusButton(card) || minusButton(card) || qtyBox(card));
