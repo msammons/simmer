@@ -15,7 +15,8 @@ type Tab = "week" | "list" | "shop" | "recipes";
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }, { id: "recipes", label: "Recipes", icon: "book" }];
+// Recipes first (Matt, Oct 30); Simmer still opens on Meals.
+const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }];
 const TAB_NAMES: Record<Tab, string> = { week: "Meals", list: "List", shop: "Shop", recipes: "Recipes" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 

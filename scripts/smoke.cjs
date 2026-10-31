@@ -139,7 +139,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
-    ok(`${tag}: four tabs (Meals, List, Shop, Recipes), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Meals,List,Shop,Recipes" && (await page.getByRole("search").count()) === 0);
+    ok(`${tag}: four tabs (Recipes, Meals, List, Shop), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Recipes,Meals,List,Shop" && (await page.getByRole("search").count()) === 0);
     await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
