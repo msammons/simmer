@@ -4,12 +4,13 @@
 // does the oldest, and reports back. The phone and the panel at the computer use the same path, so they behave the
 // same. Kept in the "Safeway jobs" tab (in memory without the Sheet), pruned as it goes. The helper's last check-in is a
 // row of the same tab (id "helper"), so Simmer can say plainly when the computer isn't answering.
-import { ensureTab, appendRows, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 import manifest from "../../extension/manifest.json";
 import { loadCart, savePick, setCartLine } from "./safeway";
 
-export const JOB_KINDS = ["search", "setQty", "sample", "snapshot"] as const;
+/** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
+export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
@@ -22,18 +23,23 @@ export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatu
 /**
  * How long things take. `alive`: the helper counts as answering if it checked in this recently (its slowest check is
  * every half minute, so two missed checks). `pickup`: a job nobody's taken by then is given up. `stuck`: a job taken but not reported by then
- * failed. `keep`: finished jobs are kept this long. `seenEvery`: how often a check-in is written down.
+ * failed. `keep`: finished jobs are kept this long. `seenEvery`: how often a check-in is written down (so `alive` survives
+ * a lost write or two). `cache`: how long one read of the tab answers everyone's checks. `stale`: when the Sheet can't
+ * be read (it allows 60 reads a minute), the last copy answers for this long instead of the tab looking empty.
  */
-export const JOB_TIMES = { alive: 65_000, pickup: 35_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 1_200 };
+export const JOB_TIMES = { alive: 90_000, pickup: 35_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
 
 const TAB = "Safeway jobs";
 const HEADERS = ["id", "kind", "status", "args", "result", "created", "updated"];
 const HELPER = "helper";
 
 type Row = Job & { row: number };
+type Tab = { at: number; jobs: Row[]; helper: Helper | null; helperRow: number; rows: number; junk: number };
 let memory: { jobs: Job[]; helper: Helper | null } = { jobs: [], helper: null };
-// A copy of the tab for a moment, so the helper's and the app's frequent checks don't each read the Sheet.
-let cache: { at: number; jobs: Row[]; helper: Helper | null; rows: number } | null = null;
+// A copy of the tab for a moment, so the helper's and the app's frequent checks don't each read the Sheet; and the last
+// copy read, for when a read fails.
+let cache: Tab | null = null;
+let lastGood: Tab | null = null;
 
 const json = <T>(s: string, fallback: T): T => { try { return s ? (JSON.parse(s) as T) : fallback; } catch { return fallback; } };
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -41,19 +47,36 @@ const now = () => new Date().toISOString();
 const age = (iso: string) => Date.now() - Date.parse(iso || "1970-01-01");
 const cells = (j: Job) => [j.id, j.kind, j.status, JSON.stringify(j.args), j.result ? JSON.stringify(j.result) : "", j.created, j.updated];
 
-async function read(): Promise<{ jobs: Row[]; helper: Helper | null; rows: number }> {
-  if (!sheetsConfigured()) return { jobs: memory.jobs.map((j, i) => ({ ...j, row: i })), helper: memory.helper, rows: memory.jobs.length };
+/**
+ * The tab, read at most every couple of seconds. A failed read is never taken for an empty tab (that once made every
+ * check-in add another header and check-in row, and the helper looked gone while it was answering): the last copy
+ * answers for a minute, then it throws.
+ */
+async function read(): Promise<Tab> {
+  if (!sheetsConfigured()) return { at: Date.now(), jobs: memory.jobs.map((j, i) => ({ ...j, row: i })), helper: memory.helper, helperRow: 0, rows: memory.jobs.length, junk: 0 };
   if (cache && Date.now() - cache.at < JOB_TIMES.cache) return cache;
-  const rows = await readTab(TAB).catch(() => [] as string[][]);
-  let helper: Helper | null = null;
+  let rows: string[][];
+  try { rows = await readTabIfAny(TAB); }
+  catch (e) { if (lastGood && Date.now() - lastGood.at < JOB_TIMES.stale) return lastGood; throw e; }
+  cache = lastGood = parseTab(rows);
+  return cache;
+}
+
+/** The tab's rows as jobs and the helper's check-in (the latest, if there's more than one), and how many rows are junk. */
+export function parseTab(rows: string[][]): Tab {
+  let helper: Helper | null = null, helperRow = 0, junk = 0;
   const jobs: Row[] = [];
   for (const r of records(rows)) {
-    if (r.get("id") === HELPER) { helper = { seen: r.get("updated"), ...json(r.get("result"), { version: "", panel: false }) }; continue; }
-    if (!r.get("id") || !(JOB_KINDS as readonly string[]).includes(r.get("kind"))) continue;
+    if (r.get("id") === HELPER) {
+      const h = { seen: r.get("updated"), ...json(r.get("result"), { version: "", panel: false }) };
+      if (helper) junk++;
+      if (!helper || h.seen > helper.seen) { helper = h; helperRow = r.rowNumber; }
+      continue;
+    }
+    if (!r.get("id") || !(JOB_KINDS as readonly string[]).includes(r.get("kind"))) { junk++; continue; }
     jobs.push({ id: r.get("id"), kind: r.get("kind") as JobKind, status: (r.get("status") || "waiting") as JobStatus, args: json(r.get("args"), {}), result: json(r.get("result"), null), created: r.get("created"), updated: r.get("updated"), row: r.rowNumber });
   }
-  cache = { at: Date.now(), jobs, helper, rows: rows.length };
-  return cache;
+  return { at: Date.now(), jobs, helper, helperRow, rows: rows.length, junk };
 }
 
 /** Writes one job (new or changed), and keeps the moment's copy in step. */
@@ -72,19 +95,20 @@ async function write(j: Job, row?: number): Promise<Job> {
     if (!rows) { await ensureTab(TAB); await appendRows(TAB, [HEADERS, cells(j)]); }
     else await appendRows(TAB, [cells(j)]);
     cache = null;
+    if (lastGood) lastGood = { ...lastGood, jobs: [...lastGood.jobs, { ...j, row: lastGood.rows + 1 }], rows: lastGood.rows + 1 };
   }
   return j;
 }
 
-/** Drops finished jobs older than a few minutes, and jobs nobody took or finished in time. */
-async function prune(jobs: Row[]) {
+/** Drops finished jobs older than a few minutes, and junk rows (stray headers, extra check-ins). */
+async function prune({ jobs, junk }: Tab) {
   const old = (j: Job) => (j.status === "done" || j.status === "failed") && age(j.updated) > JOB_TIMES.keep;
-  if (jobs.filter(old).length < 10) return;
+  if (jobs.filter(old).length < 10 && !junk) return;
   const keep = jobs.filter((j) => !old(j));
   if (!sheetsConfigured()) { memory.jobs = keep; return; }
   const h = (await read()).helper;
   await replaceTab(TAB, [HEADERS, ...(h ? [[HELPER, "check-in", "", "", JSON.stringify({ version: h.version, panel: h.panel }), "", h.seen]] : []), ...keep.map(cells)]);
-  cache = null;
+  cache = lastGood = null;
 }
 
 /** Jobs left too long: waiting with nobody taking them, or taken and never reported. */
@@ -113,12 +137,15 @@ export async function helperStatus(): Promise<{ answering: boolean; seen: string
  * taps on + become one trip to Safeway.
  */
 export async function queueJob(kind: JobKind, args: Record<string, unknown>): Promise<Job> {
-  const { jobs } = await read();
+  const tab = await read();
+  const { jobs } = tab;
   if (kind === "setQty") {
     const same = jobs.find((j) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j));
     if (same) return write({ ...same, args: { ...same.args, ...args } }, same.row);
   }
-  await prune(jobs).catch((e) => console.error("couldn't prune the jobs", e));
+  // Showing the cart: one waiting is enough.
+  if (kind === "cart") { const same = jobs.find((j) => j.kind === "cart" && j.status === "waiting" && !overdue(j)); if (same) return same; }
+  await prune(tab).catch((e) => console.error("couldn't prune the jobs", e));
   return write({ id: newId(), kind, status: "waiting", args, result: null, created: now(), updated: now() });
 }
 
@@ -139,16 +166,15 @@ export async function cancelJob(id: string): Promise<void> {
 
 /** The helper: note that it's there (written down at most every 20 seconds, or when the panel opens or closes). */
 async function checkIn(version: string, panel: boolean) {
-  const { helper } = await read();
+  const { helper, helperRow, rows } = await read();
   if (helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version) return;
   const h: Helper = { seen: now(), version, panel };
   if (!sheetsConfigured()) { memory.helper = h; return; }
-  const rows = await readTab(TAB).catch(() => [] as string[][]);
-  const at = records(rows).find((r) => r.get("id") === HELPER);
   const row = [HELPER, "check-in", "", "", JSON.stringify({ version, panel }), "", h.seen];
-  if (at) await updateRange(`${TAB}!A${at.rowNumber}:G${at.rowNumber}`, [row]);
-  else { if (!rows.length) await ensureTab(TAB); await appendRows(TAB, [...(rows.length ? [] : [HEADERS]), row]); }
-  if (cache) cache.helper = h;
+  // The row the check-in is read from (the latest, when there are several), so what's written is what's read.
+  if (helperRow) await updateRange(`${TAB}!A${helperRow}:G${helperRow}`, [row]);
+  else { if (!rows) await ensureTab(TAB); await appendRows(TAB, [...(rows ? [] : [HEADERS]), row]); cache = lastGood = null; return; }
+  for (const t of [cache, lastGood]) if (t) t.helper = h;
 }
 
 /** The helper: check in, and take the oldest waiting job (null when there's none). */
@@ -194,6 +220,17 @@ export async function finishJob(id: string, ok: boolean, raw: Record<string, unk
     await setCartLine({ productId: str(a.productId, 20), qty, name, price: str(raw.price, 40) || str(a.price, 40), image, itemId: str(a.itemId, 40), item: str(a.item, 80) });
     if (qty > 0 && str(a.item, 80)) await savePick({ item: str(a.item, 80), id: str(a.productId, 20), name, image }).catch((e) => console.error("couldn't keep the pick", e));
   }
+  if (ok && j.kind === "cart") {
+    // Safeway's cart page: products Simmer's cart knows take the quantity shown there. Only what's seen changes.
+    result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
+    if (result.signedIn) {
+      const cart = await loadCart();
+      for (const p of result.products as ReturnType<typeof productsOf>) {
+        const line = cart.find((l) => l.productId === p.id);
+        if (line && p.inCart && p.qty && line.qty !== p.qty) await setCartLine({ productId: p.id, qty: p.qty });
+      }
+    }
+  }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }
@@ -214,4 +251,4 @@ export async function recentJobs(limit = 20): Promise<Activity[]> {
 }
 
 /** For tests. */
-export const resetJobs = () => { memory = { jobs: [], helper: null }; cache = null; };
+export const resetJobs = () => { memory = { jobs: [], helper: null }; cache = lastGood = null; };

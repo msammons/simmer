@@ -31,10 +31,10 @@ const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 
 export { norm };
 
-/** "2 lemons" → 2, lemons; "lemons x2" → 2, lemons; "TP" → TP. */
+/** "2 lemons" → 2, lemons; "2 lb ground beef" → 2 lb, ground beef; "lemons x2" → 2, lemons; "TP" → TP. */
 export function parseEntry(text: string): { item: string; quantity: string } {
   const t = text.trim().replace(/\s+/g, " ");
-  const lead = t.match(/^(\d+(?:\.\d+)?|a dozen|dozen|a couple|a few)\s+(.+)$/i);
+  const lead = t.match(/^((?:\d+(?:\.\d+)?|\d+\/\d+)(?:\s*(?:lbs?|pounds?|oz|ounces?|gallons?|gal|quarts?|pints?|liters?|kg|g)\.?(?=\s))?|a dozen|dozen|a couple|a few)\s+(.+)$/i);
   if (lead) return { quantity: lead[1].toLowerCase().replace(/^a /, ""), item: lead[2] };
   const tail = t.match(/^(.+?)\s*(?:x|×)\s*(\d+)$/i);
   if (tail) return { quantity: tail[2], item: tail[1] };
