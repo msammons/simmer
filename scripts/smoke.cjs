@@ -30,6 +30,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByLabel("Household passcode").fill("nope"); await page.getByRole("button", { name: "Get started" }).tap();
     ok(`${tag}: wrong passcode message`, await seen(page.getByText("That passcode didn't work")));
     await page.getByLabel("Household passcode").fill("test123"); await page.getByRole("button", { name: "Get started" }).tap();
+    ok(`${tag}: opens on Recipes`, await seen(page.getByRole("heading", { name: "Recipes" }), 8000));
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Meals" }).tap();
     ok(`${tag}: reaches Meals`, await seen(page.getByRole("heading", { name: "Meals" }), 8000));
     await page.waitForTimeout(800);
     await settingsHere("Meals");
