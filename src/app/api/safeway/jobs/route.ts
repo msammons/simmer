@@ -19,10 +19,14 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
       productId, qty: Math.max(0, Math.min(SETTINGS.mostOfOne * 2, Math.round(qty))), query: query || text(b.name, 120),
       name: text(b.name), price: text(b.price, 40), image: /^https:\/\//.test(text(b.image, 500)) ? text(b.image, 500) : "",
       itemId: text(b.itemId, 40), item: text(b.item, 80),
+      // Other words to search when the first don't bring it up, and where to change it first (Safeway's cart page).
+      alt: text(b.alt, 120), ...(b.on === "cart" && { on: "cart" }),
     };
   }
+  if (kind === "cart") return {};
   if (kind === "snapshot") return query && /^\d+$/.test(text(b.productId, 20)) ? { query, productId: text(b.productId, 20) } : null;
-  return { query: query || "milk" };
+  // A sample of a search page, or of the cart page (`on: "cart"`, helper 1.2 on), to learn how Safeway builds it.
+  return { query: query || "milk", ...(b.on === "cart" && { on: "cart" }) };
 }
 
 /**
@@ -59,7 +63,7 @@ export async function POST(req: Request) {
       case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
       case "next": {
         const job = await takeJob(text(b.version, 20), b.panel === true);
-        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS } }, noStore);
+        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS }, noStore);
       }
       case "done": case "failed": {
         const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40) };

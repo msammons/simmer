@@ -9,7 +9,7 @@ import { api, type Activity } from "@/lib/client";
 import { BrandBar, Button, EmptyState, Group, Row } from "./ui";
 
 /** How long the panel must sit untouched before the phone's work takes it over, and how often it checks. */
-const IDLE = 120_000, EVERY = 6_000;
+const IDLE = 120_000, EVERY = 10_000; // each check is a Sheet read; the Sheet allows 60 a minute for everyone
 
 const live = (j: Activity) => j.status === "waiting" || j.status === "working";
 

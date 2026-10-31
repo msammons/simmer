@@ -85,12 +85,29 @@ export async function safewayPage(action, arg, P) {
     return [...out.values()];
   }
 
+  /**
+   * A product's whole name. Safeway shortens long titles on screen ("Pop-Tarts Toaster Pastries Fro...s 12 Count"), so
+   * when the title is shortened the longest unshortened name among its title's own attributes, its picture's
+   * description and its buttons' labels ("Add <name>", with `P.fullName` taken off the front) is used instead.
+   */
+  const short = (s) => /\.{3}|…/.test(s);
+  function fullName(card, title, img) {
+    if (title && !short(title)) return title;
+    const t = deepAll(card, TITLE)[0];
+    const strip = P.fullName ? re(P.fullName) : null;
+    const options = [t?.getAttribute("title"), t?.getAttribute("aria-label"), img?.alt, ...buttons(card).map((b) => (b.getAttribute("aria-label") ?? "").replace(strip ?? /^/, ""))]
+      .map((x) => (x ?? "").replace(/\s+/g, " ").trim()).filter((x) => x && !short(x) && x.length > 3 && (!strip || !re(P.add.label).test(x)));
+    const first = (title || "").split(/\.{3}|…/)[0].trim().toLowerCase();
+    const best = options.filter((x) => !first || x.toLowerCase().startsWith(first)).sort((a, b) => b.length - a.length)[0];
+    return best || title || (img?.alt ?? "").trim();
+  }
+
   function products() {
     const seen = new Map();
     for (const { id, card, title } of cards()) {
       if (seen.has(id)) continue;
       const img = deepAll(card, "img")[0];
-      const name = title || (img?.alt ?? "").trim();
+      const name = fullName(card, title, img);
       if (!name) continue;
       const add = addButton(card), inCart = inCartNow(card);
       if (!add && !inCart) continue;

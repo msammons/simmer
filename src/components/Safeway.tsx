@@ -4,9 +4,9 @@
 // the computer shows this same screen, so it works the same everywhere. Product pictures are Safeway's own, shown from
 // Safeway's addresses (nothing's stored).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
-import { PAGE } from "@/lib/safeway-helper.mjs";
-import { cartTotal, money, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { api, AuthError, errorText, framed, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
+import { nameWords, PAGE, searchWords } from "@/lib/safeway-helper.mjs";
+import { addedFor, cartTotal, money, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, Notice } from "./ui";
 
@@ -79,9 +79,10 @@ export function useSafeway() {
       job = q.job;
     } catch (e) { return { ok: false, problem: errorText(e) }; }
     // Not heard from lately: give it a few seconds (the panel may have just opened), then say so rather than wait on.
+    // Checked every second and a half: each check is a read of the Sheet, which allows 60 a minute for everyone.
     let quiet = heard ? 0 : Date.now() + 5000;
     for (const end = Date.now() + 120_000; Date.now() < end;) {
-      await new Promise((r) => setTimeout(r, quiet ? 800 : 1200));
+      await new Promise((r) => setTimeout(r, 1500));
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
         const s = await api.job(job.id, signal);
@@ -106,11 +107,15 @@ export function useSafeway() {
     return { ok: false, problem: NOT_ANSWERING };
   }, []);
 
-  /** Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. */
-  const setQty = useCallback(async (p: Product, qty: number, query: string, forItem?: { id: string; item: string }) => {
+  /**
+   * Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. `query`:
+   * the search that brings the product up; `alt`, other words to try; `on: "cart"`, change it on Safeway's cart page
+   * first, where it's listed (from Cart).
+   */
+  const setQty = useCallback(async (p: Product, qty: number, query: string, forItem?: { id: string; item: string } | null, how?: { alt?: string; on?: "cart" }) => {
     setProblem(null);
     setPending((x) => ({ ...x, [p.id]: qty }));
-    const r = await run("setQty", { productId: p.id, qty, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }) });
+    const r = await run("setQty", { productId: p.id, qty, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how });
     if (!alive.current) return;
     setPending((x) => { if (x[p.id] !== qty) return x; const { [p.id]: _gone, ...rest } = x; void _gone; return rest; });
     if (r.ok) {
@@ -137,9 +142,10 @@ export type Safeway = ReturnType<typeof useSafeway>;
 const searchLink = (q: string) => `${PAGE.site}${PAGE.searchPath}${encodeURIComponent(q)}`;
 const productLink = (id: string) => `${PAGE.site}${PAGE.productPath.replace("{id}", id)}`;
 
-export function ProductImage({ src, small }: { src?: string; small?: boolean }) {
+/** `tile`: a big picture across the top of a product tile once the screen is wide (Find's grid). */
+export function ProductImage({ src, small, tile }: { src?: string; small?: boolean; tile?: boolean }) {
   const [broken, setBroken] = useState("");
-  const size = small ? "size-10 rounded-lg" : "size-14 rounded-xl";
+  const size = `${small ? "size-10 rounded-lg" : "size-14 rounded-xl"}${tile ? " min-[640px]:h-32 min-[640px]:w-full" : ""}`;
   return src && broken !== src
     // eslint-disable-next-line @next/next/no-img-element -- Safeway's own picture, shown from Safeway
     ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} className={`${size} shrink-0 bg-white object-contain p-1`} />
@@ -171,6 +177,26 @@ function ProductRow({ p, sub, control }: { p: { name: string; image?: string }; 
         <p className="mt-0.5 t-foot text-muted">{sub}</p>
       </div>
       {control}
+    </div>
+  );
+}
+
+/**
+ * Find's results: a list on a phone; once the screen is wide (the helper's panel dragged wide), tiles filling the width,
+ * as many to a row as fit, in reading order. The grid reaches past the app's phone-width column, keeping a gutter.
+ */
+const GRID = "divide-y divide-line overflow-hidden rounded-[1.375rem] bg-card min-[640px]:relative min-[640px]:left-1/2 min-[640px]:grid min-[640px]:w-[min(calc(100vw-3rem),72rem)] min-[640px]:-translate-x-1/2 min-[640px]:grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] min-[640px]:gap-3 min-[640px]:divide-y-0 min-[640px]:overflow-visible min-[640px]:rounded-none min-[640px]:bg-transparent";
+const TILE = "flex items-center gap-3 px-4 py-3 min-[640px]:flex-col min-[640px]:items-stretch min-[640px]:gap-2 min-[640px]:rounded-[1.375rem] min-[640px]:bg-card min-[640px]:p-3";
+
+function FindProduct({ p, sub, control }: { p: { name: string; image?: string }; sub: React.ReactNode; control: React.ReactNode }) {
+  return (
+    <div className={TILE}>
+      <ProductImage src={p.image} tile />
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 t-body min-[640px]:line-clamp-3">{p.name}</p>
+        <p className="mt-0.5 t-foot text-muted">{sub}</p>
+      </div>
+      <div className="shrink-0 min-[640px]:flex min-[640px]:justify-center">{control}</div>
     </div>
   );
 }
@@ -243,15 +269,18 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       </form>
       {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
       {(!s || s.state === "loading") && (
-        <Group footer={s?.slow ? "The first search can take up to half a minute." : undefined}>
-          {[0, 1, 2].map((k) => (
-            <div key={k} className="flex items-center gap-3 px-4 py-3" aria-hidden>
-              <span className="size-14 shrink-0 animate-pulse rounded-xl bg-sunk" />
-              <span className="flex-1 space-y-2"><span className="block h-3.5 w-3/4 animate-pulse rounded-full bg-sunk" /><span className="block h-3 w-1/4 animate-pulse rounded-full bg-sunk" /></span>
-            </div>
-          ))}
+        <section className="space-y-1.5">
+          <div className={GRID}>
+            {[0, 1, 2].map((k) => (
+              <div key={k} className={TILE} aria-hidden>
+                <span className="size-14 shrink-0 animate-pulse rounded-xl bg-sunk min-[640px]:h-32 min-[640px]:w-full" />
+                <span className="flex-1 space-y-2"><span className="block h-3.5 w-3/4 animate-pulse rounded-full bg-sunk" /><span className="block h-3 w-1/4 animate-pulse rounded-full bg-sunk" /></span>
+              </div>
+            ))}
+          </div>
+          {s?.slow && <p className="px-4 t-foot text-muted">The first search can take up to half a minute.</p>}
           <p className="sr-only" role="status">Looking on {store}</p>
-        </Group>
+        </section>
       )}
       {s?.state === "failed" && (
         <>
@@ -275,17 +304,19 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       )}
       {s?.state === "done" && !s.signedIn && <Notice>{store} isn&apos;t signed in on the computer. Sign in there to add things.</Notice>}
       {s?.state === "done" && (results.length ? (
-        <Group>
+        <div className={GRID}>
           {results.map(({ product: p, usual }) => {
             const qty = sw.qtyOf(p.id, p.inCart ? p.qty ?? 1 : 0);
+            // For the item showing, unless other words were typed and this is plainly something else.
+            const forIt = addedFor(p, it, query);
             return (
-              <ProductRow key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
+              <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
                 control={qty > 0
-                  ? <Stepper qty={qty} name={p.name} busy={p.id in sw.pending} onChange={(n) => sw.setQty(p, n, query, it)} />
-                  : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0" disabled={!s.signedIn} onClick={() => sw.setQty(p, it.want || 1, query, it)}>Add</Button>} />
+                  ? <Stepper qty={qty} name={p.name} busy={p.id in sw.pending} onChange={(n) => sw.setQty(p, n, query, forIt)} />
+                  : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, forIt ? it.want || 1 : 1, query, forIt)}>Add</Button>} />
             );
           })}
-        </Group>
+        </div>
       ) : <EmptyState icon="search" title="Nothing came up">Try other words.</EmptyState>)}
       <div className="flex gap-3">
         {index > 0 && <Button variant="secondary" className="flex-1" onClick={() => move(index - 1)}>Back</Button>}
@@ -303,6 +334,15 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
 /** A store's cart as Simmer knows it: change quantities, take things out, and check out on Safeway. */
 export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; onFind: (() => void) | null }) {
   const { total, estimate } = cartTotal(sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })));
+  // In the helper's panel, the Safeway tab beside it shows Safeway's own cart while this is open (and Simmer's copy
+  // takes the quantities shown there).
+  const { run, refresh } = sw;
+  useEffect(() => {
+    if (!framed()) return;
+    const c = new AbortController();
+    run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
+    return () => c.abort();
+  }, [run, refresh]);
   if (sw.loaded && !sw.cart.length) {
     return (
       <div className="space-y-5">
@@ -323,7 +363,8 @@ export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; on
           const p = { id: l.productId, name: l.name, price: l.price, image: l.image };
           return (
             <ProductRow key={l.productId} p={p} sub={[l.price, l.item && `for ${l.item}`].filter(Boolean).join(" · ")}
-              control={<Stepper qty={qty} name={l.name} busy={l.productId in sw.pending} onChange={(n) => sw.setQty(p, n, l.name, l.itemId ? { id: l.itemId, item: l.item } : undefined)} />} />
+              control={<Stepper qty={qty} name={l.name} busy={l.productId in sw.pending}
+                onChange={(n) => sw.setQty(p, n, l.item ? searchWords(l.item) : nameWords(l.name), null, { alt: nameWords(l.name), on: "cart" })} />} />
           );
         })}
         <div className="flex items-baseline justify-between px-4 py-3">

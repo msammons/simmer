@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { dateIn, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
@@ -107,7 +107,7 @@ export type ShopView = "find" | "cart";
 
 /**
  * The List tab: everything to get, from every store. A Safeway item opens Shop's Find on it (`onFind`), as does the
- * button for all of them.
+ * Find at Safeway chip for all of them.
  */
 export function ListScreen({ list, kitchen, error, act, onFind }: {
   list: ListState | null; kitchen: Kitchen | null; error: string | null; act: ListActions; onFind: (id?: string) => void;
@@ -141,6 +141,10 @@ export function ShopScreen({ list, error, act, startAt, onList }: {
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
   const at = findAt ? toFind.findIndex((x) => x.id === findAt) : -1;
   const index = at >= 0 ? at : findAt === "end" ? toFind.length : firstToFind(toFind, sw.cart);
+  // The item showing stays put once it's shown: without this, adding it to the cart (or the cart reloading) moved Find
+  // to another item under the finger, and the next Add could land on the wrong item.
+  const shownId = sw.loaded && view === "find" ? toFind[index]?.id ?? null : null;
+  useEffect(() => { if (shownId && (findAt === null || at < 0) && findAt !== "end") queueMicrotask(() => setFindAt(shownId)); }, [shownId, findAt, at]);
   const go = (v: ShopView) => { scrollAppTo(0); setView(v); };
   const find = () => { setFindAt(toFind[firstToFind(toFind, sw.cart)]?.id ?? null); go("find"); };
   const count = sw.cart.length;
@@ -212,12 +216,12 @@ function ListView({ list, kitchen, act, cart, picks, onFind, anyToFind }: {
       <div className="flex flex-wrap gap-2">
         <button className={chip} onClick={() => setSheet("staples")}><Icon name="list" className="size-[18px]" />Running low</button>
         <button className={chip} onClick={() => setSheet("freezer")}><Icon name="snow" className="size-[18px]" />Freezer{frozen ? ` · ${frozen}` : ""}</button>
+        {anyToFind && <button className={chip} onClick={() => onFind()}><Icon name="search" className="size-[18px]" />Find at Safeway</button>}
       </div>
       {toCheck.length > 0 && (
         <Group><Row icon="check" title="Check you have these" subtitle={`${toCheck.length} pantry thing${toCheck.length === 1 ? "" : "s"} from the plan`} value={String(toCheck.length)} accessory="chevron" onClick={() => setSheet("check")} /></Group>
       )}
       {list && !items.length && !toCheck.length && <EmptyState icon="list" title="Nothing on the list">Add what you need, or tap Running low.</EmptyState>}
-      {anyToFind && <Button icon="search" onClick={() => onFind()} className="w-full">Find them at Safeway</Button>}
       {stores.map((s) => (
         <StoreGroup key={s} store={s} items={items.filter((i) => i.store === s)} act={act} onMore={(it) => setMoreId(it.id)} cart={cart} picks={picks}
           onFind={s === "safeway" ? (it) => onFind(it.id) : undefined}
