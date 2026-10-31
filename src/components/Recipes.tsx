@@ -5,7 +5,7 @@ import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
-import { Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
+import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 
 const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
@@ -39,7 +39,8 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
   return (
     <div className="space-y-6">
-      <TopBar title="Recipes" subtitle={all.length ? `${all.length} in your collection` : "Your collection"} />
+      <BrandBar />
+      <h1 className="sr-only">Recipes</h1>
       {error && <Notice>{error}</Notice>}
       {recipes && !all.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
