@@ -1,10 +1,10 @@
-/* The setup screen in Simmer's look: calm sage on iOS-like grouped backgrounds, light and dark. After setup the panel is Simmer itself. */
+/* The setup screen in Simmer's look: Tomato on warm cream, as Simmer, light and dark. After setup the panel is Simmer itself. */
 :root {
-  --accent: #5F7F59; --on-accent: #fff; --bg: #F4F3EF; --card: #fff; --text: #1C1C1E; --muted: #6E6E73; --line: #E3E2DD; --warn: #B4532A;
+  --accent: #C2462B; --on-accent: #fff; --bg: #FAF6F1; --card: #fff; --text: #1C1C1E; --muted: #6E6E73; --line: #E8DED4; --warn: #B4532A;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --accent: #9DBB94; --on-accent: #10140F; --bg: #121311; --card: #1E201C; --text: #F2F2F0; --muted: #A1A19C; --line: #30322D; --warn: #E8946A; }
+  :root { --accent: #F07A5C; --on-accent: #1A0E09; --bg: #110D0B; --card: #1E1815; --text: #F2F2F0; --muted: #A1A19C; --line: #3A302B; --warn: #E8946A; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }

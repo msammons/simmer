@@ -6,6 +6,7 @@
 // row of the same tab (id "helper"), so Simmer can say plainly when the computer isn't answering.
 import { ensureTab, appendRows, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
+import manifest from "../../extension/manifest.json";
 import { loadCart, savePick, setCartLine } from "./safeway";
 
 export const JOB_KINDS = ["search", "setQty", "sample", "snapshot"] as const;
@@ -87,9 +88,20 @@ const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > JOB_TIME
 
 export const helperAnswering = (h: Helper | null) => Boolean(h && age(h.seen) < JOB_TIMES.alive);
 
-export async function helperStatus(): Promise<{ answering: boolean; seen: string }> {
+/** The helper's version as this Simmer ships it (extension/manifest.json). */
+export const HELPER_VERSION: string = manifest.version;
+const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
+/** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
+export const helperOutdated = (h: Helper | null) => {
+  if (!h?.version) return false;
+  const [a, b] = [parts(h.version), parts(HELPER_VERSION)];
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  return false;
+};
+
+export async function helperStatus(): Promise<{ answering: boolean; seen: string; outdated: boolean }> {
   const { helper } = await read();
-  return { answering: helperAnswering(helper), seen: helper?.seen ?? "" };
+  return { answering: helperAnswering(helper), seen: helper?.seen ?? "", outdated: helperOutdated(helper) };
 }
 
 /**

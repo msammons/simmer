@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cancelJob, finishJob, helperStatus, jobStatus, queueJob, resetJobs, takeJob } from "./jobs";
+import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, queueJob, resetJobs, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -63,5 +63,16 @@ describe("jobs for the Safeway helper", () => {
     await takeJob("1.0.0", false);
     await finishJob(s.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 3 }, { id: "5", name: "Bread", inCart: false }], signedIn: true });
     expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 3]]);
+  });
+});
+
+describe("helperOutdated", () => {
+  const h = (version: string) => ({ seen: new Date().toISOString(), version, panel: false });
+  it("flags only a helper older than the one Simmer ships", () => {
+    expect(helperOutdated(h("0.6.1"))).toBe(true);
+    expect(helperOutdated(h("1.0.0"))).toBe(true);
+    expect(helperOutdated(h(HELPER_VERSION))).toBe(false);
+    expect(helperOutdated(h("9.0.0"))).toBe(false);
+    expect(helperOutdated(null)).toBe(false);
   });
 });
