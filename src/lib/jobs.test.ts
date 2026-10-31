@@ -79,6 +79,23 @@ describe("the jobs tab", () => {
   });
 });
 
+describe("taking a product out", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); });
+  it("counts as done when Safeway no longer has it (a second tap)", async () => {
+    await setCartLine({ ...milk, qty: 1 });
+    const off = await queueJob("setQty", { ...milk, qty: 0 });
+    await takeJob("1.2.1", true);
+    const j = await finishJob(off.id, false, { error: "not-found" });
+    expect(j?.status).toBe("done");
+    expect(await loadCart()).toEqual([]);
+  });
+  it("a missing product is still a problem when it was meant to go in", async () => {
+    const on = await queueJob("setQty", { ...milk, qty: 2 });
+    await takeJob("1.2.1", true);
+    expect((await finishJob(on.id, false, { error: "not-found" }))?.status).toBe("failed");
+  });
+});
+
 describe("showing Safeway's cart", () => {
   beforeEach(() => { resetJobs(); resetSafeway(); });
   it("one waiting is enough, and the cart page keeps quantities in step", async () => {

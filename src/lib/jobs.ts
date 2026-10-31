@@ -196,10 +196,15 @@ const productsOf = (r: Record<string, unknown>) => (Array.isArray(r.products) ? 
  * The helper: a job's outcome. A quantity set on Safeway goes into Simmer's cart, and a product added for an item
  * becomes that item's pick. What a search shows about products already in Simmer's cart keeps the cart in step.
  */
-export async function finishJob(id: string, ok: boolean, raw: Record<string, unknown>): Promise<Job | null> {
+export async function finishJob(id: string, reported: boolean, reportedRaw: Record<string, unknown>): Promise<Job | null> {
   const { jobs } = await read();
   const j = jobs.find((x) => x.id === id);
   if (!j || j.status === "done" || j.status === "failed") return j ?? null;
+  // Taking out a product Safeway no longer has is done: a second tap on the trash, or it was taken out on Safeway
+  // already (Oct 31: the eggs went, a second removal a second later came back "not found").
+  const gone = !reported && j.kind === "setQty" && Number(j.args.qty) === 0 && reportedRaw.error === "not-found";
+  const ok = reported || gone;
+  const raw: Record<string, unknown> = gone ? { ok: true, qty: 0 } : reportedRaw;
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed" };
   if (ok && j.kind === "search") {
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
