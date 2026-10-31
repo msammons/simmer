@@ -153,15 +153,21 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
 }
 
 /** − qty +, with a trash in place of − at one. */
+/**
+ * − / count / +. While a change is on its way to Safeway (busy) the product is locked: both buttons are off and the count
+ * is a spinner, so a second tap can't send a second change before the first is done (Sam, Oct 31).
+ */
 export function Stepper({ qty, name, busy, onChange }: { qty: number; name: string; busy?: boolean; onChange: (n: number) => void }) {
-  const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40";
+  const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
   return (
-    <div className={`flex shrink-0 items-center gap-1.5 ${busy ? "opacity-70" : ""}`}>
-      <button className={btn} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
+    <div className="flex shrink-0 items-center gap-1.5" aria-busy={busy || undefined}>
+      <button className={btn} disabled={busy} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
         <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
       </button>
-      <span className="w-6 text-center t-headline tabular-nums" aria-label={`${qty} in the cart`}>{qty}</span>
-      <button className={btn} aria-label={`One more ${name}`} disabled={qty >= 24} onClick={() => onChange(qty + 1)}>
+      <span className="flex w-6 justify-center t-headline tabular-nums" aria-label={busy ? `Changing ${name} on Safeway` : `${qty} in the cart`} role={busy ? "status" : undefined}>
+        {busy ? <span aria-hidden className="size-[18px] animate-spin rounded-full border-2 border-accent/25 border-t-accent" /> : qty}
+      </span>
+      <button className={btn} aria-label={`One more ${name}`} disabled={busy || qty >= 24} onClick={() => onChange(qty + 1)}>
         <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
       </button>
     </div>

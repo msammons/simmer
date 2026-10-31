@@ -181,6 +181,7 @@ await add.first().click();
 expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "Add puts the wanted number in the Safeway cart and in Simmer's cart");
 expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.itemId === milkId, "Simmer's cart knows which list item it's for");
 await sim.getByRole("button", { name: /^One more/ }).first().click();
+expect(await sim.getByRole("button", { name: /^One more/ }).first().isDisabled() && await sim.getByRole("status", { name: /^Changing .* on Safeway/ }).first().isVisible(), "a product is locked, with a spinner, while its change is on the way");
 expect(await until(async () => (await safewayQty(pid)) === 3 && (await cartQty(pid)) === 3), "+ adds one on Safeway");
 expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id === pid && /^https:/.test(p.image ?? "")), "the pick is kept, with its picture");
 
