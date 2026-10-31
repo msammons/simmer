@@ -5,7 +5,7 @@ import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { findItems, firstToFind, pickFor, qtyFor } from "@/lib/shop";
 import { Icon } from "./icons";
-import { CartView, FindView, ProductImage, useSafeway } from "./Safeway";
+import { CartView, FindView, ProductImage, UpdateNotice, useSafeway } from "./Safeway";
 import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, scrollAppTo } from "./ui";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -156,6 +156,7 @@ export function ShopScreen({ list, error, act, startAt, onList }: {
       } />
       <h1 className="sr-only">Shop at {name}</h1>
       {error && <Notice>{error}</Notice>}
+      {sw.outdated && <UpdateNotice />}
       {view === "find" && <FindView store={name} items={toFind} index={index} onIndex={(i) => { scrollAppTo(0); setFindAt(toFind[i]?.id ?? "end"); }} sw={sw} onCart={() => go("cart")} onList={onList}
         onGot={(id) => { const x = list?.items.find((i) => i.id === id); if (x) act.check(x, true); }} />}
       {view === "cart" && <CartView store={name} sw={sw} onFind={toFind.length ? find : null} />}
