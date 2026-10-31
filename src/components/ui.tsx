@@ -57,8 +57,8 @@ export function IconButton({ icon, label, onClick, href, tone = "ink" }: { icon:
 
 /**
  * The top of every screen, identical everywhere so nothing jumps between pages: a bar that stays put while the page
- * scrolls, with the Simmer lockup at the left and Settings at the right, then one large title in the same
- * place and size on every screen, with an optional line under it. On screens you drill into, a round back button sits
+ * scrolls, with the Simmer lockup at the left and Settings at the right, then the screen's own name (a recipe's), set
+ * 16px under the bar and 16px above the content, with an optional line under it. Tab screens have no title. On screens you drill into, a round back button sits
  * just before the title (swiping right also goes back), so the lockup never moves.
  */
 export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }: {
@@ -67,7 +67,7 @@ export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }
   return (
     <>
       <BrandBar trailing={trailing} />
-      <header className="space-y-1 pt-3">
+      <header className="space-y-1 !mb-4">
         <div className="flex items-center gap-2.5">
           {onBack && <BackButton onBack={onBack} label={backLabel} className="self-start mt-[3px]" />}
           <h1 className="min-w-0 text-[32px] font-bold leading-[1.15] tracking-tight">{title}</h1>
@@ -98,7 +98,8 @@ export const OpenSettings = createContext<(() => void) | null>(null);
 export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: ReactNode }) {
   const settings = useContext(OpenSettings);
   return (
-    <div className="sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10">
+    // Content starts 16px under the bar (the screens' own spacing is wider): 8px under a pinned switch plus its 8px.
+    <div className={`sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 ${below ? "!mb-2" : "!mb-4"}`}>
       {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. With something below the row,
           the backing stays solid behind it and fades only at the very bottom. */}
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
