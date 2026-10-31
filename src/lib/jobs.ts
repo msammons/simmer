@@ -7,7 +7,7 @@
 import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 import manifest from "../../extension-working/manifest.json";
-import { loadCart, savePick, setCartLine } from "./safeway";
+import { loadCart, matchCart, savePick, setCartLine } from "./safeway";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
 export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot"] as const;
@@ -203,12 +203,13 @@ export async function finishJob(id: string, ok: boolean, raw: Record<string, unk
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed" };
   if (ok && j.kind === "search") {
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
+    // Safeway's search results don't reliably show what's in the cart (a product in it came back "not in the cart",
+    // Oct 31), so a search only ever brings Simmer's quantity up; the cart page (kind "cart") decides what's gone.
     if (result.signedIn) {
       const cart = await loadCart();
       for (const p of result.products as ReturnType<typeof productsOf>) {
         const line = cart.find((l) => l.productId === p.id);
-        const qty = p.inCart ? p.qty || 1 : 0;
-        if (line && line.qty !== qty) await setCartLine({ productId: p.id, qty });
+        if (line && p.inCart && p.qty > line.qty) await setCartLine({ productId: p.id, qty: p.qty });
       }
     }
   }
@@ -221,15 +222,9 @@ export async function finishJob(id: string, ok: boolean, raw: Record<string, unk
     if (qty > 0 && str(a.item, 80)) await savePick({ item: str(a.item, 80), id: str(a.productId, 20), name, image }).catch((e) => console.error("couldn't keep the pick", e));
   }
   if (ok && j.kind === "cart") {
-    // Safeway's cart page: products Simmer's cart knows take the quantity shown there. Only what's seen changes.
+    // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
-    if (result.signedIn) {
-      const cart = await loadCart();
-      for (const p of result.products as ReturnType<typeof productsOf>) {
-        const line = cart.find((l) => l.productId === p.id);
-        if (line && p.inCart && p.qty && line.qty !== p.qty) await setCartLine({ productId: p.id, qty: p.qty });
-      }
-    }
+    if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
