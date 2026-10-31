@@ -12,7 +12,7 @@ import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
 import { norm } from "./words";
-import { eatingText, emptyNight, freezerMatch, LUNCH_PARTS, lunchShopping, readEating, weekDates, type Frozen, type Lunch, type LunchOption, type LunchPart, type Night, type NightKind, type Taste } from "./week";
+import { eatingText, emptyNight, freezerMatch, LUNCH_PARTS, lunchShopping, readEating, weekDates, weekOf, type Frozen, type Lunch, type LunchOption, type LunchPart, type Night, type NightKind, type Taste } from "./week";
 
 const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer";
 const HEADERS: Record<string, string[]> = {
@@ -126,8 +126,37 @@ export type WeekData = {
   freezer: Frozen[];
 };
 
-export async function loadWeek(monday: string): Promise<WeekData> {
+/** Everything a week is built from, read once (each tab is one Sheets read). */
+type WeekTabs = { plan: string[][]; made: string[][]; trips: string[][]; options: string[][]; lunchPlan: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
+async function readWeekTabs(): Promise<WeekTabs> {
   const [plan, made, trips, options, lunchPlan, hh, freezer] = await Promise.all([rows(PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(LUNCH_PLAN), loadHousehold(), loadFreezer()]);
+  return { plan, made, trips, options, lunchPlan, hh, freezer };
+}
+
+export async function loadWeek(monday: string): Promise<WeekData> {
+  return weekFrom(await readWeekTabs(), monday);
+}
+
+/**
+ * The Meals screen in one go: this week, then each following week while it's planned, up to and including the first
+ * that isn't (so it can be planned), at most half a year ahead; the tabs are read once for all of them. Also puts on the
+ * list the groceries of nights planned long ago that are now close (`added`).
+ */
+export async function loadWeeks(today: string): Promise<{ weeks: WeekData[]; added: number }> {
+  let tabs = await readWeekTabs();
+  let added = 0;
+  if (dueIn(tabs)) { added = await shopDue(tabs); tabs = await readWeekTabs(); } // it marked rows: read them as they are now
+  const first = weekOf(today);
+  const weeks = [weekFrom(tabs, first)];
+  for (let k = 1; k <= 26; k++) {
+    const w = weekFrom(tabs, addDays(first, 7 * k));
+    weeks.push(w);
+    if (!w.planned) break;
+  }
+  return { weeks, added };
+}
+
+function weekFrom({ plan, made, trips, options, lunchPlan, hh, freezer }: WeekTabs, monday: string): WeekData {
   const nights = toNights(plan);
   const dates = weekDates(monday), before = weekDates(addDays(monday, -7));
   const mine = dates.flatMap((d) => nights.filter((n) => n.date === d).slice(-1));
@@ -214,10 +243,16 @@ export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): P
  * Nights and lunches planned weeks ahead whose groceries waited ("later") and are now close: their groceries go on the
  * list, once. Run whenever this week is looked at. Answers how many things went on the list.
  */
-export async function shopDue(): Promise<number> {
-  const [plan, lunchPlan] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN)]);
+const isDue = (soon: string) => (r: { get: (k: string) => string }) => r.get("groceries") === LATER && r.get("date") <= soon;
+/** Whether shopDue has anything to do with these tabs. */
+const dueIn = (t: Pick<WeekTabs, "plan" | "lunchPlan">) => {
+  const due = isDue(addDays(todayIn(), SHOP_AHEAD));
+  return records(t.plan).some(due) || records(t.lunchPlan).some(due);
+};
+export async function shopDue(read?: Pick<WeekTabs, "plan" | "lunchPlan">): Promise<number> {
+  const [plan, lunchPlan] = read ? [read.plan, read.lunchPlan] : await Promise.all([rows(PLAN), rows(LUNCH_PLAN)]);
   const today = todayIn(), soon = addDays(today, SHOP_AHEAD);
-  const due = (r: { get: (k: string) => string }) => r.get("groceries") === LATER && r.get("date") <= soon;
+  const due = isDue(soon);
   const nights = records(plan).filter(due), lunchRows = records(lunchPlan).filter(due);
   if (!nights.length && !lunchRows.length) return 0;
   const [recipes, options, freezer] = await Promise.all([loadRecipes(), rows(LUNCHES), loadFreezer()]);

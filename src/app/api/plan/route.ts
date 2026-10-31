@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { loadWeek, markMade, saveWeek, shopDue } from "@/lib/plan";
+import { loadWeek, loadWeeks, markMade, saveWeek, shopDue } from "@/lib/plan";
 import { todayIn } from "@/lib/time";
 import { LUNCH_PARTS, weekOf, type Lunch, type Night } from "@/lib/week";
 
@@ -22,14 +22,18 @@ function lunch(x: Record<string, unknown>): Lunch | null {
 }
 
 /**
+ * GET ?weeks=1: this week and the ones after it that are planned, then the first that isn't (see loadWeeks).
  * GET ?week=YYYY-MM-DD (any day of it; this week by default): the week's nights and lunches, and what planning needs.
  * Asked for this week, it also puts on the list the groceries of nights planned weeks ago that are now close
  * (`added`: how many things).
  */
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
-  const w = new URL(req.url).searchParams.get("week") ?? "";
+  const params = new URL(req.url).searchParams;
+  const w = params.get("week") ?? "";
   try {
+    // ?weeks=1: the Meals screen's weeks in one answer (the Sheet read once), { weeks, added }.
+    if (params.get("weeks")) return Response.json(await loadWeeks(todayIn()), { headers: { "cache-control": "no-store" } });
     const monday = weekOf(DATE.test(w) ? w : todayIn());
     const added = monday === weekOf(todayIn()) ? await shopDue() : 0;
     return Response.json({ ...(await loadWeek(monday)), added }, { headers: { "cache-control": "no-store" } });
