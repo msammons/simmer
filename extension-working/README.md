@@ -14,7 +14,7 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   product's name. Long names Safeway shortens on screen ("…") are read whole from the product's buttons. The background
   (`background.js`) checks for jobs every half minute; once there's activity, or while the panel is open, it checks
   every couple of seconds until a few minutes pass with nothing. It does each job in a Safeway tab (`safeway.js`): one
-  already open, or a new one behind, in front only when the panel is open in that window.
+  already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
 - **The panel is Simmer.** After the one-time setup (Simmer's address and the household passcode, kept on this computer
   only), the panel shows Simmer itself, opening on Shop. The passcode goes to Simmer by message, never in the address.
   So the computer and the phone are the same experience, and both go through the same jobs.
