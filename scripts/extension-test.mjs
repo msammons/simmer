@@ -91,7 +91,10 @@ function cartPage(signedIn) {
       const draw = () => {
         const c = cart(), ids = Object.keys(c);
         document.getElementById("rows").innerHTML = ids.length ? ids.map((id) => '<div class="row" data-id="' + id + '"><div><a href="/shop/product-details.' + id + '.html">' + names[id][0] + '</a><span>' + names[id][1] + '</span></div>'
-          + '<div class="qty"><button aria-label="Decrease quantity">-</button><input type="number" value="' + c[id] + '" aria-label="Quantity"><button aria-label="Increase quantity">+</button></div></div>').join("") : "<p>Your cart is empty</p>";
+          // As the real cart page (captured Oct 31): the count is words in a button-like box, with a hidden copy for
+          // small screens, and no number box.
+          + '<div class="qty"><button aria-label="Decrease quantity" class="stepper-decrease">-</button><div role="button" class="stepper-amount"><span>' + c[id] + ' </span><span class="sr-only">- click to specify a quantity</span></div>'
+          + '<button aria-label="Increase quantity" class="stepper-increase">+</button><div style="display:none"><div role="button" class="stepper-qty-round"><span>' + c[id] + ' </span><span class="sr-only">- click to specify a quantity</span></div></div></div></div>').join("") : "<p>Your cart is empty</p>";
         document.querySelectorAll(".row").forEach((r) => r.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
           const id = r.dataset.id; put(id, (cart()[id] || 0) + (/Increase/.test(b.getAttribute("aria-label")) ? 1 : -1)); draw();
         }, 250)));

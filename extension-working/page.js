@@ -58,7 +58,8 @@ export async function safewayPage(action, arg, P) {
 
   function qtyOf(card) {
     const input = qtyBox(card);
-    const n = Number(input?.value || input?.getAttribute("aria-valuenow") || (input?.textContent ?? "").trim());
+    // A box's number, or the first number in its words: Safeway's cart page writes "3 - click to specify a quantity".
+    const n = Number(input?.value || input?.getAttribute("aria-valuenow") || (input?.textContent ?? "").match(/\d+/)?.[0]);
     if (n > 0) return n;
     const m = card.innerText.match(re(P.inCartText));
     return m ? Number(m[1]) : 1;
