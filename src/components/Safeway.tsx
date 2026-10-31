@@ -14,6 +14,16 @@ export const cartUrl = () => `${PAGE.site}${PAGE.cartPath}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Plain words for why a job didn't happen. */
+/** Simmer on the computer is older than this one: where to get the new one. */
+export function UpdateNotice() {
+  return (
+    <Notice tone="info">
+      Simmer on the computer needs an update.{" "}
+      <a className="font-semibold text-accent" href="/simmer-helper.zip" download>Get the new one</a>, open it, put what&apos;s inside in place of the old Simmer folder, then press reload on Simmer in Chrome&apos;s extensions page.
+    </Notice>
+  );
+}
+
 export const NOT_ANSWERING = "Safeway searches run on the computer with Chrome open. It's not answering right now.";
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
@@ -33,6 +43,7 @@ export function useSafeway() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [answering, setAnswering] = useState<boolean | null>(null);
+  const [outdated, setOutdated] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Record<string, number>>({});
   const [problem, setProblem] = useState<string | null>(null);
@@ -43,7 +54,7 @@ export function useSafeway() {
     try {
       const r = await api.cart();
       if (!alive.current) return;
-      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setLoaded(true);
+      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setOutdated(r.outdated === true); setLoaded(true);
     } catch (e) { if (!(e instanceof AuthError) && alive.current) setLoaded(true); }
   }, []);
   useEffect(() => {
@@ -118,7 +129,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, answering, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf };
+  return { cart, picks, answering, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
