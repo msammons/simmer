@@ -14,6 +14,10 @@ export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
 export type Helper = { seen: string; version: string; panel: boolean };
+/** Where a job was asked for: Simmer in the helper's panel, or anywhere else (the phone, mostly). */
+export type JobFrom = "panel" | "app";
+/** A job as the panel's activity log tells it. */
+export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatus; from: JobFrom; what: string; qty: number | null; error: string; signedIn: boolean; created: string; updated: string };
 
 /**
  * How long things take. `alive`: the helper counts as answering if it checked in this recently (its slowest check is
@@ -192,6 +196,21 @@ export async function finishJob(id: string, ok: boolean, raw: Record<string, unk
   }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
+}
+
+/** The panel's activity log: recent searches and cart changes, newest first, with where each was asked for. */
+export async function recentJobs(limit = 20): Promise<Activity[]> {
+  const { jobs } = await read();
+  return jobs.flatMap((j): Activity[] => {
+    if (j.kind !== "search" && j.kind !== "setQty") return [];
+    const late = overdue(j), r = j.result ?? {};
+    return [{
+      id: j.id, kind: j.kind, status: late ? "failed" : j.status, from: j.args.from === "panel" ? "panel" : "app",
+      what: str(j.args.name, 160) || str(j.args.query, 120), qty: j.kind === "setQty" ? Number(r.qty ?? j.args.qty) || 0 : null,
+      error: late ? (j.status === "waiting" ? "not-answering" : "stuck") : str(r.error, 40), signedIn: r.signedIn !== false,
+      created: j.created, updated: j.updated,
+    }];
+  }).sort((a, b) => b.created.localeCompare(a.created)).slice(0, limit);
 }
 
 /** For tests. */
