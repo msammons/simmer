@@ -28,7 +28,7 @@ export const NOT_ANSWERING = "Safeway searches run on the computer with Chrome o
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
   if (error === "signed-out") return "Safeway isn't signed in on the computer. Sign in there, then try again.";
-  if (error === "not-found") return "That product didn't come up on Safeway just now. Try searching again.";
+  if (error === "not-found") return "Couldn't find that product on Safeway just now. Try again.";
   if (error === "not-loaded") return "Safeway didn't load on the computer. Try again in a minute.";
   return "That didn't go through on Safeway. Try again.";
 }
