@@ -160,7 +160,7 @@ fills the cart (section 5). Most of these can be learned from her past Safeway o
 ### Safeway
 
 `item, product_id, product_name, updated`: the exact Safeway product picked for an item on the list, written by the
-Safeway helper (`extension/`) whenever one is picked, so the next order adds it without asking, on any computer. One
+Safeway helper (`extension-working/`) whenever one is picked, so the next order adds it without asking, on any computer. One
 row per item; fix or delete a row by hand to change what it adds.
 
 ### Freezer
@@ -408,8 +408,8 @@ bot protection may push back. That's why it starts as a test (Phase 1) before an
 automated sign-in, so the first outcome below is ruled out, and so is keeping her Safeway sign-in in Vercel. The route
 now proposed is a Chrome extension, desktop first, that fills the safeway.com cart from Simmer's list in a browser
 she's already signed in to, at a person's pace, asks when unsure, remembers her picks, and never checks out. It does not
-automate the sign-in or disguise itself. Sam said go ahead (Oct 27); it's built in `extension/` (how to install and
-use it is in `extension/README.md`), and waiting for its first real order on Robin's computer. Items it adds are
+automate the sign-in or disguise itself. Sam said go ahead (Oct 27); it's built in `extension-working/` (how to install and
+use it is in `extension-working/README.md`), and waiting for its first real order on Robin's computer. Items it adds are
 ticked in Simmer, which is what ticked already means ("in the cart"). Each pick (tapped in the panel, or added on
 Safeway while it asks) is kept in the Safeway tab (section 3), so the helper asks less with every order until it adds
 everything itself.
@@ -423,7 +423,7 @@ that product (or a search) in Safeway; an item's own sheet has *Open in Safeway*
 
 **Jobs and the Shop tab (Oct 30).** The helper (1.0) no longer runs whole orders: Simmer's Shop tab queues small jobs
 (search, set a product's quantity, read a page) and the helper does them in Chrome and reports back; its panel is
-Simmer itself. See ARCHITECTURE.md ("Shop and Safeway") and `extension/README.md`. The order endpoints stay for
+Simmer itself. See ARCHITECTURE.md ("Shop and Safeway") and `extension-working/README.md`. The order endpoints stay for
 older installed helpers.
 
 A small experiment, run from Sam's Mac with her account: can a program sign in to Safeway, read her past orders,

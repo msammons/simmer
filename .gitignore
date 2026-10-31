@@ -46,3 +46,6 @@ service-account.json
 .data/
 !.env.example
 public/simmer-helper.zip
+
+# The released helper Chrome loads on the Safeway computer (filled by scripts/release-helper.mjs)
+/extension/

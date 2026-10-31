@@ -1,4 +1,4 @@
-// The Safeway helper's thinking, kept in Simmer so it can change without reinstalling the helper (extension/). The
+// The Safeway helper's thinking, kept in Simmer so it can change without reinstalling the helper (extension-working/). The
 // helper is only hands: it asks Simmer what to fill (`prepare`), reads Safeway's pages using the page details here
 // (`PAGE`), and asks Simmer which product to take (`choose`). Plain JavaScript, shared by Simmer's server, its tests
 // and the helper's end-to-end check (scripts/extension-test.mjs).
