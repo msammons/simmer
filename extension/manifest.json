@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Simmer for Safeway",
-  "version": "1.0.0",
-  "description": "Does Simmer's Safeway searches and cart changes on safeway.com, for the phone and for Simmer in this panel. You check out on Safeway yourself.",
+  "name": "Simmer",
+  "version": "1.1.0",
+  "description": "Simmer's hands in this Chrome: does Simmer's store searches and cart changes, for the phone and for Simmer in this panel. You check out yourself.",
   "permissions": [
     "sidePanel",
     "storage",

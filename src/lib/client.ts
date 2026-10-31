@@ -124,8 +124,8 @@ export const api = {
   /** The Safeway order filled by the helper on a computer: start it, follow it, answer it, stop it. */
   order: (signal?: AbortSignal) => call<{ order: Order | null }>("/api/safeway/order", { signal }),
   orderChange: (c: { op: "start" } | { op: "answer"; id: string; answer: OrderAnswer } | { op: "stop"; id: string }) => call<{ order: Order | null }>("/api/safeway/order", { method: "POST", body: JSON.stringify(c) }),
-  /** The Safeway cart as Simmer knows it, the picks, and whether the computer is answering. */
-  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean }>("/api/safeway/cart", { signal }),
+  /** The Safeway cart as Simmer knows it, the picks, whether the computer is answering, and whether its Simmer needs an update. */
+  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean; outdated?: boolean }>("/api/safeway/cart", { signal }),
   /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
   queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args }) }),
   job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}`, { signal }),

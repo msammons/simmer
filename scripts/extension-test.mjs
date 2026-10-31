@@ -131,7 +131,7 @@ expect(await panel.getByText("Wrong passcode.").waitFor({ timeout: 10_000 }).the
 await panel.fill("#code", PASS);
 await panel.click("text=Continue");
 const sim = panel.frameLocator("#simmer");
-expect(await sim.getByRole("radio", { name: "List" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop (passcode passed by message)");
+expect(await sim.getByRole("radio", { name: "Find" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop's Find (passcode passed by message)");
 expect(!(await panel.locator("#simmer").getAttribute("src")).includes(PASS), "the passcode isn't in the frame's address");
 
 const t0 = Date.now();
@@ -153,13 +153,14 @@ expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(p
 expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.itemId === milkId, "Simmer's cart knows which list item it's for");
 await sim.getByRole("button", { name: /^One more/ }).first().click();
 expect(await until(async () => (await safewayQty(pid)) === 3 && (await cartQty(pid)) === 3), "+ adds one on Safeway");
-await sim.getByRole("button", { name: /^One less/ }).first().click();
-expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "− takes one off on Safeway");
 expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id === pid && /^https:/.test(p.image ?? "")), "the pick is kept, with its picture");
 
-// Cart: shows it, and the trash at one takes it out.
+// Cart: shows it, − takes one off, and the trash at one takes it out. (Find moves on once there are enough, so − is
+// tried here.)
 await sim.getByRole("radio", { name: /^Cart · 1/ }).click();
 expect(await sim.getByText("Check out on Safeway").waitFor({ timeout: 10_000 }).then(() => true, () => false), "Cart shows what's in it, with checkout on Safeway");
+await sim.getByRole("button", { name: /^One less/ }).click();
+expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "− takes one off on Safeway");
 await sim.getByRole("button", { name: /^One less/ }).click();
 await until(async () => (await safewayQty(pid)) === 1);
 await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
@@ -168,7 +169,7 @@ expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(p
 // The phone path: with the panel closed, a search and an add from a plain page are done by the background.
 await panel.close();
 await phone.reload();
-await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).click();
 await phone.getByRole("button", { name: /^Bananas/ }).click();
 // The background stays quick for a few minutes after activity; nudge it as the half-minute alarm would.
 worker.evaluate(() => self.simmerCheck()).catch(() => {});

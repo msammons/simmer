@@ -1,4 +1,4 @@
-# Simmer for Safeway (the Chrome helper)
+# Simmer (the Chrome helper)
 
 Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the Safeway cart, but Safeway can only be reached
 from a real browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does
@@ -25,9 +25,14 @@ in her own Chrome, pressing Safeway's own buttons at a person's pace.
 
 ## Installing or updating it (once per computer)
 
-1. Get this `extension` folder onto the computer (copy it, or `git pull` in a clone).
+Simmer knows the version it ships (`extension/manifest.json`) and the one that last checked in; when the computer's is
+older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change.
+
+1. Get the helper: Simmer serves it at `/simmer-helper.zip`, rebuilt from this folder on every deploy
+   (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
-   pick the folder. Update: press the reload arrow on **Simmer for Safeway**'s card (it should say 1.0.0).
+   pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
+   **Simmer**'s card (it should say 1.1.0). Keeping the same folder keeps the setup.
 3. Pin it (the puzzle-piece button, then the pin), click the Simmer button, and type Simmer's address and the passcode
    (once).
 4. Sign in to Safeway in that Chrome, and leave Chrome open. Simmer's Find then works from the phone too.
