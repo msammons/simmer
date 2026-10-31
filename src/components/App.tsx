@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PasscodeScreen } from "./PasscodeScreen";
@@ -298,6 +299,8 @@ export default function App() {
   const below = stack[stack.length - 2];
   const backLabel = !below ? "Back" : below.kind === "recipe" ? recipeOf(below.id)?.name ?? "Back" : TAB_NAMES[below.kind];
   const tonight = week?.nights.find((x) => x.date === dateIn(0));
+  // In the helper's panel: the computer's work for the phone (components/Activity.tsx).
+  const panel = usePanelActivity(phase === "app" && framed());
 
   return (
     <div id="scroller" className="h-full overflow-y-auto overscroll-y-contain">
@@ -328,6 +331,7 @@ export default function App() {
           onMade={() => made(dateIn(0), true)} />
       )}
       </OpenSettings.Provider>
+      {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {planning && <PlanSheet key={planning.monday} w={planning} recipes={recipes ?? []} me={me} onSave={saveWeek} onClose={() => setPlanningFor(null)} />}
       {night && nightWeek && (
         <NightSheet key={`${nightWeek.monday}|${night.date}`} w={nightWeek} n={night} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, nightWeek.lunches)}
