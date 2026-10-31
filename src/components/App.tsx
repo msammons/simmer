@@ -28,8 +28,8 @@ function takeResume(): Tab {
   const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
   try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "recipes"; } catch { return isTab(asked) ? asked : "recipes"; }
 }
-/** Nothing would be lost by reloading now: no sheet open and nothing typed. */
-const atRest = () => !document.querySelector('[role="dialog"]')
+/** Nothing would be lost by reloading now: no sheet open (the panel's activity log doesn't count) and nothing typed. */
+const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
   && ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].some((el) => el.value);
 
 export default function App() {
@@ -252,7 +252,7 @@ export default function App() {
   }, [loadHousehold]);
 
   // A new version shipped while the app sat open (an iPhone can keep it in memory for days): when it's next brought to the
-  // front on a screen at rest (a tab's first screen, or the passcode, with nothing open or typed), reload into the new
+  // front (or, in the helper's panel, every few minutes) on a screen at rest (a tab's first screen, or the passcode, with nothing open or typed), reload into the new
   // version and come back to the same tab.
   const here = useRef({ resting: false, root: "recipes" as Tab });
   useEffect(() => { here.current = { resting: phase === "passcode" || (phase === "app" && stack.length === 1), root: stack[0].kind as Tab }; }, [phase, stack]);
@@ -267,7 +267,9 @@ export default function App() {
       window.location.reload();
     };
     document.addEventListener("visibilitychange", check);
-    return () => document.removeEventListener("visibilitychange", check);
+    // The helper's panel can stay open for days without ever being hidden, so it also checks every few minutes.
+    const every = framed() ? setInterval(check, 5 * 60_000) : undefined;
+    return () => { document.removeEventListener("visibilitychange", check); clearInterval(every); };
   }, []);
 
   // A recipe that's gone (removed in the Sheet by hand) closes, back to the screen below.
