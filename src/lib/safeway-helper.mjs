@@ -9,9 +9,10 @@
  * ahead of the next. `mostOfOne`: the most of one thing a plain count can ask for. For the helper's jobs (1.0 on):
  * `fastPoll`, how often it checks for jobs once there's activity or the panel is open, and `idleAfter`, how long after
  * the last job it goes back to checking every half minute. `stepWait`: how long to wait for Safeway after a tap.
- * `cartTries`: how many times to look for the cart page's products before going on without it.
+ * `cartTries`: how many times to look for the cart page's products before going on without it. `noResultsHold`: how long
+ * Safeway must keep saying "no results" before a search counts as finding nothing (it says so for a moment while loading).
  */
-export const SETTINGS = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, fastPoll: 2500, idleAfter: 180_000, stepWait: 10_000, cartTries: 8 };
+export const SETTINGS = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, fastPoll: 2500, idleAfter: 180_000, stepWait: 10_000, cartTries: 8, noResultsHold: 4000 };
 
 /**
  * Safeway's pages, as data the helper reads them with (patterns are matched without regard to case). Safeway's pages
@@ -41,7 +42,13 @@ export const PAGE = {
   price: { selector: '[data-qa="prd-itm-prc"]', pattern: "\\$\\d+(?:\\.\\d{2})?(?:\\s*(?:each|/\\s*lb|/\\s*ea|per lb))?" },
   // The cart page's count is words in a button-like box (".stepper-amount", "3 - click to specify a quantity"), with a
   // hidden copy for small screens (".stepper-qty-round"); read from a capture of the real page, Oct 31.
-  qtyBox: '[data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"], .stepper-amount, .stepper-qty-round',
+  // On the search page (a capture of the real page, Oct 31) the count is the middle button of the stepper:
+  // `<button data-qa="qty-stppr-qtymsg" aria-label="2 units of <name> in cart. Click to update">2</button>`.
+  qtyBox: '[data-qa="qty-stppr-qtymsg"], [data-qa="prd-qty-stppr-qtybox"], input[type="number"], input[aria-label*="quantity" i], input[name*="qty" i], [role="spinbutton"], .stepper-amount, .stepper-qty-round',
+  // Pictures: Safeway's search page loads them as they're scrolled to, so a picture further down has only
+  // `data-src` ("//images.albertsons-media.com/is/image/ABS/<id>?..."); every product's picture is also at `image`.
+  imageAttrs: ["currentSrc", "src", "data-src", "data-srcset", "srcset"],
+  image: "https://images.albertsons-media.com/is/image/ABS/{id}?$grid-product-card-desktop$&defaultImage=Not_Available",
   add: { label: "^add\\b", not: "list|note|coupon|clip" },
   // Taking the last product out of the cart asks "Empty Safeway cart ... Are you sure?" with "No, don't remove" / "Yes,
   // remove" (seen Oct 31). The helper answers yes only right after its own − at one, which Sam asked for with the trash.
@@ -54,6 +61,18 @@ export const PAGE = {
   noResults: "no (search )?results for",
   productLinks: "a[href*='product']",
 };
+
+/**
+ * A product's picture address: the one read from the page when it's a real one (made https), else Safeway's picture
+ * for that product number (`PAGE.image`), so a picture Safeway hadn't loaded yet still shows.
+ * @param {string} id @param {string} [read]
+ */
+export function imageFor(id, read = "") {
+  const s = String(read ?? "").trim().split(/[\s,]/)[0] ?? "";
+  const url = s.startsWith("//") ? `https:${s}` : s;
+  if (/^https:\/\/[^\s"'<>]+$/.test(url) && !/^data:|placeholder|blank\.gif|spacer/i.test(url)) return url.slice(0, 500);
+  return /^\d+$/.test(String(id ?? "")) ? PAGE.image.replace("{id}", String(id)) : "";
+}
 
 /** Everything the helper needs from Simmer to start: how to read Safeway, how to go about it, and what to fill. */
 /** @type {(list: Parameters<typeof prepare>[0], picks: Parameters<typeof prepare>[1]) => object} */

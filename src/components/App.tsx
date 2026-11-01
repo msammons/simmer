@@ -22,10 +22,12 @@ const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(T
 
 /** Where to pick up after reloading into a new version (this tab only). */
 const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
-function takeResume(): Tab {
+/** The first screen, and whether it's the one the address asked for (not a resume after reloading). */
+function takeResume(): { tab: Tab; asked: boolean } {
   // The Safeway helper's panel opens Simmer on Shop (?open=shop).
   const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? v : isTab(asked) ? asked : "week"; } catch { return isTab(asked) ? asked : "week"; }
+  const first = { tab: isTab(asked) ? asked : "week" as Tab, asked: isTab(asked) };
+  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? { tab: v, asked: false } : first; } catch { return first; }
 }
 /** Nothing would be lost by reloading now: no sheet open (the panel's activity log doesn't count) and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
@@ -38,6 +40,7 @@ export default function App() {
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
   const [shopAt, setShopAt] = useState<string | null>(null); // the list item Shop's Find opens on, from the List tab
+  const [shopOnCart, setShopOnCart] = useState(false); // Shop opens on Cart: only the panel's first screen
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
   const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
@@ -267,7 +270,9 @@ export default function App() {
       if (!store.passcode()) setPhase("passcode");
       else loadHousehold().then((ok) => {
         if (!ok) return;
-        setStack([{ kind: resume }]);
+        setStack([{ kind: resume.tab }]);
+        // The helper's panel starting on Shop opens it on Cart (Sam, Oct 31); every other way to Shop opens Find.
+        if (resume.asked && resume.tab === "shop") setShopOnCart(true);
         setPhase("app");
       });
     });
@@ -305,6 +310,7 @@ export default function App() {
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
     setShopAt(null);
+    setShopOnCart(false);
   }
   /** Shop's Find, on a list item when there's one. */
   function openFind(id?: string) {
@@ -344,7 +350,7 @@ export default function App() {
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
       {phase === "app" && top.kind === "list" && <ListScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onFind={openFind} />}
-      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} error={error ?? listError} act={act} startAt={shopAt} onList={() => onTab("list")} />}
+      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} error={error ?? listError} act={act} startAt={shopAt} onCart={shopOnCart} onList={() => onTab("list")} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} onAddToList={(r) => { setListing(r.id); setSheet("tolist"); }} />

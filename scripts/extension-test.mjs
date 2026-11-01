@@ -51,11 +51,17 @@ const queries = [];
 function searchPage(q, signedIn) {
   queries.push(q);
   const hits = Object.entries(CATALOG).filter(([k]) => q.toLowerCase().includes(k) || CATALOG[k].some(([, n]) => n.toLowerCase() === q.toLowerCase())).flatMap(([, v]) => v);
-  // Built like Safeway's real search tiles (read from its page code, Oct 2026).
-  const tiles = hits.map(([id, name, price]) => `
-    <product-item-al-v2 class="product-card" data-id="${id}" data-name="${name}"><div class="pc"><img id="pg${id}Img" src="https://www.safeway.com/img/${id}.png" alt="" width="40" height="40">
-      <span data-qa="prd-itm-pttl" id="pg${id}" tabindex="-1">${id === "960002" ? shown(name) : name}</span><div data-qa="prd-itm-prc">${price}</div>
-      <quantity-stepper-al-v2 class="cta"></quantity-stepper-al-v2></div></product-item-al-v2>`).join("");
+  // Built like Safeway's real search tiles (from a saved copy of the real page, Oct 31): the title is a link with the
+  // product number in its id; pictures load as they're scrolled to, so only the first has its picture yet (the rest
+  // wait in data-src); the stepper's count is its middle button ("2 units of ... in cart. Click to update").
+  const tiles = hits.map(([id, name, price], i) => `
+    <product-item-al-v2 data-qa="prd-itm" class="pc-grid-prdItem" data-id="${id}" data-name="${name}"><div class="pc" id="pg${id}container">
+      <a class="pc__tap-zone" aria-label="${name},price approximatly ${price}" href="/shop/pd/item/${id}"></a>
+      <div id="pg${id}Img" data-bpn="${id}"><picture><img data-qa="prd-itm-img" class="ab-lazy" alt="${name}" data-src="//www.safeway.com/img/${id}.png"${i === 0 ? ` src="https://www.safeway.com/img/${id}.png"` : ""} width="40" height="40"></picture></div>
+      <quantity-stepper-al-v2 class="cta" id="pg${id}-qty"></quantity-stepper-al-v2>
+      <span data-qa="prd-itm-prc" id="pg${id}price"><span class="sr-only"> Your Price ${price}</span><span aria-hidden="true"> ${price.split(" ")[0]}</span></span>
+      <a data-qa="prd-itm-pttl" tabindex="-1" id="pg${id}" aria-label="${name}" href="/shop/pd/item/${id}">${id === "960002" ? shown(name) : name}</a>
+    </div></product-item-al-v2>`).join("");
   return `<!doctype html><html><body>
     <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
     <main id="grid"></main>
@@ -64,17 +70,22 @@ function searchPage(q, signedIn) {
       const put = (id, n) => { const c = cart(); if (n > 0) c[id] = n; else delete c[id]; localStorage.setItem("cart", JSON.stringify(c)); };
       const draw = (tile) => {
         const id = tile.dataset.id, name = tile.dataset.name, n = cart()[id] || 0, cta = tile.querySelector(".cta");
-        cta.innerHTML = n ? '<button aria-label="' + (n === 1 ? "Remove" : "Decrease") + ' Quantity of ' + name + '">-</button><div data-qa="prd-qty-stppr-qtybox">' + n + '</div><button aria-label="Increase Quantity 1 unit of ' + name + '">+</button>'
-          : '<button aria-label="Add ' + name + '">Add</button>';
+        cta.innerHTML = n ? '<div role="group"><button data-qa="prdctdcrmntr" aria-label="' + (n === 1 ? "Remove" : "Decrease") + ' Quantity 1 unit of ' + name + '"><span aria-hidden="true"></span></button>'
+            + '<button data-qa="qty-stppr-qtymsg" aria-label="' + n + ' units of ' + name + ' in cart. Click to update">' + n + '</button>'
+            + '<button data-qa="prdctincrmntr" aria-label="Increase Quantity 1 unit of ' + name + '"><span aria-hidden="true"></span></button></div>'
+          : '<button data-qa="addbutton" aria-label="Add 1 unit of ' + name + '"><span aria-hidden="true"></span><span>Add</span></button>';
         const total = Object.values(cart()).reduce((a, b) => a + b, 0);
         document.getElementById("cart").textContent = "Cart " + total;
         cta.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
           const l = b.getAttribute("aria-label");
+          if (/units of/.test(l)) return;
           put(id, /^Add|^Increase/.test(l) ? n + 1 : n - 1); draw(tile);
         }, 250));
       };
-      // Results arrive a moment after the page, like Safeway's.
-      setTimeout(() => { document.getElementById("grid").innerHTML = ${JSON.stringify(tiles || "<h1>No search results for &quot;" + q + "&quot;</h1>")}; document.querySelectorAll("product-item-al-v2").forEach(draw); }, 400);
+      // Results arrive a moment after the page, like Safeway's, which says "No search results" for a moment first while
+      // it's building (seen Oct 31).
+      setTimeout(() => { document.getElementById("grid").innerHTML = '<h1>No search results for &quot;' + ${JSON.stringify(q)}.replace(/</g, "") + '&quot;</h1>'; }, 100);
+      setTimeout(() => { document.getElementById("grid").innerHTML = ${JSON.stringify(tiles || "<h1>No search results for &quot;" + q + "&quot;</h1>")}; document.querySelectorAll("product-item-al-v2").forEach(draw); }, 1500);
     </script></body></html>`;
 }
 
@@ -189,30 +200,37 @@ if (!found) console.log("Find showed:", (await sim.locator("main").innerText()).
 const imgs = await sim.locator("img[src^='https://www.safeway.com/img/']").count();
 expect(imgs >= 2, "Find: products show Safeway's pictures");
 expect(await sim.getByText("Lucerne Milk Reduced Fat 2% - 1 Gallon", { exact: true }).count() === 1, "Find: a name Safeway shortened on screen shows whole");
-// Add milk: two wanted, so two go in, on Safeway and in Simmer's cart.
+// Add milk: two wanted, but Add puts one in, on Safeway and in Simmer's cart; + adds the next. Both happen on the search
+// page the Safeway tab is already showing, without loading it again.
 const firstName = await sim.locator("p.line-clamp-2").first().innerText();
 const pid = firstName.includes("1/2") ? "960001" : "960002";
+const searchesAtAdd = queries.length;
 await add.first().click();
-expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "Add puts the wanted number in the Safeway cart and in Simmer's cart");
+expect(await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1), "Add puts one in the Safeway cart and in Simmer's cart");
 expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.itemId === milkId, "Simmer's cart knows which list item it's for");
+expect(await sim.getByRole("button", { name: /^Next: Bag bananas/ }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "after an Add, Next (naming the next item) shows at the top");
 await sim.getByRole("button", { name: /^One more/ }).first().click();
 expect(await sim.getByRole("button", { name: /^One more/ }).first().isDisabled() && await sim.getByRole("status", { name: /^Changing .* on Safeway/ }).first().isVisible(), "a product is locked, with a spinner, while its change is on the way");
-expect(await until(async () => (await safewayQty(pid)) === 3 && (await cartQty(pid)) === 3), "+ adds one on Safeway");
+expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "+ adds one on Safeway, and Simmer reads Safeway's count right");
+expect(!(await sim.getByText(/didn't take all/).count()), "no \"didn't take all\" when it did");
+expect(queries.length === searchesAtAdd, `Add and + happen on the search page showing, without loading it again (${queries.length - searchesAtAdd} more)`);
 expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id === pid && /^https:/.test(p.image ?? "")), "the pick is kept, with its picture");
 
-// Cart: shows it, − takes one off, and the trash at one takes it out. (Find moves on once there are enough, so − is
-// tried here.)
+// Cart: shows it, − takes one off, and the trash at one takes it out.
 await sim.getByRole("radio", { name: /^Cart · 1/ }).click();
 expect(await sim.getByText("Check out on Safeway").waitFor({ timeout: 10_000 }).then(() => true, () => false), "Cart shows what's in it, with checkout on Safeway");
 expect(await until(() => new URL(safeway.url()).pathname === "/erums/cart", 20_000), "Cart in the panel: the Safeway tab shows Safeway's cart");
 const searchesBefore = queries.length;
 await sim.getByRole("button", { name: /^One less/ }).click();
-expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "− takes one off on Safeway");
+expect(await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1), "− takes one off on Safeway");
 expect(queries.length === searchesBefore && new URL(safeway.url()).pathname === "/erums/cart", "Cart changes are made on Safeway's cart page, which stays showing");
-await sim.getByRole("button", { name: /^One less/ }).click();
-await until(async () => (await safewayQty(pid)) === 1);
 await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
 expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(pid)) === 0), "the trash takes it out of the Safeway cart");
+// Coming back to Shop any other way than the panel's start opens Find.
+await sim.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+const findOpen = await until(async () => (await sim.getByRole("radio", { name: "Find" }).getAttribute("aria-checked")) === "true", 10_000);
+expect(findOpen, "the Shop tab opens Find when there are things to find");
+if (!findOpen) console.log("Shop showed:", (await sim.locator("main").innerText()).slice(0, 300));
 
 // The phone path: with the panel closed, a search and an add from a plain page are done by the background.
 await panel.close();
@@ -230,6 +248,7 @@ expect(queries.includes("bananas") && !queries.some((q) => /bag|\.\.\./.test(q))
 
 // Signed out of Safeway: an add says so in plain words.
 signedIn = false;
+await safeway.reload(); // Safeway shows it's signed out once its page loads again
 await phone.getByRole("button", { name: /^One more/ }).first().click();
 expect(await phone.getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
 signedIn = true;

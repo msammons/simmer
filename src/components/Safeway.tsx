@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuthError, errorText, framed, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { nameWords, PAGE, searchWords } from "@/lib/safeway-helper.mjs";
-import { addedFor, cartTotal, money, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { addedFor, cartTotal, money, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, Notice } from "./ui";
 
@@ -211,7 +211,8 @@ type Search = { query: string; state: "loading" | "done" | "failed"; products: P
 
 /**
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
- * the item), the usual first, Add puts the wanted number in the cart, − / + after that. Skip or Next moves on.
+ * the item), the usual first, Add puts one in the cart, − / + after that. Skip or Next (at the top, where it doesn't
+ * move anything when it changes) goes on; Find never moves on by itself.
  */
 export function FindView({ store, items, index, onIndex, sw, onCart, onList, onGot }: {
   /** The online store being shopped, by name. */
@@ -232,7 +233,10 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
     ctl.current = c;
     setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true, problem: "", slow: false } }));
     const slow = setTimeout(() => setSearches((s) => (s[q]?.state === "loading" ? { ...s, [q]: { ...s[q], slow: true } } : s)), 6000);
-    const r = await sw.run("search", { query: q }, c.signal);
+    let r = await sw.run("search", { query: q }, c.signal);
+    // Safeway can say "no results" for a moment while its page is still building (Oct 31: "canned pumpkin" came back
+    // empty, then full the next time), so an empty answer is asked once more before it's shown.
+    if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await sw.run("search", { query: q }, c.signal);
     clearTimeout(slow);
     if (c.signal.aborted) return;
     setSearches((s) => ({ ...s, [q]: r.ok
@@ -261,10 +265,20 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const inCartForIt = qtyFor(sw.cart, it.id);
   const last = index === items.length - 1;
   const move = (to: number) => { ctl.current?.abort(); onIndex(to); };
+  // Where Next goes: the next item still to find (else the cart). Shown at the top in a row that's always there, so it
+  // appearing after an Add doesn't push the results under the finger.
+  const to = nextAfter(items, sw.cart, index);
+  const next = () => (to < 0 ? onCart() : move(to));
+  const top = "flex h-10 max-w-[65%] min-w-0 items-center gap-1 rounded-full px-4 t-sub font-semibold transition active:scale-95";
   return (
     <div className="space-y-5">
       <div>
-        <p className="t-foot font-semibold text-muted">{index + 1} of {items.length}</p>
+        <div className="flex h-10 items-center justify-between gap-3">
+          <p className="t-foot font-semibold text-muted">{index + 1} of {items.length}</p>
+          {inCartForIt
+            ? <button onClick={next} className={`${top} glass-tint text-on-accent`}><span className="truncate">{to < 0 ? "See the cart" : `Next: ${cap(items[to].item)}`}</span><Icon name="right" className="size-4 shrink-0" strokeWidth={2.4} /></button>
+            : !last && s?.state !== "failed" && <button onClick={() => move(index + 1)} className={`${top} glass text-accent`}>Skip</button>}
+        </div>
         <h2 className="text-[26px] font-bold leading-tight tracking-tight">{cap(it.item)}</h2>
         <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : it.quantity && `${it.quantity} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
       </div>
@@ -319,7 +333,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
               <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
                 control={qty > 0
                   ? <Stepper qty={qty} name={p.name} busy={p.id in sw.pending} onChange={(n) => sw.setQty(p, n, query, forIt)} />
-                  : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, forIt ? it.want || 1 : 1, query, forIt)}>Add</Button>} />
+                  : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, 1, query, forIt)}>Add</Button>} />
             );
           })}
         </div>
@@ -327,7 +341,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       <div className="flex gap-3">
         {index > 0 && <Button variant="secondary" className="flex-1" onClick={() => move(index - 1)}>Back</Button>}
         {inCartForIt
-          ? <Button className="flex-1" onClick={() => (last ? onCart() : move(index + 1))}>{last ? "See the cart" : "Next item"}</Button>
+          ? <Button className="flex-1" onClick={next}>{to < 0 ? "See the cart" : "Next item"}</Button>
           : s?.state === "failed"
             ? <Button className="flex-1" onClick={() => { onGot(it.id); if (!last) move(index + 1); }}>Got it</Button>
             : <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
