@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, cartTotal, findItems, firstToFind, inCartLine, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -33,6 +33,14 @@ describe("Find", () => {
     expect(nextToFind(f, [line("1", "a", 2), line("2", "b", 1)], 0)).toBe(2);
     expect(nextToFind(f, [line("2", "f", 1)], 1)).toBe(-1);
     expect(firstToFind(f, f.map((x, i) => line(String(i), x.id, 1)))).toBe(0);
+  });
+
+  it("goes Next to the next item still to find, then back to one skipped, then the cart", () => {
+    const f = findItems(items, staples, []); // milk, pop tarts, eggs
+    expect(nextAfter(f, [line("1", "a", 1)], 0)).toBe(1);
+    expect(nextAfter(f, [line("1", "a", 1), line("2", "b", 1)], 0)).toBe(2);
+    expect(nextAfter(f, [line("3", "f", 1)], 2)).toBe(0); // the last one: back to the first still to find
+    expect(nextAfter(f, f.map((x, i) => line(String(i), x.id, 1)), 1)).toBe(-1);
   });
 
   it("shows the usual first, then the closest matches", () => {
