@@ -18,10 +18,13 @@ describe("jobs for the Safeway helper", () => {
     const b = await queueJob("search", { query: "bananas" });
     const took = await takeJob("1.0.0", true);
     expect(took).toMatchObject({ id: a.id, status: "working" });
-    await finishJob(a.id, true, { products: [{ id: "1", name: "Milk", price: "$3", image: "https://x/y.jpg", inCart: false, qty: 0 }, { id: "bad", name: "x" }], signedIn: true });
+    await finishJob(a.id, true, { products: [{ id: "1", name: "Milk", price: "$3", image: "https://x/y.jpg", inCart: false, qty: 0 }, { id: "bad", name: "x" }, { id: "2", name: "Oat milk", price: "$4", image: "", inCart: false, qty: 0 }], signedIn: true });
     const done = (await jobStatus(a.id)).job;
     expect(done?.status).toBe("done");
-    expect((done?.result?.products as unknown[]).length).toBe(1); // only real products come back
+    const products = done?.result?.products as { id: string; image: string }[];
+    expect(products.map((p) => p.id)).toEqual(["1", "2"]); // only real products come back
+    // One further down Safeway's page, whose picture hadn't loaded: Safeway's picture for that product.
+    expect(products[1].image).toMatch(/^https:\/\/images\.albertsons-media\.com\/is\/image\/ABS\/2\?/);
     expect((await takeJob("1.0.0", true))?.id).toBe(b.id);
     expect(await takeJob("1.0.0", true)).toBeNull();
   });

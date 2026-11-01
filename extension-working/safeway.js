@@ -59,18 +59,42 @@ async function onPage(tabId, action, arg, page) {
   } catch { return null; }
 }
 
-/** Opens a page and waits for its products (or Safeway saying there are none). */
+/**
+ * Opens a page and waits for its products (or Safeway saying there are none). Safeway's search page can say "No search
+ * results" for a moment while it's still building (Oct 31: "canned pumpkin" came back empty, then full the next time,
+ * with the page's header not yet there), so "none" counts only once it has stayed that way for `noResultsHold`.
+ */
 async function open(tabId, url, page, settings, tries = settings.resultsTries ?? 25) {
   await go(tabId, url);
-  let last = null;
+  return waitForProducts(tabId, page, settings, tries);
+}
+async function waitForProducts(tabId, page, settings, tries = settings.resultsTries ?? 25) {
+  let last = null, none = 0;
   for (let i = 0; i < tries; i++) {
     last = await onPage(tabId, "read", null, page);
-    if (last && (last.products.length || last.noResults || last.signedIn === false)) return last;
+    if (last && (last.products.length || last.signedIn === false)) return last;
+    if (last?.noResults) { none ||= Date.now(); if (Date.now() - none >= (settings.noResultsHold ?? 4000)) return last; }
+    else none = 0;
     await sleep(settings.resultsWait ?? 800);
   }
   return last;
 }
-const search = (tabId, query, page, settings) => open(tabId, `${page.site}${page.searchPath}${encodeURIComponent(query)}`, page, settings);
+const searchUrl = (query, page) => `${page.site}${page.searchPath}${encodeURIComponent(query)}`;
+const search = (tabId, query, page, settings) => open(tabId, searchUrl(query, page), page, settings);
+const sameWords = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === String(b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+/**
+ * A search as it is: read where it stands when the tab is already showing that search (an Add from Find, right after
+ * Find's search; no reload, Oct 31), else opened.
+ */
+async function searchHere(tabId, query, page, settings) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const want = new URL(searchUrl(query, page));
+  const at = tab?.url ? new URL(tab.url) : null;
+  const key = [...want.searchParams.keys()][0] ?? "q";
+  if (!at || at.origin !== want.origin || at.pathname !== want.pathname || !sameWords(at.searchParams.get(key), query)) return search(tabId, query, page, settings);
+  const r = await waitForProducts(tabId, page, settings, 3);
+  return r && r.products.length ? r : search(tabId, query, page, settings);
+}
 /** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
 const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults });
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
@@ -109,8 +133,8 @@ export async function runJob(job, windowId) {
     let loaded = false, done = null;
     for (const t of tries) {
       const p = t.cart ? cartPage(page) : page;
-      // On the cart page already: change it where it stands (no reload).
-      const r = t.cart ? await cartHere(tabId, page, settings) : await search(tabId, t.q, page, settings);
+      // On the cart page, or that search, already: change it where it stands (no reload).
+      const r = t.cart ? await cartHere(tabId, page, settings) : await searchHere(tabId, t.q, page, settings);
       if (!r) continue;
       loaded = true;
       if (r.signedIn === false) return { ok: false, error: "signed-out" };
@@ -122,6 +146,12 @@ export async function runJob(job, windowId) {
       if (t.cart && !x.ok) {
         const again = (await openCart(tabId, page, settings))?.products.find((y) => y.id === args.productId);
         x = { ...x, qty: again?.inCart ? again.qty || 1 : 0, ok: (again?.inCart ? again.qty || 1 : 0) === args.qty };
+      }
+      // On a search page: look once more where it stands (no reload, no second press) before saying it didn't take.
+      if (!t.cart && !x.ok) {
+        await sleep(settings.resultsWait ?? 800);
+        const again = (await onPage(tabId, "read", null, page))?.products.find((y) => y.id === args.productId);
+        if (again) { const n = again.inCart ? again.qty || 1 : 0; x = { ...x, qty: n, ok: n === args.qty }; }
       }
       done = x;
       break;

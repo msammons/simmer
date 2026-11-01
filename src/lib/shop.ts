@@ -86,3 +86,14 @@ export function inCartLine(cart: CartLine[], it: { id: string }): string {
 
 /** The pick for an item, however the item is written. */
 export const pickFor = (picks: Pick[], item: string) => picks.find((p) => norm(p.item) === norm(item));
+
+/**
+ * Where Find's Next goes from item `from`: the next item with nothing in the cart yet, else the first such item before
+ * it, else -1 (everything's in the cart: the cart is next).
+ */
+export function nextAfter(items: FindItem[], cart: CartLine[], from: number): number {
+  const after = nextToFind(items, cart, from);
+  if (after >= 0) return after;
+  const before = items.findIndex((it, i) => i < from && !qtyFor(cart, it.id));
+  return before;
+}

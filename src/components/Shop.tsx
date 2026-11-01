@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { dateIn, framed, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
+import { dateIn, type CartLine, type Frozen, type Item, type Kitchen, type ListState, type Pick, type Section, type Staple, type Store } from "@/lib/client";
 import { addDays } from "@/lib/time";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { findItems, firstToFind, pickFor, qtyFor } from "@/lib/shop";
@@ -131,12 +131,16 @@ export function ListScreen({ list, kitchen, error, act, onFind }: {
  * beside it. Find goes through the list's items for that store one at a time; the cart is the store's real cart,
  * changed through the computer. `startAt` opens Find on a list item.
  */
-export function ShopScreen({ list, error, act, startAt, onList }: {
-  list: ListState | null; error: string | null; act: ListActions; startAt: string | null; onList: () => void;
+export function ShopScreen({ list, error, act, startAt, onCart, onList }: {
+  list: ListState | null; error: string | null; act: ListActions; startAt: string | null;
+  /** Open on Cart: only when the helper's panel starts on Shop (Sam, Oct 31). */
+  onCart?: boolean;
+  onList: () => void;
 }) {
   const sw = useSafeway();
-  // In the helper's panel, beside Safeway, Shop opens on Cart (Sam, Oct 31); opened for a list item, on Find.
-  const [view, setView] = useState<ShopView>(() => (!startAt && framed() ? "cart" : "find"));
+  // Shop opens on Cart only as the panel's first screen; any other way here (List's Find, the Shop tab, after adding a
+  // recipe's things) opens Find, unless there's nothing to find.
+  const [view, setView] = useState<ShopView>(() => (onCart || (!startAt && list !== null && !findItems(list.items, list.staples, []).length) ? "cart" : "find"));
   const [online, setOnline] = useState<Store>(ONLINE_STORES[0]); // the store Find and Cart are for
   const [findAt, setFindAt] = useState<string | null>(startAt); // the item Find shows, by id
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
