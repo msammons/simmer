@@ -104,6 +104,23 @@ export async function safewayPage(action, arg, P) {
     return best || title || (img?.alt ?? "").trim();
   }
 
+  /**
+   * A product's picture address. Safeway loads pictures as they're scrolled to: one further down has no picture yet,
+   * only its address waiting in `data-src` (or a `data-srcset` / `srcset` beside it), so those are read too.
+   */
+  function picture(img) {
+    if (!img) return "";
+    const near = [img, ...(img.parentElement ? [...img.parentElement.querySelectorAll("source")] : [])];
+    for (const name of P.imageAttrs ?? ["currentSrc", "src", "data-src"]) {
+      for (const el of near) {
+        const v = (name === "currentSrc" || name === "src" ? el[name] : el.getAttribute(name)) || "";
+        const first = String(v).trim().split(/[\s,]/)[0];
+        if (first && !/^data:|^blob:/.test(first)) return first.startsWith("//") ? `https:${first}` : first;
+      }
+    }
+    return "";
+  }
+
   function products() {
     const seen = new Map();
     for (const { id, card, title } of cards()) {
@@ -114,7 +131,7 @@ export async function safewayPage(action, arg, P) {
       const add = addButton(card), inCart = inCartNow(card);
       if (!add && !inCart) continue;
       const price = (deepAll(card, P.price.selector)[0]?.innerText ?? card.innerText).match(re(P.price.pattern))?.[0] ?? "";
-      seen.set(id, { id, name, price, image: img?.currentSrc || img?.src || "", inCart, qty: inCart ? qtyOf(card) : 0, card });
+      seen.set(id, { id, name, price, image: picture(img), inCart, qty: inCart ? qtyOf(card) : 0, card });
     }
     return [...seen.values()];
   }

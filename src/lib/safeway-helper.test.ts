@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choose, howMany, keyOf, nameWords, PAGE, prepare, safewayItems, score, searchFor, searchWords, usualFor, words } from "./safeway-helper.mjs";
+import { choose, howMany, imageFor, keyOf, nameWords, PAGE, prepare, safewayItems, score, searchFor, searchWords, usualFor, words } from "./safeway-helper.mjs";
 
 const milk = { id: "1", name: "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", price: "$3.49" };
 const milkGal = { id: "2", name: "Lucerne Milk Reduced Fat 2% - 1 Gallon", price: "$5.29" };
@@ -113,5 +113,16 @@ describe("prepare", () => {
     expect("Increase Quantity 1 unit of Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
     expect("Remove Quantity of Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
     expect("Add Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
+  });
+
+  it("reads the search page's count from its stepper's middle button (real page, Oct 31)", () => {
+    expect(PAGE.qtyBox.split(",")[0].trim()).toBe('[data-qa="qty-stppr-qtymsg"]');
+  });
+
+  it("gives every product a picture, even one Safeway hadn't loaded yet", () => {
+    expect(imageFor("960096423", "//images.albertsons-media.com/is/image/ABS/960096423?$grid-product-card-desktop$")).toBe("https://images.albertsons-media.com/is/image/ABS/960096423?$grid-product-card-desktop$");
+    expect(imageFor("970020964", "")).toBe("https://images.albertsons-media.com/is/image/ABS/970020964?$grid-product-card-desktop$&defaultImage=Not_Available");
+    expect(imageFor("970020964", "data:image/gif;base64,R0lGOD")).toMatch(/ABS\/970020964\?/);
+    expect(imageFor("x", "")).toBe("");
   });
 });

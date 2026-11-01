@@ -8,6 +8,7 @@ import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, upda
 import { records } from "./parse";
 import manifest from "../../extension-working/manifest.json";
 import { loadCart, matchCart, savePick, setCartLine } from "./safeway";
+import { imageFor } from "./safeway-helper.mjs";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
 export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot"] as const;
@@ -189,7 +190,8 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 const productsOf = (r: Record<string, unknown>) => (Array.isArray(r.products) ? r.products : []).slice(0, 40).flatMap((p) => {
   const id = str(p?.id, 20);
-  return /^\d+$/.test(id) && str(p?.name) ? [{ id, name: str(p.name, 160), price: str(p.price, 40), image: /^https:\/\//.test(str(p.image, 500)) ? str(p.image, 500) : "", inCart: p.inCart === true, qty: Math.max(0, Math.min(99, Math.round(Number(p.qty) || 0))) }] : [];
+  // A picture Safeway hadn't loaded yet (further down its page) is Safeway's picture for that product number.
+  return /^\d+$/.test(id) && str(p?.name) ? [{ id, name: str(p.name, 160), price: str(p.price, 40), image: imageFor(id, str(p.image, 500)), inCart: p.inCart === true, qty: Math.max(0, Math.min(99, Math.round(Number(p.qty) || 0))) }] : [];
 });
 
 /**
@@ -222,7 +224,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     const a = j.args;
     const qty = Math.max(0, Math.min(99, Math.round(Number(raw.qty) || 0)));
     result = { qty, reached: raw.ok !== false && qty === Number(a.qty) };
-    const name = str(raw.name, 160) || str(a.name, 160), image = str(raw.image, 500) || str(a.image, 500);
+    const name = str(raw.name, 160) || str(a.name, 160), image = imageFor(str(a.productId, 20), str(raw.image, 500) || str(a.image, 500));
     await setCartLine({ productId: str(a.productId, 20), qty, name, price: str(raw.price, 40) || str(a.price, 40), image, itemId: str(a.itemId, 40), item: str(a.item, 80) });
     if (qty > 0 && str(a.item, 80)) await savePick({ item: str(a.item, 80), id: str(a.productId, 20), name, image }).catch((e) => console.error("couldn't keep the pick", e));
   }
