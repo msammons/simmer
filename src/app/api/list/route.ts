@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST { op, ... }: add { text, by }, many { items: { item, quantity }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
+ * POST { op, ... }: add { text, by }, many { items: { item, quantity, check? }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
  * done { store }, clear { ids } (answers with `cleared`, for Undo), putBack { items }, and Stock's keepAdd { text, section? },
  * keepRemove { item }, keepMove { item, section }. Answers with the list as it is after the change.
  */
@@ -40,8 +40,8 @@ export async function POST(req: Request) {
       case "move": await moveItem(clean(b.id, 40), { ...(isStore(b.store) && { store: b.store }), ...(isSection(b.section) && { section: b.section }) }); break;
       case "many": {
         // A recipe's ingredients: merged into what's already on the list, in one write.
-        const items: { item?: unknown; quantity?: unknown }[] = Array.isArray(b.items) ? b.items.slice(0, 80) : [];
-        await addItems(items.map((it) => ({ item: clean(it?.item), quantity: clean(it?.quantity, 30), for: clean(b.for, 60) })), clean(b.by, 20));
+        const items: { item?: unknown; quantity?: unknown; check?: unknown }[] = Array.isArray(b.items) ? b.items.slice(0, 80) : [];
+        await addItems(items.map((it) => ({ item: clean(it?.item), quantity: clean(it?.quantity, 30), for: clean(b.for, 60), check: Boolean(it?.check) })), clean(b.by, 20));
         break;
       }
       case "need": await needItem(clean(b.id, 40)); break;
