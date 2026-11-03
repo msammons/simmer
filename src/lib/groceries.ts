@@ -320,13 +320,16 @@ export const removeStaple = (item: string) => writeStaples((all) => all.filter((
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 
 /**
- * A new week's groceries are coming: what an earlier week's meals had highlighted in Stock (added before `monday`, never
- * checked) stops being highlighted (Matt, Nov 2: the highlights reset when the next week is planned).
+ * Planning again: what Stock highlights to check (check, not yet ticked) for a dinner that's no longer planned (made or
+ * removed since) stops being highlighted. An item belongs to what's planned when its `for` names one of `planned` (a
+ * dish's name, or "lunches"). Made and removed leave the list alone; this tidy-up happens only when planning, so it's
+ * one rule in one place (Nov 3, replacing "highlights reset with a new week").
  */
-export async function dropHighlightsBefore(monday: string) {
-  const old = (x: Item) => x.check && !x.checked && x.addedAt.slice(0, 10) < monday;
-  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !old(x)); return; }
+export async function dropHighlightsNotFor(planned: string[]) {
+  const names = planned.map(norm).filter(Boolean);
+  const stale = (x: Item) => x.check && !x.checked && !names.some((n) => norm(x.for).includes(n));
+  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !stale(x)); return; }
   const { items } = await loadList();
-  const ids = items.filter(old).map((x) => x.id);
+  const ids = items.filter(stale).map((x) => x.id);
   if (ids.length) await removeItems(ids);
 }
