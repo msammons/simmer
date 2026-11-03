@@ -109,6 +109,29 @@ async function cartHere(tabId, page, settings) {
 }
 
 /**
+ * Safeway's Purchases page, Online tab (1.3): opened, the tab pressed once if another is showing, then watched until an
+ * order with a date is listed, or "no orders" has held for a few seconds (as with "no results", it may show for a
+ * moment while the page builds). Answers what page.js read, or null when it never loaded.
+ */
+async function readOrders(tabId, page, settings) {
+  await go(tabId, `${page.site}${page.orders.path}`);
+  let last = null, pressed = false, none = 0;
+  for (let i = 0; i < (settings.ordersTries ?? 15); i++) {
+    const r = await onPage(tabId, "orders", { pressed }, page);
+    if (r) {
+      last = r;
+      pressed ||= r.pressed;
+      if (r.signedIn === false) return r;
+      if (r.online && !r.none && r.entries.length) return r;
+      if (r.online && r.none) { none ||= Date.now(); if (Date.now() - none >= (settings.noResultsHold ?? 4000)) return r; }
+      else none = 0;
+    }
+    await sleep(settings.resultsWait ?? 800);
+  }
+  return last;
+}
+
+/**
  * Does one job. Answers { ok: true, result } or { ok: false, error } with an error word Simmer turns into plain words
  * ("signed-out", "not-found", "not-loaded", "failed").
  */
@@ -124,7 +147,13 @@ export async function runJob(job, windowId) {
   if (job.kind === "cart") {
     const r = await cartHere(tabId, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
-    return { ok: true, result: { products: r.products, signedIn: r.signedIn, empty: Boolean(r.held && r.noResults && !r.products.length) } };
+    const empty = Boolean(r.held && r.noResults && !r.products.length);
+    // An empty cart may mean the order went through: Safeway's Purchases page (Online) says, and Simmer decides (1.3).
+    // Only asked for when Simmer's copy of the cart has something in it (`args.orders`).
+    const orders = empty && args.orders === true && r.signedIn !== false && page.orders?.path ? await readOrders(tabId, page, settings) : null;
+    // Back to the cart page, which is what the Safeway tab shows beside Simmer's Lists.
+    if (orders) await go(tabId, `${page.site}${page.cartPath}`);
+    return { ok: true, result: { products: r.products, signedIn: r.signedIn, empty, ...(orders && { orders }) } };
   }
   if (job.kind === "setQty") {
     // Where the product can be changed: Safeway's cart page first when asked (from Cart, where it's listed), then

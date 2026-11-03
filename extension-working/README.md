@@ -4,7 +4,7 @@ Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the Safewa
 from a real browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does
 Simmer's small Safeway jobs on safeway.com and reports back. It never signs in and never checks out.
 
-## How it works (1.0; 1.2 adds the cart page)
+## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push)
 
 - **Jobs.** Simmer queues a job (`/api/safeway/jobs`): `search` (a search's products with picture, name, price and
   whether each is in the cart), `setQty` (press Add / + / − on a product until the cart holds that many; 0 takes it
@@ -18,6 +18,19 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   (`background.js`) checks for jobs every half minute; once there's activity, or while the panel is open, it checks
   every couple of seconds until a few minutes pass with nothing. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **Did the order go through? (1.3)** When the cart page says "Your shopping cart is empty." and Simmer's copy of the
+  cart had something in it, the helper opens Safeway's Purchases page (`PAGE.orders.path`), presses its **Online** tab,
+  reads it, and goes back to the cart page. Simmer decides: an order listed with a date on or after the day the cart was
+  last filled means it went through (the cart's things come off the Safeway list, the trip is recorded); "You have no
+  orders placed within the last 90 days." means the cart only emptied (Simmer's copy empties, the list stays). The
+  page's words are kept in the job's result, so the first real order shows whether `PAGE.orders` reads it right.
+- **Woken by push (1.3).** When Simmer has VAPID keys (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` in
+  Vercel), the helper subscribes to Web Push with Simmer's public key and sends Simmer the subscription (kept on the
+  helper's check-in row); every queued job sends an empty push and the helper checks at once. Silent pushes need
+  Chrome 121 or later and the `notifications` permission (Chrome requires it for push in an extension; nothing is ever
+  shown). Without the keys nothing is sent and the half-minute alarm does it, as before.
+- **Away.** The half-minute alarm checks in even with nothing to do, so when Simmer hasn't heard from the helper for two
+  minutes, Lists greys the Safeway cart and turns its rows into a checklist until it's back.
 - **The panel is Simmer.** After the one-time setup (Simmer's address and the household passcode, kept on this computer
   only), the panel shows Simmer itself, opening on Shop. The passcode goes to Simmer by message, never in the address.
   So the computer and the phone are the same experience, and both go through the same jobs.
@@ -66,6 +79,8 @@ Whether Safeway's search fills in a tab nobody's looking at; whether − at one 
 confirmation step; the − / + buttons' labels on the real page (read from Safeway's code, not pressed); and anything
 about the cart page (1.2): its address (`PAGE.cartPath`), whether its products read like search tiles, and its
 buttons. If they don't, cart changes fall back to searching, and a `sample` job with `on: "cart"` shows what to put in
-`PAGE.cartItems`. Also unseen: whether the whole name of a shortened title is in the product's button labels. When
+`PAGE.cartItems`. Also unseen: whether the whole name of a shortened title is in the product's button labels, and (1.3) what an order
+looks like on the Purchases page's Online tab: `PAGE.orders.entry` is a guess, and the first real order's words (in the
+cart job's result) show what to put there. When
 something doesn't match, a `sample` or `snapshot` job's text (kept in the Sheet's "Safeway jobs" tab) shows what
 Safeway sent, to fix `PAGE` in Simmer.

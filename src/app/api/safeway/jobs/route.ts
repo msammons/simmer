@@ -1,10 +1,14 @@
+import { after } from "next/server";
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { cancelJob, finishJob, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, takeJob, type JobKind } from "@/lib/jobs";
+import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind } from "@/lib/jobs";
+import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 
 const text = (s: unknown, max = 160) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
+/** Chrome's push service (the helper runs in Chrome), so Simmer only ever sends its wake-ups there. */
+const pushService = (u: string) => { try { const x = new URL(u); return x.protocol === "https:" && /(^|\.)(googleapis|google)\.com$/.test(x.hostname); } catch { return false; } };
 const noStore = { headers: { "cache-control": "no-store" } };
 const failed = (e: unknown) => Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
 
@@ -46,7 +50,8 @@ export async function GET(req: Request) {
 
 /**
  * POST { op, ... }. From Simmer: queue { kind, from, ...args } → { job, answering }, cancel { id }. From the helper: next
- * { version, panel } → { job (with Simmer's page details and settings) | null }, done { id, result }, failed { id, error }.
+ * { version, panel } → { job (with Simmer's page details and settings) | null, push: { key, have } }, done { id, result },
+ * failed { id, error }, push { key, subscription } (1.3: how to wake it when a job is queued).
  */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
@@ -58,12 +63,24 @@ export async function POST(req: Request) {
         const args = argsFor(b.kind, b);
         if (!args) return Response.json({ error: "What should it look for?" }, { status: 400 });
         const { answering } = await helperStatus();
-        return Response.json({ job: await queueJob(b.kind, { ...args, from: b.from === "panel" ? "panel" : "app" }), answering }, noStore);
+        const job = await queueJob(b.kind, { ...args, from: b.from === "panel" ? "panel" : "app" });
+        // Wakes the helper so it starts in a second rather than at its next half-minute check (Nov 3).
+        after(() => wakeHelper().catch((e) => console.error("couldn't wake the helper", e)));
+        return Response.json({ job, answering }, noStore);
       }
       case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
       case "next": {
         const job = await takeJob(text(b.version, 20), b.panel === true);
-        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS }, noStore);
+        // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
+        const key = pushKey(), have = key ? (await helperPush())?.key === key : false;
+        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS, ...(key && { push: { key, have } }) }, noStore);
+      }
+      case "push": {
+        const s = b.subscription, key = text(b.key, 200);
+        const endpoint = text(s?.endpoint, 1000), p256dh = text(s?.keys?.p256dh, 200), auth = text(s?.keys?.auth, 100);
+        if (!key || key !== pushKey() || !pushService(endpoint) || !p256dh || !auth) return Response.json({ error: "Unknown change." }, { status: 400 });
+        await savePush({ key, sub: { endpoint, keys: { p256dh, auth } } });
+        return Response.json({ ok: true }, noStore);
       }
       case "done": case "failed": {
         const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40) };
