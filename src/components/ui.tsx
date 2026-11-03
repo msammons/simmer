@@ -188,14 +188,15 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-full bg-sunk p-1">
+    // Sized to the words, so "Trader Joe's" and "Costco" don't run together on a narrow phone (320 px, Nov 3).
+    <div role="radiogroup" aria-label={label} className="flex gap-0.5 rounded-full bg-sunk p-1">
       {options.map((o) => (
         <button
           key={o.value}
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`whitespace-nowrap rounded-full px-1.5 py-1.5 t-sub font-medium transition ${value === o.value ? "glass text-ink" : "text-muted"}`}
+          className={`min-w-0 flex-auto truncate whitespace-nowrap rounded-full px-1.5 py-1.5 t-sub font-medium transition ${value === o.value ? "glass text-ink" : "text-muted"}`}
         >
           {o.label}
         </button>
