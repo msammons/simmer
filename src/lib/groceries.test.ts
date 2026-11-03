@@ -10,6 +10,7 @@ describe("the grocery list", () => {
     expect(parseEntry("2 lb ground beef")).toEqual({ quantity: "2 lb", item: "ground beef" });
     expect(parseEntry("1/2 gallon milk")).toEqual({ quantity: "1/2 gallon", item: "milk" });
     expect(parseEntry("2 garlic")).toEqual({ quantity: "2", item: "garlic" });
+    expect(parseEntry("1 1/2 lb ground beef")).toEqual({ quantity: "1 1/2 lb", item: "ground beef" });
     expect(norm("Lemons")).toBe(norm("lemon"));
   });
   it("counts only what went on a list, not the pantry highlighted in Stock", async () => {
