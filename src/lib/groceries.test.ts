@@ -26,6 +26,13 @@ describe("the grocery list", () => {
     expect(await file("Grapes")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("apples")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("goldfish crackers")).toEqual({ store: "safeway", section: "pantry" });
+    // Phrases stay whole (Nov 3): cream isn't freezer, milk and butter aren't pantry.
+    expect(await file("heavy whipping cream")).toEqual({ store: "safeway", section: "fresh" });
+    expect(await file("milk")).toEqual({ store: "safeway", section: "fresh" });
+    expect(await file("butter")).toEqual({ store: "safeway", section: "fresh" });
+    expect(await file("peanut butter")).toEqual({ store: "safeway", section: "pantry" });
+    expect(await file("graham crackers")).toEqual({ store: "safeway", section: "pantry" });
+    expect(await file("vanilla ice cream")).toEqual({ store: "safeway", section: "freezer" });
   });
   it("merges the same thing, checks it off, and clears a store's checked items when the trip is done", async () => {
     const a = await addItem("2 lemons", "Robin");
