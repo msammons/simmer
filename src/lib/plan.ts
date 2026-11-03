@@ -1,6 +1,6 @@
 // What's planned, in the Sheet (docs/PLAN.md, section 3). Meals and lunches are planned by number, not by day (Nov 3):
-// the Planned tab has one row per thing to make or pack (a dinner, a dessert, a lunch), ticked off with the date it was
-// made. Made (the log that keeps "last made" true), Trips (finished shopping trips, for the store rhythm), Lunches (each
+// the Planned tab has one row per thing to make or pack (a dinner, a dessert, a lunch). Dinners are ticked off with the
+// date they were made; lunches aren't tracked, so planning lunches again replaces them. Made (the log that keeps "last made" true), Trips (finished shopping trips, for the store rhythm), Lunches (each
 // boy's options) and Plan counts (how many of each were asked for last time). The old Plan and Lunch plan tabs (one row
 // per night, per school day) are only read: what was still to come moved into Planned once (their `moved` column).
 // Rows are matched by their key and only those rows are written, so a hand edit anywhere else survives. Without the
@@ -248,7 +248,8 @@ export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned">;
 export type NewLunch = Omit<Lunch, "id">;
 
 /**
- * Plans more: the new dishes and lunches join what's still to make and pack (nothing planned before is touched), last
+ * Plans more: the new dishes join what's still to make, and the new lunches replace each boy's planned ones (lunches
+ * aren't ticked off as packed, Nov 3); a boy planned at 0 has none. Last
  * time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
  * fresh things to buy, pantry things to check (Nov 3: no more waiting for a night to come close).
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
@@ -256,6 +257,10 @@ export type NewLunch = Omit<Lunch, "id">;
  */
 export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number }> {
   const today = todayIn();
+  if (counts) {
+    const kids = Object.keys(counts.lunches).map(norm);
+    await removeRows(PLANNED, (get) => get("kind") === "lunch" && !get("made") && kids.includes(norm(get("kid"))));
+  }
   await append(PLANNED, [
     ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),
     ...lunches.map((l) => ({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today })),
