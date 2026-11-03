@@ -7,8 +7,6 @@
 import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 import manifest from "../../extension-working/manifest.json";
-import { doneShopping } from "./groceries";
-import { recordTrip } from "./plan";
 import { clearCart, loadCart, matchCart, savePick, setCartLine } from "./safeway";
 import { imageFor } from "./safeway-helper.mjs";
 
@@ -233,25 +231,18 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind === "cart") {
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
-    if (result.signedIn && raw.empty === true) await orderWentThrough();
+    if (result.signedIn && raw.empty === true) await clearCart();
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }
 
-/**
- * Safeway's cart page says the cart is empty (and kept saying it, so it isn't a page still building) while Simmer's cart
- * still has things in it: the order went through (Matt: "the cart empties"). What was in the cart comes off the Safeway
- * list, along with anything ticked there, and the trip is counted.
+/*
+ * Safeway's cart page saying "Your shopping cart is empty." only means the cart is empty: on Nov 3 it read that with
+ * nothing ordered (a sign-in had emptied it). So Simmer's copy of the cart empties and the list stays; the things come
+ * off the list when someone says they ordered ("Ordered? Take the cart off the list") or finishes the trip.
  */
-async function orderWentThrough() {
-  const cart = (await loadCart()).filter((l) => l.cart === "safeway");
-  if (!cart.length) return;
-  await doneShopping("safeway", new Set(cart.map((l) => l.itemId).filter(Boolean)));
-  await clearCart();
-  await recordTrip("safeway").catch((e) => console.error("couldn't record the trip", e));
-}
 
 /** The panel's activity log: recent searches and cart changes, newest first, with where each was asked for. */
 export async function recentJobs(limit = 20): Promise<Activity[]> {

@@ -5,7 +5,7 @@
 // - The cart: what was put in the Safeway cart through Simmer, one row per product, in the "Safeway cart" tab. Safeway's
 //   own cart page can't be read yet, so anything added on Safeway directly doesn't show here. The `cart` column says
 //   which cart a row belongs to ("safeway" for now), so more than one can be kept later.
-import { appendRows, ensureTab, readTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 import { norm } from "./words";
 
@@ -20,7 +20,7 @@ const safeImage = (s: unknown) => (typeof s === "string" && /^https:\/\/[^\s"'<>
 
 export async function loadPicks(): Promise<Pick[]> {
   if (!sheetsConfigured()) return memory.map((p) => ({ ...p }));
-  const rows = await readTab(TAB).catch(() => [] as string[][]);
+  const rows = await readTabIfAny(TAB);
   return records(rows).flatMap((r) => (r.get("item") && /^\d+$/.test(r.get("product_id"))
     ? [{ item: r.get("item"), id: r.get("product_id"), name: r.get("product_name"), ...(r.get("product_image") && { image: r.get("product_image") }) }] : []));
 }

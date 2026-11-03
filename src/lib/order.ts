@@ -2,7 +2,7 @@
 // left on. Simmer keeps the one current order in the "Safeway order" tab: the phone starts it and answers questions,
 // the helper picks it up, fills the cart, reports each item, and asks when it isn't sure. Without the Sheet (local dev)
 // it lives in memory.
-import { ensureTab, readTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { ensureTab, readTabIfAny, sheetsConfigured, updateRange } from "./google/sheets";
 import { records } from "./parse";
 
 /**
@@ -27,7 +27,7 @@ const json = <T>(s: string, fallback: T): T => { try { return s ? (JSON.parse(s)
 
 export async function loadOrder(): Promise<Order | null> {
   if (!sheetsConfigured()) return memory;
-  const r = records(await readTab(TAB).catch(() => [] as string[][]))[0];
+  const r = records(await readTabIfAny(TAB))[0];
   if (!r?.get("id")) return null;
   return {
     id: r.get("id"), status: (r.get("status") || "waiting") as OrderStatus, started: r.get("started"), updated: r.get("updated"), note: r.get("note"),

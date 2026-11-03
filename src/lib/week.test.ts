@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromDraft, type Draft, type Recipe } from "./recipes";
-import { applyShape, choices, eatingText, emptyNight, lunchShopping, nextOption, planLunches, rank, readEating, suggestWeek, weekDates, weekOf, type Context, type LunchOption } from "./week";
+import { applyShape, choices, isDinner, eatingText, emptyNight, lunchShopping, nextOption, planLunches, rank, readEating, suggestWeek, weekDates, weekOf, type Context, type LunchOption } from "./week";
 
 const base: Draft = { name: "", effort: "quick", minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" };
 const r = (id: string, p: Partial<Draft>): Recipe => fromDraft({ ...base, name: id, id, ...p });
@@ -52,6 +52,14 @@ describe("planning the week", () => {
     expect(regular.indexOf("mushroom risotto")).toBeGreaterThan(regular.indexOf("gazpacho") - 1); // Theo and mushrooms
   });
 
+  it("never suggests a dessert, side or breakfast for dinner", () => {
+    expect(isDinner(r("pie", { tags: ["pumpkin", "pie", "Dessert", "thanksgiving"] }))).toBe(false);
+    expect(isDinner(r("slaw", { tags: ["side dish"] }))).toBe(false);
+    expect(isDinner(r("pot pie", { tags: ["chicken", "pie"] }))).toBe(true);
+    const pie = r("pie", { effort: "regular", tags: ["dessert"], rating: 3 });
+    const nights = weekDates(monday).map((d) => emptyNight(d, "regular"));
+    expect(rank(nights, 2, { ...ctx, recipes: [...recipes, pie] }).map((o) => o.recipe.id)).not.toContain("pie");
+  });
   it("fills the open nights without repeats, keeping pinned and skipped ones", () => {
     const nights = weekDates(monday).map((d, i) => emptyNight(d, i === 5 ? "skip" : i % 2 ? "regular" : "quick"));
     nights[1] = { ...nights[1], meal: "Dinner with G&G", pinned: true };

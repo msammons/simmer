@@ -65,6 +65,9 @@ describe("how many", () => {
     expect(howMany("dozen")).toBe(1);
     expect(howMany("")).toBe(1);
     expect(howMany("40")).toBe(12);
+    expect(howMany("2", "O Organics Organic Eggs Large Brown - 18 Count")).toBe(1);
+    expect(howMany("24", "Eggs Large - 1 Dozen")).toBe(2);
+    expect(howMany("3", "Lemons")).toBe(3);
   });
 });
 
