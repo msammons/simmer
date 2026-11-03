@@ -8,14 +8,19 @@ import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, upda
 import { records } from "./parse";
 import manifest from "../../extension-working/manifest.json";
 import { clearCart, loadCart, matchCart, savePick, setCartLine } from "./safeway";
-import { imageFor } from "./safeway-helper.mjs";
+import { imageFor, orderSince } from "./safeway-helper.mjs";
+import { doneShopping } from "./groceries";
+import { recordTrip } from "./plan";
+import { todayIn } from "./time";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
 export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
-export type Helper = { seen: string; version: string; panel: boolean };
+/** A browser push subscription (its JSON), and the public key it was made with. */
+export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
+export type Helper = { seen: string; version: string; panel: boolean; push?: { key: string; sub: PushSub } | null };
 /** Where a job was asked for: Simmer in the helper's panel, or anywhere else (the phone, mostly). */
 export type JobFrom = "panel" | "app";
 /** A job as the panel's activity log tells it. */
@@ -26,9 +31,11 @@ export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatu
  * every half minute, so two missed checks). `pickup`: a job nobody's taken by then is given up. `stuck`: a job taken but not reported by then
  * failed. `keep`: finished jobs are kept this long. `seenEvery`: how often a check-in is written down (so `alive` survives
  * a lost write or two). `cache`: how long one read of the tab answers everyone's checks. `stale`: when the Sheet can't
- * be read (it allows 60 reads a minute), the last copy answers for this long instead of the tab looking empty.
+ * be read (it allows 60 reads a minute), the last copy answers for this long instead of the tab looking empty. `away`:
+ * no check-in for this long and Lists greys the Safeway cart and makes its rows a checklist (Nov 3). The helper's
+ * half-minute alarm checks in whenever Chrome runs, even with nothing to do, so that's four missed checks.
  */
-export const JOB_TIMES = { alive: 90_000, pickup: 35_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
+export const JOB_TIMES = { alive: 90_000, away: 120_000, pickup: 35_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
 
 const TAB = "Safeway jobs";
 const HEADERS = ["id", "kind", "status", "args", "result", "created", "updated"];
@@ -46,6 +53,8 @@ const json = <T>(s: string, fallback: T): T => { try { return s ? (JSON.parse(s)
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const now = () => new Date().toISOString();
 const age = (iso: string) => Date.now() - Date.parse(iso || "1970-01-01");
+/** What the helper's row keeps besides when it was seen. */
+const helperCell = (h: Omit<Helper, "seen">) => JSON.stringify({ version: h.version, panel: h.panel, ...(h.push && { push: h.push }) });
 const cells = (j: Job) => [j.id, j.kind, j.status, JSON.stringify(j.args), j.result ? JSON.stringify(j.result) : "", j.created, j.updated];
 
 /**
@@ -69,7 +78,7 @@ export function parseTab(rows: string[][]): Tab {
   const jobs: Row[] = [];
   for (const r of records(rows)) {
     if (r.get("id") === HELPER) {
-      const h = { seen: r.get("updated"), ...json(r.get("result"), { version: "", panel: false }) };
+      const h: Helper = { seen: r.get("updated"), ...json<Omit<Helper, "seen">>(r.get("result"), { version: "", panel: false }) };
       if (helper) junk++;
       if (!helper || h.seen > helper.seen) { helper = h; helperRow = r.rowNumber; }
       continue;
@@ -108,7 +117,7 @@ async function prune({ jobs, junk }: Tab) {
   const keep = jobs.filter((j) => !old(j));
   if (!sheetsConfigured()) { memory.jobs = keep; return; }
   const h = (await read()).helper;
-  await replaceTab(TAB, [HEADERS, ...(h ? [[HELPER, "check-in", "", "", JSON.stringify({ version: h.version, panel: h.panel }), "", h.seen]] : []), ...keep.map(cells)]);
+  await replaceTab(TAB, [HEADERS, ...(h ? [[HELPER, "check-in", "", "", helperCell(h), "", h.seen]] : []), ...keep.map(cells)]);
   cache = lastGood = null;
 }
 
@@ -128,9 +137,12 @@ export const helperOutdated = (h: Helper | null) => {
   return false;
 };
 
-export async function helperStatus(): Promise<{ answering: boolean; seen: string; outdated: boolean }> {
+/** Not checked in for a couple of minutes (or never): Safeway can't be reached from Simmer just now. */
+export const helperAway = (h: Helper | null) => !h || age(h.seen) >= JOB_TIMES.away;
+
+export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
   const { helper } = await read();
-  return { answering: helperAnswering(helper), seen: helper?.seen ?? "", outdated: helperOutdated(helper) };
+  return { answering: helperAnswering(helper), seen: helper?.seen ?? "", away: helperAway(helper), outdated: helperOutdated(helper) };
 }
 
 /**
@@ -144,8 +156,13 @@ export async function queueJob(kind: JobKind, args: Record<string, unknown>): Pr
     const same = jobs.find((j) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j));
     if (same) return write({ ...same, args: { ...same.args, ...args } }, same.row);
   }
-  // Showing the cart: one waiting is enough.
-  if (kind === "cart") { const same = jobs.find((j) => j.kind === "cart" && j.status === "waiting" && !overdue(j)); if (same) return same; }
+  // Showing the cart: one waiting is enough. While Simmer's copy has something in it, an empty Safeway cart also means
+  // reading the Purchases page, to see whether the order went through (Nov 3).
+  if (kind === "cart") {
+    const same = jobs.find((j) => j.kind === "cart" && j.status === "waiting" && !overdue(j));
+    if (same) return same;
+    args = { ...args, orders: (await loadCart()).length > 0 };
+  }
   await prune(tab).catch((e) => console.error("couldn't prune the jobs", e));
   return write({ id: newId(), kind, status: "waiting", args, result: null, created: now(), updated: now() });
 }
@@ -167,16 +184,30 @@ export async function cancelJob(id: string): Promise<void> {
 
 /** The helper: note that it's there (written down at most every 20 seconds, or when the panel opens or closes). */
 async function checkIn(version: string, panel: boolean) {
-  const { helper, helperRow, rows } = await read();
+  const { helper } = await read();
   if (helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version) return;
-  const h: Helper = { seen: now(), version, panel };
+  await writeHelper({ seen: now(), version, panel, push: helper?.push ?? null });
+}
+
+/** The helper's row, written where it's read from (the latest, when there are several), so what's written is what's read. */
+async function writeHelper(h: Helper) {
   if (!sheetsConfigured()) { memory.helper = h; return; }
-  const row = [HELPER, "check-in", "", "", JSON.stringify({ version, panel }), "", h.seen];
-  // The row the check-in is read from (the latest, when there are several), so what's written is what's read.
+  const { helperRow, rows } = await read();
+  const row = [HELPER, "check-in", "", "", helperCell(h), "", h.seen];
   if (helperRow) await updateRange(`${TAB}!A${helperRow}:G${helperRow}`, [row]);
   else { if (!rows) await ensureTab(TAB); await appendRows(TAB, [...(rows ? [] : [HEADERS]), row]); cache = lastGood = null; return; }
   for (const t of [cache, lastGood]) if (t) t.helper = h;
 }
+
+/**
+ * Waking the helper (Nov 3): its push subscription, kept on its row with the public key it was made with (a new key
+ * needs a new subscription). Null takes it off, when the push service says it's gone.
+ */
+export async function savePush(push: { key: string; sub: PushSub } | null): Promise<void> {
+  const { helper } = await read();
+  await writeHelper({ seen: helper?.seen ?? now(), version: helper?.version ?? "", panel: helper?.panel ?? false, push });
+}
+export const helperPush = async () => (await read()).helper?.push ?? null;
 
 /** The helper: check in, and take the oldest waiting job (null when there's none). */
 export async function takeJob(version: string, panel: boolean): Promise<Job | null> {
@@ -231,18 +262,42 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind === "cart") {
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
-    if (result.signedIn && raw.empty === true) await clearCart();
+    if (result.signedIn && raw.empty === true) result = { ...result, ...(await emptied(raw.orders)) };
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }
 
-/*
- * Safeway's cart page saying "Your shopping cart is empty." only means the cart is empty: on Nov 3 it read that with
- * nothing ordered (a sign-in had emptied it). So Simmer's copy of the cart empties and the list stays; the things come
- * off the list when someone says they ordered ("Ordered? Take the cart off the list") or finishes the trip.
+/** What the helper read on Safeway's Purchases page, checked and trimmed (the page's words kept, to learn from). */
+const ordersOf = (o: unknown) => {
+  if (!o || typeof o !== "object") return null;
+  const x = o as Record<string, unknown>;
+  return {
+    online: x.online === true, none: x.none === true, signedIn: x.signedIn !== false,
+    entries: (Array.isArray(x.entries) ? x.entries : []).slice(0, 10).map((e) => str(e, 400)).filter(Boolean), text: str(x.text, 2000),
+  };
+};
+
+/**
+ * Safeway's cart page said "Your shopping cart is empty." That alone only means the cart is empty: on Nov 3 it read
+ * that with nothing ordered (a sign-in had emptied it). So the helper also reads the Purchases page (Online, Nov 3): an
+ * order there placed since Simmer's cart was last filled means it went through, so the cart's things come off the
+ * Safeway list and the trip is recorded, as Done shopping does. Otherwise only Simmer's copy of the cart empties and the
+ * list stays ("Ordered? Take the cart off the list" is still there for when this can't tell).
  */
+async function emptied(read: unknown): Promise<{ ordered: boolean; orders?: ReturnType<typeof ordersOf> }> {
+  const orders = ordersOf(read);
+  const cart = await loadCart();
+  const filled = cart.map((l) => l.updated).filter(Boolean).sort().at(-1);
+  const ordered = Boolean(cart.length && orders?.signedIn && orderSince(orders, filled ? todayIn(new Date(filled)) : "", todayIn()));
+  if (ordered) {
+    await doneShopping("safeway", new Set(cart.map((l) => l.itemId).filter(Boolean)));
+    await recordTrip("safeway").catch((e) => console.error("couldn't record the trip", e));
+  }
+  await clearCart();
+  return { ordered, ...(orders && { orders }) };
+}
 
 /** The panel's activity log: recent searches and cart changes, newest first, with where each was asked for. */
 export async function recentJobs(limit = 20): Promise<Activity[]> {

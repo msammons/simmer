@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Simmer",
-  "version": "1.2.6",
+  "version": "1.3.0",
   "description": "Simmer's hands in this Chrome: does Simmer's store searches and cart changes, for the phone and for Simmer in this panel. You check out yourself.",
   "permissions": [
     "sidePanel",
     "storage",
     "scripting",
     "tabs",
-    "alarms"
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://www.safeway.com/*",

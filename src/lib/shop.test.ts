@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, buyAmount, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -64,5 +64,17 @@ describe("the cart", () => {
   it("shows on the list what's in the cart for an item", () => {
     expect(inCartLine([line("1", "a", 2)], { id: "a" })).toBe("In the cart · 2");
     expect(inCartLine([line("1", "a", 2)], { id: "b" })).toBe("");
+  });
+});
+
+describe("amounts on Safeway rows (Nov 3)", () => {
+  it("keeps weights and counts, drops spoons, cups and recipe names", () => {
+    expect(buyAmount("1 1/2 lb")).toBe("1½ lb");
+    expect(buyAmount("1/2 lb (Tacos)")).toBe("½ lb");
+    expect(buyAmount("8")).toBe("8");
+    expect(buyAmount("2 lb, for Chili")).toBe("2 lb");
+    expect(buyAmount("2 cans")).toBe("2 cans");
+    expect(buyAmount("a dozen")).toBe("a dozen");
+    for (const q of ["2 tbsp", "1 cup", "1/2 teaspoon", "1 Tablespoon", "a pinch", "3 cloves", "to taste", "", "some"]) expect(buyAmount(q)).toBe("");
   });
 });

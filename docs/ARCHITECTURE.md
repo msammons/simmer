@@ -55,8 +55,10 @@ pruned as it goes), the helper takes it, does it on safeway.com and reports back
 Simmer's cart ("Safeway cart" tab, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway tab, now with the product's picture address; pictures
 are shown from Safeway, never stored). The helper's last check-in is kept too, so when the computer isn't answering
-Find says so at once rather than waiting. Simmer's cart is only what was added through Simmer: Safeway's own cart page
-isn't read (yet). Done shopping for Safeway clears what's ticked or in the cart, and empties the cart. Simmer may be
+Find says so at once rather than waiting; after two minutes without one, Lists greys the cart and the Safeway rows
+become a checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
+once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
+order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Done shopping for Safeway clears what's ticked or in the cart, and empties the cart. Simmer may be
 framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the
 passcode by message from its parent, only from a Chrome helper page, never from the address.
 

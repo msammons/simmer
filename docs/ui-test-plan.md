@@ -67,22 +67,25 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
 | 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
 | 5.6 | Clear | Confirms first, then clears with Undo; Undo brings everything back | L |
+| 5.6b | Done shopping | Asks first ("Done at Trader Joe's? 6 things come off the list."); Cancel leaves everything; no Undo after | L |
 | 5.7 | Water, salt, spices from a recipe | Never on a list (salt/spices are highlighted in Stock) | L |
 
 ## 6. Lists → Safeway (the cart)
 
 | # | Do | Expect | Where |
 |---|----|--------|-------|
-| 6.1 | Safeway with known products | "Same as last time" with product, picture, "Need …", Add; "Auto-fill N" | R |
+| 6.1 | Safeway with known products | "Same as last time" with product, picture, "Need …" (weights and counts only, never spoons or cups), Add; "Auto-fill N" | R |
 | 6.2 | Auto-fill | Each row spins, then moves to In the cart; header "n in the cart · $total" | R |
 | 6.3 | Find on a "To find" row | Choices sheet: "k of N", item name, amount, search box, products with Add; wide screens show a grid that fits | R |
 | 6.4 | Add in the sheet | Becomes − n +; grid doesn't reorder; "Next: <item>" appears | R |
 | 6.5 | Skip / Next | Moves to the next item still to find | R |
 | 6.6 | − / + in In the cart | Quantity changes in Simmer and on Safeway's cart page | R |
 | 6.7 | Compare with Safeway's cart page | Same products and quantities; total matches | R |
-| 6.8 | Safeway cart emptied without ordering | Simmer's cart empties; the list rows stay (to add again) | R |
+| 6.8 | Safeway cart emptied without ordering | Simmer's cart empties; the list rows stay (to add again); the Safeway tab visits Purchases → Online, then the cart again | R |
+| 6.8b | Order placed on Safeway, then Lists → Safeway in the panel | The cart's rows come off the Safeway list by themselves; the cart starts empty (never seen yet: the first real order shows whether Purchases reads right) | R |
 | 6.9 | "Ordered? Take the cart off the list" | The cart's rows come off the Safeway list; the cart starts empty | R |
-| 6.10 | Helper not running | Plain "connection" message and a way to add on Safeway directly | R |
+| 6.10 | Helper not running (two minutes or more) | "Can't reach Safeway right now…"; the cart greyed with − / + off; Add, Find, Auto-fill off; rows tick like Trader Joe's, then Done shopping; all back once it checks in | L |
+| 6.11 | Find from the phone with Chrome idle | The search starts within a couple of seconds (a push wakes the helper), not up to half a minute | R |
 
 ## 7. Stock
 
