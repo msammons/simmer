@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addStaple, checkItem, dropHighlightsBefore, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -66,15 +66,17 @@ describe("Stock and Clear", () => {
 });
 
 describe("meal highlights", () => {
-  it("an earlier week's highlights go when a new week's groceries come; this week's stay", async () => {
+  it("highlights for something no longer planned go when planning again; the rest stay", async () => {
     await addStaple("cinnamon");
-    await addItems([{ item: "cinnamon", quantity: "2 tsp", for: "Sunday's pie" }], "Robin");
-    const it = (await loadList()).items.find((x) => x.item === "cinnamon")!;
-    expect(it.check).toBe(true);
-    await dropHighlightsBefore(it.addedAt.slice(0, 10)); // added that day: stays
-    expect((await loadList()).items.some((x) => x.id === it.id)).toBe(true);
-    await dropHighlightsBefore("9999-01-01"); // a later week: it goes
-    expect((await loadList()).items.some((x) => x.id === it.id)).toBe(false);
+    await addStaple("nutmeg");
+    await addItems([{ item: "cinnamon", quantity: "2 tsp", for: "pumpkin pie" }, { item: "nutmeg", quantity: "1 tsp", for: "apple crisp" }], "Robin");
+    const { items } = await loadList();
+    const cinnamon = items.find((x) => x.item === "cinnamon")!, nutmeg = items.find((x) => x.item === "nutmeg")!;
+    expect(cinnamon.check).toBe(true);
+    await dropHighlightsNotFor(["pumpkin pie", "lunches"]); // the pie's still planned; the crisp isn't
+    const after = (await loadList()).items;
+    expect(after.some((x) => x.id === cinnamon.id)).toBe(true);
+    expect(after.some((x) => x.id === nutmeg.id)).toBe(false);
   });
 });
 

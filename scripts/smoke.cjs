@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
-// Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning, the tabs, Settings on every
+// Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number, the tabs, Settings on every
 // screen, Stock, Lists (All and Safeway), the Recipes tab, a recipe and back, the freezer, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
@@ -37,68 +37,51 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.screenshot({ path: `${dir}/1-week-${tag}.png` });
 
     if (tag === "phone-light") {
-      // Plan the week: page through and save (the number of pages depends on the day).
-      await page.getByRole("button", { name: /^(Plan this week|Change)$/ }).first().tap(); await page.waitForTimeout(500);
-      await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300);
+      // Plan by number (Nov 3): the counts, then the picks, then the lunches, and save.
+      await page.getByRole("button", { name: "Plan", exact: true }).first().tap(); await page.waitForTimeout(500);
+      ok("plan: asks how many", await page.getByRole("heading", { name: "How many" }).isVisible());
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
-      ok("plan: dinners suggested", await page.getByRole("heading", { name: "Dinners" }).isVisible());
+      ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
       if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
       // A save that fails (the connection drops): the sheet stays with everything planned, says so inside it, and saves on a retry.
       const planSheet = page.getByRole("dialog").last();
       const planned = await planSheet.innerText();
       await page.route("**/api/plan", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
-      await page.getByRole("button", { name: "Save the week" }).tap(); await page.waitForTimeout(800);
+      await page.getByRole("button", { name: "Save", exact: true }).tap(); await page.waitForTimeout(800);
       ok("plan: a failed save keeps the sheet open", await planSheet.isVisible());
       ok("plan: and says what went wrong inside it", await seen(planSheet.getByRole("alert").filter({ hasText: "No connection. Check your signal and try again." })));
       ok("plan: and keeps what was planned", (await planSheet.innerText()).includes(planned.split("\n").slice(0, 12).join("\n")));
-      ok("plan: and the save button works again", await page.getByRole("button", { name: "Save the week" }).isEnabled());
+      ok("plan: and the save button works again", await page.getByRole("button", { name: "Save", exact: true }).isEnabled());
       ok("plan: and nothing shows on the screen behind", (await page.getByText("No connection. Check your signal and try again.").count()) === 1);
       await page.screenshot({ path: `${dir}/2-plan-failed-save.png` });
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
-      await page.getByRole("button", { name: "Save the week" }).tap();
-      ok("plan: saved, and the week shows", await seen(page.getByRole("heading", { name: "This week" }), 10000));
+      await page.getByRole("button", { name: "Save", exact: true }).tap();
+      ok("plan: saved, and the dinners show", await seen(page.getByRole("heading", { name: "Dinners to make" }), 10000));
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
-      // A night with a recipe: Cook opens it on top of This week; Back says where it goes and goes there.
-      const nights = page.locator("section").filter({ has: page.getByRole("heading", { name: "This week" }) }).first().getByRole("button").filter({ hasNotText: /^Change$/ });
+      // A dinner: Cook opens it on top of Meals; Back says where it goes and goes there.
+      const dinners = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) }).getByRole("button");
       let cooked = false;
-      for (let i = 0; i < (await nights.count()) && !cooked; i++) {
-        await nights.nth(i).tap(); await page.waitForTimeout(300);
+      if (await dinners.count()) {
+        await dinners.first().tap(); await page.waitForTimeout(300);
         if (await page.getByRole("button", { name: /^Cook/ }).isVisible()) { await page.getByRole("button", { name: /^Cook/ }).tap(); cooked = true; }
         else { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
       }
       await page.waitForTimeout(400);
-      // The planned nights depend on the day and the sample recipes; on a day none has a recipe to cook, say so and move on.
-      if (!cooked) ok("week: a night's recipe opens (skipped: no night with a recipe today)", true);
+      if (!cooked) ok("meals: a dinner's recipe opens (skipped: no dinner with a recipe)", true);
       else {
-      ok("week: a night's recipe opens", await page.getByRole("radio", { name: "Quick" }).isVisible());
+      ok("meals: a dinner's recipe opens", await page.getByRole("radio", { name: "Quick" }).isVisible());
       await settingsHere("a recipe from Meals");
       const nav = page.getByRole("navigation", { name: "Main" });
-      ok("week: Meals stays lit under the recipe", (await nav.getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
+      ok("meals: Meals stays lit under the recipe", (await nav.getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
       await page.screenshot({ path: `${dir}/3-recipe-from-week.png` });
       await page.locator("header").getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(400);
-      ok("week: back goes to Meals", await page.getByRole("heading", { name: "Meals" }).isVisible());
-      await page.getByRole("button", { name: /^Cook|Tonight/ }).first().waitFor({ timeout: 300 }).catch(() => {});
+      ok("meals: back goes to Meals", await page.getByRole("heading", { name: "Meals" }).isVisible());
       await nav.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(400);
-      ok("week: the tab starts fresh", await page.getByRole("heading", { name: "Meals" }).isVisible());
+      ok("meals: the tab starts fresh", await page.getByRole("heading", { name: "Meals" }).isVisible());
       }
-    }
-
-    if (tag === "phone-light") {
-      // Weeks ahead: next week, then the one after, each planned the same way, and the one after that offered.
-      for (const [button, heading] of [["Plan next week", "Next week"], [/^Plan the week of /, null]]) {
-        const plan = page.getByRole("button", { name: button }).first();
-        ok(`weeks ahead: "${button}" offered`, await seen(plan, 8000));
-        await plan.tap(); await page.waitForTimeout(500);
-        for (let k = 0; k < 3 && await page.getByRole("button", { name: "Next", exact: true }).isVisible(); k++) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
-        await page.getByRole("button", { name: "Save the week" }).tap(); await page.waitForTimeout(1500);
-        if (heading) ok(`weeks ahead: ${heading} shows`, await seen(page.getByRole("heading", { name: heading }), 8000));
-      }
-      ok("weeks ahead: a week further out is offered next", await seen(page.getByRole("button", { name: /^Plan the week of / }), 8000));
-      ok("weeks ahead: three weeks show", (await page.getByRole("button", { name: /^Change$/ }).count()) === 3);
-      await page.screenshot({ path: `${dir}/2-weeks-ahead.png`, fullPage: true });
     }
 
     // Settings: the look, and adding recipes from there.

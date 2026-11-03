@@ -1,251 +1,279 @@
 "use client";
-import { useMemo, useState, type ReactNode } from "react";
-import { dateIn, hourNow, type Lunch, type Night, type Recipe, type WeekData } from "@/lib/client";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { dateIn, type Counts, type Dish, type Kind, type Lunch, type NewDish, type NewLunch, type PlanData, type Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
-import { addDays } from "@/lib/time";
-import { applyShape, choices, emptyNight, LUNCH_PARTS, nextOption, planLunches, suggestWeek, weekDates, type Context, type NightKind, type Shape } from "@/lib/week";
+import { KIND_NAMES, KINDS, kindOf, LUNCH_PARTS, MAX_COUNT, nextOption, pickMany, planLunches, somethingElse, weekNumber, type Choice, type Context } from "@/lib/week";
+import { norm } from "@/lib/words";
 import { Check } from "./Shop";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { summary } from "./Recipes";
-import { BrandBar, Button, EmptyState, Group, Notice, Row, Segmented, Sheet } from "./ui";
+import { BrandBar, Button, EmptyState, Group, Notice, Row, Sheet } from "./ui";
 
-const KIND: Record<NightKind, string> = { quick: "Quick", regular: "Regular", skip: "Skip" };
-const day = (date: string, style: "long" | "short" = "long") => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: style, timeZone: "UTC" });
-const monthDay = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+// Meals and lunches are planned by number, not by day (Nov 3): the Meals tab is what's still to make and pack, in any
+// order, and planning asks how many of each.
 
 /** A meal's name: the recipe's, or the free text she typed. */
 export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;
+const NOTHING_ELSE = "Nothing else fits. Add recipes, or pick one";
+const COUNT_NAMES: Record<Kind, string> = { quick: "Quick dinners", regular: "Regular dinners", kids: "Kids' dinners", dessert: "Desserts", side: "Sides", breakfast: "Breakfasts" };
+const ONE_NAME: Record<Kind, string> = { quick: "A quick dinner", regular: "A regular dinner", kids: "A kids' dinner", dessert: "A dessert", side: "A side", breakfast: "A breakfast" };
 
-/** "Quick · Sam away · Kids separate". */
-function nightLine(n: Night) {
-  return [KIND[n.kind], ...n.away.map((a) => `${a} away`), n.split && "Kids separate"].filter(Boolean).join(" · ");
+export function contextFor(p: PlanData, recipes: Recipe[], trips = { traderJoes: p.trips.traderJoes, costco: p.trips.costco }): Context {
+  return { recipes, lastMade: p.lastMade, people: p.people, trips, freezer: p.freezer ?? [], today: dateIn(0) };
 }
-
-function contextFor(w: WeekData, recipes: Recipe[], trips = { traderJoes: w.trips.traderJoes, costco: w.trips.costco }): Context {
-  return { recipes, lastMade: w.lastMade, people: w.people, trips, freezer: w.freezer ?? [] };
-}
+/** The boys who have lunch options (the Lunches tab). */
+const lunchKids = (p: PlanData) => p.people.filter((x) => !x.isAdult && p.lunchOptions.some((o) => norm(o.kid) === norm(x.name))).map((x) => x.name);
+const lunchLine = (l: Pick<Lunch, (typeof LUNCH_PARTS)[number]>) => [[l.main, l.fruit, l.side, l.treat].filter(Boolean).join(", "), l.snack && `Snack: ${l.snack}`].filter(Boolean).join(" · ");
 
 // ---- Meals (tab)
 
-/**
- * The Meals tab: tonight, this week, and every week after it that's planned, as far ahead as anyone likes; then a way to
- * plan the next one.
- */
-export function WeekScreen({ weeks, recipes, me, error, note, onNote, onPlan, onNight, onMade, onOpen }: {
-  /** This week, then the following weeks while planned, then the first that isn't. */
-  weeks: WeekData[]; recipes: Recipe[]; me: string; error: string | null;
+/** The Meals tab: the dinners to make, by kind, and each boy's lunches to pack; then Plan, for more. */
+export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish, onAddOne, onPacked }: {
+  plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after saving ("Added 6 things to the grocery list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onPlan: (w: WeekData) => void; onNight: (w: WeekData, n: Night) => void; onMade: (date: string, made: boolean) => void;
-  onOpen: (id: string) => void;
+  onPlan: () => void; onDish: (d: Dish) => void; onAddOne: () => void; onPacked: (l: Lunch) => void;
 }) {
-  const today = dateIn(0);
-  const week = weeks[0] ?? null;
-  const ahead = weeks.slice(1).filter((w) => w.planned);
-  const toPlan = weeks.slice(1).find((w) => !w.planned);
-  const weekName = (w: WeekData) => (w.monday === addDays(week?.monday ?? "", 7) ? "Next week" : monthDay(w.monday));
-  const change = (w: WeekData) => <button className="t-foot font-semibold text-accent" onClick={() => onPlan(w)}>Change</button>;
-  const name = (id: string) => mealName(id, recipes);
-  // The most recent planned night that's past and not yet answered, within the last three days.
-  const ask = week && [...week.nights, ...(week.lastWeek ?? [])].filter((n) => n.date < today && n.date >= addDays(today, -3) && n.meal && n.kind !== "skip" && !n.made).sort((a, b) => b.date.localeCompare(a.date))[0];
-  const tonight = week?.nights.find((n) => n.date === today);
-  const schoolMorning = hourNow() < 10 ? (week?.lunches ?? []).filter((l) => l.date === today && !l.noSchool) : [];
+  const dishes = plan?.dishes ?? [], lunches = plan?.lunches ?? [];
+  const kids = [...new Set(lunches.map((l) => l.kid))];
+  const empty = plan && !dishes.length && !lunches.length;
   return (
     <div className="space-y-6">
       <BrandBar />
       <h1 className="sr-only">Meals</h1>
       {error && <Notice>{error}</Notice>}
       {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
-      {ask && (
-        <div className="glass space-y-3 rounded-[22px] p-4">
-          <p className="t-body">Did you make the {name(ask.meal).toLowerCase()} {ask.date === addDays(today, -1) ? "last night" : `on ${day(ask.date)}`}?</p>
-          <div className="flex gap-2">
-            <Button size="md" onClick={() => onMade(ask.date, true)}>Yes</Button>
-            <Button size="md" variant="secondary" onClick={() => onMade(ask.date, false)}>No, we had something else</Button>
-          </div>
-        </div>
-      )}
-      {schoolMorning.length > 0 && (
-        <Group header="Today's lunches">
-          {schoolMorning.map((l) => <Row key={l.kid} title={l.kid} subtitle={lunchLine(l)} />)}
-        </Group>
-      )}
-      {!week ? null : !week.planned ? (
-        <EmptyState icon="pot" title="Nothing planned this week" action={<Button onClick={() => onPlan(week)} icon="calendar">Plan this week</Button>}>
-          Say which nights are quick and which are regular, and Simmer fills in dinners from your recipes.
+      {!plan ? null : empty ? (
+        <EmptyState icon="pot" title="Nothing planned" action={<Button onClick={onPlan} icon="calendar">Plan</Button>}>
+          Say how many dinners and lunches, and Simmer picks them from your recipes.
         </EmptyState>
       ) : (
         <>
-          {tonight && tonight.kind !== "skip" && tonight.meal && (
-            <Group header="Tonight">
-              <Row title={<span className="t-title">{name(tonight.meal)}</span>} subtitle={[nightLine(tonight), tonight.split && tonight.kidsMeal && `Kids: ${name(tonight.kidsMeal)}`].filter(Boolean).join(" · ")}
-                accessory="chevron" onClick={() => (recipes.some((r) => r.id === tonight.meal) ? onOpen(tonight.meal) : onNight(week, tonight))} />
-            </Group>
-          )}
-          <WeekGroup header="This week" aside={change(week)} w={week} recipes={recipes} me={me} today={today} onNight={onNight} />
+          <h2 className="t-title px-1">Dinners to make</h2>
+          {KINDS.map((k) => {
+            const mine = dishes.filter((d) => d.kind === k);
+            return mine.length > 0 && (
+              <Group key={k} header={KIND_NAMES[k]}>
+                {mine.map((d) => {
+                  const r = recipes.find((x) => x.id === d.recipe);
+                  return <Row key={d.id} title={mealName(d.recipe, recipes)} subtitle={r ? summary(r) : undefined} accessory="chevron" onClick={() => onDish(d)} />;
+                })}
+              </Group>
+            );
+          })}
+          <Group>
+            {!dishes.length && <Row title="No dinners to make" />}
+            <Row icon="plus" title="Add one more" subtitle="A dinner, a dessert, a side, a breakfast or a lunch" accessory="chevron" onClick={onAddOne} />
+          </Group>
+          {kids.map((k) => {
+            const mine = lunches.filter((l) => l.kid === k);
+            return (
+              <Group key={k} header={`${k}'s lunches`} aside={<span className="t-foot text-muted">{mine.length} to pack</span>}>
+                {mine.map((l) => <Row key={l.id} lead={<Check on={false} />} title={lunchLine(l)} role="checkbox" checked={false} onClick={() => onPacked(l)} />)}
+              </Group>
+            );
+          })}
+          {kids.length > 0 && <p className="t-foot -mt-4 px-4 text-muted">Tick a lunch when it&apos;s packed.</p>}
+          <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan</Button>
         </>
-      )}
-      {ahead.map((w) => <WeekGroup key={w.monday} header={weekName(w)} aside={change(w)} w={w} recipes={recipes} me={me} today={today} onNight={onNight} />)}
-      {toPlan && (
-        <Button variant={week?.planned ? "primary" : "secondary"} className="w-full" icon="calendar" onClick={() => onPlan(toPlan)}>
-          {weekName(toPlan) === "Next week" ? "Plan next week" : `Plan the week of ${monthDay(toPlan.monday)}`}
-        </Button>
       )}
     </div>
   );
 }
 
-const lunchLine = (l: Lunch) => l.schoolLunch ? `School lunch${l.snack ? ` · Snack: ${l.snack}` : ""}` : [[l.main, l.fruit, l.side, l.treat].filter(Boolean).join(", "), l.snack && `Snack: ${l.snack}`].filter(Boolean).join(" · ");
+// ---- One dinner (tap a row)
 
-/** A week's nights. "Robin planned" shows only for nights someone else planned, not the person using this phone. */
-function WeekGroup({ header, aside, w, recipes, me, today, onNight }: { header: string; aside?: ReactNode; w: WeekData; recipes: Recipe[]; me: string; today: string; onNight: (w: WeekData, n: Night) => void }) {
-  return (
-    <Group header={header} aside={aside}>
-      {w.nights.map((n) => (
-        <Row key={n.date}
-          title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : n.date < today ? "Nothing planned" : "Not picked yet"}</span>}
-          subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== me && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
-          value={n.pinned ? <span aria-label="Pinned" className="text-accent">●</span> : undefined}
-          accessory="chevron" onClick={() => onNight(w, n)} />
-      ))}
-    </Group>
-  );
-}
-
-// ---- One night (tap a row)
-
-export function NightSheet({ w, n, recipes, onSave, onOpen, onClose }: {
-  w: WeekData; n: Night; recipes: Recipe[]; onSave: (nights: Night[]) => Promise<string | null>; onOpen: (id: string) => void; onClose: () => void;
+/** Cook it, swap it for something else of the same kind, pick one, mark it made, or take it off. */
+export function DishSheet({ plan, d, recipes, onChange, onMade, onRemove, onOpen, onClose }: {
+  plan: PlanData; d: Dish; recipes: Recipe[];
+  onChange: (recipe: string, pinned: boolean) => Promise<string | null>; onMade: () => Promise<string | null>; onRemove: () => Promise<string | null>;
+  onOpen: (id: string) => void; onClose: () => void;
 }) {
-  const [swap, setSwap] = useState<number | null>(null);
-  const [pin, setPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const at = w.nights.findIndex((x) => x.date === n.date);
-  // Closes once saved; if the save fails, the sheet (and the ideas or pick it came from) stays open to try again.
-  async function put(change: Partial<Night>) {
-    if (busy) return;
+  const [skipped, setSkipped] = useState<string[]>([]); // shown here already: Something else never brings one back
+  const [nothing, setNothing] = useState(false);
+  const [pin, setPin] = useState(false);
+  const recipe = recipes.find((r) => r.id === d.recipe);
+  async function run(p: Promise<string | null>, close: boolean) {
     setBusy(true); setProblem(null);
-    const p = await onSave(w.nights.map((x, i) => (i === at ? { ...x, ...change } : x)));
-    if (!p) return onClose();
-    setProblem(p); setBusy(false);
+    const bad = await p;
+    setBusy(false);
+    if (!bad && close) return onClose();
+    setProblem(bad);
+  }
+  function another() {
+    if (busy) return;
+    const next = somethingElse(d.kind, d.recipe, plan.dishes.map((x) => x.recipe), contextFor(plan, recipes), skipped);
+    setNothing(!next);
+    if (!next) return;
+    setSkipped([...skipped, d.recipe]);
+    run(onChange(next.recipe.id, false), false);
   }
   const status = busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>;
-  const recipe = recipes.find((r) => r.id === n.meal);
-  const ctx = contextFor(w, recipes);
-  const kind: NightKind = n.kind === "skip" ? "regular" : n.kind;
-  const ideas = swap === null ? [] : choices(w.nights.map((x, i) => (i === at ? { ...x, kind, meal: "" } : x)), at, ctx, swap);
   return (
-    <Sheet label={day(n.date)} title={`${day(n.date)}${n.meal ? `: ${mealName(n.meal, recipes)}` : ""}`} onClose={onClose}>
+    <Sheet label={mealName(d.recipe, recipes)} title={mealName(d.recipe, recipes)} onClose={onClose}>
       <div className="space-y-5 pb-2">
         {!pin && status}
-        {swap !== null ? (
-          <>
-            <Group header={`${KIND[kind]} ideas`}>
-              {ideas.map((o) => <Row key={o.recipe.id} title={o.recipe.name} subtitle={o.why || summary(o.recipe)} accessory="chevron" onClick={() => put({ meal: o.recipe.id, kind, pinned: false, made: "" })} />)}
-              {!ideas.length && <Row title="No more ideas for this night" subtitle="Add recipes from Recipes" />}
-            </Group>
-            <Button variant="secondary" className="w-full" icon="refresh" onClick={() => setSwap(swap + 1)}>Something else</Button>
-          </>
-        ) : (
-          <Group>
-            {recipe && <Row icon="pot" title="Cook" subtitle="The recipe" accessory="chevron" onClick={() => { onClose(); onOpen(recipe.id); }} />}
-            <Row icon="refresh" title="Swap" subtitle="Three ideas that fit this night" accessory="chevron" onClick={() => setSwap(0)} />
-            <Row icon="book" title={n.pinned ? "Pick something else" : "Pick a meal"} subtitle="From your recipes, or type one" accessory="chevron" onClick={() => setPin(true)} />
-            {n.meal && <Row icon="check" title={n.made === "yes" ? "Made" : "Made it"} onClick={n.made === "yes" ? undefined : () => put({ made: "yes" })} />}
-            {n.meal && <Row icon="close" title="Clear this night" onClick={() => put({ meal: "", kidsMeal: "", pinned: false, made: "" })} />}
-          </Group>
-        )}
+        <p className="t-sub text-center text-muted">{[KIND_NAMES[d.kind], recipe && recipe.minutes && `${recipe.minutes} min`].filter(Boolean).join(" · ")}</p>
+        <Group>
+          {recipe && <Row icon="pot" title="Cook" subtitle="The recipe" accessory="chevron" onClick={() => { onClose(); onOpen(recipe.id); }} />}
+          <Row icon="refresh" title="Something else" subtitle={nothing ? NOTHING_ELSE : `Another ${KIND_NAMES[d.kind].toLowerCase()} one`} onClick={another} />
+          <Row icon="book" title="Pick one" subtitle="From your recipes, or type one" accessory="chevron" onClick={() => setPin(true)} />
+          <Row icon="check" title="Made it" onClick={() => !busy && run(onMade(), true)} />
+          <Row icon="close" title="Remove" subtitle="Not making it after all" onClick={() => !busy && run(onRemove(), true)} />
+        </Group>
       </div>
-      {pin && <PinSheet kind={kind} recipes={recipes} status={status} onPick={(meal) => put({ meal, pinned: true, kind: n.kind === "skip" ? "regular" : n.kind })} onClose={() => setPin(false)} />}
+      {pin && <PinSheet kind={d.kind} recipes={recipes} status={status} onPick={async (id) => { await run(onChange(id, true), false); setPin(false); }} onClose={() => setPin(false)} />}
     </Sheet>
   );
 }
 
-/** Pin a meal she already knows: from her recipes, or typed ("Dinner with G&G"). */
-function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: NightKind; recipes: Recipe[]; status?: React.ReactNode; onPick: (meal: string) => void; onClose: () => void }) {
+/** Pick one she already knows: from her recipes of that kind (or any, searching), or typed ("Dinner with G&G"). */
+function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
-  const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && r.for !== "kids" && (kind === "skip" || r.effort === kind)).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
+  const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
   return (
-    <Sheet label="Pick a meal" title="Pick a meal" onClose={onClose}>
+    <Sheet label="Pick one" title={`Pick ${ONE_NAME[kind].toLowerCase()}`} onClose={onClose}>
       <div className="space-y-4 pb-2">
         {status}
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type a meal" aria-label="Find a recipe"
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
-          {q.trim() && <Row icon="pencil" title={`“${q.trim()}”`} subtitle="Use these words as the meal" onClick={() => onPick(q.trim().slice(0, 80))} />}
+          {q.trim() && <Row icon="pencil" title={`“${q.trim()}”`} subtitle="Use these words" onClick={() => onPick(q.trim().slice(0, 80))} />}
           {found.map((r) => <Row key={r.id} title={r.name} subtitle={summary(r)} onClick={() => onPick(r.id)} />)}
-          {!q.trim() && !found.length && <Row title="No recipes for this kind of night yet" />}
+          {!q.trim() && !found.length && <Row title="No recipes of this kind yet" subtitle="Type one, or add recipes" />}
         </Group>
       </div>
     </Sheet>
   );
 }
 
-// ---- Plan the week (sheet)
+// ---- Add one more (any time)
 
-function Chip({ on, children, onClick }: { on: boolean; children: React.ReactNode; onClick: () => void }) {
+/** One more of any kind, the best that fits, in one tap; or a lunch for one of the boys. */
+export function AddOneSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dishes: NewDish[], lunches: NewLunch[]) => Promise<string | null>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pin, setPin] = useState<Kind | null>(null);
+  const ctx = contextFor(plan, recipes);
+  const planned = plan.dishes.map((d) => d.recipe);
+  async function add(dishes: NewDish[], lunches: NewLunch[] = []) {
+    if (busy) return;
+    setBusy(true); setProblem(null);
+    const bad = await onAdd(dishes, lunches);
+    if (!bad) return onClose();
+    setProblem(bad); setBusy(false);
+  }
+  const status = busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>;
+  const kids = lunchKids(plan);
   return (
-    <button role="switch" aria-checked={on} onClick={onClick}
-      className={`t-foot h-8 rounded-full px-3 font-semibold transition active:scale-[0.97] ${on ? "bg-accent text-on-accent" : "bg-sunk text-ink"}`}>{children}</button>
+    <Sheet label="Add one more" title="Add one more" onClose={onClose}>
+      <div className="space-y-5 pb-2">
+        {!pin && status}
+        <Group>
+          {KINDS.map((k) => {
+            const top = pickMany({ [k]: 1 }, planned, ctx)[0];
+            return <Row key={k} title={ONE_NAME[k]} subtitle={top ? mealName(top.recipe, recipes) : NOTHING_ELSE} accessory="chevron"
+              onClick={() => (top ? add([{ kind: k, recipe: top.recipe, pinned: false }]) : setPin(k))} />;
+          })}
+        </Group>
+        {kids.length > 0 && (
+          <Group>
+            {kids.map((k) => {
+              const [l] = planLunches([{ name: k, count: 1 }], plan.lunchOptions, { [k]: plan.lunches.filter((x) => x.kid === k).length }, weekNumber(dateIn(0)));
+              return l && <Row key={k} title={`A lunch for ${k}`} subtitle={lunchLine(l)} accessory="chevron" onClick={() => add([], [l])} />;
+            })}
+          </Group>
+        )}
+      </div>
+      {pin && <PinSheet kind={pin} recipes={recipes} status={status} onPick={(id) => add([{ kind: pin, recipe: id, pinned: true }])} onClose={() => setPin(null)} />}
+    </Sheet>
   );
 }
 
-const PAGES = ["The nights", "This week's trips", "Dinners", "Lunches"] as const;
+// ---- Plan (sheet)
 
-export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; recipes: Recipe[]; me: string; onSave: (nights: Night[], lunches: Lunch[]) => Promise<string | null>; onClose: () => void }) {
-  const dates = weekDates(w.monday);
+/** − count +, from none to MAX_COUNT. */
+function Counter({ n, name, onChange }: { n: number; name: string; onChange: (n: number) => void }) {
+  const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button className={btn} aria-label={`One less: ${name}`} disabled={n <= 0} onClick={() => onChange(n - 1)}><Icon name="minus" className="size-[18px]" strokeWidth={2.2} /></button>
+      <span className="w-6 text-center t-headline tabular-nums" aria-label={`${name}: ${n}`}>{n}</span>
+      <button className={btn} aria-label={`One more: ${name}`} disabled={n >= MAX_COUNT} onClick={() => onChange(n + 1)}><Icon name="plus" className="size-[18px]" strokeWidth={2.2} /></button>
+    </div>
+  );
+}
+function CountRow({ title, subtitle, n, onChange }: { title: string; subtitle?: string; n: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <span className="min-w-0 flex-1"><span className="block t-body">{title}</span>{subtitle && <span className="mt-0.5 block t-foot text-muted">{subtitle}</span>}</span>
+      <Counter n={n} name={title} onChange={onChange} />
+    </div>
+  );
+}
+function RoundButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+  return (
+    <button aria-label={label} onClick={onClick} className="glass flex size-9 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90">
+      <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
+    </button>
+  );
+}
+function Chip({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return <button onClick={onClick} className="t-foot h-8 rounded-full bg-sunk px-3 font-semibold text-ink transition active:scale-[0.97]">{children}</button>;
+}
+
+type Picked = Choice & { key: string; pinned: boolean; skipped: string[]; nothing: boolean };
+
+/**
+ * Plan more: how many of each (starting from last time's numbers), then the picks (Something else, pick one, remove, one
+ * more), then the lunches (tap a part to swap it). What's still to make stays; these go on top of it.
+ */
+export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; recipes: Recipe[]; onSave: (dishes: NewDish[], lunches: NewLunch[], counts: Counts) => Promise<string | null>; onClose: () => void }) {
+  const kids = lunchKids(plan);
   const [page, setPage] = useState(0);
-  const [nights, setNights] = useState<Night[]>(() => (w.planned ? w.nights : applyShape(dates.map((d) => emptyNight(d)), "2-quick-3-regular")));
-  const [trips, setTrips] = useState({ traderJoes: w.trips.traderJoes, costco: w.trips.costco });
-  const [seeds, setSeeds] = useState<Record<string, number>>({});
-  const [nothingElse, setNothingElse] = useState<string | null>(null); // the night "Something else" had nothing more for
-  const kids = w.people.filter((p) => !p.isAdult && w.lunchOptions.some((o) => o.kid.toLowerCase() === p.name.toLowerCase()));
-  const [noSchool, setNoSchool] = useState<string[]>(() => [...new Set(w.lunches.filter((l) => l.noSchool).map((l) => l.date))]);
-  const [lunches, setLunches] = useState<Lunch[]>(() => (w.lunches.length ? w.lunches : planLunches(w.monday, kids, w.lunchOptions)));
-  const [pinAt, setPinAt] = useState<number | null>(null);
+  const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts, lunches: Object.fromEntries(kids.map((k) => [k, plan.counts.lunches[k] ?? 5])) }));
+  const [trips, setTrips] = useState({ traderJoes: plan.trips.traderJoes, costco: plan.trips.costco });
+  const [picks, setPicks] = useState<Picked[]>([]);
+  const [lunches, setLunches] = useState<Lunch[]>([]);
+  const [pinFor, setPinFor] = useState<{ key: string } | { kind: Kind } | null>(null);
+  const [none, setNone] = useState<Kind | null>(null); // the kind "One more" had nothing more for
+  const [found, setFound] = useState<Partial<Record<Kind, number>>>({}); // how many of each fit, when they were picked
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const adults = w.people.filter((p) => p.isAdult);
-  const ctx = contextFor(w, recipes, trips);
-  const today = dateIn(0);
-  const ahead = (n: Night) => n.date >= today;
-  const set = (i: number, change: Partial<Night>) => setNights((ns) => ns.map((n, j) => (j === i ? { ...n, ...change } : n)));
+  const ctx = contextFor(plan, recipes, trips);
+  const ids = () => [...plan.dishes.map((d) => d.recipe), ...picks.map((p) => p.recipe)];
+  const seq = useRef(0); // tells picks apart, even two of the same
+  const keyed = (c: Choice, pinned = false): Picked => ({ ...c, key: String(seq.current++), pinned, skipped: [], nothing: false });
+  const waiting = (k: Kind) => plan.dishes.filter((d) => d.kind === k).length;
 
-  /** Going to the dinners page: picks that no longer fit their night are dropped, then the open nights are filled. */
-  function toDinners() {
-    const byId = new Map(recipes.map((r) => [r.id, r]));
-    const fit = nights.map((n) => {
-      if (n.pinned || n.made) return n;
-      const r = byId.get(n.meal);
-      const keep = n.kind !== "skip" && (!r || r.effort === n.kind);
-      return { ...n, meal: keep ? n.meal : "", kidsMeal: n.split ? n.kidsMeal : "" };
-    });
-    // Nights already past are left as they were: nothing is suggested for them.
-    setNights(suggestWeek(fit, ctx, today));
-    setPage(2);
+  function toPicks() {
+    const all = pickMany(counts, plan.dishes.map((d) => d.recipe), ctx);
+    setPicks(all.map((c) => keyed(c)));
+    setFound(Object.fromEntries(KINDS.map((k) => [k, all.filter((c) => c.kind === k).length])));
+    const waitingLunches = Object.fromEntries(kids.map((k) => [k, plan.lunches.filter((l) => l.kid === k).length]));
+    setLunches(planLunches(kids.map((k) => ({ name: k, count: counts.lunches[k] ?? 0 })), plan.lunchOptions, waitingLunches, weekNumber(dateIn(0))));
+    setNone(null);
+    setPage(1);
   }
-  function another(i: number) {
-    const s = (seeds[nights[i].date] ?? 0) + 1;
-    setSeeds({ ...seeds, [nights[i].date]: s });
-    const cleared = nights.map((n, j) => (j === i ? { ...n, meal: "" } : n));
-    // Another meal, never the same one again; with none left, say so (it used to do nothing, Nov 3).
-    const next = choices(cleared, i, ctx, s).find((o) => o.recipe.id !== nights[i].meal);
-    setNothingElse(next || !nights[i].meal ? null : nights[i].date);
-    if (next || !nights[i].meal) set(i, { meal: next?.recipe.id ?? "" });
+  const setPick = (key: string, change: Partial<Picked>) => setPicks((ps) => ps.map((p) => (p.key === key ? { ...p, ...change } : p)));
+  function another(p: Picked) {
+    const next = somethingElse(p.kind, p.recipe, ids(), ctx, p.skipped);
+    if (!next) return setPick(p.key, { nothing: true });
+    setPick(p.key, { recipe: next.recipe.id, why: next.why, pinned: false, skipped: [...p.skipped, p.recipe], nothing: false });
   }
-  function dayOff(date: string) {
-    const off = noSchool.includes(date) ? noSchool.filter((d) => d !== date) : [...noSchool, date];
-    setNoSchool(off);
-    const fresh = planLunches(w.monday, kids, w.lunchOptions, off);
-    setLunches((ls) => ls.map((l) => (l.date === date ? fresh.find((f) => f.date === date && f.kid === l.kid) ?? l : l)));
+  function oneMore(kind: Kind) {
+    const [c] = pickMany({ [kind]: 1 }, ids(), ctx);
+    setNone(c ? null : kind);
+    if (c) setPicks((ps) => [...ps, keyed(c)]);
   }
 
-  const last = kids.length && dates.slice(0, 5).some((d) => d >= today) ? 3 : 2;
-  // Closes once saved; if the save fails, everything planned stays here, the problem shows above the button, and it can be tried again.
+  const lunchPage = lunches.length > 0;
+  const last = lunchPage ? 2 : 1;
   async function save() {
     setBusy(true); setProblem(null);
-    const p = await onSave(nights.map((n) => ({ ...n, plannedBy: n.plannedBy || me })), lunches);
+    const p = await onSave(picks.map((x) => ({ kind: x.kind, recipe: x.recipe, pinned: x.pinned })), lunches.map((l) => ({ kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])) }) as NewLunch), counts);
     if (!p) return onClose();
     setProblem(p); setBusy(false);
   }
@@ -254,86 +282,89 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
       {problem && page === last && <Notice>{problem}</Notice>}
       <div className="flex gap-2">
         {page > 0 && <Button variant="secondary" onClick={() => setPage(page - 1)}>Back</Button>}
-        {page < last
-          ? <Button className="flex-1" onClick={() => (page === 1 ? toDinners() : setPage(page + 1))}>Next</Button>
-          : <Button className="flex-1" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save the week"}</Button>}
+        {page === 0 ? <Button className="flex-1" onClick={toPicks}>Next</Button>
+          : page < last ? <Button className="flex-1" onClick={() => setPage(page + 1)}>Next</Button>
+          : <Button className="flex-1" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</Button>}
       </div>
     </div>
   );
 
-  let body: React.ReactNode;
+  let body: ReactNode;
   if (page === 0) {
-    const shape = (s: Shape) => setNights(applyShape(nights, s, w.lastWeek));
+    const set = (k: Kind, n: number) => setCounts({ ...counts, [k]: n });
+    const sub = (k: Kind, extra?: string) => [waiting(k) ? `${waiting(k)} still to make` : "", extra].filter(Boolean).join(" · ") || undefined;
+    const since = (d: string) => (d ? `Last trip ${new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}` : "No trip yet");
     body = (
-      <div className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <Chip on={false} onClick={() => shape("2-quick-3-regular")}>Weeknights 2 quick, 3 regular</Chip>
-          <Chip on={false} onClick={() => shape("all-quick")}>All quick</Chip>
-          {w.lastWeek.length > 0 && <Chip on={false} onClick={() => shape("last-week")}>Same as last week</Chip>}
-        </div>
-        {nights.map((n, i) => ahead(n) && (
-          <Group key={n.date} header={`${day(n.date)} ${monthDay(n.date).split(" ")[1]}`}
-            aside={<button className="t-foot font-semibold text-accent" onClick={() => (n.pinned ? set(i, { pinned: false, meal: "" }) : setPinAt(i))}>{n.pinned ? `${mealName(n.meal, recipes)} ✕` : "Pick a meal"}</button>}>
-            <div className="space-y-3 p-3">
-              <Segmented label={`${day(n.date)}: how long`} value={n.kind} onChange={(kind) => set(i, { kind })} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }, { value: "skip", label: "Skip" }]} />
-              {n.kind !== "skip" && (
-                <div className="flex flex-wrap gap-2">
-                  {adults.map((a) => <Chip key={a.name} on={n.away.includes(a.name)} onClick={() => set(i, { away: n.away.includes(a.name) ? n.away.filter((x) => x !== a.name) : [...n.away, a.name] })}>{a.name}&apos;s away</Chip>)}
-                  <Chip on={n.split} onClick={() => set(i, { split: !n.split, kidsMeal: "" })}>Kids separate</Chip>
-                </div>
-              )}
-            </div>
+      <div className="space-y-5">
+        <Group header="Dinners" footer={plan.dishes.length ? "What's still to make stays. These are on top of it." : undefined}>
+          {(["quick", "regular", "kids"] as const).map((k) => <CountRow key={k} title={COUNT_NAMES[k]} subtitle={sub(k, k === "kids" ? "For nights the kids eat separately" : undefined)} n={counts[k]} onChange={(n) => set(k, n)} />)}
+        </Group>
+        <Group header="Also">
+          {(["dessert", "side", "breakfast"] as const).map((k) => <CountRow key={k} title={COUNT_NAMES[k]} subtitle={sub(k)} n={counts[k]} onChange={(n) => set(k, n)} />)}
+        </Group>
+        {kids.length > 0 && (
+          <Group header="Lunches">
+            {kids.map((k) => {
+              const w = plan.lunches.filter((l) => l.kid === k).length;
+              return <CountRow key={k} title={k} subtitle={w ? `${w} still to pack` : undefined} n={counts.lunches[k] ?? 0} onChange={(n) => setCounts({ ...counts, lunches: { ...counts.lunches, [k]: n } })} />;
+            })}
           </Group>
-        ))}
+        )}
+        <Group header="Trips" footer="Meals that need Trader Joe's or Costco are only picked when there's a trip.">
+          <Row lead={<Check on={trips.traderJoes} />} title="Trader Joe's trip" subtitle={since(plan.trips.lastTraderJoes)} role="checkbox" checked={trips.traderJoes} onClick={() => setTrips({ ...trips, traderJoes: !trips.traderJoes })} />
+          <Row lead={<Check on={trips.costco} />} title="Costco trip" subtitle={since(plan.trips.lastCostco)} role="checkbox" checked={trips.costco} onClick={() => setTrips({ ...trips, costco: !trips.costco })} />
+        </Group>
       </div>
     );
   } else if (page === 1) {
-    const since = (d: string) => (d ? `Last trip ${monthDay(d)}` : "No trip yet");
+    const shown = KINDS.filter((k) => picks.some((p) => p.kind === k) || counts[k] > 0);
     body = (
-      <Group footer="Meals that need Trader Joe's or Costco are only suggested when there's a trip.">
-        <Row lead={<Check on={trips.traderJoes} />} title="Trader Joe's trip this week" subtitle={since(w.trips.lastTraderJoes)} role="checkbox" checked={trips.traderJoes} onClick={() => setTrips({ ...trips, traderJoes: !trips.traderJoes })} />
-        <Row lead={<Check on={trips.costco} />} title="Costco this week" subtitle={since(w.trips.lastCostco)} role="checkbox" checked={trips.costco} onClick={() => setTrips({ ...trips, costco: !trips.costco })} />
-      </Group>
-    );
-  } else if (page === 2) {
-    body = (
-      <div className="space-y-4">
-        {nights.map((n, i) => {
-          if (n.kind === "skip" || !ahead(n)) return null;
-          const opts = n.pinned || n.made ? [] : choices(nights.map((x, j) => (j === i ? { ...x, meal: "" } : x)), i, ctx, seeds[n.date] ?? 0);
-          const pick = recipes.find((r) => r.id === n.meal);
-          const why = opts.find((o) => o.recipe.id === n.meal)?.why;
-          const kidsOpts = n.split ? choices(nights.map((x, j) => (j === i ? { ...x, kidsMeal: "" } : x)), i, ctx, 0, true) : [];
-          return (
-            <Group key={n.date} header={`${day(n.date)} · ${nightLine(n)}`} aside={!n.pinned && !n.made ? <button className="t-foot font-semibold text-accent" onClick={() => another(i)}>Something else</button> : undefined}>
-              <Row lead={n.pinned ? <Icon name="check" className="size-5 text-accent" /> : undefined} title={<span className="font-semibold">{n.meal ? mealName(n.meal, recipes) : "Nothing fits this night"}</span>}
-                subtitle={n.pinned ? "Pinned" : nothingElse === n.date ? "Nothing else fits this night. Add recipes, or pick a meal" : why || (pick ? summary(pick) : "Add more recipes, or pick a meal")} />
-              {opts.filter((o) => o.recipe.id !== n.meal).slice(0, 2).map((o) => (
-                <Row key={o.recipe.id} title={<span className="text-muted">{o.recipe.name}</span>} subtitle={o.why || summary(o.recipe)} value="Swap" onClick={() => set(i, { meal: o.recipe.id })} />
-              ))}
-              {n.split && (
-                <Row title={`Kids: ${n.kidsMeal ? mealName(n.kidsMeal, recipes) : "nothing yet"}`} subtitle={kidsOpts.length > 1 ? "Tap for another" : "Add kids' dinners from Recipes"}
-                  onClick={kidsOpts.length ? () => { const ids = kidsOpts.map((o) => o.recipe.id); set(i, { kidsMeal: ids[(ids.indexOf(n.kidsMeal) + 1) % ids.length] }); } : undefined} />
-              )}
-            </Group>
-          );
-        })}
+      <div className="space-y-5">
+        {!shown.length && <Group><Row title="No dinners this time" subtitle="Add one below, or go back and change the numbers" /></Group>}
+        {shown.map((k) => (
+          <Group key={k} header={KIND_NAMES[k]} aside={<button className="t-foot font-semibold text-accent" onClick={() => oneMore(k)}>One more</button>}>
+            {picks.filter((p) => p.kind === k).map((p) => {
+              const r = recipes.find((x) => x.id === p.recipe);
+              return (
+                <div key={p.key} className="flex items-center gap-2 px-4 py-3">
+                  <button className="min-w-0 flex-1 text-left" onClick={() => setPinFor({ key: p.key })}>
+                    <span className="block t-body font-semibold">{mealName(p.recipe, recipes)}</span>
+                    <span className="mt-0.5 block t-foot text-muted">{p.nothing ? NOTHING_ELSE : p.pinned ? "You picked this" : p.why || (r ? summary(r) : "")}</span>
+                  </button>
+                  <RoundButton icon="refresh" label={`Something else instead of ${mealName(p.recipe, recipes)}`} onClick={() => another(p)} />
+                  <RoundButton icon="close" label={`Remove ${mealName(p.recipe, recipes)}`} onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))} />
+                </div>
+              );
+            })}
+            {!picks.some((p) => p.kind === k) && <Row title="Nothing fits" subtitle="Add recipes, or pick one" accessory="chevron" onClick={() => setPinFor({ kind: k })} />}
+            {none === k && picks.some((p) => p.kind === k) && <Row title={NOTHING_ELSE} accessory="chevron" onClick={() => setPinFor({ kind: k })} />}
+            {none !== k && picks.some((p) => p.kind === k) && (found[k] ?? 0) < counts[k] && (
+              <Row title={`Only ${found[k] ?? 0} of ${counts[k]} fit`} subtitle="Add recipes, or pick one" accessory="chevron" onClick={() => setPinFor({ kind: k })} />
+            )}
+          </Group>
+        ))}
+        <p className="t-sub px-1 text-muted">Tap one to pick it yourself.</p>
+        <div className="space-y-2">
+          <p className="t-foot px-1 font-semibold text-muted">One more of</p>
+          <div className="flex flex-wrap gap-2">{KINDS.map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
+          {none && !shown.includes(none) && <Notice tone="info">{NOTHING_ELSE}</Notice>}
+        </div>
       </div>
     );
   } else {
     body = (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <p className="t-sub px-1 text-muted">Tap a part of a lunch to swap it for another of their options.</p>
-        {dates.slice(0, 5).filter((d) => d >= today).map((date) => (
-          <Group key={date} header={day(date)} aside={<button className="t-foot font-semibold text-accent" onClick={() => dayOff(date)}>{noSchool.includes(date) ? "School day" : "No school"}</button>}>
-            {noSchool.includes(date) ? <Row title="No school" subtitle="No lunches this day" /> : lunches.filter((l) => l.date === date).map((l) => (
-              <div key={l.kid} className="space-y-2 px-4 py-3">
-                <p className="t-headline">{l.kid}{l.schoolLunch && <span className="t-sub font-normal text-muted"> · School lunch</span>}</p>
-                <div className="flex flex-wrap gap-2">
+        {kids.filter((k) => lunches.some((l) => l.kid === k)).map((k) => (
+          <Group key={k} header={`${k}'s lunches`}>
+            {lunches.filter((l) => l.kid === k).map((l) => (
+              <div key={l.id} className="flex items-start gap-2 px-4 py-3">
+                <div className="flex min-w-0 flex-1 flex-wrap gap-2">
                   {LUNCH_PARTS.filter((p) => l[p]).map((p) => (
-                    <Chip key={p} on={false} onClick={() => setLunches((ls) => ls.map((x) => (x === l ? { ...x, [p]: nextOption(x, p, w.lunchOptions) } : x)))}>{p === "snack" ? `Snack: ${l[p]}` : l[p]}</Chip>
+                    <Chip key={p} onClick={() => setLunches((ls) => ls.map((x) => (x.id === l.id ? { ...x, [p]: nextOption(x, p, plan.lunchOptions) } : x)))}>{p === "snack" ? `Snack: ${l[p]}` : l[p]}</Chip>
                   ))}
                 </div>
+                <RoundButton icon="close" label={`Remove this lunch for ${k}`} onClick={() => setLunches((ls) => ls.filter((x) => x.id !== l.id))} />
               </div>
             ))}
           </Group>
@@ -341,13 +372,17 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
       </div>
     );
   }
+  const pinKind = pinFor ? ("kind" in pinFor ? pinFor.kind : picks.find((p) => p.key === pinFor.key)?.kind) : undefined;
   return (
-    <Sheet label="Plan the week" title={PAGES[page]} onClose={onClose} footer={footer} page={String(page)} pager={{ index: page, total: last + 1 }}>
-      <div className="pb-2">
-        <p className="t-sub mb-3 text-center text-muted">{monthDay(w.monday)}</p>
-        {body}
-      </div>
-      {pinAt !== null && <PinSheet kind={nights[pinAt].kind} recipes={recipes} onPick={(meal) => { set(pinAt, { meal, pinned: true, kind: nights[pinAt].kind === "skip" ? "regular" : nights[pinAt].kind }); setPinAt(null); }} onClose={() => setPinAt(null)} />}
+    <Sheet label="Plan" title={["How many", "Dinners", "Lunches"][page]} onClose={onClose} footer={footer} page={String(page)} pager={{ index: page, total: page === 0 ? (kids.some((k) => (counts.lunches[k] ?? 0) > 0) ? 3 : 2) : last + 1 }}>
+      <div className="pb-2">{body}</div>
+      {pinFor && pinKind && (
+        <PinSheet kind={pinKind} recipes={recipes} onClose={() => setPinFor(null)} onPick={(recipe) => {
+          if ("key" in pinFor) setPick(pinFor.key, { recipe, pinned: true, why: "", nothing: false });
+          else setPicks((ps) => [...ps, keyed({ kind: pinFor.kind, recipe, why: "" }, true)]);
+          setNone(null); setPinFor(null);
+        }} />
+      )}
     </Sheet>
   );
 }
