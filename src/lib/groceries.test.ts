@@ -12,6 +12,14 @@ describe("the grocery list", () => {
     expect(parseEntry("2 garlic")).toEqual({ quantity: "2", item: "garlic" });
     expect(norm("Lemons")).toBe(norm("lemon"));
   });
+  it("counts only what went on a list, not the pantry highlighted in Stock", async () => {
+    const n = await addItems([
+      { item: "count-test ricotta", quantity: "1", for: "Friday's lasagna" },
+      { item: "count-test oregano", quantity: "1 tsp", for: "Friday's lasagna", check: true },
+    ], "Robin");
+    expect(n).toBe(1);
+    await removeItems((await loadList()).items.filter((x) => x.item.startsWith("count-test")).map((x) => x.id));
+  });
   it("files common things without asking", async () => {
     expect(await file("bananas")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("toilet paper")).toEqual({ store: "costco", section: "household" });

@@ -324,8 +324,9 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
  * With onPrev/onNext, swiping sideways moves between items, and page dots under the grabber show where you are.
  */
-export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager }: {
+export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager, wide }: {
   children: ReactNode; onClose: () => void; label: string; footer?: ReactNode; onPrev?: () => void; onNext?: () => void;
+  wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
   title?: ReactNode; // a centered heading under the grabber, for picker sheets
   page?: string; // changes when the sheet shows a different item: scroll back to its top
   pager?: { index: number; total: number };
@@ -402,7 +403,7 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
     <div className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}
-      <div ref={panel} style={keyboard ? { marginBottom: keyboard + 8, maxHeight: `calc(100dvh - env(safe-area-inset-top) - ${keyboard + 24}px)` } : undefined} className="relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] w-[calc(100%-1rem)] max-w-md animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10">
+      <div ref={panel} style={keyboard ? { marginBottom: keyboard + 8, maxHeight: `calc(100dvh - env(safe-area-inset-top) - ${keyboard + 24}px)` } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
         <div data-handle className="flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {pager && pager.total > 1 && <Dots {...pager} />}

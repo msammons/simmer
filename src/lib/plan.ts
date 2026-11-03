@@ -5,7 +5,7 @@
 // from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsBefore, type Store } from "./groceries";
 import { parseCsv, records } from "./parse";
@@ -33,7 +33,8 @@ const memory = new Map<string, string[][]>();
 const file = (tab: string) => path.join(process.cwd(), "data", `${tab.toLowerCase().replace(/ /g, "-")}.csv`);
 
 async function rows(tab: string): Promise<string[][]> {
-  if (sheetsConfigured()) return readTab(tab).catch(() => [] as string[][]);
+  // A failed read throws (read as empty, a change written after it would erase the tab).
+  if (sheetsConfigured()) return readTabIfAny(tab);
   if (!memory.has(tab)) memory.set(tab, await readFile(file(tab), "utf8").then(parseCsv, () => [] as string[][]));
   return memory.get(tab)!.map((r) => [...r]);
 }
@@ -186,9 +187,12 @@ const dayName = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateStri
 const SHOP_AHEAD = 7;
 const LATER = "later";
 
-/** What a meal needs from the store: everything but what's in the freezer (used from there instead). */
+/** Water from the tap isn't bought ("½ cup water" landed on the Safeway list, Nov 3). */
+export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewarm|ice|tap)\s+)?water$/i.test(item.replace(/\s+/g, " ").trim());
+
+/** What a meal needs from the store: everything but tap water and what's in the freezer (used from there instead). */
 const needFor = (r: Recipe, forWhat: string, freezer: Frozen[]) =>
-  r.ingredients.filter((i) => !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" }));
+  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" }));
 const forNight = (date: string, r: Recipe) => `${dayName(date)}'s ${r.name.toLowerCase()}`;
 
 /**

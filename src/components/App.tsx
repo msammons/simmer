@@ -204,6 +204,7 @@ export default function App() {
       setWeekError(null);
       if (!wasPlanned) refreshWeek(); // a newly planned week brings the one after it, to plan next
       setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
+      if (w.added) refreshList(); // the new things show on Lists and Stock right away
       return null;
     } catch (e) { return problemOf(e); }
   }

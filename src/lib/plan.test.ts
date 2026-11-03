@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadList } from "./groceries";
-import { addFrozen, loadFreezer, loadWeek, loadWeeks, markMade, saveWeek, shopDue } from "./plan";
+import { addFrozen, fromTheTap, loadFreezer, loadWeek, loadWeeks, markMade, saveWeek, shopDue } from "./plan";
 import { addDays, todayIn } from "./time";
 import { planLunches, weekOf } from "./week";
 
 describe("saving the week", () => {
+  it("never puts tap water on a list", () => {
+    expect(fromTheTap("water")).toBe(true);
+    expect(fromTheTap("warm  water")).toBe(true);
+    expect(fromTheTap("sparkling water")).toBe(false);
+    expect(fromTheTap("coconut water")).toBe(false);
+  });
   const day = addDays(todayIn(), 1);
   it("saves the nights and puts what they need on the list, once", async () => {
     const week = await loadWeek(weekOf(day));

@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTab, readTabIfAny, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
 import { known, type Section, type Store } from "./groceries";
@@ -76,7 +76,7 @@ const local = () => readFile(path.join(process.cwd(), "data", "recipes.csv"), "u
 
 export async function loadRecipes(): Promise<Recipe[]> {
   if (!sheetsConfigured()) return [...(memory ??= toRecipes(await local()))];
-  return toRecipes(await readTab(TAB).catch(() => [] as string[][]));
+  return toRecipes(await readTabIfAny(TAB));
 }
 
 export { searchRecipes } from "./search";
