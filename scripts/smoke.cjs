@@ -135,8 +135,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
     ok(`${tag}: ticking shows Done shopping`, await seen(page.getByRole("button", { name: "Done shopping" })));
     await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(800);
-    ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/isn't connected right now/), 10000));
-    ok(`${tag}: Safeway shows the cart line`, await seen(page.getByText(/in the cart/)));
+    ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));
+    ok(`${tag}: Safeway shows the top line (a checklist while it can't be reached)`, await seen(page.getByText(/in the cart| got$/)));
     await page.screenshot({ path: `${dir}/5b-lists-safeway-${tag}.png` });
     await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(500);
     await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
