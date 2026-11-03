@@ -12,6 +12,7 @@
  * safewayPage("add", { id, times }) → { ok, qty, sure, snapshot? }
  * safewayPage("setQty", { id, qty, wait }) → { ok, qty, name, price, image }
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
+ * safewayPage("orders", { pressed }) → Safeway's Purchases page, Online tab: { signedIn, online, pressed, none, entries, text }
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -257,6 +258,26 @@ export async function safewayPage(action, arg, P) {
   }
 
   if (action === "snapshot") return snapshot(arg.id);
+
+  // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
+  // Answers { signedIn, online (the Online tab found and showing), pressed, none ("no orders" said), entries (the words
+  // of each order listed with a date), text (the page's words, to learn from) }. It only reads and presses that tab.
+  if (action === "orders") {
+    const O = P.orders;
+    const header = document.querySelector("header") ?? document.body;
+    const signedIn = !buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
+    const tabs = deepAll(document, "[role=tab], button, a").filter((el) => visible(el) && re(O.tab).test((el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim()));
+    const tab = tabs[0] ?? null;
+    const showing = !!tab && (tab.getAttribute("aria-selected") === "true" || tab.getAttribute("aria-current") === "page" || tab.getAttribute("aria-current") === "true" || /\b(active|selected)\b/i.test(tab.className ?? ""));
+    let pressed = false;
+    if (tab && !showing && !arg?.pressed) { tab.click(); pressed = true; }
+    const text = (document.querySelector("main") ?? document.body).innerText.replace(/\s+/g, " ").trim();
+    const dated = (el) => re(O.date).test((el.innerText ?? "").replace(/\s+/g, " "));
+    const found = deepAll(document, O.entry).filter((el) => visible(el) && dated(el) && (el.innerText ?? "").length < 1500);
+    // The smallest part holding each order: a part holding another dated part is the list, not an order.
+    const entries = found.filter((el) => !found.some((x) => x !== el && el.contains(x))).slice(0, 10).map((el) => el.innerText.replace(/\s+/g, " ").trim().slice(0, 400));
+    return { signedIn, online: !!tab && (showing || (pressed || !!arg?.pressed)), pressed, none: re(O.none).test(text), entries, text: text.slice(0, 2000) };
+  }
 
   // A short account of the page when no products could be read: its Add buttons, product links and cart, and the
   // stretch of page around the first Add button. No pictures, nothing about the person.

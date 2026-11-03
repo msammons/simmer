@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuthError, errorText, framed, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { nameWords, PAGE, searchWords } from "@/lib/safeway-helper.mjs";
-import { addedFor, cartTotal, money, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { addedFor, buyAmount, cartTotal, money, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, Notice } from "./ui";
 
@@ -43,6 +43,8 @@ export function useSafeway() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [answering, setAnswering] = useState<boolean | null>(null);
+  // Not heard from for a couple of minutes: Lists greys the cart and turns the Safeway rows into a checklist (Nov 3).
+  const [away, setAway] = useState(false);
   const [outdated, setOutdated] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Record<string, number>>({});
@@ -54,7 +56,7 @@ export function useSafeway() {
     try {
       const r = await api.cart();
       if (!alive.current) return;
-      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setOutdated(r.outdated === true); setLoaded(true);
+      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setAway(r.away === true); setOutdated(r.outdated === true); setLoaded(true);
     } catch (e) { if (!(e instanceof AuthError) && alive.current) setLoaded(true); }
   }, []);
   useEffect(() => {
@@ -93,7 +95,7 @@ export function useSafeway() {
           return { ok: false, problem: NOT_ANSWERING };
         }
         if (s.job.status !== "waiting" || s.answering) quiet = 0;
-        if (s.job.status === "done") { setAnswering(true); return { ok: true, result: s.job.result ?? {} }; }
+        if (s.job.status === "done") { setAnswering(true); setAway(false); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
           const error = String(s.job.result?.error ?? "");
           if (error === "not-answering" || error === "stuck") setAnswering(false);
@@ -134,7 +136,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, answering, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf };
+  return { cart, picks, answering, away, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
@@ -157,17 +159,18 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
  * − / count / +. While a change is on its way to Safeway (busy) the product is locked: both buttons are off and the count
  * is a spinner, so a second tap can't send a second change before the first is done (Sam, Oct 31).
  */
-export function Stepper({ qty, name, busy, onChange }: { qty: number; name: string; busy?: boolean; onChange: (n: number) => void }) {
+/** − / count / +. `off`: Safeway can't be reached just now, so neither can be pressed (Nov 3). */
+export function Stepper({ qty, name, busy, off, onChange }: { qty: number; name: string; busy?: boolean; off?: boolean; onChange: (n: number) => void }) {
   const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
   return (
     <div className="flex shrink-0 items-center gap-1.5" aria-busy={busy || undefined}>
-      <button className={btn} disabled={busy} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
+      <button className={btn} disabled={busy || off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
         <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
       </button>
       <span className="flex w-6 justify-center t-headline tabular-nums" aria-label={busy ? `Changing ${name} on Safeway` : `${qty} in the cart`} role={busy ? "status" : undefined}>
         {busy ? <span aria-hidden className="size-[18px] animate-spin rounded-full border-2 border-accent/25 border-t-accent" /> : qty}
       </span>
-      <button className={btn} aria-label={`One more ${name}`} disabled={busy || qty >= 24} onClick={() => onChange(qty + 1)}>
+      <button className={btn} aria-label={`One more ${name}`} disabled={busy || off || qty >= 24} onClick={() => onChange(qty + 1)}>
         <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
       </button>
     </div>
@@ -295,7 +298,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             : !last && s?.state !== "failed" && <button onClick={() => move(index + 1)} className={`${top} glass text-accent`}>Skip</button>}
         </div>
         <h2 className="text-[26px] font-bold leading-tight tracking-tight">{cap(it.item)}</h2>
-        <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : it.quantity && `${it.quantity} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
+        <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : buyAmount(it.quantity) && `${buyAmount(it.quantity)} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const q = query.trim(); if (q) search(q, true); }}>
         <input value={query} onChange={(e) => setTyped((t) => ({ ...t, [it.id]: e.target.value }))} aria-label={`Search ${store}`} placeholder={`Search ${store}`} enterKeyHint="search"
@@ -397,7 +400,7 @@ export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; on
           const qty = sw.qtyOf(l.productId, l.qty);
           const p = { id: l.productId, name: l.name, price: l.price, image: l.image };
           return (
-            <ProductRow key={l.productId} p={p} sub={[l.price, l.item && `for ${l.item}`].filter(Boolean).join(" · ")}
+            <ProductRow key={l.productId} p={p} sub={l.price}
               control={<Stepper qty={qty} name={l.name} busy={l.productId in sw.pending}
                 onChange={(n) => sw.setQty(p, n, l.item ? searchWords(l.item) : nameWords(l.name), null, { alt: nameWords(l.name), on: "cart" })} />} />
           );

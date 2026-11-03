@@ -125,6 +125,25 @@ function cartPage(signedIn) {
     </script></body></html>`;
 }
 
+// Safeway's Purchases page, as a stand-in (1.3): an In-store tab showing first, and an Online tab that shows either the
+// words Safeway shows with no orders (seen Nov 3) or, once `ordered`, an order placed today (a guess at its shape).
+let ordered = false;
+const todayWords = new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric" });
+function ordersPage(signedIn) {
+  const online = ordered ? `<div class="order-card"><p>Order #5550123</p><p>Placed ${todayWords}</p><p>Delivery window tomorrow</p><p>$4.12</p></div>` : "<p>You have no orders placed within the last 90 days.</p>";
+  return `<!doctype html><html><body>
+    <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header>
+    <main><h1>Purchases</h1><div role="tablist"><button role="tab" id="store" aria-selected="true">In-store</button><button role="tab" id="online" aria-selected="false">Online</button></div>
+    <section id="list"><p>You have no orders placed within the last 90 days.</p></section></main>
+    <script>
+      document.getElementById("online").onclick = () => setTimeout(() => {
+        document.getElementById("online").setAttribute("aria-selected", "true");
+        document.getElementById("store").setAttribute("aria-selected", "false");
+        document.getElementById("list").innerHTML = ${JSON.stringify(online)};
+      }, 300);
+    </script></body></html>`;
+}
+
 const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpdir(), "simmer-ext-")), {
   channel: "chromium", headless: true,
   args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
@@ -135,6 +154,7 @@ await ctx.route("https://www.safeway.com/**", (route) => {
   if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
   if (u.pathname === "/erums/cart") return route.fulfill({ contentType: "text/html", body: cartPage(signedIn) });
+  if (u.pathname === "/order-account/orders") return route.fulfill({ contentType: "text/html", body: ordersPage(signedIn) });
   return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
 });
 // The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
@@ -167,7 +187,7 @@ await phone.getByLabel("Household passcode").fill(PASS);
 await phone.getByRole("button", { name: "Get started" }).click();
 await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Lists" }).click();
 await phone.getByRole("radio", { name: "Safeway" }).click();
-expect(await phone.getByText(/isn't connected right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
+expect(await phone.getByText(/Can't reach Safeway right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
 
 // Setup in the panel: a wrong address and a wrong passcode say so; then the panel is Simmer, open on Lists at Safeway.
 const panel = await ctx.newPage();
@@ -248,6 +268,24 @@ await safeway.reload(); // Safeway shows it's signed out once its page loads aga
 await phone.getByRole("dialog").getByRole("button", { name: /^One more/ }).first().click();
 expect(await phone.getByRole("dialog").getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
 signedIn = true;
+
+// The cart emptied on Safeway (1.3): with no online orders only Simmer's copy empties and the list stays; with an order
+// placed today, the cart's things come off the list too.
+const bananasOnList = async () => (await api("/api/list")).items.some((i) => i.item === "bag bananas");
+const cartJob = async () => { await api("/api/safeway/jobs", { op: "queue", kind: "cart" }); worker.evaluate(() => self.simmerCheck()).catch(() => {}); };
+const bananaInCart = async () => (await api("/api/safeway/cart")).cart.find((l) => l.qty > 0);
+const inCartNow = await bananaInCart();
+await safeway.evaluate(() => localStorage.removeItem("cart"));
+await cartJob();
+expect(await until(async () => !(await bananaInCart()), 60_000) && await bananasOnList(), "an emptied Safeway cart with no online orders empties Simmer's cart and leaves the list");
+const bananaItem = (await api("/api/list")).items.find((i) => i.item === "bag bananas");
+await api("/api/safeway/jobs", { op: "queue", kind: "setQty", productId: inCartNow?.productId ?? "960010", qty: 1, query: "bananas", name: inCartNow?.name ?? "Bananas", itemId: bananaItem?.id, item: "bag bananas" });
+worker.evaluate(() => self.simmerCheck()).catch(() => {});
+await until(async () => Boolean(await bananaInCart()), 60_000);
+await safeway.evaluate(() => localStorage.removeItem("cart"));
+ordered = true;
+await cartJob();
+expect(await until(async () => !(await bananasOnList()), 60_000) && !(await bananaInCart()), "an emptied Safeway cart with an order placed today takes the cart's things off the list");
 
 // Framing: another site can't show Simmer.
 const other = await ctx.newPage();

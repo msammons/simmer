@@ -61,7 +61,59 @@ export const PAGE = {
   signIn: "^sign in$",
   noResults: "no (search )?results for",
   productLinks: "a[href*='product']",
+  // Safeway's Purchases page, read after the cart page says it's empty (helper 1.3 on), to tell an order that went
+  // through from a cart that only emptied (Nov 3). Its "Online" tab says exactly `none` when there are no orders. A
+  // listed order has never been seen, so `entry` is a guess at what holds one, and an entry only counts when it has a
+  // date (`date`); the page's words are kept in the job's result so a real order can show what to put here.
+  orders: {
+    path: "/order-account/orders",
+    tab: "^online$",
+    none: "you have no orders placed within the last 90 days",
+    entry: "[data-qa*='order' i]:not(button):not(a), [class*='order-card' i], [class*='ordercard' i], [class*='order-item' i], [class*='orderitem' i], [class*='order-tile' i], li[class*='order' i], article",
+    date: String.raw`\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b`,
+  },
 };
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * The calendar dates written in a piece of Safeway's page ("Placed Nov 3, 2026", "Tue, Nov 4", "11/03/26"), as
+ * "YYYY-MM-DD". A date without a year is this year's, unless that's more than two months ahead (then last year's).
+ * @param {string} text @param {string} today "YYYY-MM-DD"
+ */
+export function datesIn(text, today) {
+  const year = Number(today.slice(0, 4));
+  const out = [];
+  const iso = (y, m, d) => (m >= 1 && m <= 12 && d >= 1 && d <= 31 ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : null);
+  const guess = (m, d) => { const s = iso(year, m, d); return s && s > addMonths(today, 2) ? iso(year - 1, m, d) : s; };
+  for (const found of String(text ?? "").matchAll(new RegExp(PAGE.orders.date, "gi"))) {
+    const s = found[0].toLowerCase();
+    const num = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (num) { const y = Number(num[3]); const d = iso(y < 100 ? 2000 + y : y, Number(num[1]), Number(num[2])); if (d) out.push(d); continue; }
+    const m = MONTHS.indexOf(s.slice(0, 3)) + 1, day = Number(s.match(/\s(\d{1,2})/)?.[1]), y = s.match(/(\d{4})$/)?.[1];
+    const d = y ? iso(Number(y), m, day) : guess(m, day);
+    if (m && d) out.push(d);
+  }
+  return out;
+}
+const addMonths = (date, n) => { const [y, m, d] = date.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1 + n, d)); return t.toISOString().slice(0, 10); };
+
+/**
+ * Whether Safeway's Purchases page shows an online order placed since the cart was filled: the Online tab was found
+ * and showing (so in-store purchases can't count), its "no orders" words aren't there, and some order entry has a date on or after the day the cart was last filled. An entry's earliest
+ * date is taken as when it was placed (a delivery date comes after it), so an older order still on its way doesn't
+ * count. Nothing read, or a cart with nothing in it, is never an order.
+ * @param {{ online?: boolean, none?: boolean, entries?: string[] } | null | undefined} orders what the helper read
+ * @param {string} filled the day the cart was last filled, "YYYY-MM-DD" ("" when the cart is empty)
+ * @param {string} today "YYYY-MM-DD"
+ */
+export function orderSince(orders, filled, today) {
+  if (!orders || orders.online !== true || orders.none === true || !filled) return false;
+  return (orders.entries ?? []).some((e) => {
+    const dates = datesIn(e, today).sort();
+    return dates.length > 0 && dates[0] >= filled;
+  });
+}
 
 /**
  * A product's picture address: the one read from the page when it's a real one (made https), else Safeway's picture

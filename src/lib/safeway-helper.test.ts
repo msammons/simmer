@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choose, howMany, imageFor, keyOf, nameWords, PAGE, prepare, safewayItems, score, searchFor, searchWords, usualFor, words } from "./safeway-helper.mjs";
+import { choose, datesIn, howMany, imageFor, keyOf, nameWords, orderSince, PAGE, prepare, safewayItems, score, searchFor, searchWords, usualFor, words } from "./safeway-helper.mjs";
 
 const milk = { id: "1", name: "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", price: "$3.49" };
 const milkGal = { id: "2", name: "Lucerne Milk Reduced Fat 2% - 1 Gallon", price: "$5.29" };
@@ -127,5 +127,29 @@ describe("prepare", () => {
     expect(imageFor("970020964", "")).toBe("https://images.albertsons-media.com/is/image/ABS/970020964?$grid-product-card-desktop$&defaultImage=Not_Available");
     expect(imageFor("970020964", "data:image/gif;base64,R0lGOD")).toMatch(/ABS\/970020964\?/);
     expect(imageFor("x", "")).toBe("");
+  });
+});
+
+describe("Safeway's Purchases page (Nov 3)", () => {
+  const today = "2026-11-03";
+  it("reads the dates written in an order", () => {
+    expect(datesIn("Order #12 Placed Nov 3, 2026 · Delivery Tue, Nov 4 · 11/05/26", today)).toEqual(["2026-11-03", "2026-11-04", "2026-11-05"]);
+    expect(datesIn("Placed December 28", "2027-01-02")).toEqual(["2026-12-28"]); // no year, and this year's would be ahead
+    expect(datesIn("You have no orders placed within the last 90 days.", today)).toEqual([]);
+    expect(datesIn("Safeway Market 12 · Decaf 2 lb", today)).toEqual([]);
+  });
+  it("an order counts only when it's online, listed with a date, and placed since the cart was filled", () => {
+    const listed = (entries: string[]) => ({ online: true, none: false, entries });
+    expect(orderSince(listed(["Order #12 Placed Nov 3, 2026 Delivery Nov 4"]), "2026-11-03", today)).toBe(true);
+    expect(orderSince(listed(["Order #11 Placed Oct 28, 2026 Delivery Nov 4"]), "2026-11-03", today)).toBe(false); // older, still coming
+    expect(orderSince(listed(["Order #12 On its way"]), "2026-11-03", today)).toBe(false);
+    expect(orderSince({ online: true, none: true, entries: ["Placed Nov 3, 2026"] }, "2026-11-03", today)).toBe(false);
+    expect(orderSince({ online: false, none: false, entries: ["Placed Nov 3, 2026"] }, "2026-11-03", today)).toBe(false);
+    expect(orderSince(listed(["Placed Nov 3, 2026"]), "", today)).toBe(false); // nothing was in the cart
+    expect(orderSince(null, "2026-11-03", today)).toBe(false);
+  });
+  it("knows the page's address and its no-orders words", () => {
+    expect(PAGE.orders.path).toBe("/order-account/orders");
+    expect(new RegExp(PAGE.orders.none, "i").test("You have no orders placed within the last 90 days.")).toBe(true);
   });
 });

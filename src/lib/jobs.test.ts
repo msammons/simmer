@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addItem, loadList } from "./groceries";
-import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, takeJob } from "./jobs";
+import { addItem, loadList, removeItem } from "./groceries";
+import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperPush, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -137,6 +137,72 @@ describe("showing Safeway's cart", () => {
     const { items } = await loadList();
     expect(items.some((x) => x.id === it.id)).toBe(true);
     expect(items.some((x) => x.id === other.id)).toBe(true);
+  });
+
+  // Nov 3: an empty cart sends the helper to Safeway's Purchases page (Online); an order there since the cart was filled
+  // means it went through.
+  const today = new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric" });
+  async function emptyCartWith(orders: unknown) {
+    resetJobs(); resetSafeway();
+    for (const x of (await loadList()).items) await removeItem(x.id);
+    const it = await addItem("milk", "Robin", "", { store: "safeway", section: "fresh" });
+    const other = await addItem("bread", "Robin", "", { store: "safeway", section: "fresh" });
+    await setCartLine({ ...milk, itemId: it.id, qty: 1 });
+    const a = await queueJob("cart", {});
+    expect(a.args.orders).toBe(true); // Simmer's cart has something, so the helper is asked to look
+    await takeJob("1.3.0", true);
+    const j = await finishJob(a.id, true, { products: [], signedIn: true, empty: true, orders });
+    const { items } = await loadList();
+    return { ordered: j?.result?.ordered, milkStays: items.some((x) => x.id === it.id), breadStays: items.some((x) => x.id === other.id) };
+  }
+  it("an online order placed since the cart was filled takes the cart's things off the list", async () => {
+    const r = await emptyCartWith({ online: true, none: false, entries: [`Order #1234 Placed ${today} Delivery Tomorrow $42.10`], text: "" });
+    expect(r).toEqual({ ordered: true, milkStays: false, breadStays: true });
+    expect(await loadCart()).toEqual([]);
+  });
+  it("no online orders: only Simmer's cart empties, the list stays", async () => {
+    const r = await emptyCartWith({ online: true, none: true, entries: [], text: "You have no orders placed within the last 90 days." });
+    expect(r).toEqual({ ordered: false, milkStays: true, breadStays: true });
+    expect(await loadCart()).toEqual([]);
+  });
+  it("an older order, an order with no date, the wrong tab, or nothing read isn't this order", async () => {
+    for (const orders of [
+      { online: true, none: false, entries: ["Order #1200 Placed Jan 2, 2020 Delivered Jan 3, 2020"] },
+      { online: true, none: false, entries: ["Order #1234 Out for delivery"] },
+      { online: false, none: false, entries: [`Order #1234 Placed ${today}`] },
+      undefined,
+    ]) {
+      expect((await emptyCartWith(orders)).milkStays).toBe(true);
+    }
+  });
+  it("with nothing in Simmer's cart, the helper isn't sent to look", async () => {
+    expect((await queueJob("cart", {})).args.orders).toBe(false);
+  });
+});
+
+describe("whether Safeway can be reached", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); });
+  it("is away until the helper checks in, and says when it last did", async () => {
+    expect(await helperStatus()).toMatchObject({ away: true, seen: "" });
+    await takeJob("1.3.0", false);
+    const s = await helperStatus();
+    expect(s.away).toBe(false);
+    expect(Date.now() - Date.parse(s.seen)).toBeLessThan(5000);
+  });
+  it("keeps the helper's push subscription through check-ins", async () => {
+    const push = { key: "BKey", sub: { endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: "p", auth: "a" } } };
+    await takeJob("1.3.0", false);
+    await savePush(push);
+    await takeJob("1.3.0", true); // the panel opened: a new check-in is written
+    expect(await helperPush()).toEqual(push);
+    await savePush(null);
+    expect(await helperPush()).toBeNull();
+  });
+  it("a check-in row with a subscription reads back", () => {
+    const H = ["id", "kind", "status", "args", "result", "created", "updated"];
+    const t = parseTab([H, ["helper", "check-in", "", "", '{"version":"1.3.0","panel":false,"push":{"key":"K","sub":{"endpoint":"https://fcm.googleapis.com/x","keys":{"p256dh":"p","auth":"a"}}}}', "", "2026-11-03T20:00:00Z"]]);
+    expect(t.helper).toMatchObject({ version: "1.3.0", push: { key: "K" } });
+    expect(t.junk).toBe(0);
   });
 });
 
