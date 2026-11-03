@@ -15,11 +15,14 @@ export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhea
   return [EFFORT[r.effort], r.minutes && (long ? `${r.minutes} minutes` : `${r.minutes} min`), r.for !== "everyone" && FOR[r.for], r.makeAhead && "Make ahead"].filter(Boolean).join(" · ");
 }
 
+/** Shown wherever a recipe has no ingredients yet (Nov 3), so a typed idea reads as unfinished, not empty. */
+const NO_INGREDIENTS = "No ingredients yet · Add them";
+
 type Opens = { onOpen: (r: Recipe) => void; onAddToList: (r: Recipe) => void };
 
 /** A recipe in the collection: tap to open it, or the list button beside it to put its ingredients on the list. */
 function RecipeRow({ r, onOpen, onAddToList }: { r: Recipe } & Opens) {
-  if (!r.ingredients.length) return <Row title={r.name} subtitle={summary(r)} accessory="chevron" onClick={() => onOpen(r)} />;
+  if (!r.ingredients.length) return <Row title={r.name} subtitle={[summary(r), NO_INGREDIENTS].join(" · ")} accessory="chevron" onClick={() => onOpen(r)} />;
   return (
     <div className="flex items-center">
       <div className="min-w-0 flex-1"><Row title={r.name} subtitle={summary(r)} onClick={() => onOpen(r)} /></div>
@@ -109,7 +112,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
           {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
         </>
       ) : (
-        <Group><Row icon="pencil" title="Add the ingredients" subtitle="So they can go on the grocery list" accessory="chevron" onClick={onEdit} /></Group>
+        <Group><Row icon="pencil" title="No ingredients yet" subtitle="Add them, so they can go on the grocery list" accessory="chevron" onClick={onEdit} /></Group>
       )}
       {r.steps.length > 0 && (
         <Group header="Steps">
@@ -131,34 +134,38 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
   );
 }
 
-/** Which of a recipe's ingredients go on the list: fresh ones ticked, pantry ones and spices left for her to check she has. */
-export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (items: Ingredient[]) => Promise<string | null>; onClose: () => void }) {
+/**
+ * Adding a recipe to the list (Nov 3): the fresh things to buy are listed, each can be unticked; the pantry things and
+ * spices aren't a checklist, they're highlighted in Stock for her to check, as planning does.
+ */
+export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (buy: Ingredient[], pantry: Ingredient[]) => Promise<{ problem: string | null; note?: string }>; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // Closes once added; if adding fails, the ticks stay and the problem shows above the button.
-  async function add() {
-    setBusy(true); setProblem(null);
-    const p = await onAdd(r.ingredients.filter((_, n) => on.has(n)));
-    if (!p) return onClose();
-    setProblem(p); setBusy(false);
-  }
-  const all = r.ingredients.map((i, n) => [i, n] as const);
-  const spices = all.filter(([i]) => isSpice(i.item));
-  const fresh = all.filter(([i]) => i.section === "fresh" && !isSpice(i.item));
-  const rest = all.filter(([i]) => i.section !== "fresh" && !isSpice(i.item));
+  const [done, setDone] = useState<string | null>(null);
+  const fresh = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section === "fresh" && !isSpice(i.item));
+  const pantry = r.ingredients.filter((i) => i.section !== "fresh" || isSpice(i.item));
   const [on, setOn] = useState(() => new Set(fresh.map(([, n]) => n)));
   const flip = (n: number) => setOn((s) => { const t = new Set(s); if (t.has(n)) t.delete(n); else t.add(n); return t; });
-  const row = (i: Ingredient, n: number) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => flip(n)} />;
+  // Stays open with a note once added; if adding fails, the ticks stay and the problem shows above the button.
+  async function add() {
+    setBusy(true); setProblem(null);
+    const res = await onAdd(fresh.filter(([, n]) => on.has(n)).map(([i]) => i), pantry);
+    setBusy(false);
+    if (res.problem) return setProblem(res.problem);
+    if (res.note) setDone(res.note); else onClose();
+  }
   return (
     <Sheet label="Add to the list" title={r.name} onClose={onClose}
       footer={<div className="space-y-3">
         {problem && <Notice>{problem}</Notice>}
-        <Button className="w-full" disabled={busy || !on.size} onClick={add}>{busy ? "Adding…" : on.size ? `Add ${on.size} to the list` : "Nothing ticked"}</Button>
+        {done && <Notice tone="info">{done}</Notice>}
+        {done
+          ? <Button className="w-full" onClick={onClose}>Done</Button>
+          : <Button className="w-full" disabled={busy || (!on.size && !pantry.length)} onClick={add}>{busy ? "Adding…" : on.size ? `Add ${on.size} to the list` : "Highlight in Stock"}</Button>}
       </div>}>
       <div className="space-y-5">
-        {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => row(i, n))}</Group>}
-        {rest.length > 0 && <Group header="Check you have these" footer={spices.length ? undefined : "Tick any you're out of."}>{rest.map(([i, n]) => row(i, n))}</Group>}
-        {spices.length > 0 && <Group header="Spices" footer="Usually on hand. Tick any you're out of.">{spices.map(([i, n]) => row(i, n))}</Group>}
+        {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => !done && flip(n)} />)}</Group>}
+        {pantry.length > 0 && <p className="t-sub px-4 text-muted">The pantry things are highlighted in Stock.</p>}
       </div>
     </Sheet>
   );
