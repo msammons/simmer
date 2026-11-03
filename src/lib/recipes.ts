@@ -251,8 +251,9 @@ async function readElsewhere(url: string): Promise<Draft[]> {
 /** Many short lines with no amounts or steps: a list of meal ideas ("Tacos", "Salmon and broccoli"), one recipe each. */
 export function looksLikeIdeas(text: string): string[] | null {
   const ls = text.split(/\n/).map((l) => l.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, "").trim()).filter(Boolean);
-  if (ls.length < 3 || ls.length > 300) return null;
-  const idea = (l: string) => l.length <= 50 && !/^[\d½¼¾⅓⅔]/.test(l) && !/:\s*$|\b(cups?|tbsp|tsp|teaspoons?|tablespoons?|oz|lbs?|minutes|preheat|stir|bake|heat)\b/i.test(l);
+  // One or two short names are ideas too ("Chicken stir fry" alone read as a recipe and failed, Nov 3).
+  if (!ls.length || ls.length > 300) return null;
+  const idea = (l: string) => l.length <= 50 && !/^[\d½¼¾⅓⅔]/.test(l) && !/:\s*$|\b(cups?|tbsp|tsp|teaspoons?|tablespoons?|oz|lbs?|minutes|preheat|stir(?![ -]?fr(?:y|ied))|bake|heat)\b/i.test(l); // "stir fry" is a dish, "stir" a step
   return ls.every(idea) ? [...new Set(ls)] : null;
 }
 
