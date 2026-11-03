@@ -52,7 +52,9 @@ describe("the recipe collection", () => {
   it("tells a list of meal ideas from a recipe", () => {
     expect(looksLikeIdeas("Tacos\nSalmon and broccoli\n- Chicken soup\nPizza night")).toEqual(["Tacos", "Salmon and broccoli", "Chicken soup", "Pizza night"]);
     expect(looksLikeIdeas("Pancakes\n2 cups flour\n1 egg\nMix and cook")).toBeNull();
-    expect(looksLikeIdeas("Just one thing")).toBeNull();
+    expect(looksLikeIdeas("Chicken stir fry")).toEqual(["Chicken stir fry"]);
+    expect(looksLikeIdeas("Chicken stir fry\nBreakfast burritos")).toEqual(["Chicken stir fry", "Breakfast burritos"]);
+    expect(looksLikeIdeas("Mix the flour and eggs, then bake for 20 minutes")).toBeNull();
   });
 
   it("never keeps an amount or time the text didn't have", () => {
