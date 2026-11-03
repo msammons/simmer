@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addStaple, checkItem, dropHighlightsBefore, doneShopping, file, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addStaple, checkItem, dropHighlightsBefore, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -68,5 +68,18 @@ describe("meal highlights", () => {
     expect((await loadList()).items.some((x) => x.id === it.id)).toBe(true);
     await dropHighlightsBefore("9999-01-01"); // a later week: it goes
     expect((await loadList()).items.some((x) => x.id === it.id)).toBe(false);
+  });
+});
+
+describe("bought history", () => {
+  it("writes down what comes off the list when a trip is done", async () => {
+    const a = await addItem("bought-test pears", "Robin", "Friday's salad", { store: "costco", section: "fresh" });
+    await checkItem(a.id, true);
+    const before = (await loadBought()).length;
+    expect(await doneShopping("costco")).toBe(1);
+    const rows = await loadBought();
+    expect(rows.length).toBe(before + 1);
+    expect(rows.at(-1)).toEqual(["bought-test pears", "", "costco", new Date().toISOString().slice(0, 10), "Friday's salad"]);
+    expect((await loadList()).items.some((x) => x.id === a.id)).toBe(false);
   });
 });

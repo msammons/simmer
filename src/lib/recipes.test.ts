@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { checkAgainst, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, parseIngredient, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
+import { describe, expect, it, vi } from "vitest";
+import { checkAgainst, guessIdeas, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, parseIngredient, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
 
 describe("the recipe collection", () => {
   it("reads ingredient lines", () => {
@@ -60,5 +60,23 @@ describe("the recipe collection", () => {
     expect(d.minutes).toBeNull();
     expect(d.serves).toBeNull();
     expect(d.ingredients).toEqual(["2 carrots", "onion"]);
+  });
+});
+
+describe("typed meal ideas", () => {
+  it("get an ingredient list each, and are kept without one when the writer fails", async () => {
+    const gemini = await import("./google/gemini");
+    const spy = vi.spyOn(gemini, "generateJson").mockImplementation((async (prompt: string) => {
+      if (prompt.includes("ingredient list")) return { data: { ideas: [{ name: "Tacos", ingredients: ["1 lb ground beef", "8 tortillas", ""] }, { name: "Pizza night", ingredients: ["1 pizza dough"] }] }, model: "m", sources: [] };
+      return { data: { ideas: [{ name: "Tacos", effort: "quick" }, { name: "Pizza night", effort: "regular" }] }, model: "m", sources: [] };
+    }) as never);
+    const made = await guessIdeas(["Tacos", "Pizza night"], "Typed in");
+    expect(made.map((d) => d.ingredients)).toEqual([["1 lb ground beef", "8 tortillas"], ["1 pizza dough"]]);
+    expect(made[0].effort).toBe("quick");
+    spy.mockRejectedValue(new Error("no key"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bare = await guessIdeas(["Tacos", "Pizza night"], "Typed in");
+    expect(bare.map((d) => [d.name, d.ingredients])).toEqual([["Tacos", []], ["Pizza night", []]]);
+    err.mockRestore(); spy.mockRestore();
   });
 });

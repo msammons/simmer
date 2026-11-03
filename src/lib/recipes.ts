@@ -345,7 +345,32 @@ export async function readRecipeFile(f: { name: string; mimeType: string; data: 
 }
 
 /** Meal ideas ("Tacos") become recipes that are just a name and a guessed effort: enough to plan with. */
-async function guessIdeas(names: string[], src: string): Promise<Draft[]> {
+export async function guessIdeas(names: string[], src: string): Promise<Draft[]> {
+  const [drafts, lists] = await Promise.all([guessEffort(names, src), ingredientLists(names)]);
+  return drafts.map((d, i) => ({ ...d, ingredients: lists[i] }));
+}
+
+/**
+ * A short plain ingredient list for each idea (Nov 3), so an idea can go on the grocery list. Any failure leaves the lists
+ * empty: the idea is saved anyway and reads "No ingredients yet" until she adds them.
+ */
+async function ingredientLists(names: string[]): Promise<string[][]> {
+  try {
+    const { text, restore } = await privately(names.join("\n"));
+    const { data } = await generateJson<{ ideas: { name: string; ingredients: string[] }[] }>(
+      `Each line is a family dinner idea. For each, in the same order and with the name exactly as written, write a short plain ingredient list for a typical family version: 5 to 10 lines, each an amount and an item ("1 lb ground turkey", "2 lemons"), no steps.\n\n${text}`,
+      { type: "OBJECT", properties: { ideas: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, ingredients: { type: "ARRAY", items: { type: "STRING" } } }, required: ["name", "ingredients"] } } }, required: ["ideas"] },
+      { light: true, timeoutMs: 15_000 },
+    );
+    const by = new Map((data.ideas ?? []).map((g) => [norm(restore(g.name)), g]));
+    return names.map((n, i) => ((by.get(norm(n)) ?? data.ideas?.[i])?.ingredients ?? []).map((l) => restore(String(l)).replace(/\s+/g, " ").trim().slice(0, 100)).filter(Boolean).slice(0, 14));
+  } catch (e) {
+    console.error("couldn't write ingredients for ideas", e);
+    return names.map(() => []);
+  }
+}
+
+async function guessEffort(names: string[], src: string): Promise<Draft[]> {
   const bare = (name: string, effort: Effort, makeAhead = false, forWho: For = "everyone"): Draft => ({
     name, effort, minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: forWho, kidOk: "", makeAhead, tags: [], source: src, rating: null, notes: "",
   });
