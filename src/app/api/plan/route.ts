@@ -1,64 +1,59 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { loadWeek, loadWeeks, markMade, saveWeek, shopDue } from "@/lib/plan";
-import { todayIn } from "@/lib/time";
-import { LUNCH_PARTS, weekOf, type Lunch, type Night } from "@/lib/week";
+import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch } from "@/lib/plan";
+import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const text = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
+const isKind = (s: unknown): s is Kind => typeof s === "string" && (KINDS as readonly string[]).includes(s);
+const isPart = (s: unknown): s is LunchPart => typeof s === "string" && (LUNCH_PARTS as readonly string[]).includes(s);
+const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.min(MAX_COUNT, Math.round(n))) : 0);
 
-function night(x: Record<string, unknown>): Night | null {
-  if (!DATE.test(String(x?.date))) return null;
-  return {
-    date: String(x.date), kind: x.kind === "quick" || x.kind === "skip" ? x.kind : "regular", meal: text(x.meal), kidsMeal: text(x.kidsMeal),
-    away: Array.isArray(x.away) ? x.away.map((a) => text(a, 20)).filter(Boolean).slice(0, 4) : [], split: Boolean(x.split), pinned: Boolean(x.pinned),
-    plannedBy: text(x.plannedBy, 20), made: x.made === "yes" || x.made === "no" ? x.made : "", notes: text(x.notes, 200),
-  };
+function dish(x: Record<string, unknown>): NewDish | null {
+  return isKind(x?.kind) && text(x.recipe) ? { kind: x.kind, recipe: text(x.recipe), pinned: Boolean(x.pinned) } : null;
 }
-function lunch(x: Record<string, unknown>): Lunch | null {
-  if (!DATE.test(String(x?.date)) || !text(x.kid)) return null;
-  return { date: String(x.date), kid: text(x.kid, 20), schoolLunch: Boolean(x.schoolLunch), noSchool: Boolean(x.noSchool), ...(Object.fromEntries(LUNCH_PARTS.map((p) => [p, text(x[p])])) as Record<(typeof LUNCH_PARTS)[number], string>) };
+function lunch(x: Record<string, unknown>): NewLunch | null {
+  if (!text(x?.kid)) return null;
+  return { kid: text(x.kid, 20), ...(Object.fromEntries(LUNCH_PARTS.map((p) => [p, text(x[p])])) as Record<LunchPart, string>) };
 }
+function counts(x: Record<string, unknown> | null | undefined): Counts | null {
+  if (!x || typeof x !== "object") return null;
+  const kids = x.lunches && typeof x.lunches === "object" ? Object.entries(x.lunches as Record<string, unknown>).slice(0, 8) : [];
+  return { ...(Object.fromEntries(KINDS.map((k) => [k, count(x[k])])) as Record<Kind, number>), lunches: Object.fromEntries(kids.map(([k, n]) => [text(k, 20), count(n)]).filter(([k]) => k)) };
+}
+const fresh = { headers: { "cache-control": "no-store" } };
 
-/**
- * GET ?weeks=1: this week and the ones after it that are planned, then the first that isn't (see loadWeeks).
- * GET ?week=YYYY-MM-DD (any day of it; this week by default): the week's nights and lunches, and what planning needs.
- * Asked for this week, it also puts on the list the groceries of nights planned weeks ago that are now close
- * (`added`: how many things).
- */
+/** GET: what's still to make and pack, and what planning needs (see loadPlan). */
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
-  const params = new URL(req.url).searchParams;
-  const w = params.get("week") ?? "";
   try {
-    // ?weeks=1: the Meals screen's weeks in one answer (the Sheet read once), { weeks, added }.
-    if (params.get("weeks")) return Response.json(await loadWeeks(todayIn()), { headers: { "cache-control": "no-store" } });
-    const monday = weekOf(DATE.test(w) ? w : todayIn());
-    const added = monday === weekOf(todayIn()) ? await shopDue() : 0;
-    return Response.json({ ...(await loadWeek(monday)), added }, { headers: { "cache-control": "no-store" } });
+    return Response.json(await loadPlan(), fresh);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
 }
 
-/** POST { op: "save", nights, lunches, by } or { op: "made", date, made }. Answers with that week as it is now. */
+/**
+ * POST { op: "plan", dishes, lunches, counts, by }: more to make and pack, on top of what's there.
+ * { op: "change", id, recipe?, pinned?, part?, item?, by }, { op: "made", id }, { op: "remove", id }: one planned thing.
+ * Answers with everything as it is now, and `added`: how many things went on the grocery list.
+ */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
   try {
-    let added = 0, week = "";
-    if (b?.op === "save") {
-      const nights = (Array.isArray(b.nights) ? b.nights : []).slice(0, 14).map(night).filter((n: Night | null): n is Night => n !== null);
-      if (!nights.length) throw new AppError("Nothing to save.");
-      const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 40).map(lunch).filter((l: Lunch | null): l is Lunch => l !== null);
-      ({ added } = await saveWeek(nights, lunches, text(b.by, 20)));
-      week = nights[0].date;
-    } else if (b?.op === "made" && DATE.test(String(b.date))) {
-      await markMade(String(b.date), Boolean(b.made));
-      week = String(b.date);
-    } else return Response.json({ error: "Unknown change." }, { status: 400 });
-    return Response.json({ ...(await loadWeek(weekOf(week))), added }, { headers: { "cache-control": "no-store" } });
+    let added = 0;
+    const id = text(b?.id, 40);
+    if (b?.op === "plan") {
+      const dishes = (Array.isArray(b.dishes) ? b.dishes : []).slice(0, KINDS.length * MAX_COUNT).map(dish).filter((d: NewDish | null): d is NewDish => d !== null);
+      const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 8 * MAX_COUNT).map(lunch).filter((l: NewLunch | null): l is NewLunch => l !== null);
+      ({ added } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
+    } else if (b?.op === "change" && id) {
+      ({ added } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
+    } else if (b?.op === "made" && id) await markMade(id);
+    else if (b?.op === "remove" && id) await removePlanned(id);
+    else return Response.json({ error: "Unknown change." }, { status: 400 });
+    return Response.json({ ...(await loadPlan()), added }, fresh);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }

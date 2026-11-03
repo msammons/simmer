@@ -1,12 +1,14 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type Lunch, type NewDish, type NewLunch, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
+import { STORE_NAMES } from "./Shop";
+import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { NightSheet, PlanSheet, WeekScreen } from "./Week";
+import { AddOneSheet, DishSheet, MealsScreen, PlanSheet } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
@@ -44,31 +46,27 @@ export default function App() {
   const [listsStart, setListsStart] = useState<Where>("all"); // the store Lists opens on: Safeway in the helper's panel
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
-  const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
+  const [, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's; only Settings read it, until "Who's using this?" went (Nov 3)
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
   const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
   const [listError, setListError] = useState<string | null>(null);
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
-  const [me, setMe] = useState(() => (browser ? store.me() : ""));
+  const me = ""; // "Who's using this?" is gone (Nov 3); added-by stays blank
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
   const [listing, setListing] = useState<string | null>(null); // the recipe going on the list from the Recipes tab
-  // This week first, then the weeks after it that are planned, then the first one that isn't (to plan it). This week is
-  // last time's at first, for opening offline.
-  const [weeks, setWeeks] = useState<WeekData[]>(() => { const w = browser ? store.week() : null; return w ? [w] : []; });
-  const week = weeks[0] ?? null;
+  // What's still to make and pack: last time's at first, for opening offline.
+  const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   const [weekError, setWeekError] = useState<string | null>(null);
   const [weekNote, setWeekNote] = useState<string | null>(null);
-  // Open sheets name their week (and night) rather than holding a copy, so they show the plan as it is now.
-  const [planningFor, setPlanningFor] = useState<string | null>(null);
-  const [nightAt, setNightAt] = useState<{ monday: string; date: string } | null>(null);
-  const weekBy = (monday: string) => weeks.find((w) => w.monday === monday) ?? null;
-  const planning = planningFor ? weekBy(planningFor) : null;
-  const nightWeek = nightAt ? weekBy(nightAt.monday) : null;
-  const night = nightAt && nightWeek?.nights.find((n) => n.date === nightAt.date);
+  // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
+  const [planning, setPlanning] = useState(false);
+  const [addingOne, setAddingOne] = useState(false);
+  const [dishAt, setDishAt] = useState<string | null>(null);
+  const dish = dishAt ? plan?.dishes.find((d) => d.id === dishAt) ?? null : null;
   const loaded = useRef(false); // the household has loaded from the server this session
 
   // The passcode was turned down (changed, or typed wrong): close everything and ask for it again. Any request can find
@@ -77,7 +75,7 @@ export default function App() {
     store.setPasscode(null);
     tellPanelSignedOut();
     setError("Wrong passcode.");
-    setSettings(false); setSheet(null); setPlanningFor(null); setNightAt(null);
+    setSettings(false); setSheet(null); setPlanning(false); setAddingOne(false); setDishAt(null);
     setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
     setPhase("passcode");
   }, []);
@@ -109,6 +107,7 @@ export default function App() {
   // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
   // (otherwise a poll answering just after a tap would undo the tap on screen until the change's own answer came).
   const listChanges = useRef(0);
+  const lastAnswer = useRef<ListState | null>(null); // the latest answer to a change (for "Added 4 to Safeway")
   const refreshList = useCallback(async () => {
     const at = listChanges.current;
     try {
@@ -161,25 +160,27 @@ export default function App() {
     catch (e) { return problemOf(e); }
     return null;
   }
-  function addToList(r: Recipe, items: Ingredient[]) {
-    return change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
+  // Fresh things go on the list; the pantry things go with `check`, highlighted in Stock (Nov 3). The note says where the fresh ones landed.
+  async function addToList(r: Recipe, buy: Ingredient[], pantry: Ingredient[]): Promise<{ problem: string | null; note?: string }> {
+    const line = (i: Ingredient, check: boolean) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), ...(check && { check }) });
+    const problem = await change({ op: "many", items: [...buy.map((i) => line(i, false)), ...pantry.map((i) => line(i, true))], for: r.name, by: me });
+    if (problem) return { problem };
+    const names = new Set(buy.map((i) => norm(i.item)));
+    const landed = (lastAnswer.current?.items ?? []).filter((x) => !x.check && !x.checked && names.has(norm(x.item)));
+    const stores = [...new Set(landed.map((x) => x.store))];
+    if (!landed.length) return { problem: null };
+    return { problem: null, note: `Added ${landed.length} to ${stores.length === 1 ? STORE_NAMES[stores[0]] : "the list"}` };
   }
 
-  /**
-   * The weeks: this one, then each following week while it's planned, up to and including the first that isn't (so it
-   * can be planned), as far ahead as anyone has planned. Loading this week also puts on the list the groceries of nights
-   * planned long ago that are now close.
-   */
-  // One request for all of them (the server reads the Sheet once). Saves and Made count up too, so an answer that
-  // started before one of them doesn't put the old plan back.
-  const weekChanges = useRef(0);
-  const refreshWeek = useCallback(async () => {
-    const at = ++weekChanges.current;
+  // What's planned: loaded when Meals opens and whenever the app comes back to the front. Each change counts up, so an
+  // answer that started before one of them doesn't put the old plan back.
+  const planChanges = useRef(0);
+  const refreshPlan = useCallback(async () => {
+    const at = ++planChanges.current;
     try {
-      const { weeks: all, added } = await api.weeks();
-      if (at !== weekChanges.current) return;
-      setWeeks(all); store.setWeek(all[0]); setWeekError(null);
-      if (added) setWeekNote(`Added ${added} thing${added === 1 ? "" : "s"} to the grocery list for the coming days.`);
+      const p = await api.plan();
+      if (at !== planChanges.current) return;
+      setPlan(p); store.setPlan(p); setWeekError(null);
     } catch (e) {
       if (!(e instanceof AuthError)) setWeekError(errorText(e));
     }
@@ -187,34 +188,36 @@ export default function App() {
   const onWeek = phase === "app" && top.kind === "week";
   useEffect(() => {
     if (!onWeek) return;
-    queueMicrotask(refreshWeek);
-    // Brought back to the front (an iPhone keeps the app open for days): the plan as it is now, and "tonight" as of today.
-    const back = () => { if (document.visibilityState === "visible") refreshWeek(); };
+    queueMicrotask(refreshPlan);
+    // Brought back to the front (an iPhone keeps the app open for days): the plan as it is now.
+    const back = () => { if (document.visibilityState === "visible") refreshPlan(); };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, [onWeek, visit, refreshWeek]);
-  /** Saves a week from the plan or night sheet; the sheet closes itself on success (null) and shows the problem otherwise. */
-  async function saveWeek(nights: Night[], lunches: Lunch[]): Promise<string | null> {
+  }, [onWeek, visit, refreshPlan]);
+  /** The plan as the server answered it, and a note for what went on the grocery list. */
+  function gotPlan(p: PlanData & { added: number }) {
+    setPlan(p); store.setPlan(p); setWeekError(null);
+    setWeekNote(p.added ? `Added ${p.added} thing${p.added === 1 ? "" : "s"} to the grocery list.` : null);
+    if (p.added) refreshList(); // the new things show on Lists and Stock right away
+  }
+  /** Plans more (the plan sheet, or one more); the sheet closes itself on success (null) and shows the problem otherwise. */
+  async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null): Promise<string | null> {
     try {
-      const wasPlanned = weeks.find((x) => x.monday === nights[0]?.date)?.planned ?? false;
-      ++weekChanges.current;
-      const w = await api.saveWeek(nights, lunches, me);
-      setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x)));
-      if (w.monday === weeks[0]?.monday) store.setWeek(w);
-      setWeekError(null);
-      if (!wasPlanned) refreshWeek(); // a newly planned week brings the one after it, to plan next
-      setWeekNote(w.added ? `Added ${w.added} thing${w.added === 1 ? "" : "s"} to the grocery list.` : null);
-      if (w.added) refreshList(); // the new things show on Lists and Stock right away
+      ++planChanges.current;
+      gotPlan(await api.savePlan(dishes, lunches, counts, me));
       return null;
     } catch (e) { return problemOf(e); }
   }
-  async function made(date: string, yes: boolean) {
-    const mark = (n: Night) => (n.date === date ? { ...n, made: yes ? "yes" as const : "no" as const } : n);
-    setWeeks((all) => all.map((w, i) => (i ? w : { ...w, nights: w.nights.map(mark), lastWeek: w.lastWeek.map(mark) })));
-    ++weekChanges.current;
-    try { const w = await api.made(date, yes); setWeeks((all) => all.map((x) => (x.monday === w.monday ? w : x))); if (w.monday === week?.monday) store.setWeek(w); }
-    catch (e) { failed(setWeekError)(e); }
+  /** One planned thing changed. Made and packed come off at once, before the answer. */
+  async function changePlan(c: PlanChange): Promise<string | null> {
+    if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
+    try {
+      ++planChanges.current;
+      gotPlan(await api.planChange(c, me));
+      return null;
+    } catch (e) { refreshPlan(); return problemOf(e); }
   }
+  const packed = (l: Lunch) => changePlan({ op: "made", id: l.id }).then((p) => { if (p) setWeekError(p); });
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState): Promise<string | null> {
@@ -222,6 +225,7 @@ export default function App() {
     if (show) setList((l) => (l ? show(l) : l));
     try {
       const l = await api.change(c);
+      lastAnswer.current = l;
       if (mine !== listChanges.current) return null; // a later change's answer is newer
       setList(l);
       store.setList(l);
@@ -330,7 +334,8 @@ export default function App() {
   }
   const below = stack[stack.length - 2];
   const backLabel = !below ? "Back" : below.kind === "recipe" ? recipeOf(below.id)?.name ?? "Back" : TAB_NAMES[below.kind];
-  const tonight = week?.nights.find((x) => x.date === dateIn(0));
+  // A recipe that's planned: Made it is one tap from the recipe (the first of it, if it's planned twice).
+  const plannedHere = open ? plan?.dishes.find((d) => d.recipe === open.id) : undefined;
   // In the helper's panel: the computer's work for the phone (components/Activity.tsx).
   const panel = usePanelActivity(phase === "app" && framed());
 
@@ -347,27 +352,28 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <WeekScreen key={visit} weeks={weeks} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
+        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
+          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)} onPacked={packed} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
       {phase === "app" && top.kind === "recipes" && (
-        <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
+        <RecipesScreen key={visit} freezer={kitchen?.freezer ?? plan?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} onAddToList={(r) => { setListing(r.id); setSheet("tolist"); }} />
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
           onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")}
-          tonight={tonight && (tonight.meal === open.id || tonight.kidsMeal === open.id) ? { made: tonight.made === "yes" } : undefined}
-          onMade={() => made(dateIn(0), true)} />
+          onMade={plannedHere ? () => { changePlan({ op: "made", id: plannedHere.id }).then((p) => { if (p) setRecipesError(p); }); } : undefined} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {planning && <PlanSheet key={planning.monday} w={planning} recipes={recipes ?? []} me={me} onSave={saveWeek} onClose={() => setPlanningFor(null)} />}
-      {night && nightWeek && (
-        <NightSheet key={`${nightWeek.monday}|${night.date}`} w={nightWeek} n={night} recipes={recipes ?? []} onSave={(nights) => saveWeek(nights, nightWeek.lunches)}
-          onOpen={openRecipe} onClose={() => setNightAt(null)} />
+      {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onClose={() => setPlanning(false)} />}
+      {addingOne && plan && <AddOneSheet plan={plan} recipes={recipes ?? []} onAdd={(d, l) => savePlan(d, l, null)} onClose={() => setAddingOne(false)} />}
+      {dish && plan && (
+        <DishSheet key={dish.id} plan={plan} d={dish} recipes={recipes ?? []} onOpen={openRecipe} onClose={() => setDishAt(null)}
+          onChange={(recipe, pinned) => changePlan({ op: "change", id: dish.id, recipe, pinned })}
+          onMade={() => changePlan({ op: "made", id: dish.id })} onRemove={() => changePlan({ op: "remove", id: dish.id })} />
       )}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
@@ -376,10 +382,9 @@ export default function App() {
         else onTab("recipes"); // several saved (her meal ideas): show the whole collection, where they now are
       }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
-      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(items) => addToList(toList, items)} onClose={() => { setSheet(null); setListing(null); }} />}
+      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(buy, pantry) => addToList(toList, buy, pantry)} onClose={() => { setSheet(null); setListing(null); }} />}
       {settings && (
-        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)}
-          people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />
+        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)} />
       )}
       {phase === "app" && (
         <TabBar tabs={TABS} active={root} onTab={onTab} />

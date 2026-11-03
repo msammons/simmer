@@ -31,10 +31,10 @@ const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 
 export { norm };
 
-/** "2 lemons" → 2, lemons; "2 lb ground beef" → 2 lb, ground beef; "lemons x2" → 2, lemons; "TP" → TP. */
+/** "2 lemons" → 2, lemons; "2 lb ground beef" → 2 lb, ground beef; "1 1/2 lb beef" → 1 1/2 lb, beef; "lemons x2" → 2, lemons; "TP" → TP. */
 export function parseEntry(text: string): { item: string; quantity: string } {
   const t = text.trim().replace(/\s+/g, " ");
-  const lead = t.match(/^((?:\d+(?:\.\d+)?|\d+\/\d+)(?:\s*(?:lbs?|pounds?|oz|ounces?|gallons?|gal|quarts?|pints?|liters?|kg|g)\.?(?=\s))?|a dozen|dozen|a couple|a few)\s+(.+)$/i);
+  const lead = t.match(/^((?:\d+\s+\d+\/\d+|\d+(?:\.\d+)?|\d+\/\d+)(?:\s*(?:lbs?|pounds?|oz|ounces?|gallons?|gal|quarts?|pints?|liters?|kg|g)\.?(?=\s))?|a dozen|dozen|a couple|a few)\s+(.+)$/i);
   if (lead) return { quantity: lead[1].toLowerCase().replace(/^a /, ""), item: lead[2] };
   const tail = t.match(/^(.+?)\s*(?:x|×)\s*(\d+)$/i);
   if (tail) return { quantity: tail[2], item: tail[1] };
@@ -77,20 +77,26 @@ export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> 
 
 // ---- filing: which store and section an item goes in
 
-/** Common things, so most items are filed without asking anyone (spices first, by isSpice in words.ts). One word per entry: a later list wins a word both share. */
+/**
+ * Common things, so most items are filed without asking anyone (spices first, by isSpice in words.ts). Entries are
+ * phrases, comma-separated: "ice cream" and "peanut butter" are whole, so cream stays fresh and butter isn't pantry (split
+ * into words they filed cream as freezer and milk as pantry, Nov 3). A stem like "strawberr" matches the word's start.
+ */
 const KNOWN: Record<string, [Store, Section]> = Object.fromEntries(([
-  ["milk egg yogurt butter cheese cream sour cream half and half banana apple orange lemon lime grape strawberr raspberr blueberr berry avocado tomato onion garlic potato carrot celery lettuce spinach broccoli cucumber pepper cilantro parsley basil herb bread tortilla ground beef ground turkey chicken salmon fish shrimp bacon ham deli turkey salad zucchini squash mushroom kale cabbage ginger jalapeno scallion green onion mint thyme rosemary dill shallot leek asparagus green bean pork sausage steak tofu mozzarella parmesan cheddar feta hummus", "safeway", "fresh"],
-  ["rice pasta flour sugar salt oil olive oil vinegar cereal oat oatmeal peanut butter jam jelly honey cracker goldfish chip pretzel snack bar granola can bean broth stock soup sauce salsa ketchup mustard mayo spice coffee tea cumin paprika oregano chili powder cinnamon vanilla baking soda baking powder breadcrumb panko soy sauce coconut milk tomato paste tomato sauce diced tomato noodle quinoa lentil chickpea black bean brown sugar seasoning taco seasoning", "safeway", "pantry"],
-  ["frozen ice cream nugget frozen pizza frozen vegetable", "safeway", "freezer"],
-  ["toilet paper tp paper towel napkin soap detergent dish soap trash bag foil plastic wrap sponge tissue shampoo toothpaste", "costco", "household"],
-] as const).flatMap(([words, st, sec]) => words.split(" ").map((w) => [w, [st, sec]])));
+  ["milk, egg, yogurt, butter, cheese, cream, sour cream, half and half, banana, apple, orange, lemon, lime, grape, strawberr, raspberr, blueberr, berry, avocado, tomato, onion, garlic, potato, carrot, celery, lettuce, spinach, broccoli, cucumber, bell pepper, cilantro, parsley, fresh basil, herb, bread, tortilla, ground beef, ground turkey, chicken, salmon, fish, shrimp, bacon, ham, deli, turkey, salad, zucchini, squash, mushroom, kale, cabbage, ginger root, jalapeno, scallion, green onion, mint, thyme, rosemary, dill, shallot, leek, asparagus, green bean, pork, sausage, steak, tofu, mozzarella, parmesan, cheddar, feta, ricotta, hummus, pie crust", "safeway", "fresh"],
+  ["rice, pasta, flour, sugar, salt, oil, olive oil, vinegar, cereal, oat, oatmeal, peanut butter, jam, jelly, honey, cracker, goldfish, chip, pretzel, snack, granola, granola bar, canned, broth, stock, soup, sauce, salsa, ketchup, mustard, mayo, spice, coffee, tea, cumin, paprika, oregano, chili powder, cinnamon, vanilla, baking soda, baking powder, breadcrumb, panko, soy sauce, coconut milk, evaporated milk, condensed milk, tomato paste, tomato sauce, crushed tomato, diced tomato, noodle, quinoa, lentil, chickpea, black bean, refried bean, kidney bean, pinto bean, brown sugar, corn syrup, seasoning, taco seasoning, pecan, walnut, almond", "safeway", "pantry"],
+  ["frozen, ice cream, nugget, frozen pizza, frozen vegetable", "safeway", "freezer"],
+  ["toilet paper, tp, paper towel, napkin, soap, detergent, dish soap, trash bag, foil, plastic wrap, sponge, tissue, shampoo, toothpaste", "costco", "household"],
+] as const).flatMap(([words, st, sec]) => words.split(",").map((w) => [w.trim(), [st, sec]])));
 
 export function known(name: string): { store: Store; section: Section } | null {
   // Spices first: "ground cumin" isn't ground beef, "black pepper" isn't a bell pepper.
   if (isSpice(name)) return { store: "safeway", section: "pantry" };
   const n = norm(name);
-  // The longest word that matches wins: "goldfish crackers" is goldfish (pantry), not fish (fresh).
-  const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 3 && n.includes(norm(w))).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
+  // The longest entry that matches from the start of a word wins: "goldfish crackers" is goldfish (pantry), not fish
+  // (fresh); "graham crackers" isn't ham.
+  const at = (w: string) => ` ${n} `.includes(` ${norm(w)}`);
+  const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 2 && at(w)).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
   return hit ? { store: hit[0], section: hit[1] } : null;
 }
 
@@ -253,20 +259,43 @@ export async function moveItem(id: string, to: { store?: Store; section?: Sectio
   await rememberFiling(it.item, { store: to.store ?? it.store, section: to.section ?? it.section }).catch((e) => console.error("couldn't remember filing", e));
 }
 
+const BOUGHT = "Bought";
+const BOUGHT_HEADERS = ["item", "quantity", "store", "date_bought", "for"];
+const boughtRow = (x: Item) => [x.item, x.quantity, x.store, stamp().slice(0, 10), x.for];
+const boughtMemory: string[][] = [];
+
+/** What has been bought so far (the Bought tab), newest last; read for the tests and for whatever looks back later. */
+export async function loadBought(): Promise<string[][]> {
+  return sheetsConfigured() ? (await readTabIfAny(BOUGHT)).slice(1) : [...boughtMemory];
+}
+
+/** Bought history (Nov 3): what's coming off the list is written down first, so the rows only go once the note is safely made. */
+async function recordBought(gone: Item[]) {
+  if (!gone.length) return;
+  if (!sheetsConfigured()) { boughtMemory.push(...gone.map(boughtRow)); return; }
+  await ensureTab(BOUGHT);
+  const existing = await readTabIfAny(BOUGHT);
+  await appendRows(BOUGHT, [...(existing.length ? [] : [BOUGHT_HEADERS]), ...gone.map(boughtRow)]);
+}
+
 /** Finishing a trip: the store's checked items come off the list (everything else stays, including other stores'). */
 /** Bought: clears that store's checked items, and `alsoIds` (for Safeway, what's in the cart). */
 export async function doneShopping(store: Store, alsoIds: Set<string> = new Set()): Promise<number> {
+  const off = (x: Item) => x.store === store && (x.checked || alsoIds.has(x.id));
   if (!sheetsConfigured()) {
     const m = await mem();
-    const before = m.list.length;
-    m.list = m.list.filter((x) => !(x.store === store && (x.checked || alsoIds.has(x.id))));
-    return before - m.list.length;
+    const gone = m.list.filter(off);
+    await recordBought(gone);
+    m.list = m.list.filter((x) => !off(x));
+    return gone.length;
   }
   const rows = await rowsOf(LIST);
   const recs = records(rows);
-  const keep = recs.filter((r) => !(asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id")))));
-  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...keep.map((r) => rows[r.rowNumber - 1])]);
-  return recs.length - keep.length;
+  const goneRecs = recs.filter((r) => asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id"))));
+  await recordBought(toItems([rows[0] ?? LIST_HEADERS, ...goneRecs.map((r) => rows[r.rowNumber - 1])]));
+  const drop = new Set(goneRecs);
+  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r)).map((r) => rows[r.rowNumber - 1])]);
+  return goneRecs.length;
 }
 
 export async function removeItem(id: string) {
@@ -320,13 +349,16 @@ export const removeStaple = (item: string) => writeStaples((all) => all.filter((
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 
 /**
- * A new week's groceries are coming: what an earlier week's meals had highlighted in Stock (added before `monday`, never
- * checked) stops being highlighted (Matt, Nov 2: the highlights reset when the next week is planned).
+ * Planning again: what Stock highlights to check (check, not yet ticked) for a dinner that's no longer planned (made or
+ * removed since) stops being highlighted. An item belongs to what's planned when its `for` names one of `planned` (a
+ * dish's name, or "lunches"). Made and removed leave the list alone; this tidy-up happens only when planning, so it's
+ * one rule in one place (Nov 3, replacing "highlights reset with a new week").
  */
-export async function dropHighlightsBefore(monday: string) {
-  const old = (x: Item) => x.check && !x.checked && x.addedAt.slice(0, 10) < monday;
-  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !old(x)); return; }
+export async function dropHighlightsNotFor(planned: string[]) {
+  const names = planned.map(norm).filter(Boolean);
+  const stale = (x: Item) => x.check && !x.checked && !names.some((n) => norm(x.for).includes(n));
+  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !stale(x)); return; }
   const { items } = await loadList();
-  const ids = items.filter(old).map((x) => x.id);
+  const ids = items.filter(stale).map((x) => x.id);
   if (ids.length) await removeItems(ids);
 }
