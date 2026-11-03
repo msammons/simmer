@@ -2,7 +2,7 @@
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, dates.
 import { addDays, todayIn, TZ } from "./time";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", week: "sm.week" };
+const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -35,9 +35,9 @@ export const store = {
   /** The collection from last time, for opening offline. */
   recipes: () => get<Recipe[]>(KEYS.recipes),
   setRecipes: (r: Recipe[]) => set(KEYS.recipes, r),
-  /** This week's plan from last time, for opening offline. */
-  week: () => get<WeekData>(KEYS.week),
-  setWeek: (w: WeekData) => set(KEYS.week, w),
+  /** What's planned, from last time, for opening offline. */
+  plan: () => get<PlanData>(KEYS.plan),
+  setPlan: (p: PlanData) => set(KEYS.plan, p),
   /** Who's using the app here, for "added by". */
   me: () => get<string>(KEYS.me) ?? "",
   setMe: (name: string) => set(KEYS.me, name),
@@ -92,16 +92,18 @@ import type { Item, Section, Staple, Store } from "./groceries";
 export type { Item, Section, Staple, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
-import type { WeekData } from "./plan";
+import type { NewDish, NewLunch, PlanData } from "./plan";
 import type { Order, OrderAnswer } from "./order";
 export type { Order, OrderAnswer };
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
 import type { Activity, Job, JobKind } from "./jobs";
 export type { Activity, Job, JobKind };
-import type { Frozen, Lunch, Night } from "./week";
-export type { Frozen, Lunch, Night, WeekData };
-export type Kitchen = { freezer: Frozen[]; trips: WeekData["trips"] };
+import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
+export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
+export type Kitchen = { freezer: Frozen[]; trips: PlanData["trips"] };
+/** A change to one planned thing: another recipe, another part of a lunch, made (or packed), or off. */
+export type PlanChange = { op: "change"; id: string; recipe: string; pinned?: boolean } | { op: "change"; id: string; part: LunchPart; item: string } | { op: "made"; id: string } | { op: "remove"; id: string };
 export type ListState = { items: Item[]; staples: Staple[] };
 type Change = { op: "need"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
   | { op: "clear"; ids: string[] } | { op: "putBack"; items: Item[] } | { op: "keepAdd"; text: string; section?: Section } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
@@ -114,11 +116,11 @@ export const api = {
   saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
   recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
   readRecipe: (from: { link: string } | { text: string } | { file: { name: string; type: string; data: string } }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
-  /** This week, then the following weeks while planned, then the first that isn't; one request. */
-  weeks: (signal?: AbortSignal) => call<{ weeks: WeekData[]; added: number }>("/api/plan?weeks=1", { signal }),
-  week: (date: string, signal?: AbortSignal) => call<WeekData & { added?: number }>(`/api/plan?week=${date}`, { signal }),
-  saveWeek: (nights: Night[], lunches: Lunch[], by: string) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "save", nights, lunches, by }) }),
-  made: (date: string, made: boolean) => call<WeekData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "made", date, made }) }),
+  /** What's still to make and pack. */
+  plan: (signal?: AbortSignal) => call<PlanData>("/api/plan", { signal }),
+  /** More to make and pack, on top of what's there; `added`: how many things went on the grocery list. */
+  savePlan: (dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string) => call<PlanData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "plan", dishes, lunches, counts, by }) }),
+  planChange: (c: PlanChange, by: string) => call<PlanData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ ...c, by }) }),
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),

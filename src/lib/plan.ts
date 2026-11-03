@@ -1,31 +1,38 @@
-// The week's plan in the Sheet (docs/PLAN.md, section 3): the Plan tab (one row per night), Made (the log that keeps
-// "last made" true), Trips (finished shopping trips, for the store rhythm), Lunches (each boy's options) and Lunch plan
-// (one row per boy per school day). Rows are matched by their key (a date, or a date and a boy) and only those rows are
-// written, so a hand edit anywhere else survives. Without the Sheet (local dev, tests) the tabs live in memory, seeded
-// from data/*.csv.
+// What's planned, in the Sheet (docs/PLAN.md, section 3). Meals and lunches are planned by number, not by day (Nov 3):
+// the Planned tab has one row per thing to make or pack (a dinner, a dessert, a lunch), ticked off with the date it was
+// made. Made (the log that keeps "last made" true), Trips (finished shopping trips, for the store rhythm), Lunches (each
+// boy's options) and Plan counts (how many of each were asked for last time). The old Plan and Lunch plan tabs (one row
+// per night, per school day) are only read: what was still to come moved into Planned once (their `moved` column).
+// Rows are matched by their key and only those rows are written, so a hand edit anywhere else survives. Without the
+// Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
-import { addItems, dropHighlightsBefore, type Store } from "./groceries";
+import { addItems, dropHighlightsNotFor, type Store } from "./groceries";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
-import { addDays, todayIn } from "./time";
+import { todayIn } from "./time";
 import { norm } from "./words";
-import { eatingText, emptyNight, freezerMatch, LUNCH_PARTS, lunchShopping, readEating, weekDates, weekOf, type Frozen, type Lunch, type LunchOption, type LunchPart, type Night, type NightKind, type Taste } from "./week";
+import { firstCounts, freezerMatch, kindOf, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
-const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer";
+const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer", PLANNED = "Planned", COUNTS = "Plan counts";
 const HEADERS: Record<string, string[]> = {
-  [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes", "groceries"],
+  [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes", "groceries", "moved"],
   [MADE]: ["date", "recipe"],
   [TRIPS]: ["date", "store"],
   [LUNCHES]: ["kid", "part", "item", "ingredients", "notes"],
-  [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school", "groceries"],
+  [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school", "groceries", "moved"],
   [FREEZER]: ["id", "item", "amount", "added", "store"],
+  [PLANNED]: ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned"],
+  [COUNTS]: ["what", "count"],
 };
 
 const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+let seq = 0;
+const newId = () => `${Date.now().toString(36)}${(seq++ % 1296).toString(36).padStart(2, "0")}${Math.random().toString(36).slice(2, 5)}`;
 
 // ---- rows, the same with or without the Sheet
 
@@ -83,32 +90,38 @@ async function append(tab: string, recs: Record<string, string>[]) {
   else memory.set(tab, [...all, ...out]);
 }
 
-// ---- reading the week
 
-const asKind = (s: string): NightKind => (/skip|out|leftover/i.test(s) ? "skip" : /quick/i.test(s) ? "quick" : "regular");
+// ---- reading what's planned
+
+const asKind = (s: string): Kind | "lunch" | null => { const k = s.trim().toLowerCase(); return k === "lunch" || (KINDS as readonly string[]).includes(k) ? (k as Kind | "lunch") : null; };
 const asPart = (s: string): LunchPart | null => (LUNCH_PARTS as readonly string[]).includes(s.trim().toLowerCase()) ? (s.trim().toLowerCase() as LunchPart) : null;
+const partsOf = (get: (k: string) => string) => Object.fromEntries(LUNCH_PARTS.map((p) => [p, get(p)])) as Record<LunchPart, string>;
 
-function toNights(all: string[][]): Night[] {
-  return records(all).flatMap((r) => (/^\d{4}-\d{2}-\d{2}$/.test(r.get("date")) ? [{
-    date: r.get("date"), kind: asKind(r.get("effort")), meal: r.get("meal"), kidsMeal: r.get("kids_meal"), ...readEating(r.get("eating")),
-    pinned: yes(r.get("pinned")), plannedBy: r.get("planned_by"), made: (yes(r.get("made")) ? "yes" : /^(no|n)$/i.test(r.get("made")) ? "no" : "") as Night["made"], notes: r.get("notes"),
-  }] : []));
-}
 const toOptions = (all: string[][]): LunchOption[] => records(all).flatMap((r) => {
   const part = asPart(r.get("part"));
   return part && r.get("kid") && r.get("item") ? [{ kid: r.get("kid"), part, item: r.get("item"), ingredients: r.get("ingredients").split(/[,\n]/).map((x) => x.trim()).filter(Boolean) }] : [];
 });
-const toLunches = (all: string[][]): Lunch[] => records(all).flatMap((r) => (r.get("date") && r.get("kid") ? [{
-  date: r.get("date"), kid: r.get("kid"), schoolLunch: yes(r.get("school_lunch")), noSchool: yes(r.get("no_school")),
-  ...(Object.fromEntries(LUNCH_PARTS.map((p) => [p, r.get(p)])) as Record<LunchPart, string>),
-}] : []));
 
-/** When each recipe was last made: from the Made log, and nights marked made in the Plan. */
-function lastMadeFrom(made: string[][], plan: Night[]): Record<string, string> {
+/** The Planned tab: what's still to make or pack (no made date), and what was made when. */
+function toPlanned(all: string[][]) {
+  const dishes: Dish[] = [], lunches: Lunch[] = [], done: { recipe: string; date: string }[] = [];
+  for (const r of records(all)) {
+    const kind = asKind(r.get("kind")), id = r.get("id");
+    if (!kind || !id) continue;
+    if (r.get("made")) { if (kind !== "lunch") done.push({ recipe: r.get("recipe"), date: r.get("made") }); continue; }
+    if (kind === "lunch") { if (r.get("kid")) lunches.push({ id, kid: r.get("kid"), ...partsOf(r.get) }); }
+    else if (r.get("recipe")) dishes.push({ id, kind, recipe: r.get("recipe"), pinned: yes(r.get("pinned")), added: r.get("added") });
+  }
+  return { dishes, lunches, done };
+}
+
+/** When each recipe was last made: from the Made log, the Planned tab's made dates, and nights marked made in the old Plan tab. */
+function lastMadeFrom(madeLog: string[][], done: { recipe: string; date: string }[], plan: string[][]): Record<string, string> {
   const out: Record<string, string> = {};
-  const note = (id: string, date: string) => { if (id && date && (!out[id] || out[id] < date)) out[id] = date; };
-  for (const r of records(made)) note(r.get("recipe"), r.get("date"));
-  for (const n of plan) if (n.made === "yes") { note(n.meal, n.date); note(n.kidsMeal, n.date); }
+  const note = (id: string, date: string) => { if (id && DATE.test(date) && (!out[id] || out[id] < date)) out[id] = date; };
+  for (const r of records(madeLog)) note(r.get("recipe"), r.get("date"));
+  for (const d of done) note(d.recipe, d.date);
+  for (const r of records(plan)) if (yes(r.get("made"))) { note(r.get("meal"), r.get("date")); note(r.get("kids_meal"), r.get("date")); }
   return out;
 }
 
@@ -120,178 +133,186 @@ function tripsDue(trips: string[][], today: string) {
   return { traderJoes: since(tj) >= 11, costco: since(costco) >= 25, lastTraderJoes: tj, lastCostco: costco };
 }
 
-export type WeekData = {
-  monday: string; nights: Night[]; planned: boolean; lastWeek: Night[]; lastMade: Record<string, string>;
-  trips: ReturnType<typeof tripsDue>; lunchOptions: LunchOption[]; lunches: Lunch[];
+export type PlanData = {
+  /** Still to make, oldest first. */
+  dishes: Dish[];
+  /** Still to pack, oldest first. */
+  lunches: Lunch[];
+  /** What was asked for last time, to start from. */
+  counts: Counts;
+  lastMade: Record<string, string>;
+  trips: ReturnType<typeof tripsDue>;
+  lunchOptions: LunchOption[];
   people: (Taste & { rules: string[] })[];
   freezer: Frozen[];
 };
 
-/** Everything a week is built from, read once (each tab is one Sheets read). */
-type WeekTabs = { plan: string[][]; made: string[][]; trips: string[][]; options: string[][]; lunchPlan: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
-async function readWeekTabs(): Promise<WeekTabs> {
-  const [plan, made, trips, options, lunchPlan, hh, freezer] = await Promise.all([rows(PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(LUNCH_PLAN), loadHousehold(), loadFreezer()]);
-  return { plan, made, trips, options, lunchPlan, hh, freezer };
+/** Everything planning is built from, read once (each tab is one Sheets read). */
+type Tabs = { planned: string[][]; plan: string[][]; lunchPlan: string[][]; made: string[][]; trips: string[][]; options: string[][]; counts: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
+async function readTabs(): Promise<Tabs> {
+  const [planned, plan, lunchPlan, made, trips, options, counts, hh, freezer] = await Promise.all([rows(PLANNED), rows(PLAN), rows(LUNCH_PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(COUNTS), loadHousehold(), loadFreezer()]);
+  return { planned, plan, lunchPlan, made, trips, options, counts, hh, freezer };
 }
 
-export async function loadWeek(monday: string): Promise<WeekData> {
-  return weekFrom(await readWeekTabs(), monday);
+/** The Meals screen: what's still to make and pack, and what planning needs. Moves the old plan's coming nights over first, once. */
+export async function loadPlan(): Promise<PlanData> {
+  let tabs = await readTabs();
+  if (await moveOldPlan(tabs)) tabs = await readTabs(); // it wrote rows: read them as they are now
+  return planFrom(tabs);
 }
 
-/**
- * The Meals screen in one go: this week, then each following week while it's planned, up to and including the first
- * that isn't (so it can be planned), at most half a year ahead; the tabs are read once for all of them. Also puts on the
- * list the groceries of nights planned long ago that are now close (`added`).
- */
-export async function loadWeeks(today: string): Promise<{ weeks: WeekData[]; added: number }> {
-  let tabs = await readWeekTabs();
-  let added = 0;
-  if (dueIn(tabs)) { added = await shopDue(tabs); tabs = await readWeekTabs(); } // it marked rows: read them as they are now
-  const first = weekOf(today);
-  const weeks = [weekFrom(tabs, first)];
-  for (let k = 1; k <= 26; k++) {
-    const w = weekFrom(tabs, addDays(first, 7 * k));
-    weeks.push(w);
-    if (!w.planned) break;
-  }
-  return { weeks, added };
-}
-
-function weekFrom({ plan, made, trips, options, lunchPlan, hh, freezer }: WeekTabs, monday: string): WeekData {
-  const nights = toNights(plan);
-  const dates = weekDates(monday), before = weekDates(addDays(monday, -7));
-  const mine = dates.flatMap((d) => nights.filter((n) => n.date === d).slice(-1));
+function planFrom({ planned, plan, made, trips, options, counts, hh, freezer }: Tabs): PlanData {
+  const p = toPlanned(planned);
+  const lunchOptions = toOptions(options);
+  const kids = hh.profile.people.filter((x) => !x.isAdult && lunchOptions.some((o) => norm(o.kid) === norm(x.name))).map((x) => x.name);
   return {
-    monday,
-    nights: dates.map((d) => mine.find((n) => n.date === d) ?? emptyNight(d)),
-    planned: mine.length > 0,
-    lastWeek: before.flatMap((d) => nights.filter((n) => n.date === d).slice(-1)),
-    lastMade: lastMadeFrom(made, nights),
+    dishes: p.dishes, lunches: p.lunches,
+    counts: countsFrom(counts, kids),
+    lastMade: lastMadeFrom(made, p.done, plan),
     trips: tripsDue(trips, todayIn()),
-    lunchOptions: toOptions(options),
-    lunches: toLunches(lunchPlan).filter((l) => dates.includes(l.date)),
-    people: hh.profile.people.map((p) => ({ name: p.name, isAdult: p.isAdult, likes: p.likes, dislikes: p.dislikes, rules: p.rules })),
+    lunchOptions,
+    people: hh.profile.people.map((x) => ({ name: x.name, isAdult: x.isAdult, likes: x.likes, dislikes: x.dislikes, rules: x.rules })),
     freezer,
   };
 }
 
-// ---- saving the week
+/** Last time's numbers (the Plan counts tab: `quick 2`, `lunches:Theo 5`), or a usual week the first time. */
+function countsFrom(all: string[][], kids: string[]): Counts {
+  const saved = new Map(records(all).map((r) => [r.get("what").trim().toLowerCase(), Number(r.get("count"))]));
+  const first = firstCounts(kids, true);
+  if (!saved.size) return first;
+  const n = (k: string, d: number) => { const v = saved.get(k.toLowerCase()); return v !== undefined && Number.isFinite(v) ? Math.max(0, Math.min(MAX_COUNT, Math.round(v))) : d; };
+  const out = { ...first, lunches: Object.fromEntries(kids.map((k) => [k, n(`lunches:${k}`, first.lunches[k])])) };
+  for (const k of KINDS) out[k] = n(k, first[k]);
+  return out;
+}
 
-const dayName = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+// ---- moving the old plan over (once)
 
 /**
- * How far ahead a plan's groceries go on the list: nights planned further out are marked "later" (the `groceries`
- * column) and their groceries go on the list once they're this close (`shopDue`), so planning weeks ahead doesn't put
- * fresh things on today's list. Rows saved before the column existed had theirs added already.
+ * The old Plan tab had a row per night and Lunch plan a row per school day. Nights from today on with a meal that wasn't
+ * made become things to make (of the recipe's kind, else the night's effort; the boys' own dinner as a kids' one), and
+ * lunches from today on become lunches to pack. Each row is marked `moved` first, so two phones opening at once don't
+ * both move it, and it never happens twice. Groceries that were still waiting ("later") go on the list now. Answers
+ * whether anything was moved.
  */
-const SHOP_AHEAD = 7;
-const LATER = "later";
+async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer">): Promise<boolean> {
+  const today = todayIn();
+  const latest = new Map<string, ReturnType<typeof records>[number]>();
+  const nightRows = records(t.plan).filter((r) => DATE.test(r.get("date")) && r.get("date") >= today && !yes(r.get("moved")));
+  for (const r of nightRows) latest.set(r.get("date"), r); // the last row for a date is the night
+  const nights = [...latest.values()].filter((r) => !r.get("made") && (r.get("meal") || r.get("kids_meal")));
+  const lunchRows = records(t.lunchPlan).filter((r) => DATE.test(r.get("date")) && r.get("date") >= today && r.get("kid") && !yes(r.get("moved")));
+  const lunches = lunchRows.filter((r) => !yes(r.get("no_school")) && LUNCH_PARTS.some((p) => r.get(p)));
+  if (!nightRows.length && !lunchRows.length) return false;
+
+  await upsert(PLAN, [...new Set(nightRows.map((r) => r.get("date")))].map((date) => ({ date, moved: "yes" })), ["date"]);
+  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), moved: "yes" })), ["date", "kid"]);
+  if (!nights.length && !lunches.length) return true;
+
+  const [recipes, options] = await Promise.all([loadRecipes(), rows(LUNCHES)]);
+  const byId = new Map(recipes.map((r) => [r.id, r]));
+  const kindFor = (meal: string, effort: string): Kind => { const r = byId.get(meal); const k = r && kindOf(r); return k ?? (/quick/i.test(effort) ? "quick" : "regular"); };
+  const recs: Record<string, string>[] = [];
+  const need: Need[] = [];
+  for (const r of nights) {
+    const later = r.get("groceries") === "later"; // planned weeks ahead: its groceries hadn't gone on the list yet
+    for (const [meal, kind] of [[r.get("meal"), kindFor(r.get("meal"), r.get("effort"))], [r.get("kids_meal"), "kids" as Kind]] as const) {
+      if (!meal) continue;
+      recs.push({ id: newId(), kind, recipe: meal, added: r.get("date"), pinned: yes(r.get("pinned")) ? "yes" : "" });
+      const recipe = byId.get(meal);
+      if (later && recipe) need.push(...needFor(recipe, t.freezer));
+    }
+  }
+  const moved = lunches.map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
+  for (const l of moved) recs.push({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today });
+  await append(PLANNED, recs);
+  const waited = lunches.filter((r) => r.get("groceries") === "later").map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
+  for (const it of lunchShopping(waited, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
+  if (need.length) await addItems(need, "");
+  return true;
+}
+
+// ---- planning
+
+type Need = { item: string; quantity: string; for: string; check: boolean };
 
 /** Water from the tap isn't bought ("½ cup water" landed on the Safeway list, Nov 3). */
 export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewarm|ice|tap)\s+)?water$/i.test(item.replace(/\s+/g, " ").trim());
 
-/** What a meal needs from the store: everything but tap water and what's in the freezer (used from there instead). */
-const needFor = (r: Recipe, forWhat: string, freezer: Frozen[]) =>
-  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: forWhat, check: i.section !== "fresh" }));
-const forNight = (date: string, r: Recipe) => `${dayName(date)}'s ${r.name.toLowerCase()}`;
+/** What a recipe needs from the store: everything but tap water and what's in the freezer (used from there instead). */
+const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
+  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: i.section !== "fresh" }));
+
+export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned">;
+export type NewLunch = Omit<Lunch, "id">;
 
 /**
- * Saves the week: each night's row and each lunch's row. What the newly planned meals need goes on the list, merged
- * with what's there: fresh things to buy, pantry things to check. A night whose meal didn't change adds nothing again.
- * Nights more than SHOP_AHEAD days out wait: theirs go on the list when they come close.
+ * Plans more: the new dishes and lunches join what's still to make and pack (nothing planned before is touched), last
+ * time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
+ * fresh things to buy, pantry things to check (Nov 3: no more waiting for a night to come close).
+ * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
+ * a pantry check from a dinner made or removed since doesn't linger. Answers how many things went on a list.
  */
-export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): Promise<{ added: number }> {
-  const [plan, lunchPlan, recipes, options, freezer] = await Promise.all([rows(PLAN), rows(LUNCH_PLAN), loadRecipes(), rows(LUNCHES), loadFreezer()]);
-  const old = toNights(plan);
-  const was = (d: string) => old.filter((n) => n.date === d).pop();
-  const shopping = new Map(records(plan).map((r) => [r.get("date"), r.get("groceries")]));
-  const lunchShoppingWas = new Map(records(lunchPlan).map((r) => [`${r.get("date")}|${r.get("kid").toLowerCase()}`, r.get("groceries")]));
-  const today = todayIn(), soon = addDays(today, SHOP_AHEAD);
-  const changed = (n: Night) => { const w = was(n.date); return !w || w.meal !== n.meal || w.kidsMeal !== n.kidsMeal; };
-  await upsert(PLAN, nights.map((n) => {
-    const w = was(n.date);
-    const same = w && w.meal === n.meal && w.kidsMeal === n.kidsMeal;
-    const later = n.date > soon && (n.meal || n.kidsMeal) && (changed(n) || shopping.get(n.date) === LATER);
-    return {
-      date: n.date, meal: n.meal, kids_meal: n.kidsMeal, effort: n.kind, eating: eatingText(n), pinned: n.pinned ? "yes" : "",
-      planned_by: same && w.plannedBy ? w.plannedBy : n.kind === "skip" && !n.meal ? "" : by, made: n.made, notes: n.notes,
-      groceries: later ? LATER : n.date > soon ? shopping.get(n.date) ?? "" : "",
-    };
-  }), ["date"]);
-  await upsert(LUNCH_PLAN, lunches.map((l) => ({
-    date: l.date, kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), school_lunch: l.schoolLunch ? "yes" : "", no_school: l.noSchool ? "yes" : "",
-    groceries: l.date > soon ? LATER : "",
-  })), ["date", "kid"]);
+export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number }> {
+  const today = todayIn();
+  await append(PLANNED, [
+    ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),
+    ...lunches.map((l) => ({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today })),
+  ]);
+  if (counts) await upsert(COUNTS, [...KINDS.map((k) => ({ what: k, count: String(counts[k]) })), ...Object.entries(counts.lunches).map(([kid, n]) => ({ what: `lunches:${kid}`, count: String(n) }))], ["what"]);
 
+  const [planned, recipes, options, freezer] = await Promise.all([rows(PLANNED), loadRecipes(), rows(LUNCHES), loadFreezer()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
-  const need: { item: string; quantity: string; for: string; check: boolean }[] = [];
-  for (const n of nights) {
-    if (n.kind === "skip" || n.date < today || n.date > soon || n.made) continue;
-    const w = was(n.date), waited = shopping.get(n.date) === LATER;
-    for (const [id, before] of [[n.meal, w?.meal], [n.kidsMeal, w?.kidsMeal]] as const) {
-      const r: Recipe | undefined = byId.get(id);
-      if (!r || (id === before && !waited)) continue;
-      need.push(...needFor(r, forNight(n.date, r), freezer));
-    }
-  }
-  // Lunches: only what's new since the last save of this week, and only the coming days'.
-  const opts = toOptions(options);
-  const near = (l: Lunch) => l.date >= today && l.date <= soon;
-  const oldLunches = toLunches(lunchPlan).filter((l) => near(l) && lunches.some((x) => x.date === l.date) && lunchShoppingWas.get(`${l.date}|${l.kid.toLowerCase()}`) !== LATER);
-  const had = new Set(lunchShopping(oldLunches, opts).map((x) => x.toLowerCase()));
-  for (const it of lunchShopping(lunches.filter(near), opts)) if (!had.has(it.toLowerCase())) need.push({ item: it, quantity: "", for: "lunches", check: false });
-  if (need.length) await dropHighlightsBefore(weekOf(today));
+  const now = toPlanned(planned);
+  await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
+  const need: Need[] = dishes.flatMap((d) => { const r = byId.get(d.recipe); return r ? needFor(r, freezer) : []; });
+  for (const it of lunchShopping(lunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
   return { added: need.length ? await addItems(need, by) : 0 };
 }
 
 /**
- * Nights and lunches planned weeks ahead whose groceries waited ("later") and are now close: their groceries go on the
- * list, once. Run whenever this week is looked at. Answers how many things went on the list.
+ * One planned thing changed: another recipe for a dish (Something else, or picked), or another option for one part of
+ * a lunch. What the new one needs goes on the list; what the old one needed stays (it may be bought already).
  */
-const isDue = (soon: string) => (r: { get: (k: string) => string }) => r.get("groceries") === LATER && r.get("date") <= soon;
-/** Whether shopDue has anything to do with these tabs. */
-const dueIn = (t: Pick<WeekTabs, "plan" | "lunchPlan">) => {
-  const due = isDue(addDays(todayIn(), SHOP_AHEAD));
-  return records(t.plan).some(due) || records(t.lunchPlan).some(due);
-};
-export async function shopDue(read?: Pick<WeekTabs, "plan" | "lunchPlan">): Promise<number> {
-  const [plan, lunchPlan] = read ? [read.plan, read.lunchPlan] : await Promise.all([rows(PLAN), rows(LUNCH_PLAN)]);
-  const today = todayIn(), soon = addDays(today, SHOP_AHEAD);
-  const due = isDue(soon);
-  const nights = records(plan).filter(due), lunchRows = records(lunchPlan).filter(due);
-  if (!nights.length && !lunchRows.length) return 0;
-  const [recipes, options, freezer] = await Promise.all([loadRecipes(), rows(LUNCHES), loadFreezer()]);
-  const byId = new Map(recipes.map((r) => [r.id, r]));
-  const need: { item: string; quantity: string; for: string; check: boolean }[] = [];
-  for (const row of nights) {
-    if (row.get("date") < today || yes(row.get("made"))) continue;
-    for (const id of [row.get("meal"), row.get("kids_meal")]) { const r = byId.get(id); if (r) need.push(...needFor(r, forNight(row.get("date"), r), freezer)); }
+export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string }, by: string): Promise<{ added: number }> {
+  const now = toPlanned(await rows(PLANNED));
+  const dish = now.dishes.find((d) => d.id === id), lunch = now.lunches.find((l) => l.id === id);
+  if (dish && change.recipe) {
+    await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"]);
+    const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
+    const r = recipes.find((x) => x.id === change.recipe);
+    return { added: r ? await addItems(needFor(r, freezer), by) : 0 };
   }
-  const dueLunches = toLunches([lunchPlan[0] ?? [], ...lunchRows.map((r) => lunchPlan[r.rowNumber - 1] ?? [])]).filter((l) => l.date >= today);
-  for (const it of lunchShopping(dueLunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
-  // Marked first, so two phones opening at once don't both add them.
-  await upsert(PLAN, nights.map((r) => ({ date: r.get("date"), groceries: "" })), ["date"]);
-  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), groceries: "" })), ["date", "kid"]);
-  if (need.length) await dropHighlightsBefore(weekOf(todayIn()));
-  return need.length ? addItems(need, "") : 0;
+  if (lunch && change.part && change.item !== undefined) {
+    await upsert(PLANNED, [{ id, [change.part]: change.item }], ["id"]);
+    const need = lunchShopping([{ ...lunch, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, p === change.part ? change.item! : ""])) } as Lunch], toOptions(await rows(LUNCHES)));
+    return { added: need.length ? await addItems(need.map((item) => ({ item, quantity: "", for: "lunches", check: false })), by) : 0 };
+  }
+  return { added: 0 };
 }
 
-/** "Did you make it?": yes logs it (so "last made" stays true); no just says so. */
-export async function markMade(date: string, made: boolean) {
-  const n = toNights(await rows(PLAN)).filter((x) => x.date === date).pop();
-  if (!n) return;
-  await upsert(PLAN, [{ date, made: made ? "yes" : "no" }], ["date"]);
-  if (!made) return;
-  const recipes = await loadRecipes();
-  const used = recipes.filter((r) => r.id === n.meal || r.id === n.kidsMeal);
-  await append(MADE, used.map((r) => ({ date, recipe: r.id })));
-  // The freezer counts down: one of each thing the meal used from it, the oldest first.
-  const freezer = await loadFreezer();
-  for (const r of used) {
-    const f = freezer.find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
-    if (f) await takeFrozen(f.id);
-  }
+/**
+ * Made it (or packed it): it comes off what's to make, with today's date, and a dinner from the collection is logged
+ * (so "last made" stays true) and counts the freezer down. The grocery list is left alone.
+ */
+export async function markMade(id: string) {
+  const now = toPlanned(await rows(PLANNED));
+  const dish = now.dishes.find((d) => d.id === id);
+  if (!dish && !now.lunches.some((l) => l.id === id)) return;
+  const date = todayIn();
+  await upsert(PLANNED, [{ id, made: date }], ["id"]);
+  if (!dish) return;
+  const r = (await loadRecipes()).find((x) => x.id === dish.recipe);
+  if (!r) return;
+  await append(MADE, [{ date, recipe: r.id }]);
+  // The freezer counts down: one of the thing the meal used from it, the oldest first.
+  const f = (await loadFreezer()).find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
+  if (f) await takeFrozen(f.id);
 }
+
+/** Not making it after all: it comes off, and the grocery list is left alone. */
+export const removePlanned = (id: string) => removeRows(PLANNED, (get) => get("id") === id);
 
 /** The freezer and when the next trips are, for the Groceries tab. */
 export async function loadKitchen() {

@@ -118,6 +118,13 @@ One row per recipe in the collection.
 | `notes` | Double the spice for Sam | |
 | `active` | yes / no | "No" keeps it but stops suggesting it |
 
+### Planned
+
+Since Nov 3, one row per thing to make or pack: `id, kind (quick / regular / kids / dessert / side / breakfast /
+lunch), recipe (recipe id or free text; blank for a lunch), kid, main, fruit, side, treat, snack (a lunch's parts),
+added, made (the date it was made or packed; blank while it's to do), pinned`. **Plan counts** (`what, count`) keeps
+last time's numbers. The old Plan and Lunch plan tabs below are kept; what was still to come moved over once (`moved`).
+
 ### Plan
 
 One row per planned night. The app writes it; she can edit by hand.
@@ -205,6 +212,13 @@ Each feature lists what it does, how it looks, and what's decided by code versus
 code (a number of minutes is read from the recipe text, never invented).
 
 ### 4.2 Planning the week
+
+**Changed Nov 3: planned by number, not by day.** Planning asks how many: quick, regular and kids' dinners, desserts,
+sides, breakfasts, and lunches for each boy (starting from last time's numbers), plus the Trader Joe's and Costco
+trips. Simmer picks that many by the rules below (variety is with everything planned, not the night before), each with
+Something else, pick one, and remove. Meals shows the dinners to make by kind and each boy's lunches to pack; Made it
+and packed take them off. What isn't made carries over, and planning again adds on top. Everything new goes on the list
+when it's saved. Who's away, kids separate, week shapes and No school are gone. The days below are the older design.
 
 **What it does.** She says what the week looks like; Simmer fills in the rest with meals from her collection.
 
@@ -335,6 +349,8 @@ Tap tonight's meal: the recipe, large and readable, with ingredients first, step
 it's open (where the browser allows). *Made it* at the bottom marks it made and updates the freezer.
 
 ### 4.9 The boys' lunches
+
+**Changed Nov 3:** lunches are a number per boy ("Theo 5, Leo 5"), not school days; each is ticked when packed.
 
 **What it does.** Plans each boy's packed lunch for the school days, from that boy's own options, and puts what's
 needed on the list.
