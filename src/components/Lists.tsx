@@ -55,8 +55,9 @@ function TopLine({ text, onClear, onDone }: { text: string; onClear: (() => void
   return (
     <div className="flex min-h-10 items-center gap-1 px-4">
       <span className="min-w-0 flex-1 t-sub font-semibold">{text}</span>
-      {onClear && <button onClick={onClear} className="h-9 rounded-full px-3 t-sub font-semibold text-muted">Clear</button>}
+      {/* Done shopping comes in to the left, so Clear stays put under the finger (ticking one moved Clear, Nov 3). */}
       {onDone && <button onClick={onDone} className="h-9 rounded-full bg-accent px-4 t-sub font-semibold text-on-accent active:scale-95">Done shopping</button>}
+      {onClear && <button onClick={onClear} className="h-9 rounded-full px-3 t-sub font-semibold text-muted">Clear</button>}
     </div>
   );
 }
@@ -116,7 +117,10 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
   const ticked = here.filter((i) => i.checked);
   const done = async () => {
     const stores = where === "all" ? STORES.filter((s) => ticked.some((i) => i.store === s)) : [where as Store];
+    const off = [...ticked];
     for (const s of stores) await act.done(s, false);
+    // Undo, as Clear has: Done shopping can be tapped by mistake.
+    setUndo({ text: `Done shopping. ${off.length} off the list.`, items: off });
   };
   const more = (it: Item) => (
     <More name={cap(it.item)} options={moreFor(it, inCart(it), it.store === "safeway" && !inCart(it) && Boolean(findOf(it.id)?.picked))}

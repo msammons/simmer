@@ -155,7 +155,7 @@ export async function addItem(text: string, by: string, forWhat = "", filing?: {
 
 const cellsOf = (row: Item): Record<string, string> => ({
   id: row.id, item: row.item, quantity: row.quantity, store: row.store, section: row.section, for: row.for, added_by: row.addedBy, added_at: row.addedAt,
-  checked: "no", checked_at: "", check: row.check ? "yes" : "",
+  checked: row.checked ? "yes" : "no", checked_at: "", check: row.check ? "yes" : "", // ticked stays ticked when Undo puts it back
 });
 
 /** New rows at the end of the List tab, written by its own headers (a missing column is added first). */
