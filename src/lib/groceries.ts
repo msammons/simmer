@@ -253,20 +253,43 @@ export async function moveItem(id: string, to: { store?: Store; section?: Sectio
   await rememberFiling(it.item, { store: to.store ?? it.store, section: to.section ?? it.section }).catch((e) => console.error("couldn't remember filing", e));
 }
 
+const BOUGHT = "Bought";
+const BOUGHT_HEADERS = ["item", "quantity", "store", "date_bought", "for"];
+const boughtRow = (x: Item) => [x.item, x.quantity, x.store, stamp().slice(0, 10), x.for];
+const boughtMemory: string[][] = [];
+
+/** What has been bought so far (the Bought tab), newest last; read for the tests and for whatever looks back later. */
+export async function loadBought(): Promise<string[][]> {
+  return sheetsConfigured() ? (await readTabIfAny(BOUGHT)).slice(1) : [...boughtMemory];
+}
+
+/** Bought history (Nov 3): what's coming off the list is written down first, so the rows only go once the note is safely made. */
+async function recordBought(gone: Item[]) {
+  if (!gone.length) return;
+  if (!sheetsConfigured()) { boughtMemory.push(...gone.map(boughtRow)); return; }
+  await ensureTab(BOUGHT);
+  const existing = await readTabIfAny(BOUGHT);
+  await appendRows(BOUGHT, [...(existing.length ? [] : [BOUGHT_HEADERS]), ...gone.map(boughtRow)]);
+}
+
 /** Finishing a trip: the store's checked items come off the list (everything else stays, including other stores'). */
 /** Bought: clears that store's checked items, and `alsoIds` (for Safeway, what's in the cart). */
 export async function doneShopping(store: Store, alsoIds: Set<string> = new Set()): Promise<number> {
+  const off = (x: Item) => x.store === store && (x.checked || alsoIds.has(x.id));
   if (!sheetsConfigured()) {
     const m = await mem();
-    const before = m.list.length;
-    m.list = m.list.filter((x) => !(x.store === store && (x.checked || alsoIds.has(x.id))));
-    return before - m.list.length;
+    const gone = m.list.filter(off);
+    await recordBought(gone);
+    m.list = m.list.filter((x) => !off(x));
+    return gone.length;
   }
   const rows = await rowsOf(LIST);
   const recs = records(rows);
-  const keep = recs.filter((r) => !(asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id")))));
-  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...keep.map((r) => rows[r.rowNumber - 1])]);
-  return recs.length - keep.length;
+  const goneRecs = recs.filter((r) => asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id"))));
+  await recordBought(toItems([rows[0] ?? LIST_HEADERS, ...goneRecs.map((r) => rows[r.rowNumber - 1])]));
+  const drop = new Set(goneRecs);
+  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r)).map((r) => rows[r.rowNumber - 1])]);
+  return goneRecs.length;
 }
 
 export async function removeItem(id: string) {
