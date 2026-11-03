@@ -21,7 +21,7 @@ function ago(iso: string): string {
 }
 
 function why(error: string): string {
-  if (error === "not-answering" || error === "stuck") return "the computer didn't answer";
+  if (error === "not-answering" || error === "stuck") return "Safeway couldn't be reached";
   if (error === "signed-out") return "Safeway isn't signed in";
   if (error === "not-found") return "it didn't come up on Safeway";
   if (error === "not-loaded") return "Safeway didn't load";
@@ -99,7 +99,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
   const now = jobs.find(live);
   const done = jobs.filter((j) => !live(j));
   return (
-    <div role="dialog" aria-label="What the computer is doing" data-at-rest className="fixed inset-0 z-40 overflow-y-auto bg-bg">
+    <div role="dialog" aria-label="What Simmer is doing at Safeway" data-at-rest className="fixed inset-0 z-40 overflow-y-auto bg-bg">
       <div className="mx-auto w-full max-w-md space-y-6 px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <BrandBar />
         <div className="rounded-[1.375rem] bg-card px-5 py-4" aria-live="polite">
@@ -117,7 +117,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
             ))}
           </Group>
         ) : (
-          !now && <EmptyState icon="bag" title="Nothing yet">Searches and cart changes show here as the computer does them.</EmptyState>
+          !now && <EmptyState icon="bag" title="Nothing yet">Searches and cart changes show here as they happen.</EmptyState>
         )}
       </div>
       <div className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">
