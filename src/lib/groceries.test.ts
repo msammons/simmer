@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addStaple, checkItem, doneShopping, file, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addStaple, checkItem, dropHighlightsBefore, doneShopping, file, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -47,5 +47,18 @@ describe("Stock and Clear", () => {
     expect((await loadList()).items.some((x) => x.id === a.id)).toBe(false);
     await putBack(gone);
     expect((await loadList()).items.find((x) => x.id === b.id)).toMatchObject({ item: "lemons", quantity: "2" });
+  });
+});
+
+describe("meal highlights", () => {
+  it("an earlier week's highlights go when a new week's groceries come; this week's stay", async () => {
+    await addStaple("cinnamon");
+    await addItems([{ item: "cinnamon", quantity: "2 tsp", for: "Sunday's pie" }], "Robin");
+    const it = (await loadList()).items.find((x) => x.item === "cinnamon")!;
+    expect(it.check).toBe(true);
+    await dropHighlightsBefore(it.addedAt.slice(0, 10)); // added that day: stays
+    expect((await loadList()).items.some((x) => x.id === it.id)).toBe(true);
+    await dropHighlightsBefore("9999-01-01"); // a later week: it goes
+    expect((await loadList()).items.some((x) => x.id === it.id)).toBe(false);
   });
 });
