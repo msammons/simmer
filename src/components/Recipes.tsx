@@ -75,10 +75,10 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, free
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, tonight, onMade }: {
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, onMade }: {
   r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
-  /** It's tonight's dinner: cooking it, so the screen stays on and Made it is one tap. */
-  tonight?: { made: boolean }; onMade?: () => void;
+  /** It's one of the dinners to make: Made it is one tap from here, and it comes off the list (Nov 3). */
+  onMade?: () => void;
 }) {
   const screen = useRef<HTMLDivElement>(null);
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
@@ -100,7 +100,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
       {error && <Notice>{error}</Notice>}
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
       {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>}
-      <Group header="How long it takes" footer="Quick nights get quick dinners when the week is planned.">
+      <Group header="How long it takes" footer="Quick dinners are picked from the quick ones.">
         <div className="p-3"><Segmented label="How long it takes" value={r.effort} onChange={onEffort} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }]} /></div>
       </Group>
       {r.ingredients.length ? (
@@ -123,9 +123,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
           {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
         </Group>
       )}
-      {tonight && onMade && (tonight.made
-        ? <Notice tone="info">Made tonight.</Notice>
-        : <Button onClick={onMade} icon="check" className="w-full">Made it</Button>)}
+      {onMade && <Button onClick={onMade} icon="check" className="w-full">Made it</Button>}
       <Button variant="plain" onClick={() => onActive(!r.active)} className="w-full">{r.active ? "Stop suggesting this" : "Suggest this again"}</Button>
     </div>
   );
