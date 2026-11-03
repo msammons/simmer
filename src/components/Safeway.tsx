@@ -17,19 +17,19 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export function UpdateNotice() {
   return (
     <Notice tone="info">
-      Simmer on the computer needs an update.{" "}
+      Simmer in Chrome needs an update.{" "}
       <a className="font-semibold text-accent" href="/simmer-helper.zip" download>Get the new one</a>, open it, put what&apos;s inside in place of the old Simmer folder, then press reload on Simmer in Chrome&apos;s extensions page.
     </Notice>
   );
 }
 
-export const NOT_ANSWERING = "Safeway searches run on the computer with Chrome open. It's not answering right now.";
+export const NOT_ANSWERING = "Can't reach Safeway right now. Check the connection and try again.";
 /** Plain words for why a job didn't happen. */
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
-  if (error === "signed-out") return "Safeway isn't signed in on the computer. Sign in there, then try again.";
+  if (error === "signed-out") return "Safeway isn't signed in. Sign in to Safeway, then try again.";
   if (error === "not-found") return "Couldn't find that product on Safeway just now. Try again.";
-  if (error === "not-loaded") return "Safeway didn't load on the computer. Try again in a minute.";
+  if (error === "not-loaded") return "Safeway didn't load. Try again in a minute.";
   return "That didn't go through on Safeway. Try again.";
 }
 
@@ -340,7 +340,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
           </Group>
         </>
       )}
-      {s?.state === "done" && !s.signedIn && <Notice>{store} isn&apos;t signed in on the computer. Sign in there to add things.</Notice>}
+      {s?.state === "done" && !s.signedIn && <Notice>{store} isn&apos;t signed in. Sign in to {store} to add things.</Notice>}
       {s?.state === "done" && (results.length ? (
         <div className={GRID}>
           {results.map(({ product: p, usual }) => {
