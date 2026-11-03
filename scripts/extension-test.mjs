@@ -165,11 +165,11 @@ await phone.setViewportSize({ width: 390, height: 844 });
 await phone.goto(`${ADDRESS}/`);
 await phone.getByLabel("Household passcode").fill(PASS);
 await phone.getByRole("button", { name: "Get started" }).click();
-await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
-await phone.getByRole("radio", { name: "Find" }).click();
-expect(await phone.getByText(/It's not answering right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Lists" }).click();
+await phone.getByRole("radio", { name: "Safeway" }).click();
+expect(await phone.getByText(/isn't connected right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
 
-// Setup in the panel: a wrong address and a wrong passcode say so; then the panel is Simmer, open on Shop.
+// Setup in the panel: a wrong address and a wrong passcode say so; then the panel is Simmer, open on Lists at Safeway.
 const panel = await ctx.newPage();
 await panel.setViewportSize({ width: 400, height: 900 });
 await panel.goto(`chrome-extension://${id}/panel.html`);
@@ -184,16 +184,16 @@ expect(await panel.getByText("Wrong passcode.").waitFor({ timeout: 10_000 }).the
 await panel.fill("#code", PASS);
 await panel.click("text=Continue");
 const sim = panel.frameLocator("#simmer");
-expect(await sim.getByRole("radio", { name: "Find" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Shop (passcode passed by message)");
-expect(await sim.getByRole("radio", { name: /^Cart/ }).getAttribute("aria-checked") === "true", "the panel's Shop opens on Cart");
+expect(await sim.getByRole("radio", { name: "Safeway" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Lists (passcode passed by message)");
+expect(await sim.getByRole("radio", { name: "Safeway" }).getAttribute("aria-checked") === "true", "the panel's Lists opens on Safeway");
 expect(!(await panel.locator("#simmer").getAttribute("src")).includes(PASS), "the passcode isn't in the frame's address");
 
 const t0 = Date.now();
 const heard = await until(async () => (await api("/api/safeway/jobs")).answering, 30_000);
 console.log(`(the helper checked in ${heard ? `after ${Date.now() - t0} ms` : "not at all"})`);
-// Find: Simmer's search, done by the helper on the stand-in Safeway, with pictures.
-await sim.getByRole("radio", { name: "Find" }).click();
-const add = sim.getByRole("button", { name: "Add", exact: true });
+// Find: Safeway's choices for an item, searched by the helper on the stand-in Safeway, with pictures.
+await sim.getByRole("button", { name: "Find", exact: true }).first().click();
+const add = sim.getByRole("dialog").getByRole("button", { name: "Add", exact: true });
 const found = await add.first().waitFor({ timeout: 30_000 }).then(() => true, () => false);
 expect(found, "Find: a search comes back with products");
 if (!found) console.log("Find showed:", (await sim.locator("main").innerText()).slice(0, 400), "| tabs:", ctx.pages().map((p) => p.url()).join(" "));
@@ -209,48 +209,44 @@ await add.first().click();
 expect(await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1), "Add puts one in the Safeway cart and in Simmer's cart");
 expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.itemId === milkId, "Simmer's cart knows which list item it's for");
 expect(await sim.getByRole("button", { name: /^Next: Bag bananas/ }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "after an Add, Next (naming the next item) shows at the top");
-await sim.getByRole("button", { name: /^One more/ }).first().click();
-expect(await sim.getByRole("button", { name: /^One more/ }).first().isDisabled() && await sim.getByRole("status", { name: /^Changing .* on Safeway/ }).first().isVisible(), "a product is locked, with a spinner, while its change is on the way");
+const choices = sim.getByRole("dialog");
+await choices.getByRole("button", { name: /^One more/ }).first().click();
+expect(await choices.getByRole("button", { name: /^One more/ }).first().isDisabled() && await choices.getByRole("status", { name: /^Changing .* on Safeway/ }).first().isVisible(), "a product is locked, with a spinner, while its change is on the way");
 expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "+ adds one on Safeway, and Simmer reads Safeway's count right");
 expect(!(await sim.getByText(/didn't take all/).count()), "no \"didn't take all\" when it did");
 expect(queries.length === searchesAtAdd, `Add and + happen on the search page showing, without loading it again (${queries.length - searchesAtAdd} more)`);
 expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id === pid && /^https:/.test(p.image ?? "")), "the pick is kept, with its picture");
 
-// Cart: shows it, − takes one off, and the trash at one takes it out.
-await sim.getByRole("radio", { name: /^Cart · 1/ }).click();
-expect(await sim.getByText("Check out on Safeway").waitFor({ timeout: 10_000 }).then(() => true, () => false), "Cart shows what's in it, with checkout on Safeway");
-expect(await until(() => new URL(safeway.url()).pathname === "/erums/cart", 20_000), "Cart in the panel: the Safeway tab shows Safeway's cart");
+// In the cart (the Safeway list's own rows): − takes one off, and the trash at one takes it out.
+await sim.locator("body").press("Escape");
+expect(await sim.getByText("In the cart", { exact: true }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the Safeway list shows what's in the cart");
 const searchesBefore = queries.length;
 await sim.getByRole("button", { name: /^One less/ }).click();
 expect(await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1), "− takes one off on Safeway");
-expect(queries.length === searchesBefore && new URL(safeway.url()).pathname === "/erums/cart", "Cart changes are made on Safeway's cart page, which stays showing");
+expect(queries.length === searchesBefore && await until(() => new URL(safeway.url()).pathname === "/erums/cart", 20_000), "cart changes are made on Safeway's cart page, which stays showing");
 await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
 expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(pid)) === 0), "the trash takes it out of the Safeway cart");
-// Coming back to Shop any other way than the panel's start opens Find.
-await sim.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
-const findOpen = await until(async () => (await sim.getByRole("radio", { name: "Find" }).getAttribute("aria-checked")) === "true", 10_000);
-expect(findOpen, "the Shop tab opens Find when there are things to find");
-if (!findOpen) console.log("Shop showed:", (await sim.locator("main").innerText()).slice(0, 300));
 
 // The phone path: with the panel closed, a search and an add from a plain page are done by the background.
 await panel.close();
 await phone.reload();
-await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).click();
-await phone.getByRole("button", { name: /^Bag bananas/ }).click();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Lists" }).click();
+await phone.getByRole("radio", { name: "Safeway" }).click();
+await phone.getByRole("button", { name: "Find", exact: true }).first().click();
 // The background stays quick for a few minutes after activity; nudge it as the half-minute alarm would.
 worker.evaluate(() => self.simmerCheck()).catch(() => {});
-const padd = phone.getByRole("button", { name: "Add", exact: true });
+const padd = phone.getByRole("dialog").getByRole("button", { name: "Add", exact: true });
 expect(await padd.first().waitFor({ timeout: 45_000 }).then(() => true, () => false), "phone: a search is done by the background, panel closed");
 await padd.first().click();
 expect(await until(async () => (await safewayQty("960010")) + (await safewayQty("960011")) === 1, 45_000), "phone: Add goes into the Safeway cart from the background");
-expect(await phone.getByRole("radio", { name: "Cart · 1" }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "phone: Simmer's cart shows it");
+expect(await until(async () => (await api("/api/safeway/cart")).cart.reduce((n, l) => n + l.qty, 0) === 1, 10_000), "phone: Simmer's cart shows it");
 expect(queries.includes("bananas") && !queries.some((q) => /bag|\.\.\./.test(q)), `searches use the item's name only (searched: ${[...new Set(queries)].join(", ")})`);
 
 // Signed out of Safeway: an add says so in plain words.
 signedIn = false;
 await safeway.reload(); // Safeway shows it's signed out once its page loads again
-await phone.getByRole("button", { name: /^One more/ }).first().click();
-expect(await phone.getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
+await phone.getByRole("dialog").getByRole("button", { name: /^One more/ }).first().click();
+expect(await phone.getByRole("dialog").getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
 signedIn = true;
 
 // Framing: another site can't show Simmer.

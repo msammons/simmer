@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning, the tabs, Settings on every
-// screen, the List tab, Shop's store picker and Find / Cart, the Recipes tab, a recipe and back, the freezer, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// screen, Stock, Lists (All and Safeway), the Recipes tab, a recipe and back, the freezer, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -111,53 +111,42 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: Add recipes from Settings`, await page.getByRole("dialog", { name: "Add recipes" }).isVisible());
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
-    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
-    await settingsHere("List");
-    ok(`${tag}: List has the add field`, await page.getByLabel("Add to the list").isVisible());
-    await page.screenshot({ path: `${dir}/5-list-${tag}.png`, fullPage: true });
-    if (!(await page.getByRole("button", { name: /^More for / }).count())) { await page.getByLabel("Add to the list").fill("eggs"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500); }
-    const findAll = page.getByRole("button", { name: "Find at Safeway" });
-    const findBox = (await findAll.count()) ? await findAll.boundingBox() : null;
-    ok(`${tag}: Find at Safeway is a small button beside Running low`, Boolean(findBox) && findBox.height <= 44 && findBox.width < width / 2, JSON.stringify(findBox));
-    // Shop: Find and Cart for one store. With no Safeway helper running, Find says so plainly (and quickly); the cart is empty.
-    if (!(await page.getByRole("button", { name: /^More for / }).count())) { await page.getByLabel("Add to the list").fill("eggs"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500); }
-    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
-    await settingsHere("Shop");
-    ok(`${tag}: Shop opens on Find`, (await page.getByRole("radio", { name: "Find" }).getAttribute("aria-checked")) === "true");
-    ok(`${tag}: Find says when the computer isn't answering`, await seen(page.getByText(/It's not answering right now/), 10000));
-    await page.screenshot({ path: `${dir}/5b-shop-find-${tag}.png` });
-    // The store picker: Safeway, the one online store for now, ticked in its sheet.
-    await page.getByRole("button", { name: /Shopping at Safeway/ }).tap();
-    ok(`${tag}: the store picker lists Safeway, ticked`, await seen(page.getByRole("radio", { name: "Safeway", checked: true })));
-    await page.screenshot({ path: `${dir}/5b-shop-store-${tag}.png` });
-    await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(300);
-    ok(`${tag}: the switch stays at the top`, (await page.getByRole("radio", { name: "Find" }).boundingBox()).y < 140);
-    await page.getByRole("radio", { name: /^Cart/ }).tap(); await page.waitForTimeout(500);
-    ok(`${tag}: an empty cart says so`, await seen(page.getByText("The cart is empty")));
-    await page.screenshot({ path: `${dir}/5c-shop-cart-${tag}.png` });
-    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(600);
-    // A Safeway item on the list opens Shop's Find on it.
-    const swItem = page.getByRole("button", { name: /^(Ground turkey|Eggs)/ }).first();
-    if (await swItem.count()) {
-      const what = ((await swItem.innerText()).split("\n")[0] || "").trim();
-      await swItem.tap(); await page.waitForTimeout(600);
-      ok(`${tag}: a Safeway item opens Find on it`, await seen(page.getByRole("heading", { name: what })));
-      await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(600);
-    }
-    await page.getByRole("button", { name: /^Freezer/ }).tap(); await page.waitForTimeout(400);
-    await page.getByLabel("Add to the freezer").fill(`2 shrimp ${tag}`); await page.keyboard.press("Enter");
-    ok(`${tag}: freezer add`, await seen(page.getByText(`shrimp ${tag}`)));
-    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-    const more = page.getByRole("button", { name: /^More for / }).first();
-    if (await more.count()) {
-      await more.tap(); await page.waitForTimeout(400);
-      ok(`${tag}: an item's options open`, await page.getByRole("heading", { name: "Get it at" }).isVisible());
-      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-    }
+    // Stock: what the house keeps, assumed in. A tap means out: it goes on its store's list; a second tap takes it back off.
+    const tabBar = page.getByRole("navigation", { name: "Main" });
+    await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
+    await settingsHere("Stock");
+    ok(`${tag}: Stock has the add field and the legend`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("In meals").isVisible()));
+    await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
+    const milk = page.getByRole("checkbox", { name: "Have Milk" });
+    if ((await milk.getAttribute("aria-checked")) === "false") { await milk.tap(); await page.waitForTimeout(1200); }
+    await milk.tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: a tap marks it out`, (await milk.getAttribute("aria-checked")) === "false");
+    await page.getByLabel("Add something to Stock").fill(`frozen waffles ${tag}`); await page.keyboard.press("Enter");
+    ok(`${tag}: Stock add`, await seen(page.getByRole("checkbox", { name: new RegExp(`Have frozen waffles ${tag}`, "i") })));
+
+    // Lists: All, Safeway, Trader Joe's, Costco. What's out in Stock is on its store's list.
+    await tabBar.getByRole("button", { name: "Lists" }).tap(); await page.waitForTimeout(800);
+    await settingsHere("Lists");
+    ok(`${tag}: Lists has the store switch and the add field`, (await page.getByRole("radio", { name: "All" }).isVisible()) && (await page.getByLabel("Add something").isVisible()));
+    ok(`${tag}: what's out in Stock is on the list`, await seen(page.getByRole("checkbox", { name: /Milk/ })));
+    const tj = (await page.getByRole("radio", { name: "Trader Joe's" }).boundingBox());
+    ok(`${tag}: the store names stay on one line`, Boolean(tj) && tj.height < 44, JSON.stringify(tj));
+    await page.screenshot({ path: `${dir}/5a-lists-all-${tag}.png`, fullPage: true });
+    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
+    ok(`${tag}: ticking shows Done shopping`, await seen(page.getByRole("button", { name: "Done shopping" })));
+    await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(800);
+    ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/isn't connected right now/), 10000));
+    ok(`${tag}: Safeway shows the cart line`, await seen(page.getByText(/in the cart/)));
+    await page.screenshot({ path: `${dir}/5b-lists-safeway-${tag}.png` });
+    await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(500);
+    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
+    await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
+    await page.getByRole("checkbox", { name: "Have Milk" }).tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Have Milk" }).getAttribute("aria-checked")) === "true");
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
-    ok(`${tag}: four tabs (Meals, Recipes, List, Shop), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Meals,Recipes,List,Shop" && (await page.getByRole("search").count()) === 0);
+    ok(`${tag}: four tabs (Recipes, Meals, Stock, Lists), no search`, (await nav.getByRole("button").allInnerTexts()).join() === "Recipes,Meals,Stock,Lists" && (await page.getByRole("search").count()) === 0);
     await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
@@ -210,13 +199,13 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
     ok(`${tag}: back to Recipes`, await page.getByRole("heading", { name: "Recipes" }).isVisible());
     await page.screenshot({ path: `${dir}/6b-recipes-${tag}.png` });
-    await nav.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(500);
+    await nav.getByRole("button", { name: "Lists" }).tap(); await page.waitForTimeout(500);
     ok(`${tag}: the recipe's ingredients are on the list`, await seen(page.getByText(/ground beef/i)));
 
     // The passcode changes while the app is open, with a sheet up: back to the passcode screen, nothing left open.
     await page.evaluate(() => localStorage.setItem("sm.passcode", JSON.stringify("changed")));
-    await page.getByRole("button", { name: /^Running low/ }).tap(); await page.waitForTimeout(300);
-    await page.getByRole("dialog").getByRole("button", { name: /Add$/ }).first().tap().catch(() => {});
+    await page.getByRole("radio", { name: "Costco" }).tap(); await page.waitForTimeout(300);
+    await page.getByLabel("Add something").fill("paper towels"); await page.keyboard.press("Enter");
     ok(`${tag}: a turned-down passcode asks again`, await seen(page.getByLabel("Household passcode"), 8000));
     ok(`${tag}: and closes what was open`, (await page.getByRole("dialog").count()) === 0);
     await page.screenshot({ path: `${dir}/7-signed-out-${tag}.png` });

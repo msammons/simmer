@@ -4,28 +4,30 @@ import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
-import { ListScreen, ShopScreen, type ListActions } from "./Shop";
+import { ListsScreen, type ListsActions, type Where } from "./Lists";
+import { StockScreen, type StockActions } from "./Stock";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
-type Tab = "week" | "list" | "shop" | "recipes";
+type Tab = "recipes" | "week" | "stock" | "lists";
 /**
  * Where you are: a tab at the bottom of a stack of screens opened from it (a recipe). Back pops one; a tab starts a new
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-// Meals first, then Recipes, and Simmer opens on Meals (Matt, Oct 31).
-const TABS: TabDef<Tab>[] = [{ id: "week", label: "Meals", icon: "pot" }, { id: "recipes", label: "Recipes", icon: "book" }, { id: "list", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "bag" }];
-const TAB_NAMES: Record<Tab, string> = { week: "Meals", list: "List", shop: "Shop", recipes: "Recipes" };
+// Recipes · Meals · Stock · Lists (Matt, Nov 2); Simmer still opens on Meals (Oct 31).
+const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "Stock", icon: "home" }, { id: "lists", label: "Lists", icon: "list" }];
+const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "Stock", lists: "Lists" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
 const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
 /** The first screen, and whether it's the one the address asked for (not a resume after reloading). */
 function takeResume(): { tab: Tab; asked: boolean } {
-  // The Safeway helper's panel opens Simmer on Shop (?open=shop).
-  const asked = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
+  // The Safeway helper's panel opens Simmer on Shop (?open=shop): Lists, on Safeway.
+  const open = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
+  const asked = open === "shop" ? "lists" : open;
   const first = { tab: isTab(asked) ? asked : "week" as Tab, asked: isTab(asked) };
   try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? { tab: v, asked: false } : first; } catch { return first; }
 }
@@ -39,8 +41,7 @@ export default function App() {
   const top = stack[stack.length - 1];
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
-  const [shopAt, setShopAt] = useState<string | null>(null); // the list item Shop's Find opens on, from the List tab
-  const [shopOnCart, setShopOnCart] = useState(false); // Shop opens on Cart: only the panel's first screen
+  const [listsStart, setListsStart] = useState<Where>("all"); // the store Lists opens on: Safeway in the helper's panel
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
   const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
@@ -120,11 +121,11 @@ export default function App() {
       if (!(e instanceof AuthError)) setListError(errorText(e));
     }
   }, []);
-  const onShop = phase === "app" && (top.kind === "list" || top.kind === "shop");
+  const onShop = phase === "app" && (top.kind === "lists" || top.kind === "stock");
   useEffect(() => {
     if (!onShop) return;
     queueMicrotask(refreshList);
-    if (top.kind === "list") api.kitchen().then(setKitchen, () => {}); // the freezer and trips: only List shows them
+    if (top.kind === "stock") api.kitchen().then(setKitchen, () => {}); // the freezer: only Stock shows it
     const visible = () => document.visibilityState === "visible";
     const t = setInterval(() => { if (visible()) refreshList(); }, 30_000);
     const back = () => { if (visible()) refreshList(); };
@@ -140,7 +141,7 @@ export default function App() {
     try { gotRecipes((await api.recipes()).recipes); }
     catch (e) { if (!(e instanceof AuthError)) setRecipesError(errorText(e)); }
   }, [gotRecipes]);
-  const inRecipes = phase === "app" && top.kind !== "list" && top.kind !== "shop";
+  const inRecipes = phase === "app" && top.kind !== "lists" && top.kind !== "stock";
   useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, visit, refreshRecipes]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
@@ -232,28 +233,33 @@ export default function App() {
       return errorText(e);
     }
   }
-  const act: ListActions = {
-    add: (text, filing) => change({ op: "add", text, by: me, ...filing }),
+  const lists: ListsActions = {
+    add: (text, store) => change({ op: "add", text, by: me, ...(store && { store }) }),
     check: (it, checked) => change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
-    move: (it, to) => change({ op: "move", id: it.id, ...to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, ...to } : x)) })),
-    remove: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
-    need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
-    have: () => change({ op: "have" }, (l) => ({ ...l, items: l.items.filter((x) => !(x.check && !x.checked)) })),
-    swapFor: (forWhat) => {
-      // "Tuesday's turkey chili" → that night, in the weeks planned.
-      const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
-      onTab("week");
-      for (const w of weeks) {
-        const n = w?.nights.find((x) => x.date >= dateIn(0) && x.meal && forWhat.toLowerCase().includes(`${dayName(x.date)}'s ${(recipeOf(x.meal)?.name ?? x.meal).toLowerCase()}`.toLowerCase()));
-        if (w && n) { setNightAt({ monday: w.monday, date: n.date }); return; }
-      }
+    move: (it, to) => change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
+    done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
+    clear: async (ids) => {
+      const mine = ++listChanges.current;
+      setList((l) => l && { ...l, items: l.items.filter((x) => !ids.includes(x.id)) });
+      try {
+        const l = await api.change({ op: "clear", ids });
+        if (mine === listChanges.current) { setList(l); store.setList(l); setListError(null); }
+        return l.cleared ?? [];
+      } catch (e) { failed(setListError)(e); refreshList(); return null; }
     },
-    freeze: (text) => api.freezer({ op: "add", text }).then(setKitchen, failed(setListError)),
+    putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
+  };
+  const stock: StockActions = {
+    out: (name, s, section, amount) => change({ op: "add", text: amount ? `${amount} ${name}` : name, by: me, store: s, section }),
+    have: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
+    need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     takeOut: (f) => {
       setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
       api.freezer({ op: "use", id: f.id }).then(setKitchen, failed(setListError));
     },
-    done: (s) => change({ op: "done", store: s }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })).then(() => api.kitchen().then(setKitchen, () => {})),
+    keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
+    keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
+    keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
   };
 
   // Boot reads browser-only state (localStorage), which only exists after mount.
@@ -271,8 +277,8 @@ export default function App() {
       else loadHousehold().then((ok) => {
         if (!ok) return;
         setStack([{ kind: resume.tab }]);
-        // The helper's panel starting on Shop opens it on Cart (Sam, Oct 31); every other way to Shop opens Find.
-        if (resume.asked && resume.tab === "shop") setShopOnCart(true);
+        // The helper's panel opens Lists on Safeway, the list that's also the cart.
+        if (resume.asked && resume.tab === "lists") setListsStart("safeway");
         setPhase("app");
       });
     });
@@ -309,13 +315,7 @@ export default function App() {
     scrollAppTo(0);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
-    setShopAt(null);
-    setShopOnCart(false);
-  }
-  /** Shop's Find, on a list item when there's one. */
-  function openFind(id?: string) {
-    onTab("shop");
-    setShopAt(id ?? null);
+    setListsStart("all");
   }
   function back() {
     scrollAppTo(0);
@@ -349,8 +349,8 @@ export default function App() {
         <WeekScreen key={visit} weeks={weeks} recipes={recipes ?? []} me={me} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onPlan={(w) => setPlanningFor(w.monday)} onNight={(w, n) => setNightAt({ monday: w.monday, date: n.date })} onMade={made} onOpen={openRecipe} />
       )}
-      {phase === "app" && top.kind === "list" && <ListScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={act} onFind={openFind} />}
-      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} error={error ?? listError} act={act} startAt={shopAt} onCart={shopOnCart} onList={() => onTab("list")} />}
+      {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
+      {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? week?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} onAddToList={(r) => { setListing(r.id); setSheet("tolist"); }} />

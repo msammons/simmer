@@ -3,7 +3,7 @@ import { recordTrip } from "@/lib/plan";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { clearCart, loadCart } from "@/lib/safeway";
-import { addItem, addItems, checkItem, haveTheRest, needItem, doneShopping, loadList, moveItem, removeItem, SECTIONS, STORES, type Section, type Store } from "@/lib/groceries";
+import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, needItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, SECTIONS, STORES, type Item, type Section, type Store } from "@/lib/groceries";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
 const isSection = (s: unknown): s is Section => typeof s === "string" && (SECTIONS as readonly string[]).includes(s);
@@ -21,14 +21,21 @@ export async function GET(req: Request) {
 
 /**
  * POST { op, ... }: add { text, by }, many { items: { item, quantity }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
- * done { store }. Answers with the list as it is after the change.
+ * done { store }, clear { ids } (answers with `cleared`, for Undo), putBack { items }, and Stock's keepAdd { text, section? },
+ * keepRemove { item }, keepMove { item, section }. Answers with the list as it is after the change.
  */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
   try {
     switch (b?.op) {
-      case "add": await addItem(clean(b.text), clean(b.by, 20), "", isStore(b.store) && isSection(b.section) ? { store: b.store, section: b.section } : undefined); break;
+      case "add": {
+        // A store alone (added on that store's list): the section is still Simmer's to work out.
+        const text = clean(b.text);
+        const filing = isStore(b.store) ? { store: b.store, section: isSection(b.section) ? b.section : (await file(parseEntry(text).item)).section } : undefined;
+        await addItem(text, clean(b.by, 20), "", filing);
+        break;
+      }
       case "check": await checkItem(clean(b.id, 40), Boolean(b.checked)); break;
       case "move": await moveItem(clean(b.id, 40), { ...(isStore(b.store) && { store: b.store }), ...(isSection(b.section) && { section: b.section }) }); break;
       case "many": {
@@ -40,9 +47,26 @@ export async function POST(req: Request) {
       case "need": await needItem(clean(b.id, 40)); break;
       case "have": await haveTheRest(); break;
       case "remove": await removeItem(clean(b.id, 40)); break;
+      case "clear": {
+        const ids: unknown[] = Array.isArray(b.ids) ? b.ids.slice(0, 300) : [];
+        const cleared = await removeItems(ids.map((x) => clean(x, 40)).filter(Boolean));
+        return Response.json({ ...(await loadList()), cleared }, { headers: { "cache-control": "no-store" } });
+      }
+      case "putBack": {
+        const items: Partial<Item>[] = Array.isArray(b.items) ? b.items.slice(0, 300) : [];
+        await putBack(items.flatMap((x) => (x && isStore(x.store) && isSection(x.section) && clean(x.id, 40) && clean(x.item) ? [{
+          id: clean(x.id, 40), item: clean(x.item), quantity: clean(x.quantity, 30), store: x.store, section: x.section, for: clean(x.for, 120),
+          addedBy: clean(x.addedBy, 20), addedAt: clean(x.addedAt, 40), checked: Boolean(x.checked), check: Boolean(x.check),
+        }] : [])));
+        break;
+      }
+      case "keepAdd": await addStaple(clean(b.text), isSection(b.section) ? b.section : undefined); break;
+      case "keepRemove": await removeStaple(clean(b.item)); break;
+      case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of Stock?"); await moveStaple(clean(b.item), b.section); break;
       case "done": if (!isStore(b.store)) throw new AppError("Which store?"); {
         // Safeway: what's in the cart counts as bought too, and the cart starts empty again.
-        const cart = b.store === "safeway" ? await loadCart() : [];
+        // Ticked in the store (cart: false) leaves the online cart alone.
+        const cart = b.store === "safeway" && b.cart !== false ? await loadCart() : [];
         await doneShopping(b.store, new Set(cart.map((l) => l.itemId).filter(Boolean)));
         if (cart.length) await clearCart();
       } await recordTrip(b.store).catch((e) => console.error("couldn't record the trip", e)); break;
