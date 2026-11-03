@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, buyAmount, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, buyAmount, needBeside, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -75,6 +75,11 @@ describe("amounts on Safeway rows (Nov 3)", () => {
     expect(buyAmount("2 lb, for Chili")).toBe("2 lb");
     expect(buyAmount("2 cans")).toBe("2 cans");
     expect(buyAmount("a dozen")).toBe("a dozen");
+    for (const q of ["15 ounce", "16 ounces", "1 (15 oz) can", "500 g", "14.5 oz"]) expect(buyAmount(q)).toBe(q.includes("can") ? "1 can" : "");
+    expect(needBeside("2", "Lucerne Large Eggs 18 Count", 1)).toBe("");
+    expect(needBeside("24", "Lucerne Large Eggs 18 Count", 1)).toBe("24");
+    expect(needBeside("3", "Bananas", 1)).toBe("3");
+    expect(needBeside("1½ lb", "Ground Beef 1 lb", 1)).toBe("1½ lb");
     for (const q of ["2 tbsp", "1 cup", "1/2 teaspoon", "1 Tablespoon", "a pinch", "3 cloves", "to taste", "", "some"]) expect(buyAmount(q)).toBe("");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type Lunch, type NewDish, type NewLunch, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type NewDish, type NewLunch, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { STORE_NAMES } from "./Shop";
@@ -208,7 +208,7 @@ export default function App() {
       return null;
     } catch (e) { return problemOf(e); }
   }
-  /** One planned thing changed. Made and packed come off at once, before the answer. */
+  /** One planned thing changed. Made comes off at once, before the answer. */
   async function changePlan(c: PlanChange): Promise<string | null> {
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
     try {
@@ -217,7 +217,6 @@ export default function App() {
       return null;
     } catch (e) { refreshPlan(); return problemOf(e); }
   }
-  const packed = (l: Lunch) => changePlan({ op: "made", id: l.id }).then((p) => { if (p) setWeekError(p); });
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState): Promise<string | null> {
@@ -353,7 +352,7 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)} onPacked={packed} />
+          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
