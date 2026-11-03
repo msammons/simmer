@@ -316,3 +316,15 @@ export async function addStaple(text: string, section?: Section) {
 }
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
+
+/**
+ * A new week's groceries are coming: what an earlier week's meals had highlighted in Stock (added before `monday`, never
+ * checked) stops being highlighted (Matt, Nov 2: the highlights reset when the next week is planned).
+ */
+export async function dropHighlightsBefore(monday: string) {
+  const old = (x: Item) => x.check && !x.checked && x.addedAt.slice(0, 10) < monday;
+  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !old(x)); return; }
+  const { items } = await loadList();
+  const ids = items.filter(old).map((x) => x.id);
+  if (ids.length) await removeItems(ids);
+}

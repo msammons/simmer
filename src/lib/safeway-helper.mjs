@@ -31,6 +31,7 @@ export const PAGE = {
   // The cart page (helper 1.2 on): read with the same details as search results, with these in place where given.
   // Not yet seen on the real site; a `sample` of the cart page would show what to put here.
   cartItems: {},
+  // Seen on the real site (Nov 2): "Your shopping cart is empty." in .empty-cart-container.
   emptyCart: "your cart is empty|cart is empty|no items in (your )?cart",
   // Safeway shortens long titles on screen ("Pop-Tarts Toaster Pastries Fro...s 12 Count"); the whole name is then
   // read from the product's buttons ("Add <name>", "Increase Quantity 1 unit of <name>") with this taken off the front.
