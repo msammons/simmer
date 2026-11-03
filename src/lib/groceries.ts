@@ -182,7 +182,10 @@ const addUp = (a: string, b: string) => (/^\d+$/.test(a) && /^\d+$/.test(b) ? St
  * check: pantry items for "Check you have these"; an item already on the list for real stays there.
  */
 export async function addItems(entries: { item: string; quantity: string; for: string; check?: boolean }[], by: string): Promise<number> {
-  const { items } = await loadList();
+  const { items, staples } = await loadList();
+  // What the house keeps (Stock) is only highlighted there, to check; so is the plan's pantry (below); everything else
+  // goes on a list (Matt, Nov 2).
+  const kept = new Set(staples.map((s) => norm(s.item)));
   const fresh: Item[] = [];
   const merged = new Map<string, { quantity: string; for: string }>();
   for (const e of entries) {
@@ -200,7 +203,7 @@ export async function addItems(entries: { item: string; quantity: string; for: s
   }
   // Filed together, so the few new things that need a guess are asked about at the same time.
   await Promise.all(fresh.map(async (x) => Object.assign(x, await file(x.item))));
-  for (const x of fresh) if (x.check && x.section !== "pantry") x.check = false; // only the pantry waits to be checked
+  for (const x of fresh) x.check = kept.has(norm(x.item)) || (x.check && x.section === "pantry");
   for (const [id, m] of merged) {
     const it = items.find((x) => x.id === id)!;
     await setCells(id, { quantity: m.quantity, for: m.for, check: it.check ? "yes" : "" });
@@ -270,3 +273,46 @@ export async function removeItem(id: string) {
   const recs = records(rows);
   await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => r.get("id") !== id).map((r) => rows[r.rowNumber - 1])]);
 }
+
+/** Clear: several items off at once (one write). Answers with what came off, so Undo can put it back. */
+export async function removeItems(ids: string[]): Promise<Item[]> {
+  const drop = new Set(ids);
+  if (!sheetsConfigured()) { const m = await mem(); const gone = m.list.filter((x) => drop.has(x.id)); m.list = m.list.filter((x) => !drop.has(x.id)); return gone; }
+  const rows = await rowsOf(LIST);
+  const recs = records(rows);
+  const gone = toItems([rows[0] ?? LIST_HEADERS, ...recs.filter((r) => drop.has(r.get("id"))).map((r) => rows[r.rowNumber - 1])]);
+  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r.get("id"))).map((r) => rows[r.rowNumber - 1])]);
+  return gone;
+}
+
+/** Undo for Clear: the items back as they were (any already back again are left alone). */
+export async function putBack(items: Item[]) {
+  const { items: now } = await loadList();
+  await appendItems(items.filter((x) => x.id && x.item && !now.some((n) => n.id === x.id)));
+}
+
+// ---- Stock: the things the house keeps (the Staples tab)
+
+const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product"];
+const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product];
+
+async function writeStaples(change: (all: Staple[]) => Staple[]) {
+  if (!sheetsConfigured()) { const m = await mem(); m.staples = change(m.staples); return; }
+  await ensureTab(STAPLES);
+  const rows = await rowsOf(STAPLES);
+  const headers = (rows[0] ?? STAPLE_HEADERS).map((h) => h.trim().toLowerCase());
+  const next = change(toStaples(rows.length ? rows : [STAPLE_HEADERS]));
+  // Written by the tab's own headers, so a column added by hand keeps its place (its cells start blank).
+  const cells = (s: Staple) => headers.map((h) => { const i = STAPLE_HEADERS.indexOf(h); return i < 0 ? "" : stapleRow(s)[i]; });
+  await replaceTab(STAPLES, [rows[0] ?? STAPLE_HEADERS, ...next.map(cells)]);
+}
+
+/** A new thing the house keeps, in the section given or guessed (the same name again changes nothing). */
+export async function addStaple(text: string, section?: Section) {
+  const item = text.replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!item) return;
+  const f = await file(item);
+  await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item)) ? all : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "" }]));
+}
+export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
+export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
