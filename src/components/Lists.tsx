@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { framed, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
-import { buyAmount, cartTotal, findItems, money, qtyFor, type FindItem } from "@/lib/shop";
+import { buyAmount, cartTotal, needBeside, findItems, money, qtyFor, type FindItem } from "@/lib/shop";
 import { norm } from "@/lib/words";
 import { FindView, ProductImage, Stepper, UpdateNotice, useSafeway, type Safeway } from "./Safeway";
 import { Check, STORE_NAMES } from "./Shop";
@@ -273,7 +273,7 @@ function SafewayList({ items, toFind, sw, more, onFind, onClear, onOrdered, onTi
                 <ProductImage src={l.image} small />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 t-body">{l.name}</p>
-                  <p className="mt-0.5 t-foot text-muted">{[l.price, it && buyAmount(it.quantity) ? `Need ${buyAmount(it.quantity)}` : ""].filter(Boolean).join(" · ")}</p>
+                  <p className="mt-0.5 t-foot text-muted">{[l.price, it && needBeside(it.quantity, l.name, l.qty) ? `Need ${needBeside(it.quantity, l.name, l.qty)}` : ""].filter(Boolean).join(" · ")}</p>
                 </div>
                 <Stepper qty={l.qty} name={l.name} busy={l.productId in sw.pending} off={away} onChange={(n) => sw.setQty(p, n, l.item || l.name, null, { alt: l.name, on: "cart" })} />
                 {it && <More name={cap(it.item)} options={[{ value: "pick", label: "Pick another", off: away }]} onPick={() => onFind(it.id)} />}
