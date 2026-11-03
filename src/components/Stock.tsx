@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
 import { norm } from "@/lib/words";
+import { STORE_NAMES } from "./Shop";
 import { BrandBar, Button, EmptyState, Group, Notice } from "./ui";
 
 /**
@@ -99,7 +100,10 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
               <div key={r.key} className={`flex items-center pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
                 <button role="checkbox" aria-checked={r.have} aria-label={`Have ${r.name}`} onClick={() => tap(r)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
                   <Circle on={r.have} />
-                  <span className="min-w-0 flex-1 t-body">{cap(r.name)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block t-body">{cap(r.name)}</span>
+                    {!r.have && r.open && <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>}
+                  </span>
                   {r.meal?.quantity && <span className="shrink-0 t-sub text-muted">{r.meal.quantity}</span>}
                 </button>
                 {r.staple && (

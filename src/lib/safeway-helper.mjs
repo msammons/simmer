@@ -91,7 +91,7 @@ export function prepare(list, picks = []) {
   const byKey = new Map(picks.map((p) => [keyOf(p.item), { id: p.id, name: p.name, ...(p.image && { image: p.image }) }]));
   return safewayItems(list).map((it) => {
     const usual = usualFor(it, list?.staples), picked = byKey.get(keyOf(it.item)) ?? null;
-    return { id: it.id, item: it.item, quantity: it.quantity ?? "", usual, picked, query: searchFor(it, usual, picked), want: howMany(it.quantity) };
+    return { id: it.id, item: it.item, quantity: it.quantity ?? "", usual, picked, query: searchFor(it, usual, picked), want: howMany(it.quantity, picked?.name || usual) };
   });
 }
 
@@ -165,9 +165,15 @@ export function nameWords(name) {
   return before.trim() || s;
 }
 
-/** How many to add. Only plain counts mean more than one; "2 lb" or "a dozen" is one of whatever Safeway sells. */
-export function howMany(quantity) {
+/**
+ * How many to add. Only plain counts mean more than one; "2 lb" or "a dozen" is one of whatever Safeway sells. A count
+ * that one package holds is one package: 2 eggs is one "18 Count" carton, not two (Nov 3).
+ * @param {string} [product] the product's name, when known
+ */
+export function howMany(quantity, product) {
   const q = String(quantity ?? "").trim().toLowerCase();
+  const holds = /\bdozen\b/i.test(product ?? "") ? 12 : Number(String(product ?? "").match(/\b(\d+)\s*-?\s*(?:count|ct|pack|pk|pc|pieces?)\b/i)?.[1] ?? 0);
+  if (/^\d+$/.test(q) && holds > 1) return Math.max(1, Math.min(Math.ceil(Number(q) / holds), SETTINGS.mostOfOne));
   if (/^\d+$/.test(q)) return Math.min(Math.max(Number(q), 1), SETTINGS.mostOfOne);
   if (q === "couple") return 2;
   return 1;

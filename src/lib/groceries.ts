@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { AppError } from "./errors";
 import { parseCsv, records } from "./parse";
 import { isSpice, norm } from "./words";
@@ -48,7 +48,8 @@ let memory: { list: Item[]; staples: Staple[]; ingredients: Map<string, { store:
 async function local(tab: string) {
   return readFile(path.join(process.cwd(), "data", `${tab.toLowerCase()}.csv`), "utf8").then(parseCsv, () => [] as string[][]);
 }
-const rowsOf = (tab: string) => (sheetsConfigured() ? readTab(tab).catch(() => [] as string[][]) : local(tab));
+// A failed read throws: read as empty, it would show an empty list or Stock, and a change written after it would erase the tab.
+const rowsOf = (tab: string) => (sheetsConfigured() ? readTabIfAny(tab) : local(tab));
 
 function toItems(rows: string[][]): Item[] {
   return records(rows).flatMap((r) => (r.get("id") && r.get("item") ? [{
@@ -154,7 +155,7 @@ export async function addItem(text: string, by: string, forWhat = "", filing?: {
 
 const cellsOf = (row: Item): Record<string, string> => ({
   id: row.id, item: row.item, quantity: row.quantity, store: row.store, section: row.section, for: row.for, added_by: row.addedBy, added_at: row.addedAt,
-  checked: "no", checked_at: "", check: row.check ? "yes" : "",
+  checked: row.checked ? "yes" : "no", checked_at: "", check: row.check ? "yes" : "", // ticked stays ticked when Undo puts it back
 });
 
 /** New rows at the end of the List tab, written by its own headers (a missing column is added first). */
@@ -209,7 +210,8 @@ export async function addItems(entries: { item: string; quantity: string; for: s
     await setCells(id, { quantity: m.quantity, for: m.for, check: it.check ? "yes" : "" });
   }
   await appendItems(fresh);
-  return fresh.length + merged.size;
+  // What went on a list; the pantry highlighted in Stock isn't counted ("Added 45 things" with 26 on the lists, Nov 3).
+  return fresh.filter((x) => !x.check).length + [...merged.keys()].filter((id) => !items.find((x) => x.id === id)!.check).length;
 }
 
 /** "Check you have these": she needs this one (it joins the list), or has the rest (they come off). */

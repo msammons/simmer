@@ -1,0 +1,106 @@
+# Simmer UI and UX test plan
+
+Every screen and flow, what to do and what should happen. Run it at phone width (390 × 844) in light and dark, and
+again in the helper's side panel for Lists → Safeway. **L** = can run on a local copy (sample data from `data/*.csv`,
+no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; never check out.
+
+## 1. Getting in
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 1.1 | Open Simmer fresh | Passcode screen: icon, "Household passcode", Get started, "You only need to do this once." | L |
+| 1.2 | Get started with the box empty | Button stays disabled or says what's missing; no crash | L |
+| 1.3 | Wrong passcode | A plain message ("That passcode didn't work" or similar); the box keeps focus | L |
+| 1.4 | Right passcode | Opens on Meals; reload stays signed in | L |
+| 1.5 | Settings (top-right) | Opens; every line is plain words; closes by tapping outside or Escape | L |
+
+## 2. Bottom bar and moving around
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 2.1 | Tap Recipes · Meals · Stock · Lists | Each opens, the tapped one is highlighted, the order is Recipes · Meals · Stock · Lists | L |
+| 2.2 | Back/forward in the browser | Moves between tabs or leaves; never a blank screen | L |
+| 2.3 | Reload on each tab | Same tab comes back with its content | L |
+| 2.4 | Keyboard: Tab through the bar | Every tab reachable, visible focus ring | L |
+
+## 3. Recipes
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 3.1 | Open Recipes | "Add recipes" on top, recipes grouped Quick / Regular, each with effort · minutes · make ahead | L |
+| 3.2 | Add recipes → From a link → paste a recipe page → Read it | "Reading the page…", then the edit form filled in (name, quick/regular, minutes, serves, ingredients, steps) | R |
+| 3.3 | Add recipes → From a link with something that isn't a link | Plain message, nothing saved | L |
+| 3.4 | Add recipes → Type it in → three ideas, one per line | "Found 3", each ticked, Save 3 adds them | R |
+| 3.5 | Type it in → a whole recipe | One recipe with its ingredients | R |
+| 3.6 | Open a recipe | Name, line (effort · minutes · make ahead · serves), Add to the list, Quick/Regular switch, ingredients by Fresh / From the pantry, numbered steps, Find it by, Where it's from, Stop suggesting this | L |
+| 3.7 | Switch Quick ↔ Regular on a recipe | Saved; the list header moves it to the other group | L |
+| 3.8 | Add to the list from a recipe | Fresh things go on Lists; things already in Stock are only highlighted there | L |
+| 3.9 | Edit (pencil) a recipe, change the name, save | New name everywhere (Recipes, Meals) | L |
+| 3.10 | Stop suggesting this | Recipe stays in the collection but planning never picks it | L |
+| 3.11 | A recipe with no ingredients (typed idea) | Says so plainly and offers to add them; doesn't look broken | L |
+
+## 4. Meals and planning
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 4.1 | Meals with nothing planned | "Nothing planned this week", Plan this week, Plan next week | L |
+| 4.2 | Plan this week → The nights | Each remaining night with Quick / Regular / Skip and away / kids-separate chips; shortcuts "Weeknights 2 quick, 3 regular" and "All quick" work | L |
+| 4.3 | Next → This week's trips | Trader Joe's and Costco toggles, with what they change explained | L |
+| 4.4 | Next → Dinners | Each night has a dinner that fits (quick night → quick recipe), no repeats, no desserts/sides, "Not made in a while"-style reasons | L |
+| 4.5 | Something else on a night | A different dinner; when none is left, says so | L |
+| 4.6 | Swap on a second idea | That idea becomes the night's dinner | L |
+| 4.7 | Pick a meal on an empty night | Picker sheet; pinned meal shows "Pinned" | L |
+| 4.8 | Next → Lunches → tap a part | Swaps to another of that kid's options; No school toggles a day | L |
+| 4.9 | Save the week | Sheet closes; "Added N things to the grocery list." N matches what appears on Lists; Lists and Stock update without a reload | L |
+| 4.10 | Meals after saving | Today's lunches, Tonight, This week (past nights muted, "Nothing planned" for past empty nights), Change | L |
+| 4.11 | Tap a night | Cook / Swap / Pick something else / Made it / Clear this night | L |
+| 4.12 | Made it | Marked made; doesn't come back as a suggestion for 10 days | L |
+| 4.13 | Plan next week | Same flow for next week; its fresh groceries wait until close | L |
+
+## 5. Lists
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 5.1 | Lists → All | Every store's rows, grouped by store; "0 of N got"; Clear | L |
+| 5.2 | Each store tab | Only that store's rows; empty store says "Nothing for <store>" | L |
+| 5.3 | Add something on a store tab | Row appears on that store with a guessed section; same thing twice joins one row with counts added | L |
+| 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
+| 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
+| 5.6 | Clear | Confirms first, then clears with Undo; Undo brings everything back | L |
+| 5.7 | Water, salt, spices from a recipe | Never on a list (salt/spices are highlighted in Stock) | L |
+
+## 6. Lists → Safeway (the cart)
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 6.1 | Safeway with known products | "Same as last time" with product, picture, "Need …", Add; "Auto-fill N" | R |
+| 6.2 | Auto-fill | Each row spins, then moves to In the cart; header "n in the cart · $total" | R |
+| 6.3 | Find on a "To find" row | Choices sheet: "k of N", item name, amount, search box, products with Add; wide screens show a grid that fits | R |
+| 6.4 | Add in the sheet | Becomes − n +; grid doesn't reorder; "Next: <item>" appears | R |
+| 6.5 | Skip / Next | Moves to the next item still to find | R |
+| 6.6 | − / + in In the cart | Quantity changes in Simmer and on Safeway's cart page | R |
+| 6.7 | Compare with Safeway's cart page | Same products and quantities; total matches | R |
+| 6.8 | Safeway cart emptied without ordering | Simmer's cart empties; the list rows stay (to add again) | R |
+| 6.9 | "Ordered? Take the cart off the list" | The cart's rows come off the Safeway list; the cart starts empty | R |
+| 6.10 | Helper not running | Plain "connection" message and a way to add on Safeway directly | R |
+
+## 7. Stock
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 7.1 | Open Stock | Sections Fresh · Pantry · Freezer · Household; each row a filled circle (have) | L |
+| 7.2 | With a planned week | The week's pantry items highlighted with the amount the meals need | L |
+| 7.3 | Tap a row | Out: goes on its store's list ("On the list · Safeway"); tap again: have | L |
+| 7.4 | Add something | New row, checked, in a guessed section | L |
+| 7.5 | ⋯ → Move to … / Remove from Stock | Moves; Remove has Undo | L |
+
+## 8. Everywhere
+
+| # | Do | Expect | Where |
+|---|----|--------|-------|
+| 8.1 | No technical words on any screen | No "error", "API", "sheet", "job", "server", device names | L |
+| 8.2 | Dark and light | Every screen readable in both; no white flashes | L |
+| 8.3 | 320 px wide | No sideways scrolling; long product names wrap or clamp | L |
+| 8.4 | Slow or failing connection | Screens keep what they had and say so; nothing shows as empty that isn't | L |
+| 8.5 | Console | No errors while using any screen | L |
+| 8.6 | Screen reader names | Buttons with only icons have names (⋯, −, +, trash) | L |
