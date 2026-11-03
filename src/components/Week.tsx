@@ -103,7 +103,7 @@ function WeekGroup({ header, aside, w, recipes, me, today, onNight }: { header: 
     <Group header={header} aside={aside}>
       {w.nights.map((n) => (
         <Row key={n.date}
-          title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : "Not picked yet"}</span>}
+          title={<span className={n.date < today ? "text-muted" : ""}>{n.kind === "skip" && !n.meal ? "Skip" : n.meal ? mealName(n.meal, recipes) : n.date < today ? "Nothing planned" : "Not picked yet"}</span>}
           subtitle={[n.date === today ? "Tonight" : day(n.date), n.kind !== "skip" && nightLine(n), n.split && n.kidsMeal && `Kids: ${mealName(n.kidsMeal, recipes)}`, n.made === "yes" && "Made", n.plannedBy && n.plannedBy !== me && `${n.plannedBy} planned`].filter(Boolean).join(" · ")}
           value={n.pinned ? <span aria-label="Pinned" className="text-accent">●</span> : undefined}
           accessory="chevron" onClick={() => onNight(w, n)} />
@@ -199,6 +199,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
   const [nights, setNights] = useState<Night[]>(() => (w.planned ? w.nights : applyShape(dates.map((d) => emptyNight(d)), "2-quick-3-regular")));
   const [trips, setTrips] = useState({ traderJoes: w.trips.traderJoes, costco: w.trips.costco });
   const [seeds, setSeeds] = useState<Record<string, number>>({});
+  const [nothingElse, setNothingElse] = useState<string | null>(null); // the night "Something else" had nothing more for
   const kids = w.people.filter((p) => !p.isAdult && w.lunchOptions.some((o) => o.kid.toLowerCase() === p.name.toLowerCase()));
   const [noSchool, setNoSchool] = useState<string[]>(() => [...new Set(w.lunches.filter((l) => l.noSchool).map((l) => l.date))]);
   const [lunches, setLunches] = useState<Lunch[]>(() => (w.lunches.length ? w.lunches : planLunches(w.monday, kids, w.lunchOptions)));
@@ -228,7 +229,10 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
     const s = (seeds[nights[i].date] ?? 0) + 1;
     setSeeds({ ...seeds, [nights[i].date]: s });
     const cleared = nights.map((n, j) => (j === i ? { ...n, meal: "" } : n));
-    set(i, { meal: choices(cleared, i, ctx, s)[0]?.recipe.id ?? "" });
+    // Another meal, never the same one again; with none left, say so (it used to do nothing, Nov 3).
+    const next = choices(cleared, i, ctx, s).find((o) => o.recipe.id !== nights[i].meal);
+    setNothingElse(next || !nights[i].meal ? null : nights[i].date);
+    if (next || !nights[i].meal) set(i, { meal: next?.recipe.id ?? "" });
   }
   function dayOff(date: string) {
     const off = noSchool.includes(date) ? noSchool.filter((d) => d !== date) : [...noSchool, date];
@@ -303,7 +307,7 @@ export function PlanSheet({ w, recipes, me, onSave, onClose }: { w: WeekData; re
           return (
             <Group key={n.date} header={`${day(n.date)} · ${nightLine(n)}`} aside={!n.pinned && !n.made ? <button className="t-foot font-semibold text-accent" onClick={() => another(i)}>Something else</button> : undefined}>
               <Row lead={n.pinned ? <Icon name="check" className="size-5 text-accent" /> : undefined} title={<span className="font-semibold">{n.meal ? mealName(n.meal, recipes) : "Nothing fits this night"}</span>}
-                subtitle={n.pinned ? "Pinned" : why || (pick ? summary(pick) : "Add more recipes, or pick a meal")} />
+                subtitle={n.pinned ? "Pinned" : nothingElse === n.date ? "Nothing else fits this night. Add recipes, or pick a meal" : why || (pick ? summary(pick) : "Add more recipes, or pick a meal")} />
               {opts.filter((o) => o.recipe.id !== n.meal).slice(0, 2).map((o) => (
                 <Row key={o.recipe.id} title={<span className="text-muted">{o.recipe.name}</span>} subtitle={o.why || summary(o.recipe)} value="Swap" onClick={() => set(i, { meal: o.recipe.id })} />
               ))}

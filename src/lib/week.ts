@@ -85,6 +85,10 @@ const hasDislike = (r: Recipe, words: string[]) => words.some((w) => {
  * night never gets a regular meal), nothing made in the last 10 days or already in this week, variety with the night
  * before, the right store trips, forgotten favorites and the season lifted, the boys' tastes and who's away respected.
  */
+/** Not a dinner: a recipe tagged as dessert, a side, breakfast, a snack or a drink (the pumpkin pie was Tuesday's dinner, Nov 3). */
+const NOT_DINNER = /^(desserts?|sides?|side dish(es)?|breakfast|brunch|snacks?|drinks?|beverages?|cocktails?|appetizers?|baking|condiments?|sauces?)$/;
+export const isDinner = (r: Pick<Recipe, "tags">) => !r.tags.some((t) => NOT_DINNER.test(norm(t)));
+
 export function rank(nights: Night[], at: number, ctx: Context, forKids = false): Option[] {
   const night = nights[at];
   const used = new Set(nights.flatMap((n, i) => (i === at ? [] : [n.meal, n.kidsMeal])).filter(Boolean));
@@ -94,7 +98,7 @@ export function rank(nights: Night[], at: number, ctx: Context, forKids = false)
   const away = ctx.people.filter((p) => night.away.some((a) => norm(a) === norm(p.name)));
   const out: Option[] = [];
   for (const r of ctx.recipes) {
-    if (!r.active || used.has(r.id)) continue;
+    if (!r.active || used.has(r.id) || !isDinner(r)) continue;
     if (forKids ? r.for !== "kids" : r.for === "kids" || r.effort !== night.kind) continue;
     if (r.store === "trader-joes" && !ctx.trips.traderJoes) continue;
     if (r.store === "costco" && !ctx.trips.costco) continue;

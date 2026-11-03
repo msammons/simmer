@@ -191,7 +191,7 @@ function ProductRow({ p, sub, control }: { p: { name: string; image?: string }; 
  * Find's results: a list on a phone; once the screen is wide (the helper's panel dragged wide), tiles filling the width,
  * as many to a row as fit, in reading order. The grid reaches past the app's phone-width column, keeping a gutter.
  */
-const GRID = "divide-y divide-line overflow-hidden rounded-[1.375rem] bg-card min-[640px]:relative min-[640px]:left-1/2 min-[640px]:grid min-[640px]:w-[min(calc(100vw-3rem),72rem)] min-[640px]:-translate-x-1/2 min-[640px]:grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] min-[640px]:gap-3 min-[640px]:divide-y-0 min-[640px]:overflow-visible min-[640px]:rounded-none min-[640px]:bg-transparent";
+const GRID = "divide-y divide-line overflow-hidden rounded-[1.375rem] bg-card min-[640px]:grid min-[640px]:grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] min-[640px]:gap-3 min-[640px]:divide-y-0 min-[640px]:overflow-visible min-[640px]:rounded-none min-[640px]:bg-transparent";
 const TILE = "flex items-center gap-3 px-4 py-3 min-[640px]:flex-col min-[640px]:items-stretch min-[640px]:gap-2 min-[640px]:rounded-[1.375rem] min-[640px]:bg-card min-[640px]:p-3";
 
 function FindProduct({ p, sub, control }: { p: { name: string; image?: string }; sub: React.ReactNode; control: React.ReactNode }) {
@@ -253,6 +253,16 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
     queueMicrotask(() => { setTyped((t) => (itemId in t ? t : { ...t, [itemId]: want })); search(want); });
   }, [want, known, search, itemId]);
   useEffect(() => () => ctl.current?.abort(), []);
+  // Each search's results, in the order first shown.
+  const [shown, setShown] = useState<Record<string, string[]>>({});
+  const shownKey = `${itemId}|${query}`;
+  const firstOrder = (() => {
+    const done = searches[query];
+    return it && done?.state === "done" ? rankResults(done.products, { picked: it.picked, usual: it.usual, item: it.item }).map((r) => r.product.id).join(",") : "";
+  })();
+  useEffect(() => {
+    if (firstOrder) queueMicrotask(() => setShown((m) => (m[shownKey] ? m : { ...m, [shownKey]: firstOrder.split(",") })));
+  }, [shownKey, firstOrder]);
 
   if (!items.length) {
     return <EmptyState icon="bag" title="Nothing to find" action={<Button variant="secondary" onClick={onList}>Back to the list</Button>}>There&apos;s nothing on the list for {store}.</EmptyState>;
@@ -261,7 +271,12 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
     return <EmptyState icon="check" title="That's everything" action={<Button onClick={onCart}>See the cart</Button>}>You&apos;ve been through the whole list for {store}.</EmptyState>;
   }
   const s = searches[query];
-  const results = s?.state === "done" ? rankResults(s.products, { picked: it.picked, usual: it.usual, item: it.item }) : [];
+  // Kept in the order first shown: an Add makes that product the remembered pick, and re-ranking then moved another
+  // product under the finger (Nov 3).
+  const ranked = s?.state === "done" ? rankResults(s.products, { picked: it.picked, usual: it.usual, item: it.item }) : [];
+  const order = shown[`${it.id}|${query}`];
+  const at = (id: string) => { const i = order?.indexOf(id) ?? -1; return i < 0 ? Infinity : i; };
+  const results = order ? [...ranked].sort((a, b) => at(a.product.id) - at(b.product.id)) : ranked;
   const inCartForIt = qtyFor(sw.cart, it.id);
   const last = index === items.length - 1;
   const move = (to: number) => { ctl.current?.abort(); onIndex(to); };

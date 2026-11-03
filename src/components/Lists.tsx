@@ -155,7 +155,7 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
         )}
 
       {finding && findOf(finding) && (
-        <Sheet label="Safeway's choices" onClose={() => setFinding(null)}>
+        <Sheet label="Safeway's choices" wide onClose={() => setFinding(null)}>
           <div className="pb-2">
             <FindView store="Safeway" items={toFind} index={toFind.findIndex((f) => f.id === finding)} sw={sw}
               onIndex={(i) => (toFind[i] ? setFinding(toFind[i].id) : setFinding(null))} onCart={() => setFinding(null)} onList={() => setFinding(null)}
