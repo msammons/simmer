@@ -4,6 +4,8 @@ import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { api, applyTheme, AuthError, dateIn, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type ListState, type Lunch, type Night, type Person, type Kitchen, type Recipe, type Theme, type WeekData } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
+import { STORE_NAMES } from "./Shop";
+import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
 import { NightSheet, PlanSheet, WeekScreen } from "./Week";
@@ -44,14 +46,14 @@ export default function App() {
   const [listsStart, setListsStart] = useState<Where>("all"); // the store Lists opens on: Safeway in the helper's panel
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
-  const [people, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's, for opening offline
+  const [, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's; only Settings read it, until "Who's using this?" went (Nov 3)
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
   const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
   const [listError, setListError] = useState<string | null>(null);
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
-  const [me, setMe] = useState(() => (browser ? store.me() : ""));
+  const me = ""; // "Who's using this?" is gone (Nov 3); added-by stays blank
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
@@ -109,6 +111,7 @@ export default function App() {
   // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
   // (otherwise a poll answering just after a tap would undo the tap on screen until the change's own answer came).
   const listChanges = useRef(0);
+  const lastAnswer = useRef<ListState | null>(null); // the latest answer to a change (for "Added 4 to Safeway")
   const refreshList = useCallback(async () => {
     const at = listChanges.current;
     try {
@@ -161,8 +164,16 @@ export default function App() {
     catch (e) { return problemOf(e); }
     return null;
   }
-  function addToList(r: Recipe, items: Ingredient[]) {
-    return change({ op: "many", items: items.map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" ") })), for: r.name, by: me });
+  // Fresh things go on the list; the pantry things go with `check`, highlighted in Stock (Nov 3). The note says where the fresh ones landed.
+  async function addToList(r: Recipe, buy: Ingredient[], pantry: Ingredient[]): Promise<{ problem: string | null; note?: string }> {
+    const line = (i: Ingredient, check: boolean) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), ...(check && { check }) });
+    const problem = await change({ op: "many", items: [...buy.map((i) => line(i, false)), ...pantry.map((i) => line(i, true))], for: r.name, by: me });
+    if (problem) return { problem };
+    const names = new Set(buy.map((i) => norm(i.item)));
+    const landed = (lastAnswer.current?.items ?? []).filter((x) => !x.check && !x.checked && names.has(norm(x.item)));
+    const stores = [...new Set(landed.map((x) => x.store))];
+    if (!landed.length) return { problem: null };
+    return { problem: null, note: `Added ${landed.length} to ${stores.length === 1 ? STORE_NAMES[stores[0]] : "the list"}` };
   }
 
   /**
@@ -222,6 +233,7 @@ export default function App() {
     if (show) setList((l) => (l ? show(l) : l));
     try {
       const l = await api.change(c);
+      lastAnswer.current = l;
       if (mine !== listChanges.current) return null; // a later change's answer is newer
       setList(l);
       store.setList(l);
@@ -376,10 +388,9 @@ export default function App() {
         else onTab("recipes"); // several saved (her meal ideas): show the whole collection, where they now are
       }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
-      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(items) => addToList(toList, items)} onClose={() => { setSheet(null); setListing(null); }} />}
+      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(buy, pantry) => addToList(toList, buy, pantry)} onClose={() => { setSheet(null); setListing(null); }} />}
       {settings && (
-        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)}
-          people={people} me={me} onMe={(n) => { setMe(n); store.setMe(n); }} />
+        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)} />
       )}
       {phase === "app" && (
         <TabBar tabs={TABS} active={root} onTab={onTab} />
