@@ -73,7 +73,8 @@ async function waitForProducts(tabId, page, settings, tries = settings.resultsTr
   for (let i = 0; i < tries; i++) {
     last = await onPage(tabId, "read", null, page);
     if (last && (last.products.length || last.signedIn === false)) return last;
-    if (last?.noResults) { none ||= Date.now(); if (Date.now() - none >= (settings.noResultsHold ?? 4000)) return last; }
+    // `held`: it said "none" for the whole hold, so it means it (the cart page's "cart is empty" counts on this).
+    if (last?.noResults) { none ||= Date.now(); if (Date.now() - none >= (settings.noResultsHold ?? 4000)) return { ...last, held: true }; }
     else none = 0;
     await sleep(settings.resultsWait ?? 800);
   }
@@ -102,8 +103,9 @@ const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cart
 async function cartHere(tabId, page, settings) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab?.url || new URL(tab.url).pathname !== page.cartPath) return openCart(tabId, page, settings);
-  const r = await onPage(tabId, "read", null, cartPage(page));
-  return r && (r.products.length || r.noResults) ? r : openCart(tabId, page, settings);
+  // Watched where it stands, without a reload, long enough that an empty cart is Safeway saying so (not a page still building).
+  const r = await waitForProducts(tabId, cartPage(page), settings, settings.cartTries ?? 8);
+  return r && (r.products.length || r.held) ? r : openCart(tabId, page, settings);
 }
 
 /**
@@ -122,7 +124,7 @@ export async function runJob(job, windowId) {
   if (job.kind === "cart") {
     const r = await cartHere(tabId, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
-    return { ok: true, result: { products: r.products, signedIn: r.signedIn } };
+    return { ok: true, result: { products: r.products, signedIn: r.signedIn, empty: Boolean(r.held && r.noResults && !r.products.length) } };
   }
   if (job.kind === "setQty") {
     // Where the product can be changed: Safeway's cart page first when asked (from Cart, where it's listed), then

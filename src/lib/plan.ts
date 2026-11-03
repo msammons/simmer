@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { appendRows, ensureTab, readTab, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
-import { addItems, type Store } from "./groceries";
+import { addItems, dropHighlightsBefore, type Store } from "./groceries";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
@@ -236,6 +236,7 @@ export async function saveWeek(nights: Night[], lunches: Lunch[], by: string): P
   const oldLunches = toLunches(lunchPlan).filter((l) => near(l) && lunches.some((x) => x.date === l.date) && lunchShoppingWas.get(`${l.date}|${l.kid.toLowerCase()}`) !== LATER);
   const had = new Set(lunchShopping(oldLunches, opts).map((x) => x.toLowerCase()));
   for (const it of lunchShopping(lunches.filter(near), opts)) if (!had.has(it.toLowerCase())) need.push({ item: it, quantity: "", for: "lunches", check: false });
+  if (need.length) await dropHighlightsBefore(weekOf(today));
   return { added: need.length ? await addItems(need, by) : 0 };
 }
 
@@ -267,6 +268,7 @@ export async function shopDue(read?: Pick<WeekTabs, "plan" | "lunchPlan">): Prom
   // Marked first, so two phones opening at once don't both add them.
   await upsert(PLAN, nights.map((r) => ({ date: r.get("date"), groceries: "" })), ["date"]);
   await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), groceries: "" })), ["date", "kid"]);
+  if (need.length) await dropHighlightsBefore(weekOf(todayIn()));
   return need.length ? addItems(need, "") : 0;
 }
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { addItem, loadList } from "./groceries";
 import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
@@ -124,6 +125,18 @@ describe("showing Safeway's cart", () => {
     await takeJob("1.2.0", true);
     await finishJob(b.id, true, { products: [], signedIn: true });
     expect((await loadCart()).length).toBe(2);
+  });
+  it("a cart Safeway says is empty means the order went through: the cart's things come off the list", async () => {
+    const it = await addItem("milk", "Robin", "", { store: "safeway", section: "fresh" });
+    const other = await addItem("bread", "Robin", "", { store: "safeway", section: "fresh" });
+    await setCartLine({ ...milk, itemId: it.id, qty: 1 });
+    const a = await queueJob("cart", {});
+    await takeJob("1.2.6", true);
+    await finishJob(a.id, true, { products: [], signedIn: true, empty: true });
+    expect(await loadCart()).toEqual([]);
+    const { items } = await loadList();
+    expect(items.some((x) => x.id === it.id)).toBe(false);
+    expect(items.some((x) => x.id === other.id)).toBe(true);
   });
 });
 
