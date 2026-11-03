@@ -77,20 +77,26 @@ export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> 
 
 // ---- filing: which store and section an item goes in
 
-/** Common things, so most items are filed without asking anyone (spices first, by isSpice in words.ts). One word per entry: a later list wins a word both share. */
+/**
+ * Common things, so most items are filed without asking anyone (spices first, by isSpice in words.ts). Entries are
+ * phrases, comma-separated: "ice cream" and "peanut butter" are whole, so cream stays fresh and butter isn't pantry (split
+ * into words they filed cream as freezer and milk as pantry, Nov 3). A stem like "strawberr" matches the word's start.
+ */
 const KNOWN: Record<string, [Store, Section]> = Object.fromEntries(([
-  ["milk egg yogurt butter cheese cream sour cream half and half banana apple orange lemon lime grape strawberr raspberr blueberr berry avocado tomato onion garlic potato carrot celery lettuce spinach broccoli cucumber pepper cilantro parsley basil herb bread tortilla ground beef ground turkey chicken salmon fish shrimp bacon ham deli turkey salad zucchini squash mushroom kale cabbage ginger jalapeno scallion green onion mint thyme rosemary dill shallot leek asparagus green bean pork sausage steak tofu mozzarella parmesan cheddar feta hummus", "safeway", "fresh"],
-  ["rice pasta flour sugar salt oil olive oil vinegar cereal oat oatmeal peanut butter jam jelly honey cracker goldfish chip pretzel snack bar granola can bean broth stock soup sauce salsa ketchup mustard mayo spice coffee tea cumin paprika oregano chili powder cinnamon vanilla baking soda baking powder breadcrumb panko soy sauce coconut milk tomato paste tomato sauce diced tomato noodle quinoa lentil chickpea black bean brown sugar seasoning taco seasoning", "safeway", "pantry"],
-  ["frozen ice cream nugget frozen pizza frozen vegetable", "safeway", "freezer"],
-  ["toilet paper tp paper towel napkin soap detergent dish soap trash bag foil plastic wrap sponge tissue shampoo toothpaste", "costco", "household"],
-] as const).flatMap(([words, st, sec]) => words.split(" ").map((w) => [w, [st, sec]])));
+  ["milk, egg, yogurt, butter, cheese, cream, sour cream, half and half, banana, apple, orange, lemon, lime, grape, strawberr, raspberr, blueberr, berry, avocado, tomato, onion, garlic, potato, carrot, celery, lettuce, spinach, broccoli, cucumber, bell pepper, cilantro, parsley, fresh basil, herb, bread, tortilla, ground beef, ground turkey, chicken, salmon, fish, shrimp, bacon, ham, deli, turkey, salad, zucchini, squash, mushroom, kale, cabbage, ginger root, jalapeno, scallion, green onion, mint, thyme, rosemary, dill, shallot, leek, asparagus, green bean, pork, sausage, steak, tofu, mozzarella, parmesan, cheddar, feta, ricotta, hummus, pie crust", "safeway", "fresh"],
+  ["rice, pasta, flour, sugar, salt, oil, olive oil, vinegar, cereal, oat, oatmeal, peanut butter, jam, jelly, honey, cracker, goldfish, chip, pretzel, snack, granola, granola bar, canned, broth, stock, soup, sauce, salsa, ketchup, mustard, mayo, spice, coffee, tea, cumin, paprika, oregano, chili powder, cinnamon, vanilla, baking soda, baking powder, breadcrumb, panko, soy sauce, coconut milk, evaporated milk, condensed milk, tomato paste, tomato sauce, crushed tomato, diced tomato, noodle, quinoa, lentil, chickpea, black bean, refried bean, kidney bean, pinto bean, brown sugar, corn syrup, seasoning, taco seasoning, pecan, walnut, almond", "safeway", "pantry"],
+  ["frozen, ice cream, nugget, frozen pizza, frozen vegetable", "safeway", "freezer"],
+  ["toilet paper, tp, paper towel, napkin, soap, detergent, dish soap, trash bag, foil, plastic wrap, sponge, tissue, shampoo, toothpaste", "costco", "household"],
+] as const).flatMap(([words, st, sec]) => words.split(",").map((w) => [w.trim(), [st, sec]])));
 
 export function known(name: string): { store: Store; section: Section } | null {
   // Spices first: "ground cumin" isn't ground beef, "black pepper" isn't a bell pepper.
   if (isSpice(name)) return { store: "safeway", section: "pantry" };
   const n = norm(name);
-  // The longest word that matches wins: "goldfish crackers" is goldfish (pantry), not fish (fresh).
-  const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 3 && n.includes(norm(w))).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
+  // The longest entry that matches from the start of a word wins: "goldfish crackers" is goldfish (pantry), not fish
+  // (fresh); "graham crackers" isn't ham.
+  const at = (w: string) => ` ${n} `.includes(` ${norm(w)}`);
+  const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 2 && at(w)).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
   return hit ? { store: hit[0], section: hit[1] } : null;
 }
 
