@@ -79,6 +79,8 @@ describe("amounts on Safeway rows (Nov 3)", () => {
     expect(needBeside("2", "Lucerne Large Eggs 18 Count", 1)).toBe("");
     expect(needBeside("24", "Lucerne Large Eggs 18 Count", 1)).toBe("24");
     expect(needBeside("3", "Bananas", 1)).toBe("3");
+    expect(needBeside("1", "Keebler Ready Crust 10-Inch Pie Crust - 9 Oz", 1)).toBe("");
+    expect(needBeside("3", "Bananas", 3)).toBe("");
     expect(needBeside("1½ lb", "Ground Beef 1 lb", 1)).toBe("1½ lb");
     for (const q of ["2 tbsp", "1 cup", "1/2 teaspoon", "1 Tablespoon", "a pinch", "3 cloves", "to taste", "", "some"]) expect(buyAmount(q)).toBe("");
   });

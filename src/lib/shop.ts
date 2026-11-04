@@ -118,8 +118,9 @@ export function buyAmount(quantity: string): string {
 /** How many one of a product holds: 12 for a dozen, 18 for "18 ct", else 1. */
 const holds = (product: string) => (/\bdozen\b/i.test(product) ? 12 : Number(product.match(/\b(\d+)\s*-?\s*(?:count|ct|pack|pk|pc|pieces?)\b/i)?.[1] ?? 0) || 1);
 
-/** "Need …" beside a cart line, or nothing when what's in the cart already covers a plain count (2 eggs, 18 in a carton). */
+/** "Need …" beside a cart line, or nothing when what's in the cart already covers a plain count (2 eggs, 18 in a carton;
+ * 1 pie crust, 1 in the cart). */
 export function needBeside(quantity: string, product: string, qty: number): string {
   const a = buyAmount(quantity);
-  return /^\d+$/.test(a) && holds(product) * Math.max(qty, 1) >= Number(a) && holds(product) > 1 ? "" : a;
+  return /^\d+$/.test(a) && holds(product) * Math.max(qty, 1) >= Number(a) ? "" : a;
 }
