@@ -43,19 +43,19 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 
 | # | Do | Expect | Where |
 |---|----|--------|-------|
-| 4.1 | Meals with nothing planned | "Nothing planned this week", Plan this week, Plan next week | L |
-| 4.2 | Plan this week → The nights | Each remaining night with Quick / Regular / Skip and away / kids-separate chips; shortcuts "Weeknights 2 quick, 3 regular" and "All quick" work | L |
-| 4.3 | Next → This week's trips | Trader Joe's and Costco toggles, with what they change explained | L |
-| 4.4 | Next → Dinners | Each night has a dinner that fits (quick night → quick recipe), no repeats, no desserts/sides, "Not made in a while"-style reasons | L |
-| 4.5 | Something else on a night | A different dinner; when none is left, says so | L |
-| 4.6 | Swap on a second idea | That idea becomes the night's dinner | L |
-| 4.7 | Pick a meal on an empty night | Picker sheet; pinned meal shows "Pinned" | L |
-| 4.8 | Next → Lunches → tap a part | Swaps to another of that kid's options; No school toggles a day | L |
-| 4.9 | Save the week | Sheet closes; "Added N things to the grocery list." N matches what appears on Lists; Lists and Stock update without a reload | L |
-| 4.10 | Meals after saving | Today's lunches, Tonight, This week (past nights muted, "Nothing planned" for past empty nights), Change | L |
-| 4.11 | Tap a night | Cook / Swap / Pick something else / Made it / Clear this night | L |
-| 4.12 | Made it | Marked made; doesn't come back as a suggestion for 10 days | L |
-| 4.13 | Plan next week | Same flow for next week; its fresh groceries wait until close | L |
+| 4.1 | Meals with nothing planned | "Nothing planned", "Say how many dinners and lunches…", Plan | L |
+| 4.2 | Plan → How many | Counters for quick, regular and kids' dinners, desserts, sides, breakfasts, and lunches per kid; each starts at last time's number and never below what's planned; "N planned already" under a kind with dinners waiting; footer "These are totals…" | L |
+| 4.3 | Trips toggles | Trader Joe's and Costco, with last trip dates | L |
+| 4.4 | Next → Dinners | Only what's missing to reach each number is picked; fits its kind, no repeats; "Only N of M fit" when short (no fill-in from another kind) | L |
+| 4.5 | Something else / One more / remove | A different recipe; when none is left, says so; One more adds one of that kind | L |
+| 4.6 | Tap a pick | Picker sheet; a picked one shows "You picked this" | L |
+| 4.7 | Next → Lunches → tap a part | Swaps to another of that kid's options; remove a lunch | L |
+| 4.8 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
+| 4.9 | Meals after saving | Dinners to make by kind (no "Quick"/"Regular" word under the kind header), each kid's lunches "N planned", no tick boxes, "Planning again replaces the lunches." | L |
+| 4.10 | Plan again with the same numbers | Nothing new picked for kinds already full; lunches replaced, not added | L |
+| 4.11 | Tap a dinner | Cook / Something else / Made it / Remove | L |
+| 4.12 | Made it | Comes off; not suggested again for a while | L |
+| 4.13 | Add one more | One of any kind, or a lunch for one kid, in one tap | L |
 
 ## 5. Lists
 
@@ -64,6 +64,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 5.1 | Lists → All | Every store's rows, grouped by store; "0 of N got"; Clear | L |
 | 5.2 | Each store tab | Only that store's rows; empty store says "Nothing for <store>" | L |
 | 5.3 | Add something on a store tab | Row appears on that store with a guessed section; same thing twice joins one row with counts added | L |
+| 5.3a | Rows from recipes | Amounts show only pounds and plain counts ("1½ lb", "8"); no spoons, cups, cloves or can sizes; cart lines hide "Need 2" when one carton of 18 covers it | L |
 | 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
 | 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
 | 5.6 | Clear | Confirms first, then clears with Undo; Undo brings everything back | L |
