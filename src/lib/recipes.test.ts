@@ -6,6 +6,8 @@ describe("the recipe collection", () => {
     expect(parseIngredient("1 lb ground turkey")).toMatchObject({ quantity: "1", unit: "lb", item: "ground turkey", section: "fresh" });
     expect(parseIngredient("1/2 cup onion, diced")).toMatchObject({ quantity: "1/2", unit: "cup", item: "onion" });
     expect(parseIngredient("1 ½ cups rice")).toMatchObject({ quantity: "1 1/2", unit: "cups", item: "rice", section: "pantry" });
+    expect(parseIngredient("15 ounce can canned pumpkin")).toMatchObject({ quantity: "15", unit: "ounce", item: "canned pumpkin" });
+    expect(parseIngredient("1 (15 ounce) can canned pumpkin")).toMatchObject({ unit: "can", item: "canned pumpkin" });
     expect(parseIngredient("2 (15 oz) cans black beans")).toMatchObject({ quantity: "2", unit: "cans", item: "black beans", section: "pantry" });
     expect(parseIngredient("Salt to taste")).toMatchObject({ quantity: "", item: "salt" });
     expect(parseIngredient("1 packet taco seasoning")).toMatchObject({ quantity: "1", unit: "packet", item: "taco seasoning", section: "pantry" });

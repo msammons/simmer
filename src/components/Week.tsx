@@ -56,7 +56,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish
               <Group key={k} header={KIND_NAMES[k]}>
                 {mine.map((d) => {
                   const r = recipes.find((x) => x.id === d.recipe);
-                  return <Row key={d.id} title={mealName(d.recipe, recipes)} subtitle={r ? summary(r) : undefined} accessory="chevron" onClick={() => onDish(d)} />;
+                  return <Row key={d.id} title={mealName(d.recipe, recipes)} subtitle={r ? summary(r, false, false) || undefined : undefined} accessory="chevron" onClick={() => onDish(d)} />;
                 })}
               </Group>
             );
@@ -234,7 +234,8 @@ type Picked = Choice & { key: string; pinned: boolean; skipped: string[]; nothin
 export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; recipes: Recipe[]; onSave: (dishes: NewDish[], lunches: NewLunch[], counts: Counts) => Promise<string | null>; onClose: () => void }) {
   const kids = lunchKids(plan);
   const [page, setPage] = useState(0);
-  const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts, lunches: Object.fromEntries(kids.map((k) => [k, plan.counts.lunches[k] ?? 5])) }));
+  // A total never starts below what's planned already (a dessert planned, last time's 0 would read as "none").
+  const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts, ...Object.fromEntries(KINDS.map((k) => [k, Math.max(plan.counts[k], plan.dishes.filter((d) => d.kind === k).length)])), lunches: Object.fromEntries(kids.map((k) => [k, plan.counts.lunches[k] ?? 5])) }));
   const [trips, setTrips] = useState({ traderJoes: plan.trips.traderJoes, costco: plan.trips.costco });
   const [picks, setPicks] = useState<Picked[]>([]);
   const [lunches, setLunches] = useState<Lunch[]>([]);
