@@ -248,9 +248,10 @@ export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned">;
 export type NewLunch = Omit<Lunch, "id">;
 
 /**
- * Plans more: the new dishes and lunches join what's planned (nothing planned before is touched; the numbers are totals,
- * so the sheet only sends what's missing). Last
- * time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
+ * Plans. With `counts` (the Plan sheet) it's the next shop (Nov 3): this week's dinners are done, whether or not anyone
+ * said so (nothing is ticked off; what was bought got cooked), so each is marked made on the day it was planned and
+ * logged, which keeps "not made in a while" true; planned lunches go too (lunches are Every week things in Stock now).
+ * Without `counts` (Add one more) the new ones join this week and nothing else is touched. Last time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
  * fresh things to buy, pantry things to check (Nov 3: no more waiting for a night to come close).
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
  * a pantry check from a dinner made or removed since doesn't linger. Answers how many things went on a list.
@@ -258,9 +259,15 @@ export type NewLunch = Omit<Lunch, "id">;
 export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number }> {
   const today = todayIn();
   if (counts) {
-    // Drops what was made more than 60 days ago, so the tab doesn't grow for ever.
+    const before = await rows(PLANNED);
+    const week = toPlanned(before), added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
+    if (week.dishes.length) {
+      await upsert(PLANNED, week.dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
+      await append(MADE, week.dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
+    }
+    // Lunches go, and what was made more than 60 days ago is dropped, so the tab doesn't grow for ever.
     const long = addDays(today, -60);
-    await removeRows(PLANNED, (get) => Boolean(get("made")) && get("made") < long);
+    await removeRows(PLANNED, (get) => (get("kind") === "lunch" && !get("made")) || (Boolean(get("made")) && get("made") < long));
   }
   await append(PLANNED, [
     ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),

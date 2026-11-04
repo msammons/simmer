@@ -43,19 +43,17 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 
 | # | Do | Expect | Where |
 |---|----|--------|-------|
-| 4.1 | Meals with nothing planned | "Nothing planned", "Say how many dinners and lunches…", Plan | L |
-| 4.2 | Plan → How many | Counters for quick, regular and kids' dinners, desserts, sides, breakfasts, and lunches per kid; each starts at last time's number and never below what's planned; "N planned already" under a kind with dinners waiting; footer "These are totals…" | L |
+| 4.1 | Meals with nothing planned | "Nothing planned", "Say how many dinners for the next shop…", Plan | L |
+| 4.2 | Plan → How many | Counters for quick, regular and kids' dinners, desserts, sides, breakfasts (no lunches), starting at last time's numbers; with dinners planned, "Saving replaces this week's N dinners." | L |
 | 4.3 | Trips toggles | Trader Joe's and Costco, with last trip dates | L |
-| 4.4 | Next → Dinners | Only what's missing to reach each number is picked; fits its kind, no repeats; "Only N of M fit" when short (no fill-in from another kind) | L |
+| 4.4 | Next → Dinners | That many of each, fitting the kind, none of this week's again; "Only N of M fit" when short | L |
 | 4.5 | Something else / One more / remove | A different recipe; when none is left, says so; One more adds one of that kind | L |
 | 4.6 | Tap a pick | Picker sheet; a picked one shows "You picked this" | L |
-| 4.7 | Next → Lunches → tap a part | Swaps to another of that kid's options; remove a lunch | L |
-| 4.8 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
-| 4.9 | Meals after saving | Dinners to make by kind (no "Quick"/"Regular" word under the kind header), each kid's lunches "N planned" with a remove button, no tick boxes | L |
-| 4.10 | Plan again with the same numbers | Nothing new picked, lunches included; remove one lunch and plan again: only that one is added back | L |
-| 4.11 | Tap a dinner | Cook / Something else / Made it / Remove | L |
-| 4.12 | Made it | Comes off; not suggested again for a while | L |
-| 4.13 | Add one more | One of any kind, or a lunch for one kid, in one tap | L |
+| 4.7 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
+| 4.8 | Meals after saving | "This week": dinners by kind (no "Quick"/"Regular" word under the header); no lunches; Plan | L |
+| 4.9 | Plan again and save | This week's dinners are replaced by the new ones; the old ones aren't suggested again soon | L |
+| 4.10 | Tap a dinner | Cook / Something else / Pick one / Remove (no Made it) | L |
+| 4.11 | Add one more | A dinner, dessert, side or breakfast joins this week in one tap; nothing else changes | L |
 
 ## 5. Lists
 
@@ -93,6 +91,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | # | Do | Expect | Where |
 |---|----|--------|-------|
 | 7.1 | Open Stock | Sections Fresh · Pantry · Freezer · Household; each row a filled circle (have) | L |
+| 7.1a | ⋯ on a Stock thing → Every week | "Every week" under its name; Done shopping at its store puts it back on that list (one row, not ticked); ⋯ → Not every week stops it | L |
 | 7.2 | With a planned week | The week's pantry items highlighted with the amount the meals need | L |
 | 7.3 | Tap a row | Out: goes on its store's list ("On the list · Safeway"); tap again: have | L |
 | 7.4 | Add something | New row, checked, in a guessed section | L |

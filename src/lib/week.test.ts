@@ -52,7 +52,8 @@ describe("planning by number", () => {
     expect(quick).not.toContain("mac and cheese"); // the boys' own dinners are their own kind
     expect(ids(rank("quick", [], { ...ctx, trips: { traderJoes: true, costco: false } }))).toContain("tj meatballs");
     const regular = ids(rank("regular", [], ctx));
-    expect(regular).not.toContain("roast chicken"); // made 6 days ago
+    expect(regular.at(-1)).toBe("roast chicken"); // made 6 days ago: last, only when nothing else fits
+    expect(rank("regular", [], ctx).at(-1)!.why).toBe("Made recently: nothing else fits");
     expect(regular).not.toContain("old soup"); // stopped suggesting
     expect(regular).not.toContain("pumpkin pie"); // a dessert is never a dinner
     expect(regular[0]).toBe("chili"); // a favorite, in season, not made since March
