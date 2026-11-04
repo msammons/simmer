@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
-// Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number, the tabs, Settings on every
-// screen, Stock, Lists (All and Safeway), the Recipes tab, a recipe and back, the freezer, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
-// Works on any day of the week, with the sample data (no .env.local). Run against a server started with
+// Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
+// This week, no lunches, no Made it), the tabs, Settings on every screen, Stock (Every week things), Lists (All, and Safeway's in-store
+// checklist when the helper can't be reached), the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
 const fs = require("fs");
@@ -40,6 +41,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // Plan by number (Nov 3): the counts, then the picks, then the lunches, and save.
       await page.getByRole("button", { name: "Plan", exact: true }).first().tap(); await page.waitForTimeout(500);
       ok("plan: asks how many", await page.getByRole("heading", { name: "How many" }).isVisible());
+      ok("plan: no lunches to plan", (await page.getByRole("dialog").last().innerText()).search(/lunch/i) < 0);
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
       ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
@@ -58,13 +60,27 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
       await page.getByRole("button", { name: "Save", exact: true }).tap();
-      ok("plan: saved, and the dinners show", await seen(page.getByRole("heading", { name: "Dinners to make" }), 10000));
+      ok("plan: saved, and This week shows", await seen(page.getByRole("heading", { name: "This week" }), 10000));
+      ok("plan: and says what went on the list", await seen(page.getByText(/Added \d+ things? to the grocery list/), 3000));
+      ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // A dinner: Cook opens it on top of Meals; Back says where it goes and goes there.
       const dinners = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) }).getByRole("button");
       let cooked = false;
       if (await dinners.count()) {
+        const count = await dinners.count();
+        await dinners.first().tap(); await page.waitForTimeout(300);
+        const dish = page.getByRole("dialog").last();
+        ok("meals: a dinner offers Something else, Pick one and Remove, never Made it", (await dish.getByText("Something else", { exact: true }).isVisible()) && (await dish.getByText("Pick one", { exact: true }).isVisible()) && (await dish.getByText("Remove", { exact: true }).isVisible()) && (await dish.getByText("Made it").count()) === 0);
+        await dish.getByText("Remove", { exact: true }).tap(); await page.waitForTimeout(800);
+        ok("meals: Remove takes just that dinner off", (await dinners.count()) === count - 1 || (await page.getByText("No dinners this week").isVisible()));
+        await page.getByRole("button", { name: "Plan", exact: true }).first().tap(); await page.waitForTimeout(500);
+        ok("plan: planning again says it replaces this week", await seen(page.getByText(/Saving replaces this week's/), 3000) || (await page.getByText("No dinners this week").count()) > 0);
+        await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
+        await page.getByRole("button", { name: "Save", exact: true }).tap();
+        ok("plan: a second plan replaces the week", await seen(page.getByRole("heading", { name: "This week" }), 10000));
+        await page.waitForTimeout(400);
         await dinners.first().tap(); await page.waitForTimeout(300);
         if (await page.getByRole("button", { name: /^Cook/ }).isVisible()) { await page.getByRole("button", { name: /^Cook/ }).tap(); cooked = true; }
         else { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
@@ -104,6 +120,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     if ((await milk.getAttribute("aria-checked")) === "false") { await milk.tap(); await page.waitForTimeout(1200); }
     await milk.tap(); await page.waitForTimeout(1500);
     ok(`${tag}: a tap marks it out`, (await milk.getAttribute("aria-checked")) === "false");
+    // Every week: a thing that comes back on its list after each shop. Eggs: out, ticked off on the Safeway checklist, Done shopping, and it is back.
+    const eggs = page.getByRole("checkbox", { name: "Have Eggs" });
+    if ((await eggs.getAttribute("aria-checked")) === "false") { await eggs.tap(); await page.waitForTimeout(1200); }
+    if (!(await eggs.getByText("Every week", { exact: true }).count())) { await page.getByLabel("More for Eggs").selectOption("weekly"); await page.waitForTimeout(1200); }
+    ok(`${tag}: ⋯ → Every week shows under the name`, await seen(eggs.getByText("Every week", { exact: true }), 3000));
+    await eggs.tap(); await page.waitForTimeout(1500);
     await page.getByLabel("Add something to Stock").fill(`frozen waffles ${tag}`); await page.keyboard.press("Enter");
     ok(`${tag}: Stock add`, await seen(page.getByRole("checkbox", { name: new RegExp(`Have frozen waffles ${tag}`, "i") })));
 
@@ -121,11 +143,23 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));
     ok(`${tag}: Safeway shows the top line (a checklist while it can't be reached)`, await seen(page.getByText(/in the cart| got$/)));
     await page.screenshot({ path: `${dir}/5b-lists-safeway-${tag}.png` });
+    // In the store: no helper, so Safeway is a checklist like the others. Done shopping asks first; Cancel leaves it; Eggs (Every week) comes straight back.
+    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(600); // Milk was ticked in All: untick, so only Eggs is done
+    await page.getByRole("checkbox", { name: /Eggs/ }).first().tap(); await page.waitForTimeout(600);
+    await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(400);
+    ok(`${tag}: Done shopping asks first`, await seen(page.getByRole("dialog", { name: "Done shopping" }).getByText(/Done at Safeway/)));
+    await page.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(400);
+    ok(`${tag}: Cancel leaves the ticks`, (await page.getByRole("checkbox", { name: /Eggs/ }).first().getAttribute("aria-checked")) === "true");
+    await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(300);
+    await page.getByRole("dialog", { name: "Done shopping" }).getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: an Every week thing is back on the list, not ticked, as one row`, (await page.getByRole("checkbox", { name: /Eggs/ }).count()) === 1 && (await page.getByRole("checkbox", { name: /Eggs/ }).first().getAttribute("aria-checked")) === "false");
     await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(500);
-    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
     await page.getByRole("checkbox", { name: "Have Milk" }).tap(); await page.waitForTimeout(1500);
     ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Have Milk" }).getAttribute("aria-checked")) === "true");
+    if ((await eggs.getAttribute("aria-checked")) === "false") { await eggs.tap(); await page.waitForTimeout(1200); } // tidy up: Eggs in, and not every week
+    await page.getByLabel("More for Eggs").selectOption("weekly"); await page.waitForTimeout(1200);
+    ok(`${tag}: ⋯ → Not every week stops it`, (await eggs.getByText("Every week", { exact: true }).count()) === 0);
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
@@ -142,9 +176,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await chiliRow.tap(); await page.waitForTimeout(400);
     const chiliSheet = page.getByRole("dialog", { name: "Add to the list" });
     ok(`${tag}: it opens the add-to-list sheet for that recipe`, (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
-    const cumin = chiliSheet.getByRole("checkbox", { name: "1 tsp cumin" }), turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
-    ok(`${tag}: spices start unticked`, (await cumin.getAttribute("aria-checked")) === "false" && (await chiliSheet.getByRole("checkbox", { name: "2 tbsp chili powder" }).getAttribute("aria-checked")) === "false");
-    ok(`${tag}: and sit below the things to buy, under Spices`, (await turkey.getAttribute("aria-checked")) === "true" && (await cumin.boundingBox()).y > (await turkey.boundingBox()).y && await chiliSheet.getByText("Spices", { exact: true }).isVisible());
+    const turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
+    ok(`${tag}: the things to buy start ticked`, (await turkey.getAttribute("aria-checked")) === "true" && await chiliSheet.getByText("To buy", { exact: true }).isVisible());
+    ok(`${tag}: spices and the pantry are only highlighted in Stock, not offered`, (await chiliSheet.getByText(/cumin|chili powder/i).count()) === 0 && await chiliSheet.getByText("The pantry things are highlighted in Stock.").isVisible());
     if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6c-add-to-list-${tag}.png` });
     await page.keyboard.press("Escape"); await page.waitForTimeout(400);
     const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
@@ -179,6 +213,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     }
     await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
     await page.getByRole("button", { name: /^Add \d+ to the list/ }).tap(); await page.waitForTimeout(800);
+    if (await page.getByRole("button", { name: "Done", exact: true }).isVisible()) { await page.getByRole("button", { name: "Done", exact: true }).tap(); await page.waitForTimeout(400); } // a note about the pantry things may keep the sheet up
     await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
     ok(`${tag}: back to Recipes`, await page.getByRole("heading", { name: "Recipes" }).isVisible());
     await page.screenshot({ path: `${dir}/6b-recipes-${tag}.png` });
