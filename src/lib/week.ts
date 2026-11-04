@@ -79,7 +79,8 @@ const hasDislike = (r: Recipe, words: string[]) => words.some((w) => {
 
 /**
  * The recipes of one kind that fit, best first, with a few words on why. Code, not the model: the kind matches (a quick
- * dinner is never a regular one), nothing already planned, nothing made in the last 10 days (4 for the boys' own), the
+ * dinner is never a regular one), nothing already planned, anything made in the last 10 days (4 for the boys' own) only
+ * when nothing else fits (Nov 3: a short collection, with every planned week counted as made, would leave nights empty), the
  * right store trips, variety of protein with what's planned, forgotten favorites and the season lifted, the boys' tastes
  * respected. `planned`: recipe ids already planned (still to make, or picked just now).
  */
@@ -96,9 +97,9 @@ export function rank(kind: Kind, planned: string[], ctx: Context): Option[] {
     if (r.store === "costco" && !ctx.trips.costco) continue;
     const last = ctx.lastMade[r.id];
     const ago = last ? daysBetween(last, ctx.today) : null;
-    if (ago !== null && ago >= 0 && ago < (kind === "kids" ? 4 : 10)) continue;
-    const why: [number, string][] = [];
-    let score = (r.rating ?? 1.5) * 0.8;
+    const recent = ago !== null && ago >= 0 && ago < (kind === "kids" ? 4 : 10);
+    const why: [number, string][] = recent ? [[99, "Made recently: nothing else fits"]] : [];
+    let score = (r.rating ?? 1.5) * 0.8 - (recent ? 100 : 0);
     if (kind !== "kids") {
       if ((r.rating ?? 0) >= 2 && ago !== null && ago > 60) { score += 2; why.push([2, `You haven't made this since ${monthName(last!)}`]); }
       if (r.season.length) { if (inSeason(r, ctx.today)) { score += 1.5; why.push([1.5, `Good for ${r.season.find((s) => SEASONS[s]?.includes(Number(ctx.today.slice(5, 7))))}`]); } else score -= 1.5; }
