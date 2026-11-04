@@ -49,6 +49,8 @@ export function parseIngredient(raw: string): Ingredient {
   const m = line.match(LINE);
   let quantity = "", unit = "", item = line;
   if (m) { quantity = m[1].toLowerCase().replace(/^(an?|one)$/, "1").replace(/^two$/, "2").replace(/^three$/, "3").replace(/^four$/, "4"); unit = (m[2] ?? "").toLowerCase(); item = m[3]; }
+  // "15 ounce can pumpkin": the size came first, so the container is still on the name.
+  if (unit) item = item.replace(/^(?:cans?|jars?|packages?|pkgs?|bags?|boxes|box|containers?|bottles?|cartons?)\s+(?:of\s+)?/i, "");
   // What's bought, not how it's cut: "onion, diced" → onion; "garlic (minced)" → garlic; "salt to taste" → salt.
   item = item.replace(/\([^)]*\)/g, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
   return { line: raw.trim(), quantity, unit, item: item || line.toLowerCase(), section: known(item)?.section ?? "fresh" };

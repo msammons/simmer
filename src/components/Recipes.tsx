@@ -11,8 +11,9 @@ const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
 
 /** "Quick · 25 minutes · Kids' dinner". */
-export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhead">, long = false) {
-  return [EFFORT[r.effort], r.minutes && (long ? `${r.minutes} minutes` : `${r.minutes} min`), r.for !== "everyone" && FOR[r.for], r.makeAhead && "Make ahead"].filter(Boolean).join(" · ");
+/** `kind`: false where a header already says quick or regular (Meals), so a dessert doesn't read "Regular". */
+export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhead">, long = false, kind = true) {
+  return [kind && EFFORT[r.effort], r.minutes && (long ? `${r.minutes} minutes` : `${r.minutes} min`), r.for !== "everyone" && FOR[r.for], r.makeAhead && "Make ahead"].filter(Boolean).join(" · ");
 }
 
 /** Shown wherever a recipe has no ingredients yet (Nov 3), so a typed idea reads as unfinished, not empty. */

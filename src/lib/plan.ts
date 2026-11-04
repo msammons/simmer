@@ -12,7 +12,7 @@ import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, type Store } from "./groceries";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
-import { todayIn } from "./time";
+import { addDays, todayIn } from "./time";
 import { norm } from "./words";
 import { firstCounts, freezerMatch, kindOf, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
@@ -258,8 +258,9 @@ export type NewLunch = Omit<Lunch, "id">;
 export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number }> {
   const today = todayIn();
   if (counts) {
-    const kids = Object.keys(counts.lunches).map(norm);
-    await removeRows(PLANNED, (get) => get("kind") === "lunch" && !get("made") && kids.includes(norm(get("kid"))));
+    // Also drops what was made or packed more than 60 days ago, so the tab doesn't grow for ever.
+    const kids = Object.keys(counts.lunches).map(norm), long = addDays(today, -60);
+    await removeRows(PLANNED, (get) => (get("kind") === "lunch" && !get("made") && kids.includes(norm(get("kid")))) || (Boolean(get("made")) && get("made") < long));
   }
   await append(PLANNED, [
     ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),

@@ -70,7 +70,7 @@ function TickRow({ it, inCart, onTick, more }: { it: Item; inCart: number; onTic
       <div className="min-w-0 flex-1">
         {inCart
           ? <Row lead={<ProductImage small />} title={title} subtitle={<span className="font-semibold text-accent">In the cart{inCart > 1 ? ` · ${inCart}` : ""}</span>} />
-          : <Row lead={<Check on={it.checked} />} title={title} subtitle={it.quantity || undefined} role="checkbox" checked={it.checked} onClick={onTick} />}
+          : <Row lead={<Check on={it.checked} />} title={title} subtitle={buyAmount(it.quantity) || undefined} role="checkbox" checked={it.checked} onClick={onTick} />}
       </div>
       {more}
     </div>
