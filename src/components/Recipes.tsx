@@ -79,10 +79,9 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, free
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, onMade }: {
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList }: {
   r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's one of the dinners to make: Made it is one tap from here, and it comes off the list (Nov 3). */
-  onMade?: () => void;
 }) {
   const screen = useRef<HTMLDivElement>(null);
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
@@ -127,7 +126,6 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
           {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
         </Group>
       )}
-      {onMade && <Button onClick={onMade} icon="check" className="w-full">Made it</Button>}
       <Button variant="plain" onClick={() => onActive(!r.active)} className="w-full">{r.active ? "Stop suggesting this" : "Suggest this again"}</Button>
     </div>
   );
