@@ -51,8 +51,8 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.6 | Tap a pick | Picker sheet; a picked one shows "You picked this" | L |
 | 4.7 | Next → Lunches → tap a part | Swaps to another of that kid's options; remove a lunch | L |
 | 4.8 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
-| 4.9 | Meals after saving | Dinners to make by kind (no "Quick"/"Regular" word under the kind header), each kid's lunches "N planned", no tick boxes, "Planning again replaces the lunches." | L |
-| 4.10 | Plan again with the same numbers | Nothing new picked for kinds already full; lunches replaced, not added | L |
+| 4.9 | Meals after saving | Dinners to make by kind (no "Quick"/"Regular" word under the kind header), each kid's lunches "N planned" with a remove button, no tick boxes | L |
+| 4.10 | Plan again with the same numbers | Nothing new picked, lunches included; remove one lunch and plan again: only that one is added back | L |
 | 4.11 | Tap a dinner | Cook / Something else / Made it / Remove | L |
 | 4.12 | Made it | Comes off; not suggested again for a while | L |
 | 4.13 | Add one more | One of any kind, or a lunch for one kid, in one tap | L |

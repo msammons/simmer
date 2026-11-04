@@ -28,11 +28,11 @@ const lunchLine = (l: Pick<Lunch, (typeof LUNCH_PARTS)[number]>) => [[l.main, l.
 // ---- Meals (tab)
 
 /** The Meals tab: the dinners to make, by kind, and each boy's lunches to pack; then Plan, for more. */
-export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish, onAddOne }: {
+export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish, onAddOne, onRemoveLunch }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after saving ("Added 6 things to the grocery list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onPlan: () => void; onDish: (d: Dish) => void; onAddOne: () => void;
+  onPlan: () => void; onDish: (d: Dish) => void; onAddOne: () => void; onRemoveLunch: (l: Lunch) => void;
 }) {
   const dishes = plan?.dishes ?? [], lunches = plan?.lunches ?? [];
   const kids = [...new Set(lunches.map((l) => l.kid))];
@@ -69,11 +69,16 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish
             const mine = lunches.filter((l) => l.kid === k);
             return (
               <Group key={k} header={`${k}'s lunches`} aside={<span className="t-foot text-muted">{mine.length} planned</span>}>
-                {mine.map((l) => <Row key={l.id} title={lunchLine(l)} />)}
+                {mine.map((l) => (
+                  <div key={l.id} className="flex items-center pr-2">
+                    <div className="min-w-0 flex-1"><Row title={lunchLine(l)} /></div>
+                    <RoundButton icon="close" label={`Remove this lunch for ${k}`} onClick={() => onRemoveLunch(l)} />
+                  </div>
+                ))}
               </Group>
             );
           })}
-          {kids.length > 0 && <p className="t-foot -mt-4 px-4 text-muted">Planning again replaces the lunches.</p>}
+          
           <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan</Button>
         </>
       )}
@@ -229,13 +234,13 @@ type Picked = Choice & { key: string; pinned: boolean; skipped: string[]; nothin
 /**
  * Plan more: how many of each (starting from last time's numbers), then the picks (Something else, pick one, remove, one
  * more), then the lunches (tap a part to swap it). The numbers are totals (Nov 3): what's still to make counts, and
- * only what's missing is picked. Lunches aren't ticked off, so planning replaces them.
+ * only what's missing is picked, lunches too. Nothing planned before is touched.
  */
 export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; recipes: Recipe[]; onSave: (dishes: NewDish[], lunches: NewLunch[], counts: Counts) => Promise<string | null>; onClose: () => void }) {
   const kids = lunchKids(plan);
   const [page, setPage] = useState(0);
   // A total never starts below what's planned already (a dessert planned, last time's 0 would read as "none").
-  const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts, ...Object.fromEntries(KINDS.map((k) => [k, Math.max(plan.counts[k], plan.dishes.filter((d) => d.kind === k).length)])), lunches: Object.fromEntries(kids.map((k) => [k, plan.counts.lunches[k] ?? 5])) }));
+  const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts, ...Object.fromEntries(KINDS.map((k) => [k, Math.max(plan.counts[k], plan.dishes.filter((d) => d.kind === k).length)])), lunches: Object.fromEntries(kids.map((k) => [k, Math.max(plan.counts.lunches[k] ?? 5, plan.lunches.filter((l) => l.kid === k).length)])) }));
   const [trips, setTrips] = useState({ traderJoes: plan.trips.traderJoes, costco: plan.trips.costco });
   const [picks, setPicks] = useState<Picked[]>([]);
   const [lunches, setLunches] = useState<Lunch[]>([]);
@@ -256,7 +261,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
     setPicks(all.map((c) => keyed(c)));
     setFound(Object.fromEntries(KINDS.map((k) => [k, all.filter((c) => c.kind === k).length])));
     const waitingLunches = Object.fromEntries(kids.map((k) => [k, plan.lunches.filter((l) => l.kid === k).length]));
-    setLunches(planLunches(kids.map((k) => ({ name: k, count: counts.lunches[k] ?? 0 })), plan.lunchOptions, waitingLunches, weekNumber(dateIn(0))));
+    setLunches(planLunches(kids.map((k) => ({ name: k, count: Math.max(0, (counts.lunches[k] ?? 0) - waitingLunches[k]) })), plan.lunchOptions, waitingLunches, weekNumber(dateIn(0))));
     setNone(null);
     setPage(1);
   }
@@ -309,7 +314,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
           <Group header="Lunches">
             {kids.map((k) => {
               const w = plan.lunches.filter((l) => l.kid === k).length;
-              return <CountRow key={k} title={k} subtitle={w ? `Replaces the ${w} planned now` : undefined} n={counts.lunches[k] ?? 0} onChange={(n) => setCounts({ ...counts, lunches: { ...counts.lunches, [k]: n } })} />;
+              return <CountRow key={k} title={k} subtitle={w ? `${w} planned already` : undefined} n={counts.lunches[k] ?? 0} onChange={(n) => setCounts({ ...counts, lunches: { ...counts.lunches, [k]: n } })} />;
             })}
           </Group>
         )}
