@@ -8,7 +8,8 @@ import { BrandBar, Button, EmptyState, Group, Notice } from "./ui";
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (checking never moves a row). Simmer assumes we
  * have everything: a tap means we're out and puts it on its store's list; a second tap takes it back off. What this
- * week's meals need is highlighted, with the amount. ⋯ moves a thing to another section or takes it out of Stock.
+ * week's meals need is highlighted, with the amount. ⋯ moves a thing to another section, marks it Every week (Done
+ * shopping puts it back on the list, Nov 3: lunch foods), or takes it out of Stock.
  */
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -23,6 +24,7 @@ export type StockActions = {
   takeOut: (f: Frozen) => void;
   keepAdd: (text: string, section?: Section) => void;
   keepMove: (item: string, section: Section) => void;
+  keepWeekly: (item: string, weekly: boolean) => void;
   keepRemove: (s: Staple) => void;
 };
 
@@ -102,7 +104,8 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
                   <Circle on={r.have} />
                   <span className="min-w-0 flex-1">
                     <span className="block t-body">{cap(r.name)}</span>
-                    {!r.have && r.open && <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>}
+                    {!r.have && r.open ? <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>
+                      : r.staple?.weekly && <span className="block t-foot text-muted">Every week</span>}
                   </span>
                   {r.meal?.quantity && <span className="shrink-0 t-sub text-muted">{r.meal.quantity}</span>}
                 </button>
@@ -110,9 +113,10 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
                   <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                     <span aria-hidden>⋯</span>
                     <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                      onChange={(e) => { const v = e.target.value; if (v === "remove") { act.keepRemove(r.staple!); setRemoved(r.staple); } else if (v) act.keepMove(r.name, v as Section); }}>
+                      onChange={(e) => { const v = e.target.value; if (v === "remove") { act.keepRemove(r.staple!); setRemoved(r.staple); } else if (v === "weekly") act.keepWeekly(r.name, !r.staple!.weekly); else if (v) act.keepMove(r.name, v as Section); }}>
                       <option value="" disabled>{cap(r.name)}</option>
                       {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
+                      <option value="weekly">{r.staple.weekly ? "Not every week" : "Every week"}</option>
                       <option value="remove">Remove from Stock</option>
                     </select>
                   </label>

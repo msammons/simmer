@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type NewDish, type NewLunch, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { STORE_NAMES } from "./Shop";
@@ -200,11 +200,12 @@ export default function App() {
     setWeekNote(p.added ? `Added ${p.added} thing${p.added === 1 ? "" : "s"} to the grocery list.` : null);
     if (p.added) refreshList(); // the new things show on Lists and Stock right away
   }
-  /** Plans more (the plan sheet, or one more); the sheet closes itself on success (null) and shows the problem otherwise. */
-  async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null): Promise<string | null> {
+  /** The next shop's dinners (the plan sheet, with counts) or one more for this week (no counts); the sheet closes itself
+   * on success (null) and shows the problem otherwise. */
+  async function savePlan(dishes: NewDish[], counts: Counts | null): Promise<string | null> {
     try {
       ++planChanges.current;
-      gotPlan(await api.savePlan(dishes, lunches, counts, me));
+      gotPlan(await api.savePlan(dishes, [], counts, me));
       return null;
     } catch (e) { return problemOf(e); }
   }
@@ -263,6 +264,7 @@ export default function App() {
     },
     keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
+    keepWeekly: (item, weekly) => change({ op: "keepWeekly", item, weekly }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, weekly } : x)) })),
     keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
   };
 
@@ -333,8 +335,6 @@ export default function App() {
   }
   const below = stack[stack.length - 2];
   const backLabel = !below ? "Back" : below.kind === "recipe" ? recipeOf(below.id)?.name ?? "Back" : TAB_NAMES[below.kind];
-  // A recipe that's planned: Made it is one tap from the recipe (the first of it, if it's planned twice).
-  const plannedHere = open ? plan?.dishes.find((d) => d.recipe === open.id) : undefined;
   // In the helper's panel: the computer's work for the phone (components/Activity.tsx).
   const panel = usePanelActivity(phase === "app" && framed());
 
@@ -352,8 +352,7 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)}
-          onRemoveLunch={(l) => changePlan({ op: "remove", id: l.id }).then((p) => { if (p) setWeekError(p); })} />
+          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
@@ -363,17 +362,16 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")}
-          onMade={plannedHere ? () => { changePlan({ op: "made", id: plannedHere.id }).then((p) => { if (p) setRecipesError(p); }); } : undefined} />
+          onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onClose={() => setPlanning(false)} />}
-      {addingOne && plan && <AddOneSheet plan={plan} recipes={recipes ?? []} onAdd={(d, l) => savePlan(d, l, null)} onClose={() => setAddingOne(false)} />}
+      {addingOne && plan && <AddOneSheet plan={plan} recipes={recipes ?? []} onAdd={(d) => savePlan(d, null)} onClose={() => setAddingOne(false)} />}
       {dish && plan && (
         <DishSheet key={dish.id} plan={plan} d={dish} recipes={recipes ?? []} onOpen={openRecipe} onClose={() => setDishAt(null)}
           onChange={(recipe, pinned) => changePlan({ op: "change", id: dish.id, recipe, pinned })}
-          onMade={() => changePlan({ op: "made", id: dish.id })} onRemove={() => changePlan({ op: "remove", id: dish.id })} />
+          onRemove={() => changePlan({ op: "remove", id: dish.id })} />
       )}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);

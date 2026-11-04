@@ -46,13 +46,6 @@ describe("planning by number", () => {
     expect(after.lunches).toEqual(before.lunches);
   });
 
-  it("planning again leaves the lunches already planned alone", async () => {
-    const before = await loadPlan();
-    await savePlan([{ kind: "quick", recipe: "tacos-1", pinned: false }], [], counts, "Sam");
-    const after = await loadPlan();
-    expect(after.lunches).toEqual(before.lunches);
-  });
-
   it("made comes off, is remembered for picking, and leaves the list alone", async () => {
     const { dishes } = await loadPlan();
     const chili = dishes.find((d) => d.recipe === "turkey-chili-1")!;
@@ -101,5 +94,17 @@ describe("planning by number", () => {
     const d = (await loadPlan()).dishes.filter((x) => x.recipe === "salmon-1").pop()!;
     await markMade(d.id);
     expect((await loadFreezer()).find((f) => f.item === "salmon")?.amount).toBe("1");
+  });
+
+  it("planning the next shop closes this week: its dinners count as made the day they were planned, lunches go", async () => {
+    await savePlan([], planLunches([{ name: "Leo", count: 1 }], (await loadPlan()).lunchOptions).map(({ kid, main, fruit, side, treat, snack }) => ({ kid, main, fruit, side, treat, snack })), null, "Sam");
+    const before = await loadPlan();
+    expect(before.dishes.length).toBeGreaterThan(0);
+    expect(before.lunches.length).toBeGreaterThan(0);
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: false }], [], counts, "Sam");
+    const after = await loadPlan();
+    expect(after.dishes.map((d) => d.recipe)).toEqual(["turkey-chili-1"]);
+    expect(after.lunches).toEqual([]);
+    for (const d of before.dishes) expect(after.lastMade[d.recipe]).toBe(todayIn());
   });
 });
