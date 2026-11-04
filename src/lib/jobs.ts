@@ -112,7 +112,8 @@ async function write(j: Job, row?: number): Promise<Job> {
 
 /** Drops finished jobs older than a few minutes, and junk rows (stray headers, extra check-ins). */
 async function prune({ jobs, junk }: Tab) {
-  const old = (j: Job) => (j.status === "done" || j.status === "failed") && age(j.updated) > JOB_TIMES.keep;
+  // Waiting or working ones nobody finished count too (six searches sat "waiting" for days, Nov 3).
+  const old = (j: Job) => (j.status === "done" || j.status === "failed" || overdue(j)) && age(j.updated) > JOB_TIMES.keep;
   if (jobs.filter(old).length < 10 && !junk) return;
   const keep = jobs.filter((j) => !old(j));
   if (!sheetsConfigured()) { memory.jobs = keep; return; }
