@@ -255,7 +255,8 @@ export default function App() {
     putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
   };
   const stock: StockActions = {
-    out: (name, s, section, amount) => change({ op: "add", text: amount ? `${amount} ${name}` : name, by: me, store: s, section }),
+    // The usual amount goes alongside, not in front: "1 loaf bread" filed as "loaf bread", which Stock never matched (Nov 3).
+    out: (name, s, section, amount) => change({ op: "add", text: name, by: me, store: s, section, ...(amount && { amount }) }),
     have: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
     need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     takeOut: (f) => {
