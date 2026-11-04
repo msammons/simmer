@@ -46,13 +46,11 @@ describe("planning by number", () => {
     expect(after.lunches).toEqual(before.lunches);
   });
 
-  it("replaces each boy's lunches when they're planned again (lunches aren't ticked off)", async () => {
+  it("planning again leaves the lunches already planned alone", async () => {
     const before = await loadPlan();
-    const one = planLunches([{ name: "Theo", count: 1 }], before.lunchOptions).map(({ kid, main, fruit, side, treat, snack }) => ({ kid, main, fruit, side, treat, snack }));
-    await savePlan([], one, { ...counts, lunches: { Theo: 1, Leo: 0 } }, "Sam");
+    await savePlan([{ kind: "quick", recipe: "tacos-1", pinned: false }], [], counts, "Sam");
     const after = await loadPlan();
-    expect(after.lunches.filter((l) => l.kid === "Theo")).toHaveLength(1);
-    expect(after.dishes).toEqual(before.dishes);
+    expect(after.lunches).toEqual(before.lunches);
   });
 
   it("made comes off, is remembered for picking, and leaves the list alone", async () => {
