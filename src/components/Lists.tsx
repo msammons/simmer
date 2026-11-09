@@ -11,7 +11,7 @@ import { BrandBar, Button, EmptyState, Group, Notice, Row, Segmented, Sheet } fr
  * Lists (the redesign, Nov 2): one list per store, and All for shopping in person. The Safeway rows are also its cart:
  * "Same as last time" (Add puts the usual in the cart), "To find" (Find opens Safeway's choices), "In the cart" (− / +).
  * Trader Joe's, Costco and All are checklists: tick what you got, then Done shopping (confirmed first). Clear (confirmed,
- * with Undo) takes a list off at once. When Safeway can't be reached (the helper hasn't checked in for a couple of
+ * no Undo after) takes a list off at once. When Safeway can't be reached (the helper hasn't checked in for a couple of
  * minutes), the Safeway rows are a checklist too and the cart is greyed (Nov 3).
  */
 export type Where = "all" | Store;
@@ -85,7 +85,6 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
   const [findNext, setFindNext] = useState<string | null>(null); // a Safeway item just added: its choices open once it's on the list
   const [clearing, setClearing] = useState<Item[] | null>(null);
   const [finishing, setFinishing] = useState<Item[] | null>(null); // Done shopping, waiting on its confirm
-  const [undo, setUndo] = useState<{ text: string; items: Item[] } | null>(null);
   const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on a list yet
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
   // With Safeway out of reach its rows are ticked off in the store, so the ticked ones stay showing (Nov 3).
@@ -113,8 +112,7 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
   const doClear = async () => {
     const these = clearing ?? [];
     setClearing(null);
-    const gone = await act.clear(these.map((i) => i.id));
-    if (gone?.length) setUndo({ text: `Cleared ${gone.length}.`, items: gone });
+    await act.clear(these.map((i) => i.id));
   };
 
   const here = where === "all" ? items.filter((i) => !inCart(i)) : items.filter((i) => i.store === where);
@@ -134,7 +132,7 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
 
   return (
     <div className="space-y-5">
-      <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={(w) => { setWhere(w); setUndo(null); }} />} />
+      <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />} />
       <h1 className="sr-only">Lists</h1>
       {error && <Notice>{error}</Notice>}
       <form onSubmit={submit} className="flex gap-2">
@@ -142,7 +140,6 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
-      {undo && <Notice tone="info" onClick={() => { act.putBack(undo.items); setUndo(null); }}>{undo.text} <span className="font-semibold text-accent">Undo</span></Notice>}
 
       {where === "safeway"
         ? <SafewayList items={items.filter((i) => i.store === "safeway")} toFind={toTick} sw={sw} more={more} onFind={setFinding}

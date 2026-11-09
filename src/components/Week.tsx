@@ -24,14 +24,15 @@ export function contextFor(p: PlanData, recipes: Recipe[], trips = { traderJoes:
 // ---- Meals (tab)
 
 /** The Meals tab: this week's dinners, by kind; then Plan, for the next shop. */
-export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish, onAddOne }: {
+export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen, onRemove, onAddOne }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after saving ("Added 6 things to the grocery list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onPlan: () => void; onDish: (d: Dish) => void; onAddOne: () => void;
+  onPlan: () => void; onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onAddOne: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const empty = plan && !dishes.length;
+  const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   return (
     <div className="space-y-6">
       <BrandBar />
@@ -51,7 +52,15 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish
               <Group key={k} header={KIND_NAMES[k]}>
                 {mine.map((d) => {
                   const r = recipes.find((x) => x.id === d.recipe);
-                  return <Row key={d.id} title={mealName(d.recipe, recipes)} subtitle={r ? summary(r, false, false) || undefined : undefined} accessory="chevron" onClick={() => onDish(d)} />;
+                  // Tap opens the recipe; the one change made here is taking it off (Nov 9). Plan is for changing the week.
+                  return (
+                    <div key={d.id} className="flex items-center pr-2">
+                      <div className="min-w-0 flex-1">
+                        <Row title={mealName(d.recipe, recipes)} subtitle={r ? summary(r, false, false) || undefined : "Typed in, no recipe"} accessory={r ? "chevron" : undefined} onClick={r ? () => onOpen(d) : undefined} />
+                      </div>
+                      <RoundButton quiet icon="close" label={`Take ${mealName(d.recipe, recipes)} off this week`} onClick={() => setTaking(d)} />
+                    </div>
+                  );
                 })}
               </Group>
             );
@@ -60,60 +69,24 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onDish
             {!dishes.length && <Row title="No dinners this week" />}
             <Row icon="plus" title="Add one more" subtitle="A dinner, a dessert, a side or a breakfast" accessory="chevron" onClick={onAddOne} />
           </Group>
-          <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan</Button>
+          <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan the next shop</Button>
         </>
+      )}
+      {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
+      {taking && (
+        <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off this week?`} onClose={() => setTaking(null)}>
+          <div className="space-y-3 pb-2">
+            <p className="t-sub text-muted">What it needs stays on the grocery list.</p>
+            <Button className="w-full" onClick={() => { onRemove(taking); setTaking(null); }}>Take it off</Button>
+            <Button variant="secondary" className="w-full" onClick={() => setTaking(null)}>Cancel</Button>
+          </div>
+        </Sheet>
       )}
     </div>
   );
 }
 
-// ---- One dinner (tap a row)
-
-/** Cook it, swap it for something else of the same kind, pick one, or take it off. Nothing is ticked off as made
- * (Nov 3): the food is in the kitchen, and the next plan replaces the week. */
-export function DishSheet({ plan, d, recipes, onChange, onRemove, onOpen, onClose }: {
-  plan: PlanData; d: Dish; recipes: Recipe[];
-  onChange: (recipe: string, pinned: boolean) => Promise<string | null>; onRemove: () => Promise<string | null>;
-  onOpen: (id: string) => void; onClose: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [skipped, setSkipped] = useState<string[]>([]); // shown here already: Something else never brings one back
-  const [nothing, setNothing] = useState(false);
-  const [pin, setPin] = useState(false);
-  const recipe = recipes.find((r) => r.id === d.recipe);
-  async function run(p: Promise<string | null>, close: boolean) {
-    setBusy(true); setProblem(null);
-    const bad = await p;
-    setBusy(false);
-    if (!bad && close) return onClose();
-    setProblem(bad);
-  }
-  function another() {
-    if (busy) return;
-    const next = somethingElse(d.kind, d.recipe, plan.dishes.map((x) => x.recipe), contextFor(plan, recipes), skipped);
-    setNothing(!next);
-    if (!next) return;
-    setSkipped([...skipped, d.recipe]);
-    run(onChange(next.recipe.id, false), false);
-  }
-  const status = busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>;
-  return (
-    <Sheet label={mealName(d.recipe, recipes)} title={mealName(d.recipe, recipes)} onClose={onClose}>
-      <div className="space-y-5 pb-2">
-        {!pin && status}
-        <p className="t-sub text-center text-muted">{[KIND_NAMES[d.kind], recipe && recipe.minutes && `${recipe.minutes} min`].filter(Boolean).join(" · ")}</p>
-        <Group>
-          {recipe && <Row icon="pot" title="Cook" subtitle="The recipe" accessory="chevron" onClick={() => { onClose(); onOpen(recipe.id); }} />}
-          <Row icon="refresh" title="Something else" subtitle={nothing ? NOTHING_ELSE : `Another ${KIND_NAMES[d.kind].toLowerCase()} one`} onClick={another} />
-          <Row icon="book" title="Pick one" subtitle="From your recipes, or type one" accessory="chevron" onClick={() => setPin(true)} />
-          <Row icon="close" title="Remove" subtitle="Not making it after all" onClick={() => !busy && run(onRemove(), true)} />
-        </Group>
-      </div>
-      {pin && <PinSheet kind={d.kind} recipes={recipes} status={status} onPick={async (id) => { await run(onChange(id, true), false); setPin(false); }} onClose={() => setPin(false)} />}
-    </Sheet>
-  );
-}
+// ---- Pick a recipe (Plan, Add one more)
 
 /** Pick one she already knows: from her recipes of that kind (or any, searching), or typed ("Dinner with G&G"). */
 function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onClose: () => void }) {
@@ -190,9 +163,10 @@ function CountRow({ title, subtitle, n, onChange }: { title: string; subtitle?: 
     </div>
   );
 }
-function RoundButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+/** `quiet`: a small grey one, for a change that's rare next to the row's main use (Meals' take-it-off). */
+function RoundButton({ icon, label, onClick, quiet }: { icon: IconName; label: string; onClick: () => void; quiet?: boolean }) {
   return (
-    <button aria-label={label} onClick={onClick} className="glass flex size-9 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90">
+    <button aria-label={label} onClick={onClick} className={`flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-90 ${quiet ? "text-muted" : "glass text-accent"}`}>
       <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
     </button>
   );
@@ -293,7 +267,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
                 <div key={p.key} className="flex items-center gap-2 px-4 py-3">
                   <button className="min-w-0 flex-1 text-left" onClick={() => setPinFor({ key: p.key })}>
                     <span className="block t-body font-semibold">{mealName(p.recipe, recipes)}</span>
-                    <span className="mt-0.5 block t-foot text-muted">{p.nothing ? NOTHING_ELSE : p.pinned ? "You picked this" : p.why || (r ? summary(r) : "")}</span>
+                    <span className="mt-0.5 block t-foot text-muted">{p.nothing ? NOTHING_ELSE : p.pinned ? "You picked this" : p.why || (r ? summary(r, false, false) : "")}</span>
                   </button>
                   <RoundButton icon="refresh" label={`Something else instead of ${mealName(p.recipe, recipes)}`} onClick={() => another(p)} />
                   <RoundButton icon="close" label={`Remove ${mealName(p.recipe, recipes)}`} onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))} />
@@ -310,7 +284,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
         <p className="t-sub px-1 text-muted">Tap one to pick it yourself.</p>
         <div className="space-y-2">
           <p className="t-foot px-1 font-semibold text-muted">One more of</p>
-          <div className="flex flex-wrap gap-2">{KINDS.map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
+          <div className="flex flex-wrap gap-2">{KINDS.filter((k) => !shown.includes(k)).map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
           {none && !shown.includes(none) && <Notice tone="info">{NOTHING_ELSE}</Notice>}
         </div>
       </div>

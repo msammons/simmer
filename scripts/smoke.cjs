@@ -65,25 +65,30 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
-      // A dinner: Cook opens it on top of Meals; Back says where it goes and goes there.
-      const dinners = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) }).getByRole("button");
+      // A dinner: tapping it opens the recipe on top of Meals; its quiet × takes it off after a confirm (no sheet of
+      // choices, no Undo; Nov 9). Back says where it goes and goes there.
+      const kindSections = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) });
+      const dinners = kindSections.getByRole("button").filter({ hasText: /\S/ });
+      const offs = kindSections.getByRole("button", { name: /^Take .* off this week$/ });
       let cooked = false;
       if (await dinners.count()) {
         const count = await dinners.count();
-        await dinners.first().tap(); await page.waitForTimeout(300);
-        const dish = page.getByRole("dialog").last();
-        ok("meals: a dinner offers Something else, Pick one and Remove, never Made it", (await dish.getByText("Something else", { exact: true }).isVisible()) && (await dish.getByText("Pick one", { exact: true }).isVisible()) && (await dish.getByText("Remove", { exact: true }).isVisible()) && (await dish.getByText("Made it").count()) === 0);
-        await dish.getByText("Remove", { exact: true }).tap(); await page.waitForTimeout(800);
-        ok("meals: Remove takes just that dinner off", (await dinners.count()) === count - 1 || (await page.getByText("No dinners this week").isVisible()));
-        await page.getByRole("button", { name: "Plan", exact: true }).first().tap(); await page.waitForTimeout(500);
+        ok("meals: each dinner has its own take-it-off button, and nothing says Made it", (await offs.count()) === count && (await page.getByText("Made it").count()) === 0);
+        await offs.first().tap(); await page.waitForTimeout(300);
+        const confirm = page.getByRole("dialog", { name: "Take it off" });
+        ok("meals: taking one off asks first", await confirm.isVisible());
+        await confirm.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
+        ok("meals: Cancel keeps it", (await dinners.count()) === count);
+        await offs.first().tap(); await page.waitForTimeout(300);
+        await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(800);
+        ok("meals: Take it off takes just that dinner off, with no Undo", ((await dinners.count()) === count - 1 || (await page.getByText("No dinners this week").isVisible())) && (await page.getByText("Undo").count()) === 0);
+        await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
         ok("plan: planning again says it replaces this week", await seen(page.getByText(/Saving replaces this week's/), 3000) || (await page.getByText("No dinners this week").count()) > 0);
         await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
         await page.getByRole("button", { name: "Save", exact: true }).tap();
         ok("plan: a second plan replaces the week", await seen(page.getByRole("heading", { name: "This week" }), 10000));
         await page.waitForTimeout(400);
-        await dinners.first().tap(); await page.waitForTimeout(300);
-        if (await page.getByRole("button", { name: /^Cook/ }).isVisible()) { await page.getByRole("button", { name: /^Cook/ }).tap(); cooked = true; }
-        else { await page.keyboard.press("Escape"); await page.waitForTimeout(200); }
+        if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("radio", { name: "Quick" }).isVisible(); }
       }
       await page.waitForTimeout(400);
       if (!cooked) ok("meals: a dinner's recipe opens (skipped: no dinner with a recipe)", true);
@@ -100,14 +105,14 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       }
     }
 
-    // Settings: the look, and adding recipes from there.
+    // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).
     await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(400);
     await page.screenshot({ path: `${dir}/4-settings-${tag}.png` });
     await page.getByRole("radio", { name: /^Apricot/ }).tap(); await page.waitForTimeout(200);
     ok(`${tag}: theme switches`, (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot");
     await page.getByRole("radio", { name: /^Simmer$/ }).tap();
-    await page.getByRole("button", { name: /^Add recipes/ }).tap(); await page.waitForTimeout(400);
-    ok(`${tag}: Add recipes from Settings`, await page.getByRole("dialog", { name: "Add recipes" }).isVisible());
+    ok(`${tag}: no Add recipes in Settings`, (await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /^Add recipes/ }).count()) === 0);
+    ok(`${tag}: sheets have a close button`, await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Close" }).last().isVisible());
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
     // Stock: what the house keeps, assumed in. A tap means out: it goes on its store's list; a second tap takes it back off.

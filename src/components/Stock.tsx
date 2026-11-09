@@ -3,7 +3,7 @@ import { useState } from "react";
 import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
 import { norm } from "@/lib/words";
 import { STORE_NAMES } from "./Shop";
-import { BrandBar, Button, EmptyState, Group, Notice } from "./ui";
+import { BrandBar, Button, EmptyState, Group, Notice, Sheet } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (checking never moves a row). Simmer assumes we
@@ -64,7 +64,7 @@ function Circle({ on }: { on: boolean }) {
 
 export function StockScreen({ list, kitchen, error, act }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: StockActions }) {
   const [text, setText] = useState("");
-  const [removed, setRemoved] = useState<Staple | null>(null); // for Undo
+  const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const rows = rowsOf(list, kitchen);
   const tap = (r: StockRow) => {
     if (!r.have && r.open) return act.have(r.open);
@@ -91,7 +91,7 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
         <span aria-hidden className="ml-3 size-4 rounded-[5px] bg-accent/15" />
         In meals
       </div>
-      {removed && <Notice tone="info" onClick={() => { act.keepAdd(removed.item, removed.section); setRemoved(null); }}>Removed {cap(removed.item)} from Stock. <span className="font-semibold text-accent">Undo</span></Notice>}
+      <p className="-mt-3 px-4 t-foot text-muted">Tap something when it runs out; it goes on the list.</p>
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
@@ -113,7 +113,7 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
                   <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                     <span aria-hidden>⋯</span>
                     <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                      onChange={(e) => { const v = e.target.value; if (v === "remove") { act.keepRemove(r.staple!); setRemoved(r.staple); } else if (v === "weekly") act.keepWeekly(r.name, !r.staple!.weekly); else if (v) act.keepMove(r.name, v as Section); }}>
+                      onChange={(e) => { const v = e.target.value; if (v === "remove") setRemoving(r.staple); else if (v === "weekly") act.keepWeekly(r.name, !r.staple!.weekly); else if (v) act.keepMove(r.name, v as Section); }}>
                       <option value="" disabled>{cap(r.name)}</option>
                       {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
                       <option value="weekly">{r.staple.weekly ? "Not every week" : "Every week"}</option>
@@ -126,6 +126,15 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
           </Group>
         );
       })}
+      {removing && (
+        <Sheet label="Remove from Stock" title={`Remove ${cap(removing.item)} from Stock?`} onClose={() => setRemoving(null)}>
+          <div className="space-y-3 pb-2">
+            <p className="t-sub text-muted">It stops showing here{removing.weekly ? " and stops coming back every week" : ""}.</p>
+            <Button className="w-full" onClick={() => { act.keepRemove(removing); setRemoving(null); }}>Remove from Stock</Button>
+            <Button variant="secondary" className="w-full" onClick={() => setRemoving(null)}>Cancel</Button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
