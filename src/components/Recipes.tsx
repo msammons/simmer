@@ -19,39 +19,31 @@ export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhea
 /** Shown wherever a recipe has no ingredients yet (Nov 3), so a typed idea reads as unfinished, not empty. */
 const NO_INGREDIENTS = "No ingredients yet · Add them";
 
-type Opens = { onOpen: (r: Recipe) => void; onAddToList: (r: Recipe) => void };
+type Opens = { onOpen: (r: Recipe) => void };
 /** `kind`: false under a Quick or Regular heading, which already says it. */
 
-/** A recipe in the collection: tap to open it, or the list button beside it to put its ingredients on the list. */
-function RecipeRow({ r, onOpen, onAddToList, kind = true }: { r: Recipe; kind?: boolean } & Opens) {
-  if (!r.ingredients.length) return <Row title={r.name} subtitle={[summary(r, false, kind), NO_INGREDIENTS].filter(Boolean).join(" · ")} accessory="chevron" onClick={() => onOpen(r)} />;
-  return (
-    <div className="flex items-center">
-      <div className="min-w-0 flex-1"><Row title={r.name} subtitle={summary(r, false, kind) || undefined} onClick={() => onOpen(r)} /></div>
-      <button onClick={() => onAddToList(r)} aria-label={`Add ${r.name} to the list`}
-        className="mr-3 flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent transition active:scale-90">
-        <Icon name="list" className="size-[18px]" strokeWidth={2} />
-      </button>
-    </div>
-  );
+/** A recipe in the collection: tap to open it (Add to the list is on the recipe; the row's own button went, Nov 9). */
+function RecipeRow({ r, onOpen, kind = true }: { r: Recipe; kind?: boolean } & Opens) {
+  const sub = [summary(r, false, kind), !r.ingredients.length && NO_INGREDIENTS].filter(Boolean).join(" · ");
+  return <Row title={r.name} subtitle={sub || undefined} accessory="chevron" onClick={() => onOpen(r)} />;
 }
 
 /** A few of a group, and the rest one tap away, so the list stays short. */
-function Some({ header, items, onOpen, onAddToList, kind = true }: { header: string; items: Recipe[]; kind?: boolean } & Opens) {
+function Some({ header, items, onOpen, kind = true }: { header: string; items: Recipe[]; kind?: boolean } & Opens) {
   const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
     <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
-      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} kind={kind} onOpen={onOpen} onAddToList={onAddToList} />)}
+      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} kind={kind} onOpen={onOpen} />)}
     </Group>
   );
 }
 
 /** The Recipes tab: her collection by kind, each kind opening to all of it. */
-export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, freezer = [] }: {
+export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
   recipes: Recipe[] | null; error: string | null; freezer?: Frozen[]; onAdd: () => void;
 } & Opens) {
-  const opens = { onOpen, onAddToList };
+  const opens = { onOpen };
   const all = useMemo(() => recipes ?? [], [recipes]);
   const active = all.filter((r) => r.active);
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
@@ -80,8 +72,8 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, free
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, planned }: {
-  r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, onAddToList, planned }: {
+  r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
   /** It's one of the dinners to make: Made it is one tap from here, and it comes off the list (Nov 3). */
@@ -107,9 +99,6 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
       {planned && <p className="t-sub px-1 text-muted">One of this week&apos;s dinners. What it needs went on the list when it was planned.</p>}
       {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" variant={planned ? "secondary" : undefined} className="w-full">{planned ? "Add to the list again" : "Add to the list"}</Button>}
-      <Group header="How long it takes" footer="Quick dinners are picked from the quick ones.">
-        <div className="p-3"><Segmented label="How long it takes" value={r.effort} onChange={onEffort} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }]} /></div>
-      </Group>
       {r.ingredients.length ? (
         <>
           {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
