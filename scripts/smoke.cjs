@@ -88,12 +88,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
         await page.getByRole("button", { name: "Save", exact: true }).tap();
         ok("plan: a second plan replaces the week", await seen(page.getByRole("heading", { name: "This week" }), 10000));
         await page.waitForTimeout(400);
-        if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("radio", { name: "Quick" }).isVisible(); }
+        if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("button", { name: /^Add to the list/ }).isVisible(); }
       }
       await page.waitForTimeout(400);
       if (!cooked) ok("meals: a dinner's recipe opens (skipped: no dinner with a recipe)", true);
       else {
-      ok("meals: a dinner's recipe opens", await page.getByRole("radio", { name: "Quick" }).isVisible());
+      ok("meals: a dinner's recipe opens, and says it's this week's", await page.getByText("One of this week's dinners.", { exact: false }).isVisible());
       await settingsHere("a recipe from Meals");
       const nav = page.getByRole("navigation", { name: "Main" });
       ok("meals: Meals stays lit under the recipe", (await nav.getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
@@ -173,12 +173,14 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
     ok(`${tag}: no plus button at the top of Recipes`, (await page.locator("header, .sticky").getByRole("button", { name: "Add recipes" }).count()) === 0);
-    // A recipe's ingredients onto the list straight from its row: the same sheet, spices unticked below the things to buy.
-    const chiliRow = page.getByRole("button", { name: "Add Turkey chili to the list" }).first();
+    // Rows only open the recipe (no button of their own, Nov 9); Add to the list is on the recipe: the sheet lists the
+    // things to buy, and the pantry is only highlighted in Stock.
+    ok(`${tag}: recipe rows have no add-to-list button of their own`, (await page.getByRole("button", { name: /^Add .+ to the list$/ }).count()) === 0);
+    const chiliRow = page.getByRole("button", { name: /^Turkey chili/ }).first();
     for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await chiliRow.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
-    ok(`${tag}: each recipe row has an add-to-list button`, await chiliRow.isVisible());
     if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6a-recipes-overview-${tag}.png` });
     await chiliRow.tap(); await page.waitForTimeout(400);
+    await page.getByRole("button", { name: /^Add to the list/ }).tap(); await page.waitForTimeout(400);
     const chiliSheet = page.getByRole("dialog", { name: "Add to the list" });
     ok(`${tag}: it opens the add-to-list sheet for that recipe`, (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
     const turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
@@ -186,18 +188,20 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: spices and the pantry are only highlighted in Stock, not offered`, (await chiliSheet.getByText(/cumin|chili powder/i).count()) === 0 && await chiliSheet.getByText("The pantry things are highlighted in Stock.").isVisible());
     if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6c-add-to-list-${tag}.png` });
     await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+    await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(400);
     const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
     for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await tacos.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
     await tacos.tap(); await page.waitForTimeout(300);
-    ok(`${tag}: recipe screen`, (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).isVisible()));
+    ok(`${tag}: recipe screen, with Quick/Regular only in Edit`, (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).count()) === 0);
     const addBtn = await page.getByRole("button", { name: "Add to the list" }).boundingBox();
-    ok(`${tag}: Add to the list at the top of the recipe, without scrolling`, Boolean(addBtn) && addBtn.y + addBtn.height < height - 100 && addBtn.y < (await page.getByRole("radio", { name: "Quick" }).boundingBox()).y);
+    ok(`${tag}: Add to the list at the top of the recipe, without scrolling`, Boolean(addBtn) && addBtn.y + addBtn.height < height - 100);
     await settingsHere("a recipe");
     await page.screenshot({ path: `${dir}/6-recipe-${tag}.png`, fullPage: true });
     if (tag === "phone-light") {
       // Editing a recipe, and adding it to the list, when the save fails: the sheet stays with what was typed or ticked.
       await page.getByRole("button", { name: "Edit", exact: true }).tap(); await page.waitForTimeout(400);
       const edit = page.getByRole("dialog", { name: "Edit Tacos" });
+      ok("edit: Quick/Regular is chosen here", await edit.getByRole("radio", { name: "Quick" }).isVisible());
       await edit.getByPlaceholder("Double the spice for Sam").fill("A note that must survive");
       await page.route("**/api/recipes", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
       await edit.getByRole("button", { name: "Save", exact: true }).tap(); await page.waitForTimeout(800);
