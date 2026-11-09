@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, setWeekly, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, setWeekly, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -46,6 +46,39 @@ describe("the grocery list", () => {
     const { items, staples } = await loadList();
     expect(items.map((i) => i.id)).toEqual([tp.id]);
     expect(staples.length).toBeGreaterThan(0);
+  });
+});
+
+describe("adding amounts up (Nov 9)", () => {
+  it("adds amounts that share a unit, fractions included, and writes them back nicely", () => {
+    expect(addUp("1 lb", "1 lb")).toBe("2 lb");
+    expect(addUp("1", "1")).toBe("2");
+    expect(addUp("1½ lb", "1/2 lb")).toBe("2 lb");
+    expect(addUp("1 1/2 lb", "1 lb")).toBe("2½ lb");
+    expect(addUp("1/2", "1/2")).toBe("1");
+    expect(addUp("1/2 lb", "1 lb")).toBe("1½ lb");
+    expect(addUp("1/2 lb", "1/4 lb")).toBe("¾ lb");
+    expect(addUp("1 lbs", "1 pound")).toBe("2 lb");
+    expect(addUp("2 pounds", "1/2 lbs")).toBe("2½ lb");
+    expect(addUp("8 oz", "8 ounces")).toBe("16 oz");
+    expect(addUp("1 can", "1 can")).toBe("2 cans");
+    expect(addUp("1 head", "2 heads")).toBe("3 heads");
+    expect(addUp("1 bunch", "1 bunch")).toBe("2 bunches");
+  });
+  it("keeps today's behaviour when the units differ or an amount isn't one number", () => {
+    expect(addUp("1 lb", "2")).toBe("2");
+    expect(addUp("1 lb", "8 oz")).toBe("8 oz");
+    expect(addUp("", "1 lb")).toBe("1 lb");
+    expect(addUp("1 lb", "")).toBe("1 lb");
+    expect(addUp("1 medium", "1 medium")).toBe("1 medium");
+    expect(addUp("dozen", "6")).toBe("6");
+  });
+  it("adds up pounds when a second recipe needs the same thing", async () => {
+    await addItems([{ item: "sum-test ground turkey", quantity: "1 lb", for: "turkey chili" }], "Robin");
+    await addItems([{ item: "sum-test ground turkey", quantity: "1 1/2 lb", for: "tacos" }], "Robin");
+    const rows = (await loadList()).items.filter((x) => x.item === "sum-test ground turkey");
+    expect(rows.map((x) => x.quantity)).toEqual(["2½ lb"]);
+    await removeItems(rows.map((x) => x.id));
   });
 });
 
