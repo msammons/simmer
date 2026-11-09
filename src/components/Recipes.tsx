@@ -20,13 +20,14 @@ export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhea
 const NO_INGREDIENTS = "No ingredients yet · Add them";
 
 type Opens = { onOpen: (r: Recipe) => void; onAddToList: (r: Recipe) => void };
+/** `kind`: false under a Quick or Regular heading, which already says it. */
 
 /** A recipe in the collection: tap to open it, or the list button beside it to put its ingredients on the list. */
-function RecipeRow({ r, onOpen, onAddToList }: { r: Recipe } & Opens) {
-  if (!r.ingredients.length) return <Row title={r.name} subtitle={[summary(r), NO_INGREDIENTS].join(" · ")} accessory="chevron" onClick={() => onOpen(r)} />;
+function RecipeRow({ r, onOpen, onAddToList, kind = true }: { r: Recipe; kind?: boolean } & Opens) {
+  if (!r.ingredients.length) return <Row title={r.name} subtitle={[summary(r, false, kind), NO_INGREDIENTS].filter(Boolean).join(" · ")} accessory="chevron" onClick={() => onOpen(r)} />;
   return (
     <div className="flex items-center">
-      <div className="min-w-0 flex-1"><Row title={r.name} subtitle={summary(r)} onClick={() => onOpen(r)} /></div>
+      <div className="min-w-0 flex-1"><Row title={r.name} subtitle={summary(r, false, kind) || undefined} onClick={() => onOpen(r)} /></div>
       <button onClick={() => onAddToList(r)} aria-label={`Add ${r.name} to the list`}
         className="mr-3 flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent transition active:scale-90">
         <Icon name="list" className="size-[18px]" strokeWidth={2} />
@@ -36,12 +37,12 @@ function RecipeRow({ r, onOpen, onAddToList }: { r: Recipe } & Opens) {
 }
 
 /** A few of a group, and the rest one tap away, so the list stays short. */
-function Some({ header, items, onOpen, onAddToList }: { header: string; items: Recipe[] } & Opens) {
+function Some({ header, items, onOpen, onAddToList, kind = true }: { header: string; items: Recipe[]; kind?: boolean } & Opens) {
   const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
     <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
-      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} onAddToList={onAddToList} />)}
+      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} kind={kind} onOpen={onOpen} onAddToList={onAddToList} />)}
     </Group>
   );
 }
@@ -68,9 +69,9 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, free
           <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
-          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
+          <Some header="Quick" kind={false} items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Regular" kind={false} items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Kids' dinners" kind={false} items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
           <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} {...opens} />
         </>
       )}
@@ -79,8 +80,10 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, onAddToList, free
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList }: {
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, onActive, onAddToList, planned }: {
   r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onEffort: (e: Effort) => void; onActive: (a: boolean) => void; onAddToList: () => void;
+  /** It's one of this week's dinners: its groceries went on the list when it was planned. */
+  planned?: boolean;
   /** It's one of the dinners to make: Made it is one tap from here, and it comes off the list (Nov 3). */
 }) {
   const screen = useRef<HTMLDivElement>(null);
@@ -102,7 +105,8 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onEffort, on
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
       {error && <Notice>{error}</Notice>}
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
-      {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>}
+      {planned && <p className="t-sub px-1 text-muted">One of this week&apos;s dinners. What it needs went on the list when it was planned.</p>}
+      {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" variant={planned ? "secondary" : undefined} className="w-full">{planned ? "Add to the list again" : "Add to the list"}</Button>}
       <Group header="How long it takes" footer="Quick dinners are picked from the quick ones.">
         <div className="p-3"><Segmented label="How long it takes" value={r.effort} onChange={onEffort} options={[{ value: "quick", label: "Quick" }, { value: "regular", label: "Regular" }]} /></div>
       </Group>

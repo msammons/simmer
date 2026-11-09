@@ -8,7 +8,7 @@ import { STORE_NAMES } from "./Shop";
 import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { AddOneSheet, DishSheet, MealsScreen, PlanSheet } from "./Week";
+import { AddOneSheet, MealsScreen, PlanSheet } from "./Week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
@@ -65,8 +65,6 @@ export default function App() {
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
   const [planning, setPlanning] = useState(false);
   const [addingOne, setAddingOne] = useState(false);
-  const [dishAt, setDishAt] = useState<string | null>(null);
-  const dish = dishAt ? plan?.dishes.find((d) => d.id === dishAt) ?? null : null;
   const loaded = useRef(false); // the household has loaded from the server this session
 
   // The passcode was turned down (changed, or typed wrong): close everything and ask for it again. Any request can find
@@ -75,7 +73,7 @@ export default function App() {
     store.setPasscode(null);
     tellPanelSignedOut();
     setError("Wrong passcode.");
-    setSettings(false); setSheet(null); setPlanning(false); setAddingOne(false); setDishAt(null);
+    setSettings(false); setSheet(null); setPlanning(false); setAddingOne(false);
     setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
     setPhase("passcode");
   }, []);
@@ -353,7 +351,8 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={() => setPlanning(true)} onDish={(d) => setDishAt(d.id)} onAddOne={() => setAddingOne(true)} />
+          onPlan={() => setPlanning(true)} onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)}
+          onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
@@ -363,17 +362,12 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} />
+          onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onClose={() => setPlanning(false)} />}
       {addingOne && plan && <AddOneSheet plan={plan} recipes={recipes ?? []} onAdd={(d) => savePlan(d, null)} onClose={() => setAddingOne(false)} />}
-      {dish && plan && (
-        <DishSheet key={dish.id} plan={plan} d={dish} recipes={recipes ?? []} onOpen={openRecipe} onClose={() => setDishAt(null)}
-          onChange={(recipe, pinned) => changePlan({ op: "change", id: dish.id, recipe, pinned })}
-          onRemove={() => changePlan({ op: "remove", id: dish.id })} />
-      )}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);
@@ -383,7 +377,7 @@ export default function App() {
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} onSave={saveEdit} onClose={() => setSheet(null)} />}
       {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} onAdd={(buy, pantry) => addToList(toList, buy, pantry)} onClose={() => { setSheet(null); setListing(null); }} />}
       {settings && (
-        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onAddRecipes={() => { setSettings(false); setSheet("add"); }} onClose={() => setSettings(false)} />
+        <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} />
       )}
       {phase === "app" && (
         <TabBar tabs={TABS} active={root} onTab={onTab} />

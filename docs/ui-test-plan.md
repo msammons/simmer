@@ -52,7 +52,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.7 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
 | 4.8 | Meals after saving | "This week": dinners by kind (no "Quick"/"Regular" word under the header); no lunches; Plan | L |
 | 4.9 | Plan again and save | This week's dinners are replaced by the new ones; the old ones aren't suggested again soon | L |
-| 4.10 | Tap a dinner | Cook / Something else / Pick one / Remove (no Made it) | L |
+| 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off this week?" (Take it off / Cancel), no Undo after | L |
 | 4.11 | Add one more | A dinner, dessert, side or breakfast joins this week in one tap; nothing else changes | L |
 
 ## 5. Lists
@@ -65,7 +65,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 5.3a | Rows from recipes | Amounts show only pounds and plain counts ("1½ lb", "8"); no spoons, cups, cloves or can sizes; cart lines hide "Need 2" when one carton of 18 covers it | L |
 | 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
 | 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
-| 5.6 | Clear | Confirms first, then clears with Undo; Undo brings everything back | L |
+| 5.6 | Clear | Confirms first, then clears; no Undo | L |
 | 5.6b | Done shopping | Asks first ("Done at Trader Joe's? 6 things come off the list."); Cancel leaves everything; no Undo after | L |
 | 5.7 | Water, salt, spices from a recipe | Never on a list (salt/spices are highlighted in Stock) | L |
 
@@ -95,7 +95,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 7.2 | With a planned week | The week's pantry items highlighted with the amount the meals need | L |
 | 7.3 | Tap a row | Out: goes on its store's list ("On the list · Safeway"); tap again: have | L |
 | 7.4 | Add something | New row, checked, in a guessed section | L |
-| 7.5 | ⋯ → Move to … / Remove from Stock | Moves; Remove has Undo | L |
+| 7.5 | ⋯ → Move to … / Remove from Stock | Moves; Remove asks first, no Undo | L |
 
 ## 8. Everywhere
 
