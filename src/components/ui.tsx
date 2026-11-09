@@ -103,6 +103,8 @@ export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: Re
       {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. With something below the row,
           the backing stays solid behind it and fades only at the very bottom. */}
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
+      {/* Above the bar, plain background: if a pull ever drags the bar down, the gap shows that, never a color (Matt, Nov 9). */}
+      <span aria-hidden className="pointer-events-none absolute bottom-[calc(100%+env(safe-area-inset-top)+0.5rem)] left-[calc(50%-50vw)] -z-10 h-screen w-screen bg-bg" />
       <div className="flex h-11 items-center justify-between">
         <Brand />
         <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
