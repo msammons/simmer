@@ -2,15 +2,12 @@
 import { THEMES, type Theme } from "@/lib/client";
 import { Group, Row, Sheet } from "./ui";
 
-export function SettingsSheet({ theme, onTheme, onAddRecipes, onClose }: {
-  theme: Theme; onTheme: (t: Theme) => void; onAddRecipes: () => void; onClose: () => void;
+export function SettingsSheet({ theme, onTheme, onClose }: {
+  theme: Theme; onTheme: (t: Theme) => void; onClose: () => void;
 }) {
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        <Group header="Recipes">
-          <Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAddRecipes} />
-        </Group>
         <Group header="Look" footer="Light or dark follows your settings.">
           {THEMES.map((t) => (
             <Row
