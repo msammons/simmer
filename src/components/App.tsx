@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Effort, type Ingredient, type Counts, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Counts, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { STORE_NAMES } from "./Shop";
@@ -148,7 +148,6 @@ export default function App() {
     try { gotRecipes((await api.recipeChange(c)).recipes); }
     catch (e) { failed(setRecipesError)(e); refreshRecipes(); }
   }
-  const setEffort = (r: Recipe, effort: Effort) => recipeChange({ op: "effort", id: r.id, effort }, (x) => ({ ...x, effort }));
   const setActive = (r: Recipe, active: boolean) => recipeChange({ op: "active", id: r.id, active }, (x) => ({ ...x, active }));
   // Saves from a sheet answer with the problem, if any, so the sheet stays open with what was entered and says what went
   // wrong; on success (null) the sheet closes itself. A turned-down passcode has already closed everything, so it answers null.
@@ -358,11 +357,11 @@ export default function App() {
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? plan?.freezer ?? []} recipes={recipes} error={error ?? recipesError}
-          onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} onAddToList={(r) => { setListing(r.id); setSheet("tolist"); }} />
+          onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onEffort={(e) => setEffort(open, e)} onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} />
+          onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
