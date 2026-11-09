@@ -8,7 +8,8 @@ import { STORE_NAMES } from "./Shop";
 import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { AddOneSheet, MealsScreen, PlanSheet } from "./Week";
+import { AddMealSheet, MealsScreen, PlanSheet } from "./Week";
+import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
@@ -182,7 +183,8 @@ export default function App() {
       if (!(e instanceof AuthError)) setWeekError(errorText(e));
     }
   }, []);
-  const onWeek = phase === "app" && top.kind === "week";
+  // A recipe's page reads it too: it offers "Add to this week" only when the recipe isn't planned.
+  const onWeek = phase === "app" && (top.kind === "week" || top.kind === "recipe");
   useEffect(() => {
     if (!onWeek) return;
     queueMicrotask(refreshPlan);
@@ -191,11 +193,16 @@ export default function App() {
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [onWeek, visit, refreshPlan]);
-  /** The plan as the server answered it, and a note for what went on the grocery list. */
-  function gotPlan(p: PlanData & { added: number }) {
+  /** The plan as the server answered it, and a note for what went on the grocery list (naming the meal when one was added). */
+  function gotPlan(p: PlanData & { added: number }, meal?: { name: string; groceries: boolean }) {
     setPlan(p); store.setPlan(p); setWeekError(null);
-    setWeekNote(p.added ? `Added ${p.added} thing${p.added === 1 ? "" : "s"} to the grocery list.` : null);
+    const things = `${p.added} thing${p.added === 1 ? "" : "s"}`;
+    const note = meal
+      ? `Added ${meal.name}.${p.added ? ` ${things} went on the list.` : meal.groceries ? " Its groceries were already on the list." : ""}`
+      : p.added ? `Added ${things} to the grocery list.` : null;
+    setWeekNote(note);
     if (p.added) refreshList(); // the new things show on Lists and Stock right away
+    return note ?? undefined;
   }
   /** The next shop's dinners (the plan sheet, with counts) or one more for this week (no counts); the sheet closes itself
    * on success (null) and shows the problem otherwise. */
@@ -205,6 +212,15 @@ export default function App() {
       gotPlan(await api.savePlan(dishes, [], counts, me));
       return null;
     } catch (e) { return problemOf(e); }
+  }
+  /** One meal added to this week (Add a meal, or a recipe's "Add to this week"); the note names it. */
+  async function addMeal(d: NewDish): Promise<{ problem: string | null; note?: string }> {
+    const r = recipeOf(d.recipe);
+    try {
+      ++planChanges.current;
+      const p = await api.savePlan([d], [], null, me);
+      return { problem: null, note: gotPlan(p, { name: r?.name ?? d.recipe, groceries: Boolean(r?.ingredients.length) }) };
+    } catch (e) { return { problem: problemOf(e) }; }
   }
   /** One planned thing changed. Made comes off at once, before the answer. */
   async function changePlan(c: PlanChange): Promise<string | null> {
@@ -361,12 +377,13 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} error={error ?? recipesError} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} />
+          onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
+          onAddToWeek={kindOf(open) ? () => addMeal({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onClose={() => setPlanning(false)} />}
-      {addingOne && plan && <AddOneSheet plan={plan} recipes={recipes ?? []} onAdd={(d) => savePlan(d, null)} onClose={() => setAddingOne(false)} />}
+      {addingOne && plan && <AddMealSheet plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onClose={() => setAddingOne(false)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);
