@@ -150,7 +150,7 @@ export async function addItem(text: string, by: string, forWhat = "", filing?: {
   const { items } = await loadList();
   const same = items.find((x) => !x.checked && norm(x.item) === norm(item));
   if (same) {
-    const q = /^\d+$/.test(same.quantity) && /^\d+$/.test(quantity) ? String(Number(same.quantity) + Number(quantity)) : quantity || same.quantity;
+    const q = addUp(same.quantity, quantity);
     if (q !== same.quantity) await setCells(same.id, { quantity: q });
     return { ...same, quantity: q };
   }
@@ -182,7 +182,52 @@ async function appendItems(rows: Item[]) {
 }
 const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
 
-const addUp = (a: string, b: string) => (/^\d+$/.test(a) && /^\d+$/.test(b) ? String(Number(a) + Number(b)) : b || a);
+// ---- adding amounts up
+
+const GLYPHS: Record<string, number> = { "½": 1 / 2, "¼": 1 / 4, "¾": 3 / 4, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 1 / 8 };
+/** Units that can be added up, each spelling → one name ("lbs", "pounds" → lb). Others (a "medium" onion) aren't summed. */
+const UNITS: Record<string, string> = {
+  lb: "lb", lbs: "lb", pound: "lb", pounds: "lb", oz: "oz", ounce: "oz", ounces: "oz",
+  can: "can", cans: "can", head: "head", heads: "head", bunch: "bunch", bunches: "bunch", bag: "bag", bags: "bag",
+  jar: "jar", jars: "jar", box: "box", boxes: "box", bottle: "bottle", bottles: "bottle", package: "package", packages: "package",
+  pkg: "package", pkgs: "package", loaf: "loaf", loaves: "loaf", stick: "stick", sticks: "stick", clove: "clove", cloves: "clove",
+  cup: "cup", cups: "cup", tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp", tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
+  pint: "pint", pints: "pint", quart: "quart", quarts: "quart", gallon: "gallon", gallons: "gallon", dozen: "dozen",
+};
+const PLURAL: Record<string, string> = { bunch: "bunches", box: "boxes", loaf: "loaves" };
+const SAME_PLURAL = new Set(["lb", "oz", "tbsp", "tsp", "dozen"]);
+
+/** "1½ lb", "1 1/2 lbs", "1/2 pound", "2" → { n, unit } (unit "" for a plain count); null when it isn't one number and one known unit. */
+export function amountOf(q: string): { n: number; unit: string } | null {
+  const m = q.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)?\s*(?:(\d+)\/(\d+)|([½¼¾⅓⅔⅛]))?\s*([a-z]+\.?)?$/);
+  if (!m || (!m[1] && !m[2] && !m[4])) return null;
+  if (m[1] && m[2] && /\./.test(m[1])) return null; // "1.5 1/2"
+  const n = Number(m[1] ?? 0) + (m[2] ? Number(m[2]) / Number(m[3]) : 0) + (m[4] ? GLYPHS[m[4]] : 0);
+  if (!Number.isFinite(n) || (m[2] && !Number(m[3]))) return null;
+  const word = (m[5] ?? "").replace(/\.$/, "");
+  if (word && !UNITS[word]) return null;
+  return { n, unit: word ? UNITS[word] : "" };
+}
+/** 2.5 → "2½", 0.5 → "½", 2 → "2"; other fractions as decimals ("1.38"). */
+function numberText(n: number): string {
+  const whole = Math.floor(n + 1e-9), rest = n - whole;
+  if (rest < 1e-6) return String(whole);
+  const glyph = Object.entries(GLYPHS).find(([, v]) => Math.abs(v - rest) < 1e-6)?.[0];
+  if (glyph) return `${whole || ""}${glyph}`;
+  return String(Math.round(n * 100) / 100);
+}
+
+/**
+ * Two amounts of the same thing on the list, added up when they share a unit: "1 lb" + "1 lb" → "2 lb", "1½ lb" + "1/2 lb"
+ * → "2 lb", "1" + "1" → "2" (Nov 9: pounds stayed "1 lb"). Otherwise the newer amount, or the one there is.
+ */
+export function addUp(a: string, b: string): string {
+  const x = amountOf(a), y = amountOf(b);
+  if (!x || !y || x.unit !== y.unit) return b || a;
+  const n = x.n + y.n;
+  const unit = !x.unit ? "" : SAME_PLURAL.has(x.unit) || n <= 1 ? x.unit : PLURAL[x.unit] ?? `${x.unit}s`;
+  return [numberText(n), unit].filter(Boolean).join(" ");
+}
 
 /**
  * Many items at once (a recipe's ingredients, a planned week): the list is read once, each item merges into the same

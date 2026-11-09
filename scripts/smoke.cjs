@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
 // This week, no lunches, no Made it), the tabs, Settings on every screen, Stock (Every week things), Lists (All, and Safeway's in-store
-// checklist when the helper can't be reached), the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// checklist when the helper can't be reached), Add a meal and a recipe's Add to this week, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -39,7 +39,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
 
     if (tag === "phone-light") {
       // Plan by number (Nov 3): the counts, then the picks, then the lunches, and save.
-      await page.getByRole("button", { name: "Plan", exact: true }).first().tap(); await page.waitForTimeout(500);
+      await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
       ok("plan: asks how many", await page.getByRole("heading", { name: "How many" }).isVisible());
       ok("plan: no lunches to plan", (await page.getByRole("dialog").last().innerText()).search(/lunch/i) < 0);
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
@@ -103,6 +103,60 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await nav.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(400);
       ok("meals: the tab starts fresh", await page.getByRole("heading", { name: "Meals" }).isVisible());
       }
+
+      // Add a meal (Nov 9, "Search and pick"), and a recipe's "Add to this week". Turkey chili is the sample's only regular
+      // dinner: take it off first, so it can be added back from its page and then from Add a meal.
+      const tabs = page.getByRole("navigation", { name: "Main" });
+      const takeChiliOff = async () => {
+        await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
+        const off = page.getByRole("button", { name: "Take Turkey chili off this week" });
+        if (await off.count()) {
+          await off.first().tap(); await page.waitForTimeout(300);
+          await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(1000);
+        }
+      };
+      const chiliPlanned = () => page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) }).getByRole("button", { name: /^Turkey chili/ });
+      await takeChiliOff();
+      // The recipe's page: not planned, so "Add to this week" leads and "Just add to the list" is the quieter one.
+      await tabs.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(600);
+      await page.getByRole("button", { name: /^Turkey chili/ }).first().tap(); await page.waitForTimeout(500);
+      const toWeek = page.getByRole("button", { name: "Add to this week" });
+      ok("recipe: not planned, it offers Add to this week and Just add to the list", (await toWeek.isVisible()) && (await page.getByRole("button", { name: "Just add to the list" }).isVisible()));
+      await page.screenshot({ path: `${dir}/8a-recipe-add-to-week.png` });
+      await toWeek.tap();
+      ok("recipe: Add to this week says so, naming it", await seen(page.getByText(/^Added Turkey chili\./), 8000));
+      ok("recipe: and then it's planned (Add to the list again)", await seen(page.getByRole("button", { name: "Add to the list again" }), 3000) && (await toWeek.count()) === 0);
+      await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
+      await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
+      ok("recipe: it's on Meals under Regular", (await chiliPlanned().count()) === 1);
+      // Add a meal: suggestions first, every recipe with its kind, a planned one shown as This week and not addable.
+      await takeChiliOff();
+      await page.getByRole("button", { name: /^Add a meal/ }).tap(); await page.waitForTimeout(500);
+      const addSheet = page.getByRole("dialog", { name: "Add a meal" });
+      const box = addSheet.getByLabel("Find a recipe, or type one");
+      ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));
+      ok("add a meal: Suggested first, with the regular dinner and its reason", (await addSheet.getByText("Suggested", { exact: true }).isVisible()) && (await addSheet.locator("section").first().getByRole("button", { name: /^Turkey chili\s*Regular dinner/ }).count()) === 1);
+      ok("add a meal: then all the recipes, each with its kind", (await addSheet.getByText("All recipes", { exact: true }).isVisible()) && (await addSheet.getByRole("button", { name: /^Tacos\s*Quick dinner/ }).count()) >= 1);
+      const thisWeek = addSheet.getByRole("button", { name: /This week$/ });
+      ok("add a meal: a planned recipe shows This week and can't be added", (await thisWeek.count()) > 0 && (await thisWeek.first().isDisabled()));
+      await page.screenshot({ path: `${dir}/8b-add-a-meal.png` });
+      await page.setViewportSize({ width: 320, height: 640 }); await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/8c-add-a-meal-320.png` });
+      ok("add a meal: fits 320 wide", (await addSheet.evaluate((el) => el.scrollWidth - el.clientWidth)) <= 0);
+      await box.fill("chili"); await page.waitForTimeout(300);
+      ok("add a meal: typing finds recipes, and offers the words as a meal", (await addSheet.getByRole("button", { name: /^Turkey chili/ }).count()) === 1 && (await addSheet.getByRole("button", { name: /^Add “chili”\s*No recipe · counts as a quick dinner/ }).isVisible()));
+      await page.screenshot({ path: `${dir}/8d-add-a-meal-search-320.png` });
+      await page.setViewportSize({ width, height }); await page.waitForTimeout(300);
+      await addSheet.getByRole("button", { name: /^Turkey chili/ }).tap();
+      ok("add a meal: picking one closes the sheet and the note names it", await seen(page.getByText(/^Added Turkey chili\. (\d+ things? went on the list|Its groceries were already on the list)\./), 8000) && (await addSheet.count()) === 0);
+      ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
+      await page.getByRole("button", { name: /^Add a meal/ }).tap(); await page.waitForTimeout(500);
+      ok("add a meal: now it shows This week", await addSheet.getByRole("button", { name: /^Turkey chili.*This week$/ }).first().isDisabled());
+      await addSheet.getByLabel("Find a recipe, or type one").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
+      await addSheet.getByRole("button", { name: /^Add “Dinner at Grandma's”/ }).tap();
+      ok("add a meal: typed words go in as a quick dinner", await seen(page.getByText(/^Added Dinner at Grandma's\./), 8000)
+        && (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) }).getByText("Dinner at Grandma's").count()) === 1);
+      await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
     }
 
     // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).
@@ -180,7 +234,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await chiliRow.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
     if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6a-recipes-overview-${tag}.png` });
     await chiliRow.tap(); await page.waitForTimeout(400);
-    await page.getByRole("button", { name: /^Add to the list/ }).tap(); await page.waitForTimeout(400);
+    await page.getByRole("button", { name: /add to the list/i }).first().tap(); await page.waitForTimeout(400);
     const chiliSheet = page.getByRole("dialog", { name: "Add to the list" });
     ok(`${tag}: it opens the add-to-list sheet for that recipe`, (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
     const turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
