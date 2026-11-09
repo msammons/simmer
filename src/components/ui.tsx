@@ -150,10 +150,12 @@ export function IconBadge({ icon, size = "md" }: { icon: IconName; size?: "md" |
 }
 
 /** One row of a Group. With onClick or href it's a button; accessory "chevron" for drill-in, "check" for a picked choice. */
-export function Row({ icon, lead, title, subtitle, value, accessory, onClick, href, role, checked }: {
+export function Row({ icon, lead, title, subtitle, value, accessory, onClick, href, role, checked, disabled }: {
   icon?: IconName; lead?: ReactNode; title: ReactNode; subtitle?: ReactNode; value?: ReactNode;
   accessory?: "chevron" | "check" | "external" | ReactNode; onClick?: () => void; href?: string;
   role?: "radio" | "checkbox"; checked?: boolean;
+  /** Shown but not tappable (Add a meal: a recipe already planned this week). */
+  disabled?: boolean;
 }) {
   const inner = (
     <>
@@ -172,6 +174,7 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
   );
   const cls = "flex w-full items-center gap-3 px-4 py-3 text-left";
   if (href) return <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer" className={`${cls} active:bg-sunk`}>{inner}</a>;
+  if (disabled) return <button disabled className={`${cls} opacity-55`}>{inner}</button>;
   if (onClick) return <button onClick={onClick} role={role} aria-checked={role ? Boolean(checked) : undefined} className={`${cls} active:bg-sunk`}>{inner}</button>;
   return <div className={cls}>{inner}</div>;
 }

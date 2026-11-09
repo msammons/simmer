@@ -72,12 +72,21 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, onAddToList, planned }: {
+export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, onAddToList, planned, onAddToWeek }: {
   r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
-  /** It's one of the dinners to make: Made it is one tap from here, and it comes off the list (Nov 3). */
+  /** Puts it on this week's plan with its groceries, as Add a meal does (absent for snacks and sauces, never planned). */
+  onAddToWeek?: () => Promise<{ problem: string | null; note?: string }>;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState<{ problem: string | null; note?: string } | null>(null);
+  async function addToWeek() {
+    if (!onAddToWeek || adding) return;
+    setAdding(true); setAdded(null);
+    setAdded(await onAddToWeek());
+    setAdding(false);
+  }
   const screen = useRef<HTMLDivElement>(null);
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
   useEffect(() => {
@@ -97,8 +106,16 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
       {error && <Notice>{error}</Notice>}
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
-      {planned && <p className="t-sub px-1 text-muted">One of this week&apos;s dinners. What it needs went on the list when it was planned.</p>}
-      {r.ingredients.length > 0 && <Button onClick={onAddToList} icon="list" variant={planned ? "secondary" : undefined} className="w-full">{planned ? "Add to the list again" : "Add to the list"}</Button>}
+      {added?.problem && <Notice>{added.problem}</Notice>}
+      {added?.note && <Notice tone="info">{added.note}</Notice>}
+      {planned && !added?.note && <p className="t-sub px-1 text-muted">One of this week&apos;s dinners. What it needs went on the list when it was planned.</p>}
+      {/* Not planned: putting it on this week is the main thing (Nov 9); just its groceries is the quieter choice. */}
+      <div className="space-y-3 empty:hidden">
+        {!planned && onAddToWeek && <Button onClick={addToWeek} disabled={adding} icon="calendarPlus" className="w-full">{adding ? "Adding…" : "Add to this week"}</Button>}
+        {r.ingredients.length > 0 && (planned || onAddToWeek
+          ? <Button onClick={onAddToList} icon="list" variant="secondary" className="w-full">{planned ? "Add to the list again" : "Just add to the list"}</Button>
+          : <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>)}
+      </div>
       {r.ingredients.length ? (
         <>
           {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} />)}</Group>}

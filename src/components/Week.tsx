@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { dateIn, type Counts, type Dish, type Kind, type NewDish, type PlanData, type Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
-import { KIND_NAMES, KINDS, kindOf, MAX_COUNT, pickMany, somethingElse, type Choice, type Context } from "@/lib/week";
+import { KIND_NAMES, KINDS, kindOf, MAX_COUNT, pickMany, rank, somethingElse, type Choice, type Context } from "@/lib/week";
 import { Check } from "./Shop";
 import { Icon, type IconName } from "./icons";
 import { summary } from "./Recipes";
@@ -67,7 +67,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
           })}
           <Group>
             {!dishes.length && <Row title="No dinners this week" />}
-            <Row icon="plus" title="Add one more" subtitle="A dinner, a dessert, a side or a breakfast" accessory="chevron" onClick={onAddOne} />
+            <Row icon="plus" title="Add a meal" subtitle="A recipe, or type one" accessory="chevron" onClick={onAddOne} />
           </Group>
           <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan the next shop</Button>
         </>
@@ -86,9 +86,12 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
   );
 }
 
-// ---- Pick a recipe (Plan, Add one more)
+// ---- Pick a recipe (the Plan sheet's "pick it yourself")
 
-/** Pick one she already knows: from her recipes of that kind (or any, searching), or typed ("Dinner with G&G"). */
+/**
+ * Pick one she already knows: from her recipes of that kind (or any, searching), or typed ("Dinner with G&G"). A
+ * searched recipe of another kind is filed under its own kind by the Plan sheet; typed words keep the slot's.
+ */
 function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
@@ -108,36 +111,71 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
   );
 }
 
-// ---- Add one more (any time)
+// ---- Add a meal (any time)
 
-/** One more of any kind for this week, the best that fits, in one tap. */
-export function AddOneSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dishes: NewDish[]) => Promise<string | null>; onClose: () => void }) {
+/** "Quick dinner", "Dessert": what a recipe goes in as, for a row's subtitle. */
+export const kindName = (k: Kind) => ONE_NAME[k].replace(/^An? /, "").replace(/^./, (c) => c.toUpperCase());
+/** A recipe's row line in Add a meal: its kind, then its minutes. */
+const kindLine = (r: Recipe, k: Kind) => [kindName(k), r.minutes && `${r.minutes} min`].filter(Boolean).join(" · ");
+/** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */
+const plannable = (r: Recipe) => kindOf(r) !== null;
+
+/**
+ * Add a meal to this week (Nov 9, "Search and pick"): one sheet. With nothing typed, a few best picks for this week (the
+ * top quick and regular dinner, and whatever the freezer lifts), then every recipe A–Z; typing searches, and the last row
+ * adds the words as a meal with no recipe (a quick dinner). A recipe goes in under its own kind; one already planned
+ * shows "This week" and can't go in twice.
+ */
+export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onClose: () => void }) {
+  const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [pin, setPin] = useState<Kind | null>(null);
-  const ctx = contextFor(plan, recipes);
-  const planned = plan.dishes.map((d) => d.recipe);
-  async function add(dishes: NewDish[]) {
+  const planned = useMemo(() => new Set(plan.dishes.map((d) => d.recipe)), [plan.dishes]);
+  const suggested = useMemo(() => {
+    const ctx = contextFor(plan, recipes);
+    const quick = rank("quick", [...planned], ctx), regular = rank("regular", [...planned], ctx);
+    const out = [quick[0], regular[0]].filter(Boolean);
+    const frozen = [...quick, ...regular].filter((o) => o.why.startsWith("Uses the") && !out.includes(o)).sort((a, b) => b.score - a.score);
+    return [...out, ...frozen.slice(0, 2)];
+  }, [plan, recipes, planned]);
+  const term = q.trim();
+  const all = useMemo(() => recipes.filter((r) => r.active && plannable(r)).sort((a, b) => a.name.localeCompare(b.name)), [recipes]);
+  const found = useMemo(() => (term ? searchRecipes(recipes, term).filter(plannable) : []), [recipes, term]);
+  async function add(dish: NewDish) {
     if (busy) return;
     setBusy(true); setProblem(null);
-    const bad = await onAdd(dishes);
+    const bad = await onAdd(dish);
     if (!bad) return onClose();
     setProblem(bad); setBusy(false);
   }
-  const status = busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>;
+  const row = (r: Recipe, sub?: string) => {
+    const k = kindOf(r)!;
+    const here = planned.has(r.id);
+    return <Row key={r.id} title={r.name} subtitle={here ? kindName(k) : sub || kindLine(r, k)} value={here ? "This week" : undefined} disabled={here}
+      onClick={here ? undefined : () => add({ kind: k, recipe: r.id, pinned: true })} />;
+  };
   return (
-    <Sheet label="Add one more" title="Add one more" onClose={onClose}>
+    <Sheet label="Add a meal" title="Add a meal" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        {!pin && status}
-        <Group>
-          {KINDS.map((k) => {
-            const top = pickMany({ [k]: 1 }, planned, ctx)[0];
-            return <Row key={k} title={ONE_NAME[k]} subtitle={top ? mealName(top.recipe, recipes) : NOTHING_ELSE} accessory="chevron"
-              onClick={() => (top ? add([{ kind: k, recipe: top.recipe, pinned: false }]) : setPin(k))} />;
-          })}
-        </Group>
+        {busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>}
+        {/* No autofocus: on a phone the keyboard would cover the suggestions. */}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe, or type one" enterKeyHint="search"
+          className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
+        {term ? (
+          <Group>
+            {found.slice(0, 30).map((r) => row(r))}
+            <Row icon="pencil" title={`Add “${term.slice(0, 80)}”`} subtitle="No recipe · counts as a quick dinner" onClick={() => add({ kind: "quick", recipe: term.slice(0, 80), pinned: true })} />
+          </Group>
+        ) : (
+          <>
+            {suggested.length > 0 && <Group header="Suggested">{suggested.map((o) => row(o.recipe, [kindName(kindOf(o.recipe)!), o.why].filter(Boolean).join(" · ")))}</Group>}
+            <Group header="All recipes">
+              {all.map((r) => row(r))}
+              {!all.length && <Row title="No recipes yet" subtitle="Type one above, or add recipes" />}
+            </Group>
+          </>
+        )}
       </div>
-      {pin && <PinSheet kind={pin} recipes={recipes} status={status} onPick={(id) => add([{ kind: pin, recipe: id, pinned: true }])} onClose={() => setPin(null)} />}
     </Sheet>
   );
 }
@@ -296,8 +334,11 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
       <div className="pb-2">{body}</div>
       {pinFor && pinKind && (
         <PinSheet kind={pinKind} recipes={recipes} onClose={() => setPinFor(null)} onPick={(recipe) => {
-          if ("key" in pinFor) setPick(pinFor.key, { recipe, pinned: true, why: "", nothing: false });
-          else setPicks((ps) => [...ps, keyed({ kind: pinFor.kind, recipe, why: "" }, true)]);
+          // A recipe goes under its own kind (a searched dessert isn't a quick dinner); typed words keep the slot's.
+          const r = recipes.find((x) => x.id === recipe);
+          const kind = (r && kindOf(r)) || pinKind;
+          if ("key" in pinFor) setPick(pinFor.key, { recipe, kind, pinned: true, why: "", nothing: false });
+          else setPicks((ps) => [...ps, keyed({ kind, recipe, why: "" }, true)]);
           setNone(null); setPinFor(null);
         }} />
       )}
