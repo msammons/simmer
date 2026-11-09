@@ -353,7 +353,7 @@ export default function App() {
   const panel = usePanelActivity(phase === "app" && framed());
 
   return (
-    <div id="scroller" className="h-full overflow-y-auto overscroll-y-contain">
+    <div id="scroller" className="h-full overflow-y-auto overscroll-y-none">
     <main className="mx-auto min-h-[calc(100%+1px)] w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
       {phase === "boot" && <Splash />}
       {phase === "passcode" && (
