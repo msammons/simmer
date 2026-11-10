@@ -57,7 +57,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("plan: and says what went on the list", await seen(page.getByText(/^Planned the next shop\./), 3000));
       ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       const quickGroup = page.locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
-      if (!(await quickGroup.count())) { await page.getByRole("button", { name: "Quick", exact: true }).tap(); await seen(quickGroup, 8000); }
+      ok("meals: every kind shows, empty ones with Add one, and no chips", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Dessert", exact: true }) }).getByRole("button", { name: /^Add (one|another)$/ }).count()) === 1 && (await page.getByText("Also add").count()) === 0);
       ok("meals: each dinner has Something else and take-it-off, each kind Add another", (await quickGroup.getByRole("button", { name: /^Something else instead of/ }).count()) >= 1 && (await quickGroup.getByRole("button", { name: "Add another" }).count()) === 1);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // Add another: Simmer's next idea of that kind goes on at once, named in the note.
