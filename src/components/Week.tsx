@@ -91,7 +91,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
  * Pick one of her recipes: those of that kind, or any, searching. Recipes only (Matt, Nov 10: a meal added as just words
  * read oddly); a searched recipe of another kind is filed under its own kind by the Plan sheet.
  */
-function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onClose: () => void }) {
+function PinSheet({ kind, recipes, status, onPick, onRecipes, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onRecipes: () => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
   return (
@@ -102,7 +102,7 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
           {found.map((r) => <Row key={r.id} title={r.name} onClick={() => onPick(r.id)} />)}
-          {!found.length && <Row title={q.trim() ? `No recipe called “${q.trim()}”` : "No recipes of this kind yet"} subtitle="Add it on the Recipes tab" />}
+          {!found.length && <ToRecipes missing={q.trim() ? `No recipe called “${q.trim()}” yet` : "No recipes of this kind yet"} onClick={onRecipes} />}
         </Group>
       </div>
     </Sheet>
@@ -110,6 +110,11 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
 }
 
 // ---- Add a meal (any time)
+
+/** When the recipe isn't there: a way straight to adding it on the Recipes tab (Matt, Nov 10), not just a pointer to it. */
+function ToRecipes({ missing, onClick }: { missing: string; onClick: () => void }) {
+  return <Row icon="plus" title="Add a recipe" subtitle={missing} accessory="chevron" onClick={onClick} />;
+}
 
 /** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */
 const plannable = (r: Recipe) => kindOf(r) !== null;
@@ -120,7 +125,7 @@ const plannable = (r: Recipe) => kindOf(r) !== null;
  * searches. Recipes only (Nov 10). A recipe goes in under its own kind; one already planned shows "This week" and can't
  * go in twice.
  */
-export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onClose: () => void }) {
+export function AddMealSheet({ plan, recipes, onAdd, onRecipes, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onRecipes: () => void; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -159,7 +164,7 @@ export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData
         {term ? (
           <Group>
             {found.slice(0, 30).map((r) => row(r))}
-            {!found.length && <Row title={`No recipe called “${term.slice(0, 80)}”`} subtitle="Add it on the Recipes tab" />}
+            {!found.length && <ToRecipes missing={`No recipe called “${term.slice(0, 80)}” yet`} onClick={onRecipes} />}
           </Group>
         ) : (
           <>
@@ -167,7 +172,7 @@ export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData
             {KINDS.filter((k) => all.some((r) => kindOf(r) === k)).map((k) => (
               <Group key={k} header={KIND_NAMES[k]}>{all.filter((r) => kindOf(r) === k).map((r) => row(r))}</Group>
             ))}
-            {!all.length && <Group><Row title="No recipes yet" subtitle="Add them on the Recipes tab" /></Group>}
+            {!all.length && <Group><ToRecipes missing="No recipes yet" onClick={onRecipes} /></Group>}
           </>
         )}
       </div>
@@ -215,7 +220,7 @@ type Picked = Choice & { key: string; pinned: boolean; skipped: string[]; nothin
  * remove, one more). Saving replaces this week's dinners (Nov 3: nothing is ticked off as made; the food bought is what
  * gets cooked). This week's dinners count as just made, so they come back only when nothing else fits. Lunches aren't planned: they're Every week things in Stock.
  */
-export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; recipes: Recipe[]; onSave: (dishes: NewDish[], counts: Counts) => Promise<string | null>; onClose: () => void }) {
+export function PlanSheet({ plan, recipes, onSave, onRecipes, onClose }: { plan: PlanData; recipes: Recipe[]; onSave: (dishes: NewDish[], counts: Counts) => Promise<string | null>; onRecipes: () => void; onClose: () => void }) {
   const [page, setPage] = useState(0);
   const [counts, setCounts] = useState<Counts>(() => ({ ...plan.counts }));
   const [trips, setTrips] = useState({ traderJoes: plan.trips.traderJoes, costco: plan.trips.costco });
@@ -223,6 +228,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
   const [pinFor, setPinFor] = useState<{ key: string } | { kind: Kind } | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false); // going to Recipes from a pick, which ends this plan unsaved: asks first
   const ctx = contextFor(plan, recipes, trips);
   const ids = () => [...plan.dishes.map((d) => d.recipe), ...picks.map((p) => p.recipe)];
   const seq = useRef(0); // tells picks apart, even two of the same
@@ -340,7 +346,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
     {/* Beside the Plan sheet, never inside it: inside, it was laid out within the moving sheet (the search box landed in
         the wrong place and the sheet behind kept scrolling). */}
     {pinFor && pinKind && (
-        <PinSheet kind={pinKind} recipes={recipes} onClose={() => setPinFor(null)} onPick={(recipe) => {
+        <PinSheet kind={pinKind} recipes={recipes} onRecipes={() => setLeaving(true)} onClose={() => setPinFor(null)} onPick={(recipe) => {
           // A recipe goes under its own kind (a searched dessert isn't a quick dinner).
           const r = recipes.find((x) => x.id === recipe);
           const kind = (r && kindOf(r)) || pinKind;
@@ -348,6 +354,15 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
           else setPicks((ps) => [...ps, keyed({ kind, recipe, why: "" }, true)]);
           setPinFor(null);
         }} />
+    )}
+    {leaving && (
+      <Sheet label="Leave planning" title="Leave planning?" onClose={() => setLeaving(false)}>
+        <div className="space-y-3 pb-2">
+          <p className="t-sub text-muted">The dinners picked so far won&apos;t be saved. This week stays as it is.</p>
+          <Button className="w-full" onClick={onRecipes}>Go to Recipes</Button>
+          <Button variant="secondary" className="w-full" onClick={() => setLeaving(false)}>Keep planning</Button>
+        </div>
+      </Sheet>
     )}
     </>
   );
