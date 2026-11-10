@@ -9,6 +9,7 @@ import { nameWords, PAGE, searchWords } from "@/lib/safeway-helper.mjs";
 import { addedFor, buyAmount, cartTotal, money, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, Notice } from "./ui";
+import manifest from "../../extension-working/manifest.json";
 
 export const cartUrl = () => `${PAGE.site}${PAGE.cartPath}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -18,7 +19,7 @@ export function UpdateNotice() {
   return (
     <Notice tone="info">
       Simmer in Chrome needs an update.{" "}
-      <a className="font-semibold text-accent" href="/simmer-helper.zip" download>Get the new one</a>, open it, put what&apos;s inside in place of the old Simmer folder, then press reload on Simmer in Chrome&apos;s extensions page.
+      <a className="font-semibold text-accent" href={`/simmer-helper-v${manifest.version}.zip`} download>Get the new one</a>, open it, put what&apos;s inside in place of the old Simmer folder, then press reload on Simmer in Chrome&apos;s extensions page.
     </Notice>
   );
 }

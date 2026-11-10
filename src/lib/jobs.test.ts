@@ -212,7 +212,8 @@ describe("helperOutdated", () => {
     expect(helperOutdated(h("0.6.1"))).toBe(true);
     expect(helperOutdated(h("1.0.0"))).toBe(true);
     expect(helperOutdated(h(HELPER_VERSION))).toBe(false);
-    expect(helperOutdated(h("9.0.0"))).toBe(false);
+    expect(helperOutdated(h("99.1.1"))).toBe(false);
+    expect(helperOutdated(h("1.3.0"))).toBe(true); // the last version before date versions
     expect(helperOutdated(null)).toBe(false);
   });
   it("reads date versions, a same-day release included", () => {
