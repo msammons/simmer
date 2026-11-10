@@ -100,8 +100,7 @@ body {
 }
 
 body {
-  /* A faint wash of the accent at the top, so the glass has something to show through. */
-  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) var(--bg) no-repeat;
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
@@ -172,4 +171,12 @@ button, a, [role="button"] {
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; }
+}
+
+/*
+ * A faint wash of the brand color at the top of the list, moving with it: when a pull stretches the list down, the gap
+ * opened above it is the plain background (Matt, Nov 9).
+ */
+#scroller {
+  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) 0 0 / 100% 100dvh no-repeat local;
 }
