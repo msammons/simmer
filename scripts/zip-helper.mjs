@@ -1,6 +1,7 @@
-// Packs the Chrome helper (extension-working/) into public/simmer-helper.zip before every build, so Simmer always offers the
-// helper that matches it (Simmer says when the computer's copy is older). The zip holds one folder, "Simmer".
-import { readdir, readFile, writeFile } from "node:fs/promises";
+// Packs the Chrome helper (extension-working/) into public/simmer-helper-v<version>.zip before every build, so Simmer always
+// offers the helper that matches it (Simmer says when the computer's copy is older). The zip holds one folder, "Simmer".
+// Versions are the release date, YY.M.D (26.11.10; a second release that day 26.11.10.1), named in the file too.
+import { readdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 
 const dir = new URL("../extension-working/", import.meta.url);
@@ -32,5 +33,10 @@ const size = central.reduce((n, b) => n + b.length, 0);
 const end = Buffer.alloc(22);
 end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(names.length, 8); end.writeUInt16LE(names.length, 10);
 end.writeUInt32LE(size, 12); end.writeUInt32LE(offset, 16);
-await writeFile(new URL("../public/simmer-helper.zip", import.meta.url), Buffer.concat([...local, ...central, end]));
-console.log(`simmer-helper.zip: ${names.length} files`);
+const { version } = JSON.parse(await readFile(new URL("manifest.json", dir), "utf8"));
+const pub = new URL("../public/", import.meta.url);
+// Only this version's zip: an older one left in public/ would be served too.
+for (const f of await readdir(pub)) if (/^simmer-helper.*\.zip$/.test(f)) await unlink(new URL(f, pub));
+const file = `simmer-helper-v${version}.zip`;
+await writeFile(new URL(file, pub), Buffer.concat([...local, ...central, end]));
+console.log(`${file}: ${names.length} files`);
