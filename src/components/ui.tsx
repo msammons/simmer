@@ -34,7 +34,11 @@ export function Brand({ size = "sm" }: { size?: "sm" | "md" }) {
     <span className={`inline-flex items-center ${s[2]}`}>
       {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG; next/image adds nothing here */}
       <img src="/icon.svg" alt="" className={`${s[0]} shadow-[0_4px_14px_color-mix(in_srgb,var(--g2)_30%,transparent)]`} />
-      <span className={`font-brand font-extrabold leading-none tracking-[-0.03em] text-ink ${s[1]}`}>Simmer</span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className={`font-brand font-extrabold leading-none tracking-[-0.03em] text-ink ${s[1]}`}>Simmer</span>
+        {/* Still being tried out (Matt, Nov 10). */}
+        <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-wider text-accent">Alpha</span>
+      </span>
     </span>
   );
 }

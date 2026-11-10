@@ -38,6 +38,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.screenshot({ path: `${dir}/1-week-${tag}.png` });
 
     if (tag === "phone-light") {
+      ok("brand: says Alpha by the logo", await page.getByText("Alpha", { exact: true }).first().isVisible());
       // Plan by number (Nov 3): the counts, then the picks, then the lunches, and save.
       await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
       ok("plan: asks how many", await page.getByRole("heading", { name: "How many" }).isVisible());
@@ -45,9 +46,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
       ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
-      // Out of ideas (Nov 10): "One more" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
+      // Out of ideas (Nov 10): "Suggest another" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
       const quickGroup = page.getByRole("dialog").last().locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
-      for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "One more" }).tap(); await page.waitForTimeout(150); }
+      for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "Suggest another" }).tap(); await page.waitForTimeout(150); }
       ok("plan: out of ideas shows a place to pick one", (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) >= 1);
       ok("plan: and no count of what fits", !/\bfits?\b/.test(await page.getByRole("dialog").last().innerText()));
       await page.getByRole("button", { name: /^Pick a quick dinner/ }).first().tap(); await page.waitForTimeout(500);
@@ -57,7 +58,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("pick: the search box sits at the top of its sheet", pickBox && pickBox.y > 0 && pickBox.y < 400 && pickBox.width > 300, JSON.stringify(pickBox));
       await page.screenshot({ path: `${dir}/2-pick.png` });
       await pick.locator("section button").first().tap(); await page.waitForTimeout(400);
-      ok("pick: the place is filled", (await page.getByRole("dialog", { name: "Pick one" }).count()) === 0 && (await page.getByText("You picked this").count()) >= 1);
+      ok("pick: the place is filled", (await page.getByRole("dialog", { name: "Pick one" }).count()) === 0 && (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) === 0);
       if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
       // A save that fails (the connection drops): the sheet stays with everything planned, says so inside it, and saves on a retry.
       const planSheet = page.getByRole("dialog").last();
@@ -146,10 +147,10 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await takeChiliOff();
       await page.getByRole("button", { name: /^Add a meal/ }).tap(); await page.waitForTimeout(500);
       const addSheet = page.getByRole("dialog", { name: "Add a meal" });
-      const box = addSheet.getByLabel("Find a recipe, or type one");
+      const box = addSheet.getByLabel("Find a recipe");
       ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));
-      ok("add a meal: Suggested first, with the regular dinner and its reason", (await addSheet.getByText("Suggested", { exact: true }).isVisible()) && (await addSheet.locator("section").first().getByRole("button", { name: /^Turkey chili\s*Regular dinner/ }).count()) === 1);
-      ok("add a meal: then all the recipes, each with its kind", (await addSheet.getByText("All recipes", { exact: true }).isVisible()) && (await addSheet.getByRole("button", { name: /^Tacos\s*Quick dinner/ }).count()) >= 1);
+      ok("add a meal: Suggested first, with the regular dinner, name only", (await addSheet.getByText("Suggested", { exact: true }).isVisible()) && (await addSheet.locator("section").first().getByRole("button", { name: /^Turkey chili$/ }).count()) === 1);
+      ok("add a meal: then the recipes under their kinds, names only", (await addSheet.getByRole("heading", { name: "Quick", exact: true }).isVisible()) && (await addSheet.locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) }).getByRole("button", { name: /^Tacos/ }).count()) >= 1);
       const thisWeek = addSheet.getByRole("button", { name: /This week$/ });
       ok("add a meal: a planned recipe shows This week and can't be added", (await thisWeek.count()) > 0 && (await thisWeek.first().isDisabled()));
       await page.screenshot({ path: `${dir}/8b-add-a-meal.png` });
@@ -157,7 +158,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.screenshot({ path: `${dir}/8c-add-a-meal-320.png` });
       ok("add a meal: fits 320 wide", (await addSheet.evaluate((el) => el.scrollWidth - el.clientWidth)) <= 0);
       await box.fill("chili"); await page.waitForTimeout(300);
-      ok("add a meal: typing finds recipes, and offers the words as a meal", (await addSheet.getByRole("button", { name: /^Turkey chili/ }).count()) === 1 && (await addSheet.getByRole("button", { name: /^Add “chili”\s*No recipe · counts as a quick dinner/ }).isVisible()));
+      ok("add a meal: typing finds recipes, and offers no words-only meal", (await addSheet.getByRole("button", { name: /^Turkey chili/ }).count()) === 1 && (await addSheet.getByText(/^Add “/).count()) === 0);
       await page.screenshot({ path: `${dir}/8d-add-a-meal-search-320.png` });
       await page.setViewportSize({ width, height }); await page.waitForTimeout(300);
       await addSheet.getByRole("button", { name: /^Turkey chili/ }).tap();
@@ -165,10 +166,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
       await page.getByRole("button", { name: /^Add a meal/ }).tap(); await page.waitForTimeout(500);
       ok("add a meal: now it shows This week", await addSheet.getByRole("button", { name: /^Turkey chili.*This week$/ }).first().isDisabled());
-      await addSheet.getByLabel("Find a recipe, or type one").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
-      await addSheet.getByRole("button", { name: /^Add “Dinner at Grandma's”/ }).tap();
-      ok("add a meal: typed words go in as a quick dinner", await seen(page.getByText(/^Added Dinner at Grandma's\./), 8000)
-        && (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) }).getByText("Dinner at Grandma's").count()) === 1);
+      await addSheet.getByLabel("Find a recipe").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
+      ok("add a meal: no match points to Recipes, and adds nothing", await addSheet.getByText("No recipe called “Dinner at Grandma's”").isVisible());
+      await addSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
     }
 
