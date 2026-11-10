@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Icon, type IconName } from "./icons";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
@@ -95,22 +95,45 @@ export const OpenSettings = createContext<(() => void) | null>(null);
  * `below` (Shop's List / Find / Cart switch) is pinned inside the same bar, under one blurred backing (two stacked
  * blurred layers shudder on the iPad).
  */
+/**
+ * Where the top bar sits: held still at the top of the screen while the list under it scrolls and stretches on a pull
+ * (Matt, Nov 9), with a space its height left in the page so the content starts below it.
+ */
+function PinnedBar({ children, className = "", space = "", barRef }: { children: ReactNode; className?: string; space?: string; barRef?: Ref<HTMLDivElement> }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(44);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setHeight(el.offsetHeight);
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <div style={{ height }} className={space}>
+      <div ref={box} className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 mx-auto w-full max-w-md px-4">
+        <div ref={barRef} className={`relative ${className}`}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: ReactNode }) {
   const settings = useContext(OpenSettings);
   return (
     // Content starts 16px under the bar (the screens' own spacing is wider): 8px under a pinned switch plus its 8px.
-    <div className={`sticky top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 ${below ? "!mb-2" : "!mb-4"}`}>
+    <PinnedBar space={below ? "!mb-2" : "!mb-4"}>
       {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. With something below the row,
           the backing stays solid behind it and fades only at the very bottom. */}
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
-      {/* Above the bar, plain background: if a pull ever drags the bar down, the gap shows that, never a color (Matt, Nov 9). */}
-      <span aria-hidden className="pointer-events-none absolute bottom-[calc(100%+env(safe-area-inset-top)+0.5rem)] left-[calc(50%-50vw)] -z-10 h-screen w-screen bg-bg" />
       <div className="flex h-11 items-center justify-between">
         <Brand />
         <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
       </div>
       {below && <div className="pb-2 pt-3">{below}</div>}
-    </div>
+    </PinnedBar>
   );
 }
 
