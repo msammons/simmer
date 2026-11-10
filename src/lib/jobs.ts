@@ -130,13 +130,14 @@ export const helperAnswering = (h: Helper | null) => Boolean(h && age(h.seen) < 
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
 export const HELPER_VERSION: string = manifest.version;
 const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
-/** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
-export const helperOutdated = (h: Helper | null) => {
-  if (!h?.version) return false;
-  const [a, b] = [parts(h.version), parts(HELPER_VERSION)];
-  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+/** Whether version `have` is older than `want`, every part compared: 26.11.10.1 (a second release that day) is newer than 26.11.10. */
+export const olderVersion = (have: string, want: string) => {
+  const [a, b] = [parts(have), parts(want)];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
   return false;
 };
+/** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
+export const helperOutdated = (h: Helper | null) => Boolean(h?.version) && olderVersion(h!.version, HELPER_VERSION);
 
 /** Not checked in for a couple of minutes (or never): Safeway can't be reached from Simmer just now. */
 export const helperAway = (h: Helper | null) => !h || age(h.seen) >= JOB_TIMES.away;

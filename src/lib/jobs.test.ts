@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperPush, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -214,6 +214,15 @@ describe("helperOutdated", () => {
     expect(helperOutdated(h(HELPER_VERSION))).toBe(false);
     expect(helperOutdated(h("9.0.0"))).toBe(false);
     expect(helperOutdated(null)).toBe(false);
+  });
+  it("reads date versions, a same-day release included", () => {
+    expect(olderVersion("1.3.0", "26.11.10")).toBe(true);
+    expect(olderVersion("26.11.10", "26.11.10.1")).toBe(true);
+    expect(olderVersion("26.11.10.1", "26.11.10.2")).toBe(true);
+    expect(olderVersion("26.11.10.2", "26.11.10")).toBe(false);
+    expect(olderVersion("26.9.30", "26.11.1")).toBe(true);
+    expect(olderVersion("26.12.31", "27.1.1")).toBe(true);
+    expect(olderVersion("26.11.10", "26.11.10")).toBe(false);
   });
 });
 
