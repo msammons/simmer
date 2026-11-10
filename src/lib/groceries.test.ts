@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, setWeekly, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, setWeekly, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -139,5 +139,46 @@ describe("bought history", () => {
     expect(back[0]).toMatchObject({ checked: false, for: "every week", store: t.store });
     await doneShopping(t.store); // not ticked: stays one row
     expect((await loadList()).items.filter((i) => i.item === "tortillas")).toHaveLength(1);
+  });
+});
+
+describe("taking a dinner's groceries off (Nov 10)", () => {
+  it("takes away amounts in the same unit", () => {
+    expect(takeAway("2½ lb", "1 lb")).toBe("1½ lb");
+    expect(takeAway("2 lb", "2 lb")).toBe("");
+    expect(takeAway("3", "1")).toBe("2");
+    expect(takeAway("1 lb", "8 oz")).toBeNull();
+  });
+  it("removes what only that dinner needed, cuts back what's shared, and leaves hand-added and held things", async () => {
+    await addItems([
+      { item: "off-test tortillas", quantity: "1", for: "off-tacos" },
+      { item: "off-test ground beef", quantity: "1 lb", for: "off-tacos" },
+      { item: "off-test cilantro", quantity: "1 bunch", for: "off-tacos" },
+    ], "Robin");
+    await addItems([{ item: "off-test ground beef", quantity: "1 lb", for: "off-chili" }], "Robin");
+    await addItem("off-test salsa", "Robin"); // added by hand: for no dinner
+    const before = (await loadList()).items;
+    const cilantro = before.find((x) => x.item === "off-test cilantro")!; // in the Safeway cart
+    const n = await takeOffFor([
+      { item: "off-test tortillas", quantity: "1", for: "off-tacos" },
+      { item: "off-test ground beef", quantity: "1 lb", for: "off-tacos" },
+      { item: "off-test cilantro", quantity: "1 bunch", for: "off-tacos" },
+      { item: "off-test salsa", quantity: "", for: "off-tacos" },
+    ], new Set([cilantro.id]));
+    const after = (await loadList()).items;
+    expect(after.some((x) => x.item === "off-test tortillas")).toBe(false);
+    const beef = after.find((x) => x.item === "off-test ground beef")!;
+    expect(beef.quantity).toBe("1 lb");
+    expect(beef.for).toBe("off-chili");
+    expect(after.some((x) => x.id === cilantro.id)).toBe(true);
+    expect(after.some((x) => x.item === "off-test salsa")).toBe(true);
+    expect(n).toBe(1);
+  });
+  it("never takes off something ticked off", async () => {
+    await addItems([{ item: "off-test lemons", quantity: "2", for: "off-fish" }], "Robin");
+    const it0 = (await loadList()).items.find((x) => x.item === "off-test lemons")!;
+    await checkItem(it0.id, true);
+    expect(await takeOffFor([{ item: "off-test lemons", quantity: "2", for: "off-fish" }])).toBe(0);
+    expect((await loadList()).items.some((x) => x.id === it0.id)).toBe(true);
   });
 });

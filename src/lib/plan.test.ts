@@ -68,6 +68,18 @@ describe("planning by number", () => {
     expect(q.lastMade["tacos-1"]).toBeUndefined(); // removed isn't made
   });
 
+  it("a dinner taken off takes what only it needed off the list (Nov 10)", async () => {
+    await savePlan([{ kind: "quick", recipe: "tacos-1", pinned: false }], [], null, "Sam");
+    const forTacos = () => loadList().then((l) => l.items.filter((i) => i.for.split(",").map((x) => x.trim()).includes("tacos") && !i.checked));
+    const before = await forTacos();
+    expect(before.length).toBeGreaterThan(0);
+    const tacos = (await loadPlan()).dishes.find((d) => d.recipe === "tacos-1")!;
+    const { removed } = await removePlanned(tacos.id);
+    expect(removed).toBeGreaterThan(0);
+    // Only things shared with another dinner are left, and they no longer say tacos.
+    expect(await forTacos()).toEqual([]);
+  });
+
   it("Something else changes the recipe and puts what the new one needs on the list", async () => {
     const [d] = (await loadPlan()).dishes;
     const { added } = await changePlanned(d.id, { recipe: "salmon-1", pinned: false }, "Robin");
