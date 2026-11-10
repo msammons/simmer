@@ -9,7 +9,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
 import { loadHousehold } from "./data";
-import { addItems, dropHighlightsNotFor, type Store } from "./groceries";
+import { addItems, dropHighlightsNotFor, takeOffFor, type Store } from "./groceries";
+import { loadCart } from "./safeway";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
@@ -244,6 +245,14 @@ export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewa
 const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
   r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: i.section !== "fresh" }));
 
+/** These dinners are off the plan: what only they needed comes off the list (see takeOffFor). Answers how many things. */
+async function takeOffDishes(recipeIds: string[]): Promise<number> {
+  if (!recipeIds.length) return 0;
+  const [recipes, freezer, cart] = await Promise.all([loadRecipes(), loadFreezer(), loadCart().catch(() => [])]);
+  const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer) : []; });
+  return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
+}
+
 export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned">;
 export type NewLunch = Omit<Lunch, "id">;
 
@@ -256,11 +265,14 @@ export type NewLunch = Omit<Lunch, "id">;
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
  * a pantry check from a dinner made or removed since doesn't linger. Answers how many things went on a list.
  */
-export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number }> {
+export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number; removed: number }> {
   const today = todayIn();
+  let removed = 0;
   if (counts) {
     const before = await rows(PLANNED);
     const week = toPlanned(before), added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
+    // Starting over (Nov 10): what only the old dinners needed, and isn't bought yet, comes off the list first.
+    removed = await takeOffDishes(week.dishes.map((d) => d.recipe));
     if (week.dishes.length) {
       await upsert(PLANNED, week.dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
       await append(MADE, week.dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
@@ -281,21 +293,23 @@ export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: C
   await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
   const need: Need[] = dishes.flatMap((d) => { const r = byId.get(d.recipe); return r ? needFor(r, freezer) : []; });
   for (const it of lunchShopping(lunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
-  return { added: need.length ? await addItems(need, by) : 0 };
+  return { added: need.length ? await addItems(need, by) : 0, removed };
 }
 
 /**
- * One planned thing changed: another recipe for a dish (Something else, or picked), or another option for one part of
- * a lunch. What the new one needs goes on the list; what the old one needed stays (it may be bought already).
+ * One planned thing changed: another recipe for a dish (Something else), or another option for one part of a lunch.
+ * What the new one needs goes on the list; what only the old one needed comes off, unless it's ticked off or in the
+ * cart (Nov 10: before, it stayed, and a swap left its groceries behind).
  */
-export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string }, by: string): Promise<{ added: number }> {
+export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string }, by: string): Promise<{ added: number; removed?: number }> {
   const now = toPlanned(await rows(PLANNED));
   const dish = now.dishes.find((d) => d.id === id), lunch = now.lunches.find((l) => l.id === id);
   if (dish && change.recipe) {
     await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"]);
+    const removed = await takeOffDishes([dish.recipe]);
     const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
     const r = recipes.find((x) => x.id === change.recipe);
-    return { added: r ? await addItems(needFor(r, freezer), by) : 0 };
+    return { added: r ? await addItems(needFor(r, freezer), by) : 0, removed };
   }
   if (lunch && change.part && change.item !== undefined) {
     await upsert(PLANNED, [{ id, [change.part]: change.item }], ["id"]);
@@ -324,8 +338,12 @@ export async function markMade(id: string) {
   if (f) await takeFrozen(f.id);
 }
 
-/** Not making it after all: it comes off, and the grocery list is left alone. */
-export const removePlanned = (id: string) => removeRows(PLANNED, (get) => get("id") === id);
+/** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
+export async function removePlanned(id: string): Promise<{ removed: number }> {
+  const dish = toPlanned(await rows(PLANNED)).dishes.find((d) => d.id === id);
+  await removeRows(PLANNED, (get) => get("id") === id);
+  return { removed: dish ? await takeOffDishes([dish.recipe]) : 0 };
+}
 
 /** The freezer and when the next trips are, for the Groceries tab. */
 export async function loadKitchen() {

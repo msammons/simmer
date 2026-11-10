@@ -42,18 +42,18 @@ export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
   try {
-    let added = 0;
+    let added = 0, removed = 0;
     const id = text(b?.id, 40);
     if (b?.op === "plan") {
       const dishes = (Array.isArray(b.dishes) ? b.dishes : []).slice(0, KINDS.length * MAX_COUNT).map(dish).filter((d: NewDish | null): d is NewDish => d !== null);
       const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 8 * MAX_COUNT).map(lunch).filter((l: NewLunch | null): l is NewLunch => l !== null);
-      ({ added } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
+      ({ added, removed } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
     } else if (b?.op === "change" && id) {
-      ({ added } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
+      ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
     } else if (b?.op === "made" && id) await markMade(id);
-    else if (b?.op === "remove" && id) await removePlanned(id);
+    else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
     else return Response.json({ error: "Unknown change." }, { status: 400 });
-    return Response.json({ ...(await loadPlan()), added }, fresh);
+    return Response.json({ ...(await loadPlan()), added, removed }, fresh);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
