@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Counts, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Kind, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { STORE_NAMES } from "./Shop";
@@ -64,7 +64,7 @@ export default function App() {
   const [weekError, setWeekError] = useState<string | null>(null);
   const [weekNote, setWeekNote] = useState<string | null>(null);
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
-  const [addingOne, setAddingOne] = useState(false);
+  const [addingOne, setAddingOne] = useState<Kind | null>(null); // the kind being added to, from Meals
   const loaded = useRef(false); // the household has loaded from the server this session
 
   // The passcode was turned down (changed, or typed wrong): close everything and ask for it again. Any request can find
@@ -73,7 +73,7 @@ export default function App() {
     store.setPasscode(null);
     tellPanelSignedOut();
     setError("Wrong passcode.");
-    setSettings(false); setSheet(null); setAddingOne(false);
+    setSettings(false); setSheet(null); setAddingOne(null);
     setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
     setPhase("passcode");
   }, []);
@@ -206,15 +206,7 @@ export default function App() {
     if (p.added || off) refreshList(); // the list changes show on Lists and Stock right away
     return note ?? undefined;
   }
-  /** Start over (or the first plan): the week replaced with fresh picks; the sheet closes itself on success (null). */
-  async function startOver(dishes: NewDish[], counts: Counts): Promise<string | null> {
-    try {
-      ++planChanges.current;
-      gotPlan(await api.savePlan(dishes, [], counts, me), "Planned the next shop.");
-      return null;
-    } catch (e) { return problemOf(e); }
-  }
-  /** One meal added to this week (Add another, Add a meal, or a recipe's "Add to this week"); the note names it. */
+  /** One meal added to this week (Add one / Add another, or a recipe's "Add to this week"); the note names it. */
   async function addMeal(d: NewDish): Promise<{ problem: string | null; note?: string }> {
     const r = recipeOf(d.recipe);
     try {
@@ -340,7 +332,7 @@ export default function App() {
   }
   /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
   function toRecipes() {
-    setAddingOne(false);
+    setAddingOne(null);
 
     onTab("recipes");
     setSheet("add");
@@ -374,9 +366,7 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)} onStartOver={startOver}
-          onAdd={(d) => { setWeekNote(null); addMeal(d).then((r) => { if (r.problem) setWeekError(r.problem); }); }}
-          onSwap={(d, recipe) => { setWeekNote(null); changePlan({ op: "change", id: d.id, recipe, pinned: false }, `Swapped in ${recipeOf(recipe)?.name ?? recipe}.`).then((p) => { if (p) setWeekError(p); }); }}
+          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => { setWeekNote(null); setAddingOne(k); }}
           onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
@@ -392,7 +382,7 @@ export default function App() {
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {addingOne && plan && <AddMealSheet plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onRecipes={toRecipes} onClose={() => setAddingOne(false)} />}
+      {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onRecipes={toRecipes} onClose={() => setAddingOne(null)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);

@@ -45,20 +45,14 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 
 | # | Do | Expect | Where |
 |---|----|--------|-------|
-| 4.1 | Meals with nothing planned | "Nothing planned", a line on planning, Plan | L |
-| 4.2 | Plan / Start over | A short sheet: trips (with last trip dates), what it will pick ("2 quick, 3 regular"), and for Start over "replaced with new picks… what only they needed comes off the grocery list"; Cancel leaves the week as it was | L |
-| 4.3 | Trips | Meals that need Trader Joe's or Costco are only picked with that trip ticked | L |
-| 4.4 | After Plan / Start over | "This week": that many of each kind, none of last week's again; note "Planned the next shop. N things went on the list." | L |
-| 4.5 | Something else (↻) on a dinner | Swapped at once; note "Swapped in X. N things went on the list, M came off."; when none is left, the row says "No other ideas from your recipes" | L |
-| 4.6 | Add another / Add one (end of every kind; empty kinds show too) | Simmer's next idea of that kind goes on at once; note "Added X. …"; when none is left, says so | L |
-| 4.7 | Groceries follow the week | What only a removed or swapped-out dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
-| 4.8 | Meals after a change | Dinners by kind (no "Quick"/"Regular" word under the header); no lunches; Add a meal; Start over | L |
-| 4.9 | Start over twice | The second replaces the first; the old dinners aren't suggested again soon | L |
+| 4.1 | Meals | "This week", then every kind (Quick, Regular, Kids', Dessert, Side, Breakfast) the same way: its dinners, then "Add one" (empty) or "Add another"; no Plan, Start over, swap or suggestions (Nov 10: Simmer doesn't pick meals) | L |
+| 4.2 | Add one / Add another | A sheet "Add a quick dinner" (etc.): a search box (not focused), then her recipes of that kind A–Z, names only | L |
+| 4.3 | Pick a recipe there | Sheet closes; it's under its own kind; the note says "Added X. N things went on the list." (or "Its groceries were already on the list.") | L |
+| 4.4 | Search there | Any recipe, of any kind; picked, it goes under its own kind | L |
+| 4.5 | A recipe already planned, in the sheet | Greyed, "This week" on the right, can't be tapped | L |
+| 4.6 | A kind with no recipes, or a search with no match | "Add a recipe" row: opens Add recipes on the Recipes tab | L |
+| 4.7 | Groceries follow the week | What only a removed dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
 | 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off this week?" (what only it needed comes off the list; Take it off / Cancel), no Undo after; note "Took X off. N things came off the list." | L |
-| 4.11 | Meals → Add a meal | One sheet: a search box (not focused, so the keyboard doesn't cover the list), "Suggested" (the best quick and regular dinner for this week and anything the freezer lifts), then every recipe under its kind (Quick, Regular…), names only | L |
-| 4.12 | Tap a recipe in Add a meal | Sheet closes; it's on Meals under its own kind (a dessert under Dessert); the note says "Added X. N things went on the list." (or "Its groceries were already on the list."); nothing else changes | L |
-| 4.13 | A recipe already planned, in Add a meal | Greyed, "This week" on the right, can't be tapped | L |
-| 4.14 | Type in Add a meal | Matching recipes only; no match offers "Add a recipe", which opens Add recipes on the Recipes tab (no meal as just words, Nov 10) | L |
 | 4.16 | A recipe sharing a thing with one already on the list ("1 lb" + "1½ lb" ground turkey) | One row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 
 ## 5. Lists
