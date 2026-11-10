@@ -45,6 +45,19 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
       ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
+      // Out of ideas (Nov 10): "One more" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
+      const quickGroup = page.getByRole("dialog").last().locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
+      for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "One more" }).tap(); await page.waitForTimeout(150); }
+      ok("plan: out of ideas shows a place to pick one", (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) >= 1);
+      ok("plan: and no count of what fits", !/\bfits?\b/.test(await page.getByRole("dialog").last().innerText()));
+      await page.getByRole("button", { name: /^Pick a quick dinner/ }).first().tap(); await page.waitForTimeout(500);
+      const pick = page.getByRole("dialog", { name: "Pick one" });
+      ok("pick: opens beside the Plan sheet, not inside it", (await pick.count()) === 1 && (await page.getByRole("dialog", { name: "Plan" }).locator('[role="dialog"]').count()) === 0);
+      const pickBox = await pick.getByRole("textbox").boundingBox();
+      ok("pick: the search box sits at the top of its sheet", pickBox && pickBox.y > 0 && pickBox.y < 400 && pickBox.width > 300, JSON.stringify(pickBox));
+      await page.screenshot({ path: `${dir}/2-pick.png` });
+      await pick.locator("section button").first().tap(); await page.waitForTimeout(400);
+      ok("pick: the place is filled", (await page.getByRole("dialog", { name: "Pick one" }).count()) === 0 && (await page.getByText("You picked this").count()) >= 1);
       if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
       // A save that fails (the connection drops): the sheet stays with everything planned, says so inside it, and saves on a retry.
       const planSheet = page.getByRole("dialog").last();

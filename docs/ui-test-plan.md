@@ -48,7 +48,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.1 | Meals with nothing planned | "Nothing planned", "Say how many dinners for the next shop…", Plan | L |
 | 4.2 | Plan → How many | Counters for quick, regular and kids' dinners, desserts, sides, breakfasts (no lunches), starting at last time's numbers; with dinners planned, "Saving replaces this week's N dinners." | L |
 | 4.3 | Trips toggles | Trader Joe's and Costco, with last trip dates | L |
-| 4.4 | Next → Dinners | That many of each, fitting the kind, none of this week's again; "Only N of M fit" when short | L |
+| 4.4 | Next → Dinners | That many of each, fitting the kind, none of this week's again; when ideas run out, the rest show as "Pick a …" places | L |
 | 4.5 | Something else / One more / remove | A different recipe; when none is left, says so; One more adds one of that kind | L |
 | 4.6 | Tap a pick | Picker sheet; a picked one shows "You picked this" | L |
 | 4.7 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
