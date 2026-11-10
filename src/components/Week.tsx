@@ -13,7 +13,7 @@ import { BrandBar, Button, EmptyState, Group, Notice, Row, Sheet } from "./ui";
 
 /** A meal's name: the recipe's, or the free text she typed. */
 export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;
-const NOTHING_ELSE = "Nothing else fits. Add recipes, or pick one";
+const NOTHING_ELSE = "No other ideas from your recipes";
 const COUNT_NAMES: Record<Kind, string> = { quick: "Quick dinners", regular: "Regular dinners", kids: "Kids' dinners", dessert: "Desserts", side: "Sides", breakfast: "Breakfasts" };
 const ONE_NAME: Record<Kind, string> = { quick: "A quick dinner", regular: "A regular dinner", kids: "A kids' dinner", dessert: "A dessert", side: "A side", breakfast: "A breakfast" };
 
@@ -96,10 +96,10 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
   const [q, setQ] = useState("");
   const found = useMemo(() => (q.trim() ? searchRecipes(recipes, q) : recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name))).slice(0, 30), [q, recipes, kind]);
   return (
-    <Sheet label="Pick one" title={`Pick ${ONE_NAME[kind].toLowerCase()}`} onClose={onClose}>
+    <Sheet label="Pick one" title={`Pick ${ONE_NAME[kind].toLowerCase()}`} onClose={onClose} tall>
       <div className="space-y-4 pb-2">
         {status}
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
           {q.trim() && <Row icon="pencil" title={`“${q.trim()}”`} subtitle="Use these words" onClick={() => onPick(q.trim().slice(0, 80))} />}
@@ -155,7 +155,7 @@ export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData
       onClick={here ? undefined : () => add({ kind: k, recipe: r.id, pinned: true })} />;
   };
   return (
-    <Sheet label="Add a meal" title="Add a meal" onClose={onClose}>
+    <Sheet label="Add a meal" title="Add a meal" onClose={onClose} tall>
       <div className="space-y-5 pb-2">
         {busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>}
         {/* No autofocus: on a phone the keyboard would cover the suggestions. */}
@@ -226,21 +226,22 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
   const [trips, setTrips] = useState({ traderJoes: plan.trips.traderJoes, costco: plan.trips.costco });
   const [picks, setPicks] = useState<Picked[]>([]);
   const [pinFor, setPinFor] = useState<{ key: string } | { kind: Kind } | null>(null);
-  const [none, setNone] = useState<Kind | null>(null); // the kind "One more" had nothing more for
-  const [found, setFound] = useState<Partial<Record<Kind, number>>>({}); // how many of each fit, when they were picked
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const ctx = contextFor(plan, recipes, trips);
   const ids = () => [...plan.dishes.map((d) => d.recipe), ...picks.map((p) => p.recipe)];
   const seq = useRef(0); // tells picks apart, even two of the same
   const keyed = (c: Choice, pinned = false): Picked => ({ ...c, key: String(seq.current++), pinned, skipped: [], nothing: false });
+  // An open place (Nov 10): when Simmer runs out of ideas for a kind, the rest of the number shows as places to pick
+  // one yourself, instead of a count of how many "fit".
+  const open = (kind: Kind): Picked => keyed({ kind, recipe: "", why: "" });
 
   function toPicks() {
     // This week's dinners count as just made: picked again only when nothing else fits.
     const all = pickMany(counts, [], { ...ctx, lastMade: { ...ctx.lastMade, ...Object.fromEntries(plan.dishes.map((d) => [d.recipe, ctx.today])) } });
-    setPicks(all.map((c) => keyed(c)));
-    setFound(Object.fromEntries(KINDS.map((k) => [k, all.filter((c) => c.kind === k).length])));
-    setNone(null);
+    const filled = all.map((c) => keyed(c));
+    // Kept in the kinds' order, each kind's open places after its picks.
+    setPicks(KINDS.flatMap((k) => [...filled.filter((p) => p.kind === k), ...Array.from({ length: Math.max(0, counts[k] - all.filter((c) => c.kind === k).length) }, () => open(k))]));
     setPage(1);
   }
   const setPick = (key: string, change: Partial<Picked>) => setPicks((ps) => ps.map((p) => (p.key === key ? { ...p, ...change } : p)));
@@ -250,15 +251,14 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
     setPick(p.key, { recipe: next.recipe.id, why: next.why, pinned: false, skipped: [...p.skipped, p.recipe], nothing: false });
   }
   function oneMore(kind: Kind) {
-    const [c] = pickMany({ [kind]: 1 }, ids(), ctx);
-    setNone(c ? null : kind);
-    if (c) setPicks((ps) => [...ps, keyed(c)]);
+    const [c] = pickMany({ [kind]: 1 }, ids().filter(Boolean), ctx);
+    setPicks((ps) => [...ps, c ? keyed(c) : open(kind)]);
   }
 
   const last = 1;
   async function save() {
     setBusy(true); setProblem(null);
-    const p = await onSave(picks.map((x) => ({ kind: x.kind, recipe: x.recipe, pinned: x.pinned })), counts);
+    const p = await onSave(picks.filter((x) => x.recipe).map((x) => ({ kind: x.kind, recipe: x.recipe, pinned: x.pinned })), counts);
     if (!p) return onClose();
     setProblem(p); setBusy(false);
   }
@@ -300,6 +300,18 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
         {shown.map((k) => (
           <Group key={k} header={KIND_NAMES[k]} aside={<button className="t-foot font-semibold text-accent" onClick={() => oneMore(k)}>One more</button>}>
             {picks.filter((p) => p.kind === k).map((p) => {
+              if (!p.recipe) return (
+                <div key={p.key} className="flex items-center gap-2 px-4 py-3">
+                  <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setPinFor({ key: p.key })}>
+                    <Icon name="plus" className="size-5 shrink-0 text-accent" strokeWidth={2.2} />
+                    <span className="min-w-0">
+                      <span className="block t-body font-semibold text-accent">Pick {ONE_NAME[k].toLowerCase()}</span>
+                      <span className="mt-0.5 block t-foot text-muted">{NOTHING_ELSE}</span>
+                    </span>
+                  </button>
+                  <RoundButton quiet icon="close" label={`Remove this ${KIND_NAMES[k].toLowerCase()} place`} onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))} />
+                </div>
+              );
               const r = recipes.find((x) => x.id === p.recipe);
               return (
                 <div key={p.key} className="flex items-center gap-2 px-4 py-3">
@@ -312,36 +324,34 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
                 </div>
               );
             })}
-            {!picks.some((p) => p.kind === k) && <Row title="Nothing fits" subtitle="Add recipes, or pick one" accessory="chevron" onClick={() => setPinFor({ kind: k })} />}
-            {none === k && picks.some((p) => p.kind === k) && <Row title={NOTHING_ELSE} accessory="chevron" onClick={() => setPinFor({ kind: k })} />}
-            {none !== k && picks.some((p) => p.kind === k) && (found[k] ?? 0) < counts[k] && (
-              <Row title={`Only ${found[k] ?? 0} of ${counts[k]} fit`} subtitle="Add recipes, or pick one" accessory="chevron" onClick={() => setPinFor({ kind: k })} />
-            )}
           </Group>
         ))}
         <p className="t-sub px-1 text-muted">Tap one to pick it yourself.</p>
         <div className="space-y-2">
           <p className="t-foot px-1 font-semibold text-muted">One more of</p>
           <div className="flex flex-wrap gap-2">{KINDS.filter((k) => !shown.includes(k)).map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
-          {none && !shown.includes(none) && <Notice tone="info">{NOTHING_ELSE}</Notice>}
         </div>
       </div>
     );
   }
   const pinKind = pinFor ? ("kind" in pinFor ? pinFor.kind : picks.find((p) => p.key === pinFor.key)?.kind) : undefined;
   return (
+    <>
     <Sheet label="Plan" title={["How many", "Dinners"][page]} onClose={onClose} footer={footer} page={String(page)} pager={{ index: page, total: 2 }}>
       <div className="pb-2">{body}</div>
-      {pinFor && pinKind && (
+    </Sheet>
+    {/* Beside the Plan sheet, never inside it: inside, it was laid out within the moving sheet (the search box landed in
+        the wrong place and the sheet behind kept scrolling). */}
+    {pinFor && pinKind && (
         <PinSheet kind={pinKind} recipes={recipes} onClose={() => setPinFor(null)} onPick={(recipe) => {
           // A recipe goes under its own kind (a searched dessert isn't a quick dinner); typed words keep the slot's.
           const r = recipes.find((x) => x.id === recipe);
           const kind = (r && kindOf(r)) || pinKind;
           if ("key" in pinFor) setPick(pinFor.key, { recipe, kind, pinned: true, why: "", nothing: false });
           else setPicks((ps) => [...ps, keyed({ kind, recipe, why: "" }, true)]);
-          setNone(null); setPinFor(null);
+          setPinFor(null);
         }} />
-      )}
-    </Sheet>
+    )}
+    </>
   );
 }
