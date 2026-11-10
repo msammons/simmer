@@ -226,7 +226,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await nav.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
     await settingsHere("Recipes");
     ok(`${tag}: Recipes lit`, (await nav.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
-    ok(`${tag}: no plus button at the top of Recipes`, (await page.locator("header, .sticky").getByRole("button", { name: "Add recipes" }).count()) === 0);
+    ok(`${tag}: no plus button at the top of Recipes`, (await page.locator("header, .fixed.max-w-md").getByRole("button", { name: "Add recipes" }).count()) === 0);
     // Rows only open the recipe (no button of their own, Nov 9); Add to the list is on the recipe: the sheet lists the
     // things to buy, and the pantry is only highlighted in Stock.
     ok(`${tag}: recipe rows have no add-to-list button of their own`, (await page.getByRole("button", { name: /^Add .+ to the list$/ }).count()) === 0);
