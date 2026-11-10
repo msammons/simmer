@@ -337,6 +337,13 @@ export default function App() {
     setStack([{ kind: t }]);
     setListsStart("all");
   }
+  /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
+  function toRecipes() {
+    setPlanning(false);
+    setAddingOne(false);
+    onTab("recipes");
+    setSheet("add");
+  }
   function back() {
     scrollAppTo(0);
     setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
@@ -382,8 +389,8 @@ export default function App() {
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onClose={() => setPlanning(false)} />}
-      {addingOne && plan && <AddMealSheet plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onClose={() => setAddingOne(false)} />}
+      {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onRecipes={toRecipes} onClose={() => setPlanning(false)} />}
+      {addingOne && plan && <AddMealSheet plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onRecipes={toRecipes} onClose={() => setAddingOne(false)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);
