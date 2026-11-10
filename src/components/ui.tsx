@@ -112,10 +112,7 @@ function PinnedBar({ children, className = "", space = "", barRef }: { children:
     return () => watch.disconnect();
   }, []);
   return (
-    <div style={{ height }} className={`relative ${space}`}>
-      {/* Plain background above the page, moving with it: the gap a pull opens under the still bar shows this, never the
-          brand wash behind the page (Matt, Nov 9). */}
-      <span aria-hidden className="pointer-events-none absolute bottom-[calc(100%+env(safe-area-inset-top)+0.5rem)] left-[calc(50%-50vw)] h-[200vh] w-screen bg-bg" />
+    <div style={{ height }} className={space}>
       <div ref={box} className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 mx-auto w-full max-w-md px-4">
         <div ref={barRef} className={`relative ${className}`}>{children}</div>
       </div>
@@ -131,6 +128,7 @@ export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: Re
       {/* Scroll edge: content passing under the bar blurs and fades, as under iOS bars. With something below the row,
           the backing stays solid behind it and fades only at the very bottom. */}
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 bg-bg/70 backdrop-blur-md ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
+      <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 wash opacity-30 ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
       <div className="flex h-11 items-center justify-between">
         <Brand />
         <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>

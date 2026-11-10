@@ -100,8 +100,7 @@ body {
 }
 
 body {
-  /* A faint wash of the brand color at the top of the screen, held still; a pull covers it (see PinnedBar). */
-  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) var(--bg) no-repeat;
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
@@ -174,3 +173,11 @@ button, a, [role="button"] {
   * { animation: none !important; }
 }
 
+
+/*
+ * A faint wash of the brand color (a team's, on its own screen), drawn only inside the top bar, which never moves: a pull
+ * that stretches the list shows plain background, with no tint and no edge (Matt, Nov 9).
+ */
+.wash {
+  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) center top / 100vw 100dvh no-repeat;
+}
