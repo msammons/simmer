@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type Ref } from "react";
 import { Icon, type IconName } from "./icons";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
@@ -261,7 +261,7 @@ export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef
 
 /** How far the on-screen keyboard covers the page, from the visual viewport (0 when it's down). */
 const KEYBOARD_PX = 120; // smaller gaps are the toolbar or the scroll bounce, not a keyboard
-function useKeyboardInset() {
+function useKeyboardInset(own?: RefObject<HTMLElement | null>) {
   const [inset, setInset] = useState(0);
   useEffect(() => {
     const vv = window.visualViewport;
@@ -270,7 +270,7 @@ function useKeyboardInset() {
     // it while someone is typing and the gap is keyboard-sized; otherwise the bar would jump around on scroll.
     const update = () => {
       const el = document.activeElement;
-      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      const typing = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && (!own || Boolean(own.current?.contains(el)));
       const gap = Math.round(window.innerHeight - vv.height - vv.offsetTop);
       setInset(typing && gap > KEYBOARD_PX ? gap : 0);
     };
@@ -354,9 +354,10 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
  * With onPrev/onNext, swiping sideways moves between items, and page dots under the grabber show where you are.
  */
-export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager, wide }: {
+export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager, wide, tall }: {
   children: ReactNode; onClose: () => void; label: string; footer?: ReactNode; onPrev?: () => void; onNext?: () => void;
   wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
+  tall?: boolean; // full height whatever it holds: a search keeps its box in one place while the results change
   title?: ReactNode; // a centered heading under the grabber, for picker sheets
   page?: string; // changes when the sheet shows a different item: scroll back to its top
   pager?: { index: number; total: number };
@@ -367,7 +368,9 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
   useEffect(() => { close.current = onClose; nav.current = { onPrev, onNext }; });
   const panel = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const keyboard = useKeyboardInset(); // a sheet with a text field rides above the keyboard, like the tab bar
+  // A sheet with a text field rides above the keyboard, like the tab bar; only the sheet being typed in, so one open on
+  // top of another leaves the one behind where it is.
+  const keyboard = useKeyboardInset(panel);
   useEffect(() => { body.current?.scrollTo(0, 0); }, [page]);
   useEffect(() => {
     const behind = scroller(), prev = behind?.style.overflow ?? "";
@@ -433,7 +436,7 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
     <div className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}
-      <div ref={panel} style={keyboard ? { marginBottom: keyboard + 8, maxHeight: `calc(100dvh - env(safe-area-inset-top) - ${keyboard + 24}px)` } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
+      <div ref={panel} style={keyboard ? { marginBottom: keyboard + 8, maxHeight: `calc(100dvh - env(safe-area-inset-top) - ${keyboard + 24}px)` } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] ${tall ? "h-[90dvh] " : ""}w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
