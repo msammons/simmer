@@ -39,44 +39,43 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
 
     if (tag === "phone-light") {
       ok("brand: says Alpha by the logo", await page.getByText("Alpha", { exact: true }).first().isVisible());
-      // Plan by number (Nov 3): the counts, then the picks, then the lunches, and save.
+      // Plan the next shop on the Meals page itself (Nov 10): Simmer's picks for last time's numbers, changed in place, saved once.
       await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
-      ok("plan: asks how many", await page.getByRole("heading", { name: "How many" }).isVisible());
-      ok("plan: no lunches to plan", (await page.getByRole("dialog").last().innerText()).search(/lunch/i) < 0);
-      await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
-      ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
-      await page.screenshot({ path: `${dir}/2-dinners.png` });
+      const planPage = page.locator("main");
+      ok("plan: on the Meals page, no sheet", (await page.getByRole("heading", { name: "Next shop", exact: true }).isVisible()) && (await page.getByRole("dialog").count()) === 0);
+      ok("plan: the tabs still show", await page.locator("nav").getByRole("button", { name: /Meals/ }).isVisible());
+      ok("plan: no lunches to plan", (await planPage.innerText()).search(/lunch/i) < 0);
+      const quickGroup = page.locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
+      if (!(await quickGroup.count())) { await page.getByRole("button", { name: "Quick", exact: true }).tap(); await page.waitForTimeout(200); }
+      ok("plan: dinners picked", (await quickGroup.getByRole("button", { name: /^Something else instead of/ }).count()) >= 1);
+      await page.screenshot({ path: `${dir}/2-dinners.png`, fullPage: true });
       // Out of ideas (Nov 10): "Add another" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
-      const quickGroup = page.getByRole("dialog").last().locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
       for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "Add another" }).tap(); await page.waitForTimeout(150); }
       ok("plan: out of ideas shows a place to pick one", (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) >= 1);
-      ok("plan: and no count of what fits", !/\bfits?\b/.test(await page.getByRole("dialog").last().innerText()));
+      ok("plan: and no count of what fits", !/\bfits?\b/.test(await planPage.innerText()));
       await page.getByRole("button", { name: /^Pick a quick dinner/ }).first().tap(); await page.waitForTimeout(500);
       const pick = page.getByRole("dialog", { name: "Pick one" });
-      ok("pick: opens beside the Plan sheet, not inside it", (await pick.count()) === 1 && (await page.getByRole("dialog", { name: "Plan" }).locator('[role="dialog"]').count()) === 0);
+      ok("pick: opens as its own sheet", (await pick.count()) === 1);
       const pickBox = await pick.getByRole("textbox").boundingBox();
       ok("pick: the search box sits at the top of its sheet", pickBox && pickBox.y > 0 && pickBox.y < 400 && pickBox.width > 300, JSON.stringify(pickBox));
-      await pick.getByRole("textbox").fill("zzz"); await page.waitForTimeout(200);
-      await pick.getByRole("button", { name: /^Add a recipe/ }).tap(); await page.waitForTimeout(300);
-      ok("pick: going to Recipes from planning asks first", await page.getByRole("dialog", { name: "Leave planning" }).isVisible());
-      await page.getByRole("button", { name: "Keep planning" }).tap(); await page.waitForTimeout(300);
-      ok("pick: Keep planning stays", (await page.getByRole("dialog", { name: "Leave planning" }).count()) === 0 && (await pick.count()) === 1);
-      await pick.getByRole("textbox").fill(""); await page.waitForTimeout(200);
       await page.screenshot({ path: `${dir}/2-pick.png` });
       await pick.locator("section button").first().tap(); await page.waitForTimeout(400);
       ok("pick: the place is filled", (await page.getByRole("dialog", { name: "Pick one" }).count()) === 0 && (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) === 0);
-      if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) { await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(300); }
-      // A save that fails (the connection drops): the sheet stays with everything planned, says so inside it, and saves on a retry.
-      const planSheet = page.getByRole("dialog").last();
-      const planned = await planSheet.innerText();
+      // The plan waits while another tab is visited.
+      const before = await planPage.innerText();
+      await page.locator("nav button", { hasText: "Lists" }).tap(); await page.waitForTimeout(400);
+      await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
+      ok("plan: kept while another tab is visited", (await page.getByRole("heading", { name: "Next shop", exact: true }).isVisible()) && (await planPage.innerText()) === before);
+      // A save that fails (the connection drops): the page keeps everything planned, says so, and saves on a retry.
+      const planned = before;
       await page.route("**/api/plan", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
       await page.getByRole("button", { name: "Save", exact: true }).tap(); await page.waitForTimeout(800);
-      ok("plan: a failed save keeps the sheet open", await planSheet.isVisible());
-      ok("plan: and says what went wrong inside it", await seen(planSheet.getByRole("alert").filter({ hasText: "No connection. Check your signal and try again." })));
-      ok("plan: and keeps what was planned", (await planSheet.innerText()).includes(planned.split("\n").slice(0, 12).join("\n")));
+      ok("plan: a failed save keeps the plan", await page.getByRole("heading", { name: "Next shop", exact: true }).isVisible());
+      ok("plan: and says what went wrong", await seen(page.getByRole("alert").filter({ hasText: "No connection. Check your signal and try again." })));
+      ok("plan: and keeps what was planned", (await planPage.innerText()).includes(planned.split("\n").slice(0, 12).join("\n")));
       ok("plan: and the save button works again", await page.getByRole("button", { name: "Save", exact: true }).isEnabled());
-      ok("plan: and nothing shows on the screen behind", (await page.getByText("No connection. Check your signal and try again.").count()) === 1);
-      await page.screenshot({ path: `${dir}/2-plan-failed-save.png` });
+      ok("plan: and says it once", (await page.getByText("No connection. Check your signal and try again.").count()) === 1);
+      await page.screenshot({ path: `${dir}/2-plan-failed-save.png`, fullPage: true });
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
       await page.getByRole("button", { name: "Save", exact: true }).tap();
@@ -102,9 +101,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
         await offs.first().tap(); await page.waitForTimeout(300);
         await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(800);
         ok("meals: Take it off takes just that dinner off, with no Undo", ((await dinners.count()) === count - 1 || (await page.getByText("No dinners this week").isVisible())) && (await page.getByText("Undo").count()) === 0);
+        const weekBefore = await dinners.count();
         await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
         ok("plan: planning again says it replaces this week", await seen(page.getByText(/Saving replaces this week's/), 3000) || (await page.getByText("No dinners this week").count()) > 0);
-        await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
+        await page.getByRole("button", { name: "Cancel", exact: true }).tap(); await page.waitForTimeout(400);
+        ok("plan: Cancel goes back to this week, unchanged", (await page.getByRole("heading", { name: "This week" }).isVisible() || (await page.getByText("No dinners this week").count()) > 0) && (await dinners.count()) === weekBefore);
+        await page.getByRole("button", { name: /^Plan/ }).first().tap(); await page.waitForTimeout(500);
         await page.getByRole("button", { name: "Save", exact: true }).tap();
         ok("plan: a second plan replaces the week", await seen(page.getByRole("heading", { name: "This week" }), 10000));
         await page.waitForTimeout(400);
