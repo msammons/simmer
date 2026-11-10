@@ -229,6 +229,44 @@ export function addUp(a: string, b: string): string {
   return [numberText(n), unit].filter(Boolean).join(" ");
 }
 
+/** Less of an amount: "2½ lb" less "1 lb" → "1½ lb", "" when none is left; null when it can't be worked out. */
+export function takeAway(a: string, b: string): string | null {
+  const x = amountOf(a), y = amountOf(b);
+  if (!x || !y || x.unit !== y.unit) return null;
+  const n = x.n - y.n;
+  if (n <= 1e-6) return "";
+  const unit = !x.unit ? "" : SAME_PLURAL.has(x.unit) || n <= 1 ? x.unit : PLURAL[x.unit] ?? `${x.unit}s`;
+  return [numberText(n), unit].filter(Boolean).join(" ");
+}
+
+/** The dinners a list item is for ("tacos, turkey chili"). */
+const forOf = (f: string) => f.split(",").map((x) => x.trim()).filter(Boolean);
+
+/**
+ * A dinner off the plan (taken off, swapped, or replaced by starting over; Nov 10): what only it needed comes off the
+ * list, and what it shared with another dinner is cut back by its amount. Never something ticked off or in the Safeway
+ * cart (`held`: list item ids), which may be bought already; never something added by hand (it's for no dinner).
+ * Answers how many things came off.
+ */
+export async function takeOffFor(needs: { item: string; quantity: string; for: string }[], held: Set<string> = new Set()): Promise<number> {
+  if (!needs.length) return 0;
+  const { items } = await loadList();
+  const drop = new Set<string>();
+  const cut = new Map<string, { quantity: string; for: string }>();
+  for (const n of needs) {
+    const it = items.find((x) => !x.checked && !drop.has(x.id) && norm(x.item) === norm(n.item) && forOf(cut.get(x.id)?.for ?? x.for).includes(n.for));
+    if (!it || held.has(it.id)) continue;
+    const now = cut.get(it.id) ?? { quantity: it.quantity, for: it.for };
+    const others = forOf(now.for).filter((f) => f !== n.for);
+    if (!others.length) { drop.add(it.id); cut.delete(it.id); continue; }
+    const less = n.quantity ? takeAway(now.quantity, n.quantity) : null;
+    cut.set(it.id, { quantity: less === null ? now.quantity : less, for: others.join(", ") });
+  }
+  for (const [id, c] of cut) await setCells(id, { quantity: c.quantity, for: c.for });
+  if (drop.size) await removeItems([...drop]);
+  return drop.size;
+}
+
 /**
  * Many items at once (a recipe's ingredients, a planned week): the list is read once, each item merges into the same
  * unchecked item already there (two recipes needing onions make one line), and the new ones go in one write.
