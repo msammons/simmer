@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addItems, addStaple, loadList, removeItem } from "./groceries";
-import { addFrozen, changePlanned, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
+import { addFrozen, changePlanned, clearPlanned, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
 import { todayIn } from "./time";
 import { planLunches } from "./week";
 
@@ -118,5 +118,17 @@ describe("planning by number", () => {
     expect(after.dishes.map((d) => d.recipe)).toEqual(["turkey-chili-1"]);
     expect(after.lunches).toEqual([]);
     for (const d of before.dishes) expect(after.lastMade[d.recipe]).toBe(todayIn());
+  });
+});
+
+describe("a new plan (Nov 10)", () => {
+  it("New plan takes every dinner off, logs them as made, and leaves the list alone (Nov 10)", async () => {
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
+    const list = (await loadList()).items.length;
+    await clearPlanned();
+    const p = await loadPlan();
+    expect(p.dishes).toEqual([]);
+    expect(p.lastMade["turkey-chili-1"]).toBe(todayIn());
+    expect((await loadList()).items.length).toBe(list);
   });
 });

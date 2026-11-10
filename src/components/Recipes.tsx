@@ -107,10 +107,10 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
       {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
       {added?.problem && <Notice>{added.problem}</Notice>}
       {added?.note && <Notice tone="info">{added.note}</Notice>}
-      {planned && !added?.note && <p className="t-sub px-1 text-muted">One of this week&apos;s dinners. What it needs went on the list when it was planned.</p>}
+      {planned && !added?.note && <p className="t-sub px-1 text-muted">On the plan. What it needs went on the list when it was planned.</p>}
       {/* Not planned: putting it on this week is the main thing (Nov 9); just its groceries is the quieter choice. */}
       <div className="space-y-3 empty:hidden">
-        {!planned && onAddToWeek && <Button onClick={addToWeek} disabled={adding} icon="calendarPlus" className="w-full">{adding ? "Adding…" : "Add to this week"}</Button>}
+        {!planned && onAddToWeek && <Button onClick={addToWeek} disabled={adding} icon="calendarPlus" className="w-full">{adding ? "Adding…" : "Add to the plan"}</Button>}
         {r.ingredients.length > 0 && (planned || onAddToWeek
           ? <Button onClick={onAddToList} icon="list" variant="secondary" className="w-full">{planned ? "Add to the list again" : "Just add to the list"}</Button>
           : <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>)}
