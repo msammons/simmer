@@ -112,7 +112,10 @@ function PinnedBar({ children, className = "", space = "", barRef }: { children:
     return () => watch.disconnect();
   }, []);
   return (
-    <div style={{ height }} className={space}>
+    <div style={{ height }} className={`relative ${space}`}>
+      {/* Plain background above the page, moving with it: the gap a pull opens under the still bar shows this, never the
+          brand wash behind the page (Matt, Nov 9). */}
+      <span aria-hidden className="pointer-events-none absolute bottom-[calc(100%+env(safe-area-inset-top)+0.5rem)] left-[calc(50%-50vw)] h-[200vh] w-screen bg-bg" />
       <div ref={box} className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 mx-auto w-full max-w-md px-4">
         <div ref={barRef} className={`relative ${className}`}>{children}</div>
       </div>
