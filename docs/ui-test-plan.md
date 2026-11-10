@@ -50,7 +50,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.3 | Trips | Meals that need Trader Joe's or Costco are only picked with that trip ticked | L |
 | 4.4 | After Plan / Start over | "This week": that many of each kind, none of last week's again; note "Planned the next shop. N things went on the list." | L |
 | 4.5 | Something else (↻) on a dinner | Swapped at once; note "Swapped in X. N things went on the list, M came off."; when none is left, the row says "No other ideas from your recipes" | L |
-| 4.6 | Add another (end of each kind) / Also add chips | Simmer's next idea of that kind goes on at once; note "Added X. …"; when none is left, says so | L |
+| 4.6 | Add another / Add one (end of every kind; empty kinds show too) | Simmer's next idea of that kind goes on at once; note "Added X. …"; when none is left, says so | L |
 | 4.7 | Groceries follow the week | What only a removed or swapped-out dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
 | 4.8 | Meals after a change | Dinners by kind (no "Quick"/"Regular" word under the header); no lunches; Add a meal; Start over | L |
 | 4.9 | Start over twice | The second replaces the first; the old dinners aren't suggested again soon | L |
