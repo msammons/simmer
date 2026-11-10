@@ -58,7 +58,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.11 | Meals → Add a meal | One sheet: a search box (not focused, so the keyboard doesn't cover the list), "Suggested" (the best quick and regular dinner for this week and anything the freezer lifts), then every recipe under its kind (Quick, Regular…), names only | L |
 | 4.12 | Tap a recipe in Add a meal | Sheet closes; it's on Meals under its own kind (a dessert under Dessert); the note says "Added X. N things went on the list." (or "Its groceries were already on the list."); nothing else changes | L |
 | 4.13 | A recipe already planned, in Add a meal | Greyed, "This week" on the right, can't be tapped | L |
-| 4.14 | Type in Add a meal | Matching recipes only; no match says "No recipe called …" and points to the Recipes tab (no meal as just words, Nov 10) | L |
+| 4.14 | Type in Add a meal | Matching recipes only; no match offers "Add a recipe", which opens Add recipes on the Recipes tab (no meal as just words, Nov 10); from inside planning it asks "Leave planning?" first | L |
 | 4.15 | Plan → Dinners → tap a pick → search a recipe of another kind | It moves under that recipe's own kind; typed words stay in the slot's kind | L |
 | 4.16 | A recipe sharing a thing with one already on the list ("1 lb" + "1½ lb" ground turkey) | One row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 

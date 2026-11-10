@@ -56,6 +56,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("pick: opens beside the Plan sheet, not inside it", (await pick.count()) === 1 && (await page.getByRole("dialog", { name: "Plan" }).locator('[role="dialog"]').count()) === 0);
       const pickBox = await pick.getByRole("textbox").boundingBox();
       ok("pick: the search box sits at the top of its sheet", pickBox && pickBox.y > 0 && pickBox.y < 400 && pickBox.width > 300, JSON.stringify(pickBox));
+      await pick.getByRole("textbox").fill("zzz"); await page.waitForTimeout(200);
+      await pick.getByRole("button", { name: /^Add a recipe/ }).tap(); await page.waitForTimeout(300);
+      ok("pick: going to Recipes from planning asks first", await page.getByRole("dialog", { name: "Leave planning" }).isVisible());
+      await page.getByRole("button", { name: "Keep planning" }).tap(); await page.waitForTimeout(300);
+      ok("pick: Keep planning stays", (await page.getByRole("dialog", { name: "Leave planning" }).count()) === 0 && (await pick.count()) === 1);
+      await pick.getByRole("textbox").fill(""); await page.waitForTimeout(200);
       await page.screenshot({ path: `${dir}/2-pick.png` });
       await pick.locator("section button").first().tap(); await page.waitForTimeout(400);
       ok("pick: the place is filled", (await page.getByRole("dialog", { name: "Pick one" }).count()) === 0 && (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) === 0);
@@ -167,8 +173,11 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("button", { name: /^Add a meal/ }).tap(); await page.waitForTimeout(500);
       ok("add a meal: now it shows This week", await addSheet.getByRole("button", { name: /^Turkey chili.*This week$/ }).first().isDisabled());
       await addSheet.getByLabel("Find a recipe").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
-      ok("add a meal: no match points to Recipes, and adds nothing", await addSheet.getByText("No recipe called “Dinner at Grandma's”").isVisible());
-      await addSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(400);
+      ok("add a meal: no match offers Add a recipe, and adds nothing", await addSheet.getByText("No recipe called “Dinner at Grandma's” yet").isVisible());
+      await addSheet.getByRole("button", { name: /^Add a recipe/ }).tap(); await page.waitForTimeout(500);
+      ok("add a meal: Add a recipe goes to Recipes with Add recipes open", (await page.getByRole("dialog", { name: "Add recipes" }).count()) === 1 && (await addSheet.count()) === 0);
+      await page.getByRole("dialog", { name: "Add recipes" }).getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
+      await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
     }
 
