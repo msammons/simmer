@@ -53,9 +53,10 @@ Simmer in `chrome://extensions`. Other computers use the zip below.
 ## Installing or updating it (once per computer)
 
 Simmer knows the version it ships (`extension-working/manifest.json`) and the one that last checked in; when the computer's is
-older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change.
+older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
+YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper.zip`, rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.10.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
