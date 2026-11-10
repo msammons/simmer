@@ -34,8 +34,8 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 3.5 | Type it in → a whole recipe | One recipe with its ingredients | R |
 | 3.6 | Open a recipe | Name, line (effort · minutes · make ahead · serves), the buttons (3.8a), ingredients by Fresh / From the pantry, numbered steps, Find it by, Where it's from, Stop suggesting this | L |
 | 3.7 | Switch Quick ↔ Regular on a recipe | Saved; the list header moves it to the other group | L |
-| 3.8a | A recipe not on this week's plan | "Add to this week" (main button), then a quieter "Just add to the list"; Add to this week puts it on Meals under its own kind with its groceries, and says "Added Turkey chili. N things went on the list." | L |
-| 3.8b | A recipe already planned | "One of this week's dinners…" and a quieter "Add to the list again"; no Add to this week | L |
+| 3.8a | A recipe not on the plan | "Add to the plan" (main button), then a quieter "Just add to the list"; Add to the plan puts it on Meals under its own kind with its groceries, and says "Added Turkey chili. N things went on the list." | L |
+| 3.8b | A recipe already planned | "On the plan…" and a quieter "Add to the list again"; no Add to the plan | L |
 | 3.8 | Add to the list from a recipe | Fresh things go on Lists; things already in Stock are only highlighted there | L |
 | 3.9 | Edit (pencil) a recipe, change the name, save | New name everywhere (Recipes, Meals) | L |
 | 3.10 | Stop suggesting this | Recipe stays in the collection but planning never picks it | L |
@@ -45,14 +45,15 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 
 | # | Do | Expect | Where |
 |---|----|--------|-------|
-| 4.1 | Meals | "This week", then every kind (Quick, Regular, Kids', Dessert, Side, Breakfast) the same way: its dinners, then "Add one" (empty) or "Add another"; no Plan, Start over, swap or suggestions (Nov 10: Simmer doesn't pick meals) | L |
+| 4.1 | Meals | "The plan" (no weeks or dates anywhere, Nov 10), with "New plan" beside it when there are dinners, then every kind (Quick, Regular, Kids', Dessert, Side, Breakfast) the same way: its dinners, then "Add one" (empty) or "Add another"; no Plan, Start over, swap or suggestions (Nov 10: Simmer doesn't pick meals) | L |
 | 4.2 | Add one / Add another | A sheet "Add a quick dinner" (etc.): a search box (not focused), then her recipes of that kind A–Z, names only | L |
 | 4.3 | Pick a recipe there | Sheet closes; it's under its own kind; the note says "Added X. N things went on the list." (or "Its groceries were already on the list.") | L |
 | 4.4 | Search there | Any recipe, of any kind; picked, it goes under its own kind | L |
-| 4.5 | A recipe already planned, in the sheet | Greyed, "This week" on the right, can't be tapped | L |
+| 4.5 | A recipe already planned, in the sheet | Greyed, "Planned" on the right, can't be tapped | L |
 | 4.6 | A kind with no recipes, or a search with no match | "Add a recipe" row: opens Add recipes on the Recipes tab | L |
-| 4.7 | Groceries follow the week | What only a removed dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
-| 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off this week?" (what only it needed comes off the list; Take it off / Cancel), no Undo after; note "Took X off. N things came off the list." | L |
+| 4.7 | Groceries follow the plan | What only a removed dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
+| 4.8 | New plan | Asks "Start a new plan?" (these N dinners come off; the grocery list stays as it is); New plan empties every kind, logs them as made, and leaves Lists as they were; Cancel changes nothing | L |
+| 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off the plan?" (what only it needed comes off the list; Take it off / Cancel), no Undo after; note "Took X off. N things came off the list." | L |
 | 4.16 | A recipe sharing a thing with one already on the list ("1 lb" + "1½ lb" ground turkey) | One row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 
 ## 5. Lists

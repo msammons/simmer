@@ -338,6 +338,20 @@ export async function markMade(id: string) {
   if (f) await takeFrozen(f.id);
 }
 
+/**
+ * New plan (Nov 10): every dinner comes off, logged as made on the day it was planned (they were bought and cooked:
+ * nothing is ticked off), so "last made" stays true. The grocery list is left alone: what they needed was bought.
+ */
+export async function clearPlanned(): Promise<void> {
+  const today = todayIn();
+  const before = await rows(PLANNED);
+  const dishes = toPlanned(before).dishes;
+  if (!dishes.length) return;
+  const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
+  await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
+  await append(MADE, dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
+}
+
 /** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
 export async function removePlanned(id: string): Promise<{ removed: number }> {
   const dish = toPlanned(await rows(PLANNED)).dishes.find((d) => d.id === id);

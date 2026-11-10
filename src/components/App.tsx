@@ -217,6 +217,7 @@ export default function App() {
   }
   /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
   async function changePlan(c: PlanChange, lead?: string): Promise<string | null> {
+    if (c.op === "clear") setPlan((p) => (p ? { ...p, dishes: [] } : p));
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
     try {
       ++planChanges.current;
@@ -367,6 +368,7 @@ export default function App() {
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => { setWeekNote(null); setAddingOne(k); }}
+          onNewPlan={() => { setWeekNote(null); changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
           onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
-// This week, no lunches, no Made it), the tabs, Settings on every screen, Stock (Every week things), Lists (All, and Safeway's in-store
-// checklist when the helper can't be reached), Add a meal and a recipe's Add to this week, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// The plan, no lunches, no Made it), the tabs, Settings on every screen, Stock (Every week things), Lists (All, and Safeway's in-store
+// checklist when the helper can't be reached), Add a meal and a recipe's Add to the plan, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -62,7 +62,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // choices, no Undo; Nov 9). Back says where it goes and goes there.
       const kindSections = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) });
       const dinners = kindSections.getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ });
-      const offs = kindSections.getByRole("button", { name: /^Take .* off this week$/ });
+      const offs = kindSections.getByRole("button", { name: /^Take .* off the plan$/ });
       let cooked = false;
       if (await dinners.count()) {
         const count = await dinners.count();
@@ -74,7 +74,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
         ok("meals: Cancel keeps it", (await dinners.count()) === count);
         await offs.first().tap(); await page.waitForTimeout(300);
         await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(800);
-        ok("meals: Take it off takes just that dinner off, with no Undo", ((await dinners.count()) === count - 1 || (await page.getByText("No dinners this week").isVisible())) && (await page.getByText("Undo").count()) === 0);
+        ok("meals: Take it off takes just that dinner off, with no Undo", ((await dinners.count()) === count - 1 || (await dinners.count()) === 0) && (await page.getByText("Undo").count()) === 0);
         ok("meals: taking one off says what came off the list", await seen(page.getByText(/^Took .+ off\./), 5000));
         await page.waitForTimeout(400);
         if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("button", { name: /^Add to the list/ }).isVisible(); }
@@ -82,7 +82,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.waitForTimeout(400);
       if (!cooked) ok("meals: a dinner's recipe opens (skipped: no dinner with a recipe)", true);
       else {
-      ok("meals: a dinner's recipe opens, and says it's this week's", await page.getByText("One of this week's dinners.", { exact: false }).isVisible());
+      ok("meals: a dinner's recipe opens, and says it's on the plan", await page.getByText("On the plan.", { exact: false }).isVisible());
       await settingsHere("a recipe from Meals");
       const nav = page.getByRole("navigation", { name: "Main" });
       ok("meals: Meals stays lit under the recipe", (await nav.getByRole("button", { name: "Meals" }).getAttribute("aria-current")) === "page");
@@ -93,12 +93,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("meals: the tab starts fresh", await page.getByRole("heading", { name: "Meals" }).isVisible());
       }
 
-      // Add a meal (Nov 9, "Search and pick"), and a recipe's "Add to this week". Turkey chili is the sample's only regular
+      // Add a meal (Nov 9, "Search and pick"), and a recipe's "Add to the plan". Turkey chili is the sample's only regular
       // dinner: take it off first, so it can be added back from its page and then from Add a meal.
       const tabs = page.getByRole("navigation", { name: "Main" });
       const takeChiliOff = async () => {
         await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
-        const off = page.getByRole("button", { name: "Take Turkey chili off this week" });
+        const off = page.getByRole("button", { name: "Take Turkey chili off the plan" });
         if (await off.count()) {
           await off.first().tap(); await page.waitForTimeout(300);
           await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(1000);
@@ -106,19 +106,19 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       };
       const chiliPlanned = () => page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) }).getByRole("button", { name: /^Turkey chili/ });
       await takeChiliOff();
-      // The recipe's page: not planned, so "Add to this week" leads and "Just add to the list" is the quieter one.
+      // The recipe's page: not planned, so "Add to the plan" leads and "Just add to the list" is the quieter one.
       await tabs.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(600);
       await page.getByRole("button", { name: /^Turkey chili/ }).first().tap(); await page.waitForTimeout(500);
-      const toWeek = page.getByRole("button", { name: "Add to this week" });
-      ok("recipe: not planned, it offers Add to this week and Just add to the list", (await toWeek.isVisible()) && (await page.getByRole("button", { name: "Just add to the list" }).isVisible()));
+      const toWeek = page.getByRole("button", { name: "Add to the plan" });
+      ok("recipe: not planned, it offers Add to the plan and Just add to the list", (await toWeek.isVisible()) && (await page.getByRole("button", { name: "Just add to the list" }).isVisible()));
       await page.screenshot({ path: `${dir}/8a-recipe-add-to-week.png` });
       await toWeek.tap();
-      ok("recipe: Add to this week says so, naming it", await seen(page.getByText(/^Added Turkey chili\./), 8000));
+      ok("recipe: Add to the plan says so, naming it", await seen(page.getByText(/^Added Turkey chili\./), 8000));
       ok("recipe: and then it's planned (Add to the list again)", await seen(page.getByRole("button", { name: "Add to the list again" }), 3000) && (await toWeek.count()) === 0);
       await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(300);
       await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
       ok("recipe: it's on Meals under Regular", (await chiliPlanned().count()) === 1);
-      // Add from Regular: her regular dinners A–Z, a planned one shown as This week and not addable.
+      // Add from Regular: her regular dinners A–Z, a planned one shown as Planned and not addable.
       await takeChiliOff();
       const addRegular = () => page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) }).getByRole("button", { name: /^Add (one|another)$/ }).tap();
       await addRegular(); await page.waitForTimeout(500);
@@ -138,7 +138,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("add a meal: picking one closes the sheet and the note names it", await seen(page.getByText(/^Added Turkey chili\. (\d+ things? went on the list|Its groceries were already on the list)\./), 8000) && (await addSheet.count()) === 0);
       ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
       await addRegular(); await page.waitForTimeout(500);
-      ok("add a meal: now it shows This week", await addSheet.getByRole("button", { name: /^Turkey chili.*This week$/ }).first().isDisabled());
+      ok("add a meal: now it shows Planned", await addSheet.getByRole("button", { name: /^Turkey chili.*Planned$/ }).first().isDisabled());
       await addSheet.getByLabel("Find a recipe").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
       ok("add a meal: no match offers Add a recipe, and adds nothing", await addSheet.getByText("No recipe called “Dinner at Grandma's” yet").isVisible());
       await addSheet.getByRole("button", { name: /^Add a recipe/ }).tap(); await page.waitForTimeout(500);
@@ -146,6 +146,16 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("dialog", { name: "Add recipes" }).getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
       await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
+      // New plan (Nov 10): asks first; every dinner comes off; the grocery list stays.
+      const listBefore = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
+      await page.getByRole("button", { name: "New plan", exact: true }).tap(); await page.waitForTimeout(300);
+      const fresh = page.getByRole("dialog", { name: "New plan" });
+      ok("new plan: asks first, and says the list stays", (await fresh.isVisible()) && (await fresh.getByText("The grocery list stays as it is.").isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
+      await fresh.getByRole("button", { name: "New plan" }).tap();
+      ok("new plan: every dinner comes off", await seen(page.getByText(/^Started a new plan\./), 8000) && (await page.getByRole("button", { name: /^Take .* off the plan$/ }).count()) === 0);
+      const listAfter = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
+      ok("new plan: the grocery list stays", listBefore === listAfter, `${listBefore} → ${listAfter}`);
+      ok("meals: nothing on Meals says week", !/\bweek\b/i.test(await page.locator("main").innerText()));
     }
 
     // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).

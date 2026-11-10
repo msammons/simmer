@@ -25,14 +25,15 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onAdd }: {
+export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after a change ("Took Tacos off. 3 things came off the list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onAdd: (kind: Kind) => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
+  const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
   return (
     <div className="space-y-6">
       <BrandBar />
@@ -41,7 +42,11 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
       {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
       {plan && (
         <>
-          <h2 className="t-title px-1">This week</h2>
+          {/* No weeks or dates on screen (Matt, Nov 10): it's the plan, until a new one starts. */}
+          <div className="flex items-baseline justify-between px-1">
+            <h2 className="t-title">The plan</h2>
+            {dishes.length > 0 && <button className="t-sub font-semibold text-accent active:opacity-60" onClick={() => setStarting(true)}>New plan</button>}
+          </div>
           {KINDS.map((k) => {
             const mine = dishes.filter((d) => d.kind === k);
             return (
@@ -54,7 +59,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
                       <div className="min-w-0 flex-1">
                         <Row title={name} accessory={r ? "chevron" : undefined} onClick={r ? () => onOpen(d) : undefined} />
                       </div>
-                      <RoundButton quiet icon="close" label={`Take ${name} off this week`} onClick={() => setTaking(d)} />
+                      <RoundButton quiet icon="close" label={`Take ${name} off the plan`} onClick={() => setTaking(d)} />
                     </div>
                   );
                 })}
@@ -64,9 +69,19 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
           })}
         </>
       )}
+      {/* A new plan asks first: every dinner comes off; the list stays (what they needed was bought). */}
+      {starting && (
+        <Sheet label="New plan" title="Start a new plan?" onClose={() => setStarting(false)}>
+          <div className="space-y-3 pb-2">
+            <p className="t-sub text-muted">{dishes.length === 1 ? "This dinner comes off." : `These ${dishes.length} dinners come off.`} The grocery list stays as it is.</p>
+            <Button className="w-full" onClick={() => { onNewPlan(); setStarting(false); }}>New plan</Button>
+            <Button variant="secondary" className="w-full" onClick={() => setStarting(false)}>Cancel</Button>
+          </div>
+        </Sheet>
+      )}
       {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
       {taking && (
-        <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off this week?`} onClose={() => setTaking(null)}>
+        <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off the plan?`} onClose={() => setTaking(null)}>
           <div className="space-y-3 pb-2">
             <p className="t-sub text-muted">What only it needed comes off the grocery list, unless it&apos;s ticked off or in the cart.</p>
             <Button className="w-full" onClick={() => { onRemove(taking); setTaking(null); }}>Take it off</Button>
@@ -91,7 +106,7 @@ const plannable = (r: Recipe) => kindOf(r) !== null;
 /**
  * Add one of a kind to this week: her recipes of that kind, A–Z, to pick from (no suggestions: Simmer doesn't pick
  * meals, Nov 10); the search box finds any recipe, which goes in under its own kind. Recipes only. One already planned
- * shows "This week" and can't go in twice.
+ * shows "Planned" and can't go in twice.
  */
 export function AddMealSheet({ kind, plan, recipes, onAdd, onRecipes, onClose }: { kind: Kind; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onRecipes: () => void; onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -111,7 +126,7 @@ export function AddMealSheet({ kind, plan, recipes, onAdd, onRecipes, onClose }:
   // Just the name (Matt, Nov 10: no lines under rows).
   const row = (r: Recipe) => {
     const here = planned.has(r.id);
-    return <Row key={r.id} title={r.name} value={here ? "This week" : undefined} disabled={here}
+    return <Row key={r.id} title={r.name} value={here ? "Planned" : undefined} disabled={here}
       onClick={here ? undefined : () => add({ kind: kindOf(r) ?? kind, recipe: r.id, pinned: true })} />;
   };
   return (
