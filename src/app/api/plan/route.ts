@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch } from "@/lib/plan";
+import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned } from "@/lib/plan";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 
 const text = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
     } else if (b?.op === "made" && id) await markMade(id);
     else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
+    else if (b?.op === "clear") await clearPlanned();
     else return Response.json({ error: "Unknown change." }, { status: 400 });
     return Response.json({ ...(await loadPlan()), added, removed }, fresh);
   } catch (e) {
