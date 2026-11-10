@@ -119,8 +119,8 @@ export const api = {
   /** What's still to make and pack. */
   plan: (signal?: AbortSignal) => call<PlanData>("/api/plan", { signal }),
   /** More to make and pack, on top of what's there; `added`: how many things went on the grocery list. */
-  savePlan: (dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string) => call<PlanData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "plan", dishes, lunches, counts, by }) }),
-  planChange: (c: PlanChange, by: string) => call<PlanData & { added: number }>("/api/plan", { method: "POST", body: JSON.stringify({ ...c, by }) }),
+  savePlan: (dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string) => call<PlanData & { added: number; removed?: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "plan", dishes, lunches, counts, by }) }),
+  planChange: (c: PlanChange, by: string) => call<PlanData & { added: number; removed?: number }>("/api/plan", { method: "POST", body: JSON.stringify({ ...c, by }) }),
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),

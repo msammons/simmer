@@ -8,7 +8,7 @@ import { STORE_NAMES } from "./Shop";
 import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { AddMealSheet, MealsScreen, PlanPage } from "./Week";
+import { AddMealSheet, MealsScreen, mealName } from "./Week";
 import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
@@ -64,7 +64,6 @@ export default function App() {
   const [weekError, setWeekError] = useState<string | null>(null);
   const [weekNote, setWeekNote] = useState<string | null>(null);
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
-  const [planning, setPlanning] = useState(false);
   const [addingOne, setAddingOne] = useState(false);
   const loaded = useRef(false); // the household has loaded from the server this session
 
@@ -74,7 +73,7 @@ export default function App() {
     store.setPasscode(null);
     tellPanelSignedOut();
     setError("Wrong passcode.");
-    setSettings(false); setSheet(null); setPlanning(false); setAddingOne(false);
+    setSettings(false); setSheet(null); setAddingOne(false);
     setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
     setPhase("passcode");
   }, []);
@@ -193,41 +192,43 @@ export default function App() {
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [onWeek, visit, refreshPlan]);
-  /** The plan as the server answered it, and a note for what went on the grocery list (naming the meal when one was added). */
-  function gotPlan(p: PlanData & { added: number }, meal?: { name: string; groceries: boolean }) {
+  /**
+   * The plan as the server answered it, and a note saying what changed and what went on or came off the grocery list:
+   * "Took Tacos off. 3 things came off the list." `lead` names the change; `already`: a meal whose groceries were there.
+   */
+  function gotPlan(p: PlanData & { added: number; removed?: number }, lead?: string, already?: boolean) {
     setPlan(p); store.setPlan(p); setWeekError(null);
-    const things = `${p.added} thing${p.added === 1 ? "" : "s"}`;
-    const note = meal
-      ? `Added ${meal.name}.${p.added ? ` ${things} went on the list.` : meal.groceries ? " Its groceries were already on the list." : ""}`
-      : p.added ? `Added ${things} to the grocery list.` : null;
+    const t = (n: number) => `${n} thing${n === 1 ? "" : "s"}`;
+    const off = p.removed ?? 0;
+    const list = p.added && off ? `${t(p.added)} went on the list, ${off} came off.` : p.added ? `${t(p.added)} went on the list.` : off ? `${t(off)} came off the list.` : already ? "Its groceries were already on the list." : "";
+    const note = [lead, list].filter(Boolean).join(" ") || null;
     setWeekNote(note);
-    if (p.added) refreshList(); // the new things show on Lists and Stock right away
+    if (p.added || off) refreshList(); // the list changes show on Lists and Stock right away
     return note ?? undefined;
   }
-  /** The next shop's dinners (the plan sheet, with counts) or one more for this week (no counts); the sheet closes itself
-   * on success (null) and shows the problem otherwise. */
-  async function savePlan(dishes: NewDish[], counts: Counts | null): Promise<string | null> {
+  /** Start over (or the first plan): the week replaced with fresh picks; the sheet closes itself on success (null). */
+  async function startOver(dishes: NewDish[], counts: Counts): Promise<string | null> {
     try {
       ++planChanges.current;
-      gotPlan(await api.savePlan(dishes, [], counts, me));
+      gotPlan(await api.savePlan(dishes, [], counts, me), "Planned the next shop.");
       return null;
     } catch (e) { return problemOf(e); }
   }
-  /** One meal added to this week (Add a meal, or a recipe's "Add to this week"); the note names it. */
+  /** One meal added to this week (Add another, Add a meal, or a recipe's "Add to this week"); the note names it. */
   async function addMeal(d: NewDish): Promise<{ problem: string | null; note?: string }> {
     const r = recipeOf(d.recipe);
     try {
       ++planChanges.current;
       const p = await api.savePlan([d], [], null, me);
-      return { problem: null, note: gotPlan(p, { name: r?.name ?? d.recipe, groceries: Boolean(r?.ingredients.length) }) };
+      return { problem: null, note: gotPlan(p, `Added ${r?.name ?? d.recipe}.`, Boolean(r?.ingredients.length)) };
     } catch (e) { return { problem: problemOf(e) }; }
   }
-  /** One planned thing changed. Made comes off at once, before the answer. */
-  async function changePlan(c: PlanChange): Promise<string | null> {
+  /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
+  async function changePlan(c: PlanChange, lead?: string): Promise<string | null> {
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
     try {
       ++planChanges.current;
-      gotPlan(await api.planChange(c, me));
+      gotPlan(await api.planChange(c, me), lead);
       return null;
     } catch (e) { refreshPlan(); return problemOf(e); }
   }
@@ -339,7 +340,7 @@ export default function App() {
   }
   /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
   function toRecipes() {
-    setAddingOne(false); // a plan being made stays, for coming back to
+    setAddingOne(false);
 
     onTab("recipes");
     setSheet("add");
@@ -371,16 +372,12 @@ export default function App() {
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
-      {/* Planning happens on the Meals page (Nov 10), kept while other tabs are visited; nothing changes until Save. */}
-      {phase === "app" && planning && plan && (
-        <div hidden={top.kind !== "week"}>
-          <PlanPage plan={plan} recipes={recipes ?? []} onSave={async (d, c) => { const p = await savePlan(d, c); if (!p) { setPlanning(false); scrollAppTo(0); } return p; }} onRecipes={toRecipes} onCancel={() => { setPlanning(false); scrollAppTo(0); }} />
-        </div>
-      )}
-      {phase === "app" && top.kind === "week" && !planning && (
+      {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={() => { setWeekNote(null); setPlanning(true); scrollAppTo(0); }} onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)}
-          onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }).then((p) => { if (p) setWeekError(p); }); }} />
+          onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)} onStartOver={startOver}
+          onAdd={(d) => { setWeekNote(null); addMeal(d).then((r) => { if (r.problem) setWeekError(r.problem); }); }}
+          onSwap={(d, recipe) => { setWeekNote(null); changePlan({ op: "change", id: d.id, recipe, pinned: false }, `Swapped in ${recipeOf(recipe)?.name ?? recipe}.`).then((p) => { if (p) setWeekError(p); }); }}
+          onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
