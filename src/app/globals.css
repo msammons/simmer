@@ -100,7 +100,8 @@ body {
 }
 
 body {
-  background: var(--bg);
+  /* A faint wash of the brand color at the top of the screen, held still; a pull covers it (see PinnedBar). */
+  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) var(--bg) no-repeat;
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
@@ -173,10 +174,3 @@ button, a, [role="button"] {
   * { animation: none !important; }
 }
 
-/*
- * A faint wash of the brand color at the top of the list, moving with it: when a pull stretches the list down, the gap
- * opened above it is the plain background (Matt, Nov 9).
- */
-#scroller {
-  background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) 0 0 / 100% 100dvh no-repeat local;
-}
