@@ -63,7 +63,6 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
     setNone(null);
     onAdd({ kind, recipe: c.recipe, pinned: false });
   }
-  const shown = KINDS.filter((k) => dishes.some((d) => d.kind === k));
   return (
     <div className="space-y-6">
       <BrandBar />
@@ -77,7 +76,8 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
       ) : (
         <>
           <h2 className="t-title px-1">This week</h2>
-          {shown.map((k) => (
+          {/* Every kind, each the same way (Matt, Nov 10: the "Also add" chips under the rest read oddly). */}
+          {KINDS.map((k) => (
             <Group key={k} header={KIND_NAMES[k]}>
               {dishes.filter((d) => d.kind === k).map((d) => {
                 const r = recipes.find((x) => x.id === d.recipe);
@@ -93,17 +93,10 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
                 );
               })}
               {/* Simmer adds its next idea of this kind (Matt, Nov 10: "Add another", not "One more" or "Suggest another"). */}
-              <Row icon="plus" title="Add another" subtitle={none === k ? NOTHING_ELSE : undefined} onClick={() => another(k)} />
+              <Row icon="plus" title={dishes.some((d) => d.kind === k) ? "Add another" : "Add one"} subtitle={none === k ? NOTHING_ELSE : undefined} onClick={() => another(k)} />
             </Group>
           ))}
           <Group><Row icon="search" title="Add a meal" accessory="chevron" onClick={onAddOne} /></Group>
-          {KINDS.some((k) => !shown.includes(k)) && (
-            <div className="space-y-2">
-              <p className="t-foot px-1 font-semibold text-muted">Also add</p>
-              <div className="flex flex-wrap gap-2">{KINDS.filter((k) => !shown.includes(k)).map((k) => <Chip key={k} onClick={() => another(k)}>{KIND_NAMES[k]}</Chip>)}</div>
-              {none && KINDS.includes(none as Kind) && !shown.includes(none as Kind) && <p className="px-1 t-foot text-muted">{NOTHING_ELSE}</p>}
-            </div>
-          )}
           <Button variant="secondary" className="w-full" icon="refresh" onClick={() => setStarting(true)}>Start over</Button>
         </>
       )}
@@ -239,7 +232,4 @@ function RoundButton({ icon, label, onClick, quiet }: { icon: IconName; label: s
       <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
     </button>
   );
-}
-function Chip({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return <button onClick={onClick} className="t-foot h-8 rounded-full bg-sunk px-3 font-semibold text-ink transition active:scale-[0.97]">{children}</button>;
 }
