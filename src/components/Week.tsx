@@ -5,7 +5,6 @@ import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, KINDS, kindOf, MAX_COUNT, pickMany, rank, somethingElse, type Choice, type Context } from "@/lib/week";
 import { Check } from "./Shop";
 import { Icon, type IconName } from "./icons";
-import { summary } from "./Recipes";
 import { BrandBar, Button, EmptyState, Group, Notice, Row, Sheet } from "./ui";
 
 // Dinners are planned by number for the next shop, not by day (Nov 3): the Meals tab is this week's dinners, in any
@@ -56,7 +55,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
                   return (
                     <div key={d.id} className="flex items-center pr-2">
                       <div className="min-w-0 flex-1">
-                        <Row title={mealName(d.recipe, recipes)} subtitle={r ? summary(r, false, false) || undefined : "Typed in, no recipe"} accessory={r ? "chevron" : undefined} onClick={r ? () => onOpen(d) : undefined} />
+                        <Row title={mealName(d.recipe, recipes)} accessory={r ? "chevron" : undefined} onClick={r ? () => onOpen(d) : undefined} />
                       </div>
                       <RoundButton quiet icon="close" label={`Take ${mealName(d.recipe, recipes)} off this week`} onClick={() => setTaking(d)} />
                     </div>
@@ -67,7 +66,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
           })}
           <Group>
             {!dishes.length && <Row title="No dinners this week" />}
-            <Row icon="plus" title="Add a meal" subtitle="A recipe, or type one" accessory="chevron" onClick={onAddOne} />
+            <Row icon="plus" title="Add a meal" accessory="chevron" onClick={onAddOne} />
           </Group>
           <Button variant="secondary" className="w-full" icon="calendar" onClick={onPlan}>Plan the next shop</Button>
         </>
@@ -89,8 +88,8 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onPlan, onOpen
 // ---- Pick a recipe (the Plan sheet's "pick it yourself")
 
 /**
- * Pick one she already knows: from her recipes of that kind (or any, searching), or typed ("Dinner with G&G"). A
- * searched recipe of another kind is filed under its own kind by the Plan sheet; typed words keep the slot's.
+ * Pick one of her recipes: those of that kind, or any, searching. Recipes only (Matt, Nov 10: a meal added as just words
+ * read oddly); a searched recipe of another kind is filed under its own kind by the Plan sheet.
  */
 function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; recipes: Recipe[]; status?: ReactNode; onPick: (recipe: string) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -99,12 +98,11 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
     <Sheet label="Pick one" title={`Pick ${ONE_NAME[kind].toLowerCase()}`} onClose={onClose} tall>
       <div className="space-y-4 pb-2">
         {status}
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe" enterKeyHint="search"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
-          {q.trim() && <Row icon="pencil" title={`“${q.trim()}”`} subtitle="Use these words" onClick={() => onPick(q.trim().slice(0, 80))} />}
-          {found.map((r) => <Row key={r.id} title={r.name} subtitle={summary(r)} onClick={() => onPick(r.id)} />)}
-          {!q.trim() && !found.length && <Row title="No recipes of this kind yet" subtitle="Type one, or add recipes" />}
+          {found.map((r) => <Row key={r.id} title={r.name} onClick={() => onPick(r.id)} />)}
+          {!found.length && <Row title={q.trim() ? `No recipe called “${q.trim()}”` : "No recipes of this kind yet"} subtitle="Add it on the Recipes tab" />}
         </Group>
       </div>
     </Sheet>
@@ -113,18 +111,14 @@ function PinSheet({ kind, recipes, status, onPick, onClose }: { kind: Kind; reci
 
 // ---- Add a meal (any time)
 
-/** "Quick dinner", "Dessert": what a recipe goes in as, for a row's subtitle. */
-export const kindName = (k: Kind) => ONE_NAME[k].replace(/^An? /, "").replace(/^./, (c) => c.toUpperCase());
-/** A recipe's row line in Add a meal: its kind, then its minutes. */
-const kindLine = (r: Recipe, k: Kind) => [kindName(k), r.minutes && `${r.minutes} min`].filter(Boolean).join(" · ");
 /** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */
 const plannable = (r: Recipe) => kindOf(r) !== null;
 
 /**
  * Add a meal to this week (Nov 9, "Search and pick"): one sheet. With nothing typed, a few best picks for this week (the
- * top quick and regular dinner, and whatever the freezer lifts), then every recipe A–Z; typing searches, and the last row
- * adds the words as a meal with no recipe (a quick dinner). A recipe goes in under its own kind; one already planned
- * shows "This week" and can't go in twice.
+ * top quick and regular dinner, and whatever the freezer lifts), then every recipe under its kind, names only; typing
+ * searches. Recipes only (Nov 10). A recipe goes in under its own kind; one already planned shows "This week" and can't
+ * go in twice.
  */
 export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -148,10 +142,11 @@ export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData
     if (!bad) return onClose();
     setProblem(bad); setBusy(false);
   }
-  const row = (r: Recipe, sub?: string) => {
+  // Just the name (Matt, Nov 10: no lines under rows); the kind shows as the group a recipe is under.
+  const row = (r: Recipe) => {
     const k = kindOf(r)!;
     const here = planned.has(r.id);
-    return <Row key={r.id} title={r.name} subtitle={here ? kindName(k) : sub || kindLine(r, k)} value={here ? "This week" : undefined} disabled={here}
+    return <Row key={r.id} title={r.name} value={here ? "This week" : undefined} disabled={here}
       onClick={here ? undefined : () => add({ kind: k, recipe: r.id, pinned: true })} />;
   };
   return (
@@ -159,20 +154,20 @@ export function AddMealSheet({ plan, recipes, onAdd, onClose }: { plan: PlanData
       <div className="space-y-5 pb-2">
         {busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>}
         {/* No autofocus: on a phone the keyboard would cover the suggestions. */}
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe, or type one" aria-label="Find a recipe, or type one" enterKeyHint="search"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         {term ? (
           <Group>
             {found.slice(0, 30).map((r) => row(r))}
-            <Row icon="pencil" title={`Add “${term.slice(0, 80)}”`} subtitle="No recipe · counts as a quick dinner" onClick={() => add({ kind: "quick", recipe: term.slice(0, 80), pinned: true })} />
+            {!found.length && <Row title={`No recipe called “${term.slice(0, 80)}”`} subtitle="Add it on the Recipes tab" />}
           </Group>
         ) : (
           <>
-            {suggested.length > 0 && <Group header="Suggested">{suggested.map((o) => row(o.recipe, [kindName(kindOf(o.recipe)!), o.why].filter(Boolean).join(" · ")))}</Group>}
-            <Group header="All recipes">
-              {all.map((r) => row(r))}
-              {!all.length && <Row title="No recipes yet" subtitle="Type one above, or add recipes" />}
-            </Group>
+            {suggested.length > 0 && <Group header="Suggested">{suggested.map((o) => row(o.recipe))}</Group>}
+            {KINDS.filter((k) => all.some((r) => kindOf(r) === k)).map((k) => (
+              <Group key={k} header={KIND_NAMES[k]}>{all.filter((r) => kindOf(r) === k).map((r) => row(r))}</Group>
+            ))}
+            {!all.length && <Group><Row title="No recipes yet" subtitle="Add them on the Recipes tab" /></Group>}
           </>
         )}
       </div>
@@ -281,7 +276,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
     body = (
       <div className="space-y-5">
         <Group header="Dinners" footer={plan.dishes.length ? `Saving replaces this week's ${plan.dishes.length === 1 ? "dinner" : `${plan.dishes.length} dinners`}.` : undefined}>
-          {(["quick", "regular", "kids"] as const).map((k) => <CountRow key={k} title={COUNT_NAMES[k]} subtitle={k === "kids" ? "For nights the kids eat separately" : undefined} n={counts[k]} onChange={(n) => set(k, n)} />)}
+          {(["quick", "regular", "kids"] as const).map((k) => <CountRow key={k} title={COUNT_NAMES[k]} n={counts[k]} onChange={(n) => set(k, n)} />)}
         </Group>
         <Group header="Also">
           {(["dessert", "side", "breakfast"] as const).map((k) => <CountRow key={k} title={COUNT_NAMES[k]} n={counts[k]} onChange={(n) => set(k, n)} />)}
@@ -298,7 +293,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
       <div className="space-y-5">
         {!shown.length && <Group><Row title="No dinners this time" subtitle="Add one below, or go back and change the numbers" /></Group>}
         {shown.map((k) => (
-          <Group key={k} header={KIND_NAMES[k]} aside={<button className="t-foot font-semibold text-accent" onClick={() => oneMore(k)}>One more</button>}>
+          <Group key={k} header={KIND_NAMES[k]}>
             {picks.filter((p) => p.kind === k).map((p) => {
               if (!p.recipe) return (
                 <div key={p.key} className="flex items-center gap-2 px-4 py-3">
@@ -306,7 +301,6 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
                     <Icon name="plus" className="size-5 shrink-0 text-accent" strokeWidth={2.2} />
                     <span className="min-w-0">
                       <span className="block t-body font-semibold text-accent">Pick {ONE_NAME[k].toLowerCase()}</span>
-                      <span className="mt-0.5 block t-foot text-muted">{NOTHING_ELSE}</span>
                     </span>
                   </button>
                   <RoundButton quiet icon="close" label={`Remove this ${KIND_NAMES[k].toLowerCase()} place`} onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))} />
@@ -317,18 +311,21 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
                 <div key={p.key} className="flex items-center gap-2 px-4 py-3">
                   <button className="min-w-0 flex-1 text-left" onClick={() => setPinFor({ key: p.key })}>
                     <span className="block t-body font-semibold">{mealName(p.recipe, recipes)}</span>
-                    <span className="mt-0.5 block t-foot text-muted">{p.nothing ? NOTHING_ELSE : p.pinned ? "You picked this" : p.why || (r ? summary(r, false, false) : "")}</span>
+                    {/* No reason under a pick (Matt, Nov 10: clutter); only the answer when Something else has none. */}
+                    {p.nothing && <span className="mt-0.5 block t-foot text-muted">{NOTHING_ELSE}</span>}
                   </button>
                   <RoundButton icon="refresh" label={`Something else instead of ${mealName(p.recipe, recipes)}`} onClick={() => another(p)} />
                   <RoundButton icon="close" label={`Remove ${mealName(p.recipe, recipes)}`} onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))} />
                 </div>
               );
             })}
+            {/* A row that says what it does (Matt, Nov 10: "One more" in the header was confusing): Simmer suggests one more. */}
+            <Row icon="plus" title="Suggest another" onClick={() => oneMore(k)} />
           </Group>
         ))}
         <p className="t-sub px-1 text-muted">Tap one to pick it yourself.</p>
         <div className="space-y-2">
-          <p className="t-foot px-1 font-semibold text-muted">One more of</p>
+          <p className="t-foot px-1 font-semibold text-muted">Also suggest</p>
           <div className="flex flex-wrap gap-2">{KINDS.filter((k) => !shown.includes(k)).map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
         </div>
       </div>
@@ -344,7 +341,7 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
         the wrong place and the sheet behind kept scrolling). */}
     {pinFor && pinKind && (
         <PinSheet kind={pinKind} recipes={recipes} onClose={() => setPinFor(null)} onPick={(recipe) => {
-          // A recipe goes under its own kind (a searched dessert isn't a quick dinner); typed words keep the slot's.
+          // A recipe goes under its own kind (a searched dessert isn't a quick dinner).
           const r = recipes.find((x) => x.id === recipe);
           const kind = (r && kindOf(r)) || pinKind;
           if ("key" in pinFor) setPick(pinFor.key, { recipe, kind, pinned: true, why: "", nothing: false });

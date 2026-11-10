@@ -49,16 +49,16 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.2 | Plan → How many | Counters for quick, regular and kids' dinners, desserts, sides, breakfasts (no lunches), starting at last time's numbers; with dinners planned, "Saving replaces this week's N dinners." | L |
 | 4.3 | Trips toggles | Trader Joe's and Costco, with last trip dates | L |
 | 4.4 | Next → Dinners | That many of each, fitting the kind, none of this week's again; when ideas run out, the rest show as "Pick a …" places | L |
-| 4.5 | Something else / One more / remove | A different recipe; when none is left, says so; One more adds one of that kind | L |
-| 4.6 | Tap a pick | Picker sheet; a picked one shows "You picked this" | L |
+| 4.5 | Something else / Suggest another / remove | A different recipe; when none is left, says so; "Suggest another" (last row of each kind) adds one of that kind | L |
+| 4.6 | Tap a pick | Picker sheet; the pick takes the place, with no line under it | L |
 | 4.7 | Save | Sheet closes; "Added N things to the grocery list." N matches Lists; Lists and Stock update without a reload | L |
 | 4.8 | Meals after saving | "This week": dinners by kind (no "Quick"/"Regular" word under the header); no lunches; Plan | L |
 | 4.9 | Plan again and save | This week's dinners are replaced by the new ones; the old ones aren't suggested again soon | L |
 | 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off this week?" (Take it off / Cancel), no Undo after | L |
-| 4.11 | Meals → Add a meal ("A recipe, or type one") | One sheet: a search box (not focused, so the keyboard doesn't cover the list), "Suggested" (the best quick and regular dinner for this week and anything the freezer lifts, each with its reason), then "All recipes" A–Z, each with its kind ("Quick dinner · 25 min") | L |
+| 4.11 | Meals → Add a meal | One sheet: a search box (not focused, so the keyboard doesn't cover the list), "Suggested" (the best quick and regular dinner for this week and anything the freezer lifts), then every recipe under its kind (Quick, Regular…), names only | L |
 | 4.12 | Tap a recipe in Add a meal | Sheet closes; it's on Meals under its own kind (a dessert under Dessert); the note says "Added X. N things went on the list." (or "Its groceries were already on the list."); nothing else changes | L |
 | 4.13 | A recipe already planned, in Add a meal | Greyed, "This week" on the right, can't be tapped | L |
-| 4.14 | Type in Add a meal | Matching recipes, then "Add “<words>”" · "No recipe · counts as a quick dinner"; tapping it puts the words under Quick | L |
+| 4.14 | Type in Add a meal | Matching recipes only; no match says "No recipe called …" and points to the Recipes tab (no meal as just words, Nov 10) | L |
 | 4.15 | Plan → Dinners → tap a pick → search a recipe of another kind | It moves under that recipe's own kind; typed words stay in the slot's kind | L |
 | 4.16 | A recipe sharing a thing with one already on the list ("1 lb" + "1½ lb" ground turkey) | One row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 

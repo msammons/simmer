@@ -20,21 +20,20 @@ export function summary(r: Pick<Recipe, "effort" | "minutes" | "for" | "makeAhea
 const NO_INGREDIENTS = "No ingredients yet · Add them";
 
 type Opens = { onOpen: (r: Recipe) => void };
-/** `kind`: false under a Quick or Regular heading, which already says it. */
 
 /** A recipe in the collection: tap to open it (Add to the list is on the recipe; the row's own button went, Nov 9). */
-function RecipeRow({ r, onOpen, kind = true }: { r: Recipe; kind?: boolean } & Opens) {
-  const sub = [summary(r, false, kind), !r.ingredients.length && NO_INGREDIENTS].filter(Boolean).join(" · ");
-  return <Row title={r.name} subtitle={sub || undefined} accessory="chevron" onClick={() => onOpen(r)} />;
+function RecipeRow({ r, onOpen }: { r: Recipe } & Opens) {
+  // Only what needs doing (Matt, Nov 10: no minutes or labels under rows); the rest is on the recipe's page.
+  return <Row title={r.name} subtitle={r.ingredients.length ? undefined : NO_INGREDIENTS} accessory="chevron" onClick={() => onOpen(r)} />;
 }
 
 /** A few of a group, and the rest one tap away, so the list stays short. */
-function Some({ header, items, onOpen, kind = true }: { header: string; items: Recipe[]; kind?: boolean } & Opens) {
+function Some({ header, items, onOpen }: { header: string; items: Recipe[] } & Opens) {
   const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
     <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
-      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} kind={kind} onOpen={onOpen} />)}
+      {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}
     </Group>
   );
 }
@@ -61,9 +60,9 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
           <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
-          <Some header="Quick" kind={false} items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Regular" kind={false} items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Kids' dinners" kind={false} items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
+          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
+          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
           <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} {...opens} />
         </>
       )}
@@ -201,7 +200,7 @@ function Editor({ d, onChange }: { d: Draft; onChange: (d: Draft) => void }) {
         <Field label="Serves"><input className={FIELD} inputMode="numeric" value={d.serves ?? ""} onChange={(e) => set({ serves: n(e.target.value) })} placeholder="—" /></Field>
       </div>
       <Segmented label="Who it's for" value={d.for} onChange={(f) => set({ for: f })} options={[{ value: "everyone", label: "Everyone" }, { value: "kids", label: "Kids" }, { value: "adults", label: "Grown-ups" }]} />
-      <Group><Row lead={<Check on={d.makeAhead} />} title="Can be made ahead" subtitle="Earlier in the day or the night before" role="checkbox" checked={d.makeAhead} onClick={() => set({ makeAhead: !d.makeAhead })} /></Group>
+      <Group><Row lead={<Check on={d.makeAhead} />} title="Can be made ahead" role="checkbox" checked={d.makeAhead} onClick={() => set({ makeAhead: !d.makeAhead })} /></Group>
       <Field label="Ingredients, one per line"><textarea className={`${FIELD} min-h-40`} value={d.ingredients.join("\n")} onChange={(e) => set({ ingredients: e.target.value.split("\n") })} placeholder={"1 lb ground turkey\n1 onion"} /></Field>
       <Field label="Steps, one per line"><textarea className={`${FIELD} min-h-32`} value={d.steps.join("\n")} onChange={(e) => set({ steps: e.target.value.split("\n") })} placeholder="Optional" /></Field>
       <Field label="Find it by"><input className={FIELD} value={d.tags.join(", ")} onChange={(e) => set({ tags: e.target.value.split(",").map((t) => t.trimStart()) })} placeholder="tacos, one-pan" /></Field>
@@ -277,10 +276,10 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
   if (step.at === "choose") {
     body = (
       <Group footer="Simmer shows you what it found. Nothing is added until you say so.">
-        <Row icon="link" title="From a link" subtitle="A recipe page you like" accessory="chevron" onClick={() => setStep({ at: "link" })} />
-        <Row icon="camera" title="From a photo" subtitle="A recipe card, a cookbook page, or a screenshot" accessory="chevron" onClick={() => photo.current?.click()} />
-        <Row icon="book" title="From my files" subtitle="A PDF or a picture, from your phone or Drive" accessory="chevron" onClick={() => files.current?.click()} />
-        <Row icon="pencil" title="Type it in" subtitle="A family recipe, or your list of meal ideas" accessory="chevron" onClick={() => setStep({ at: "text" })} />
+        <Row icon="link" title="From a link" accessory="chevron" onClick={() => setStep({ at: "link" })} />
+        <Row icon="camera" title="From a photo" accessory="chevron" onClick={() => photo.current?.click()} />
+        <Row icon="book" title="From my files" accessory="chevron" onClick={() => files.current?.click()} />
+        <Row icon="pencil" title="Type it in" accessory="chevron" onClick={() => setStep({ at: "text" })} />
       </Group>
     );
     if (busy) body = <div className="py-10 text-center"><p className="t-headline">Reading it…</p><p className="t-sub mt-1 text-muted">A page full of recipes can take a minute.</p></div>;
@@ -299,7 +298,7 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
     body = (
       <Group header={`Found ${step.found.length}`} footer="Untick any you don't want to keep. Ones already in your collection are left out.">
         {step.found.map((d, i) => (
-          <Row key={i} lead={<Check on={picked.has(i)} />} title={d.name} subtitle={twin(d.name) ? "Already in your collection" : summary(d)} role="checkbox" checked={picked.has(i)} onClick={() => flip(i)} />
+          <Row key={i} lead={<Check on={picked.has(i)} />} title={d.name} subtitle={twin(d.name) ? "Already in your collection" : undefined} role="checkbox" checked={picked.has(i)} onClick={() => flip(i)} />
         ))}
       </Group>
     );
