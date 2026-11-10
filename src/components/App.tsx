@@ -8,7 +8,7 @@ import { STORE_NAMES } from "./Shop";
 import { norm } from "@/lib/words";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { AddMealSheet, MealsScreen, PlanSheet } from "./Week";
+import { AddMealSheet, MealsScreen, PlanPage } from "./Week";
 import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
@@ -339,8 +339,8 @@ export default function App() {
   }
   /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
   function toRecipes() {
-    setPlanning(false);
-    setAddingOne(false);
+    setAddingOne(false); // a plan being made stays, for coming back to
+
     onTab("recipes");
     setSheet("add");
   }
@@ -371,9 +371,15 @@ export default function App() {
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
-      {phase === "app" && top.kind === "week" && (
+      {/* Planning happens on the Meals page (Nov 10), kept while other tabs are visited; nothing changes until Save. */}
+      {phase === "app" && planning && plan && (
+        <div hidden={top.kind !== "week"}>
+          <PlanPage plan={plan} recipes={recipes ?? []} onSave={async (d, c) => { const p = await savePlan(d, c); if (!p) { setPlanning(false); scrollAppTo(0); } return p; }} onRecipes={toRecipes} onCancel={() => { setPlanning(false); scrollAppTo(0); }} />
+        </div>
+      )}
+      {phase === "app" && top.kind === "week" && !planning && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onPlan={() => setPlanning(true)} onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)}
+          onPlan={() => { setWeekNote(null); setPlanning(true); scrollAppTo(0); }} onOpen={(d) => openRecipe(d.recipe)} onAddOne={() => setAddingOne(true)}
           onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
@@ -389,7 +395,6 @@ export default function App() {
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {planning && plan && <PlanSheet plan={plan} recipes={recipes ?? []} onSave={savePlan} onRecipes={toRecipes} onClose={() => setPlanning(false)} />}
       {addingOne && plan && <AddMealSheet plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onRecipes={toRecipes} onClose={() => setAddingOne(false)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
