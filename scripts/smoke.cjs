@@ -46,9 +46,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.getByRole("button", { name: "Next", exact: true }).tap(); await page.waitForTimeout(400);
       ok("plan: dinners picked", await page.getByRole("heading", { name: "Dinners" }).isVisible());
       await page.screenshot({ path: `${dir}/2-dinners.png` });
-      // Out of ideas (Nov 10): "Suggest another" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
+      // Out of ideas (Nov 10): "Add another" until Simmer runs out; the rest is a place to pick one, never a count that "fits".
       const quickGroup = page.getByRole("dialog").last().locator("section").filter({ has: page.getByRole("heading", { name: "Quick", exact: true }) });
-      for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "Suggest another" }).tap(); await page.waitForTimeout(150); }
+      for (let i = 0; i < 12 && !(await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()); i++) { await quickGroup.getByRole("button", { name: "Add another" }).tap(); await page.waitForTimeout(150); }
       ok("plan: out of ideas shows a place to pick one", (await page.getByRole("button", { name: /^Pick a quick dinner/ }).count()) >= 1);
       ok("plan: and no count of what fits", !/\bfits?\b/.test(await page.getByRole("dialog").last().innerText()));
       await page.getByRole("button", { name: /^Pick a quick dinner/ }).first().tap(); await page.waitForTimeout(500);

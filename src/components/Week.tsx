@@ -319,13 +319,13 @@ export function PlanSheet({ plan, recipes, onSave, onClose }: { plan: PlanData; 
                 </div>
               );
             })}
-            {/* A row that says what it does (Matt, Nov 10: "One more" in the header was confusing): Simmer suggests one more. */}
-            <Row icon="plus" title="Suggest another" onClick={() => oneMore(k)} />
+            {/* A row that says what it does (Matt, Nov 10: "One more" in the header was confusing; "Add another", not "Suggest another"): Simmer adds its next idea. */}
+            <Row icon="plus" title="Add another" onClick={() => oneMore(k)} />
           </Group>
         ))}
         <p className="t-sub px-1 text-muted">Tap one to pick it yourself.</p>
         <div className="space-y-2">
-          <p className="t-foot px-1 font-semibold text-muted">Also suggest</p>
+          <p className="t-foot px-1 font-semibold text-muted">Also add</p>
           <div className="flex flex-wrap gap-2">{KINDS.filter((k) => !shown.includes(k)).map((k) => <Chip key={k} onClick={() => oneMore(k)}>{KIND_NAMES[k]}</Chip>)}</div>
         </div>
       </div>
