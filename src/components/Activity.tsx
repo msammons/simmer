@@ -117,7 +117,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
             ))}
           </Group>
         ) : (
-          !now && <EmptyState icon="bag" title="Nothing yet">Searches and cart changes show here as they happen.</EmptyState>
+          !now && <EmptyState icon="bag" title="Nothing yet" />
         )}
       </div>
       <div className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">

@@ -57,6 +57,19 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.unroute("**/api/plan");
       await firstFree.tap();
       ok("meals: picking one adds it, named in the note", (await seen(page.getByText(/^Added .+\./), 8000)) && (await kindSheet.count()) === 0);
+      // How many of one dinner (Nov 10): + adds another helping, − takes one back; no arrows on the rows.
+      const quickPlus = groupOf("Quick").getByRole("button", { name: /^One more / }).first();
+      const quickCount = () => groupOf("Quick").getByLabel(/: \d+$/).first().innerText();
+      const c0 = Number(await quickCount());
+      await quickPlus.tap();
+      ok("meals: + plans one more of that dinner", (await seen(page.getByText(/^Added .+\./), 8000)) && Number(await quickCount()) === c0 + 1);
+      await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap();
+      ok("meals: − takes one back without asking", await seen(page.getByText(/^Took .+ off\./), 8000) && Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0);
+      ok("meals: no arrows on the dinners", (await groupOf("Quick").getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ }).first().locator("svg").count()) === 0);
+      // A change's note doesn't follow you around: switching tabs clears it.
+      await page.locator("nav button", { hasText: "Lists" }).tap(); await page.waitForTimeout(300);
+      await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
+      ok("meals: the note is gone after switching tabs", (await page.getByText(/^(Added|Took) .+\./).count()) === 0);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // A dinner: tapping it opens the recipe on top of Meals; its quiet × takes it off after a confirm (no sheet of
       // choices, no Undo; Nov 9). Back says where it goes and goes there.
@@ -238,7 +251,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: it opens the add-to-list sheet for that recipe`, (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
     const turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
     ok(`${tag}: the things to buy start ticked`, (await turkey.getAttribute("aria-checked")) === "true" && await chiliSheet.getByText("To buy", { exact: true }).isVisible());
-    ok(`${tag}: spices and the pantry are only highlighted in Stock, not offered`, (await chiliSheet.getByText(/cumin|chili powder/i).count()) === 0 && await chiliSheet.getByText("The pantry things are highlighted in Stock.").isVisible());
+    ok(`${tag}: spices and the pantry are only highlighted in Stock, not offered`, (await chiliSheet.getByText(/cumin|chili powder/i).count()) === 0);
     if (tag.startsWith("phone")) await page.screenshot({ path: `${dir}/6c-add-to-list-${tag}.png` });
     await page.keyboard.press("Escape"); await page.waitForTimeout(400);
     await page.locator("header").getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(400);

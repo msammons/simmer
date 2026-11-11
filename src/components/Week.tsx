@@ -25,11 +25,11 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onMore, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after a change ("Took Tacos off. 3 things came off the list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onAdd: (kind: Kind) => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMore: (d: Dish) => void; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
@@ -49,17 +49,22 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
           </div>
           {KINDS.map((k) => {
             const mine = dishes.filter((d) => d.kind === k);
+            // The same dinner planned more than once shows once, with how many (Nov 10): − and + change it.
+            const groups = [...new Map(mine.map((d) => [d.recipe, mine.filter((x) => x.recipe === d.recipe)])).values()];
             return (
               <Group key={k} header={KIND_NAMES[k]}>
-                {mine.map((d) => {
+                {groups.map((same) => {
+                  const d = same[same.length - 1];
                   const r = recipes.find((x) => x.id === d.recipe);
                   const name = mealName(d.recipe, recipes);
                   return (
-                    <div key={d.id} className="flex items-center pr-2">
+                    <div key={d.recipe} className="flex items-center gap-1.5 pr-3">
                       <div className="min-w-0 flex-1">
-                        <Row title={name} accessory={r ? "chevron" : undefined} onClick={r ? () => onOpen(d) : undefined} />
+                        <Row title={name} onClick={r ? () => onOpen(d) : undefined} />
                       </div>
-                      <RoundButton quiet icon="close" label={`Take ${name} off the plan`} onClick={() => setTaking(d)} />
+                      <RoundButton quiet icon="minus" label={same.length > 1 ? `One less ${name}` : `Take ${name} off the plan`} onClick={() => (same.length > 1 ? onRemove(d) : setTaking(d))} />
+                      <span className="w-5 text-center t-headline tabular-nums" aria-label={`${name}: ${same.length}`}>{same.length}</span>
+                      <RoundButton quiet icon="plus" label={`One more ${name}`} onClick={() => onMore(d)} />
                     </div>
                   );
                 })}
@@ -83,7 +88,7 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
       {taking && (
         <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off the plan?`} onClose={() => setTaking(null)}>
           <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">What only it needed comes off the grocery list, unless it&apos;s ticked off or in the cart.</p>
+            <p className="t-sub text-muted">What only it needed comes off the grocery list.</p>
             <Button className="w-full" onClick={() => { onRemove(taking); setTaking(null); }}>Take it off</Button>
             <Button variant="secondary" className="w-full" onClick={() => setTaking(null)}>Cancel</Button>
           </div>

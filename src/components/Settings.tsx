@@ -8,7 +8,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        <Group header="Look" footer="Light or dark follows your settings.">
+        <Group header="Look">
           {THEMES.map((t) => (
             <Row
               key={t.id}
