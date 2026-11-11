@@ -313,6 +313,20 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
   return drop.size;
 }
 
+/** A list item that's there only for a dinner (not added by hand, ticked on Stock, or an old Every week refill). */
+export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week";
+
+/**
+ * New plan (Nov 10): every grocery that's on the list only for a dinner comes off, in one write. Kept: what was added by
+ * hand or ticked on Stock, what's ticked off as bought, and what's in the cart (`held`). Answers how many came off.
+ */
+export async function takeOffDinnerGroceries(held: Set<string> = new Set()): Promise<number> {
+  const { items } = await loadList();
+  const ids = items.filter((x) => forADinner(x) && !held.has(x.id)).map((x) => x.id);
+  if (ids.length) await removeItems(ids);
+  return ids.length;
+}
+
 /**
  * Many items at once (a recipe's ingredients, a planned week): the list is read once, each item merges into the same
  * unchecked item already there (two recipes needing onions make one line), and the new ones go in one write.

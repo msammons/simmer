@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
     } else if (b?.op === "made" && id) await markMade(id);
     else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
-    else if (b?.op === "clear") await clearPlanned();
+    else if (b?.op === "clear") ({ removed } = await clearPlanned());
     else if (b?.op === "count" && text(b.recipe) && (KINDS as readonly string[]).includes(b.kind) && Number.isFinite(Number(b.count))) ({ added, removed } = await setCount(text(b.recipe), b.kind, Number(b.count), text(b.by, 20)));
     else return Response.json({ error: "Unknown change." }, { status: 400 });
     return Response.json({ ...(await loadPlan()), added, removed }, fresh);
