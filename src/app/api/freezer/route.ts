@@ -2,7 +2,6 @@ import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { addFrozen, loadKitchen, takeFrozen } from "@/lib/plan";
-import { forViewing } from "@/lib/google/sheets";
 
 const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
@@ -10,7 +9,7 @@ const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
-    return Response.json(await forViewing(loadKitchen), { headers: { "cache-control": "no-store" } });
+    return Response.json(await loadKitchen(), { headers: { "cache-control": "no-store" } });
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
