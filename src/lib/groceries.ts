@@ -189,8 +189,10 @@ export async function addItem(text: string, by: string, forWhat = "", filing?: {
   const same = items.find((x) => !x.checked && norm(x.item) === norm(item));
   if (same) {
     const q = addUp(same.quantity, quantity);
-    if (q !== same.quantity) await setManyCells([[same.id, { quantity: q }]], true, rows);
-    return { ...same, quantity: q };
+    // Added by hand onto a dinner's line: it says so, so taking the dinner off leaves it.
+    const f = forWhat ? joinFor(same.for, forWhat) : same.for && !forOf(same.for).includes(BY_HAND) ? [BY_HAND, ...forOf(same.for)].join(", ").slice(0, 120) : same.for;
+    if (q !== same.quantity || f !== same.for) await setManyCells([[same.id, { quantity: q, for: f }]], true, rows);
+    return { ...same, quantity: q, for: f };
   }
   const f = filing ?? (await file(item));
   const row: Item = { id: newId(), item, quantity, store: f.store, section: f.section, for: forWhat, addedBy: by, addedAt: stamp(), checked: false, check: false };
@@ -260,7 +262,9 @@ function numberText(n: number): string {
  */
 export function addUp(a: string, b: string): string {
   const x = amountOf(a), y = amountOf(b);
-  if (!x || !y || x.unit !== y.unit) return b || a;
+  // Different units: both kept ("1 dozen + 1"; Nov 10: a recipe's "1" egg replaced the "1 dozen" added by hand).
+  if (x && y && x.unit !== y.unit) return `${a.trim()} + ${b.trim()}`;
+  if (!x || !y) return b || a;
   const n = x.n + y.n;
   const unit = !x.unit ? "" : SAME_PLURAL.has(x.unit) || n <= 1 ? x.unit : PLURAL[x.unit] ?? `${x.unit}s`;
   return [numberText(n), unit].filter(Boolean).join(" ");
@@ -278,6 +282,17 @@ export function takeAway(a: string, b: string): string | null {
 
 /** The dinners a list item is for ("tacos, turkey chili"). */
 const forOf = (f: string) => f.split(",").map((x) => x.trim()).filter(Boolean);
+/**
+ * Marks a line someone added by hand (or ticked on Stock) that a dinner's groceries joined, so taking the dinner off,
+ * or a New plan, leaves it on the list (Nov 10: hand-added eggs became lasagna's, and would have gone with it).
+ */
+export const BY_HAND = "added by hand";
+/** What a line is for once `what` joins it: a hand-added line ("") keeps saying so. */
+const joinFor = (now: string, what: string) => {
+  const parts = forOf(now);
+  if (!what || parts.includes(what)) return now;
+  return [...(parts.length ? parts : [BY_HAND]), what].join(", ").slice(0, 120);
+};
 
 /**
  * A dinner off the plan (taken off, swapped, or replaced by starting over; Nov 10): what only it needed comes off the
@@ -314,7 +329,7 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
 }
 
 /** A list item that's there only for a dinner (not added by hand, ticked on Stock, or an old Every week refill). */
-export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week";
+export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week" && !forOf(x.for).includes(BY_HAND);
 
 /**
  * New plan (Nov 10): every grocery that's on the list only for a dinner comes off, in one write. Kept: what was added by
@@ -345,7 +360,7 @@ export async function addItems(entries: { item: string; quantity: string; for: s
     const same = [...fresh, ...items].find((x) => !x.checked && norm(x.item) === norm(item));
     if (same) {
       const q = e.check && !same.check ? same.quantity : addUp(same.quantity, e.quantity);
-      const f = same.for.includes(e.for) || !e.for ? same.for : [same.for, e.for].filter(Boolean).join(", ").slice(0, 120);
+      const f = joinFor(same.for, e.for);
       if (fresh.includes(same)) { same.quantity = q; same.for = f; if (!e.check) same.check = false; }
       else if (q !== same.quantity || f !== same.for || (!e.check && same.check)) { merged.set(same.id, { quantity: q, for: f }); Object.assign(same, { quantity: q, for: f, check: e.check ? same.check : false }); }
       continue;
