@@ -3,7 +3,6 @@ import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount } from "@/lib/plan";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
-import { forViewing } from "@/lib/google/sheets";
 
 const text = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 const isKind = (s: unknown): s is Kind => typeof s === "string" && (KINDS as readonly string[]).includes(s);
@@ -28,7 +27,7 @@ const fresh = { headers: { "cache-control": "no-store" } };
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
-    return Response.json(await forViewing(loadPlan), fresh);
+    return Response.json(await loadPlan(), fresh);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
