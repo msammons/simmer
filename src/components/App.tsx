@@ -215,6 +215,19 @@ export default function App() {
       return { problem: null, note: gotPlan(p, `Added ${r?.name ?? d.recipe}.`, Boolean(r?.ingredients.length)) };
     } catch (e) { return { problem: problemOf(e) }; }
   }
+  // Count changes go one at a time, in order, so two never cross in the Sheet.
+  const counting = useRef<Promise<unknown>>(Promise.resolve());
+  /** How many of one dinner, sent once the taps stop (Meals); rejects on a problem, which shows on Meals. */
+  function countMeal(d: { recipe: string; kind: Kind }, count: number): Promise<void> {
+    const name = recipeOf(d.recipe)?.name ?? d.recipe;
+    const run = counting.current.then(async () => {
+      ++planChanges.current;
+      try { gotPlan(await api.planChange({ op: "count", recipe: d.recipe, kind: d.kind, count }, me), count ? `${name} × ${count}.` : `Took ${name} off.`); }
+      catch (e) { setWeekError(problemOf(e)); refreshPlan(); throw e; }
+    });
+    counting.current = run.catch(() => {});
+    return run;
+  }
   /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
   async function changePlan(c: PlanChange, lead?: string): Promise<string | null> {
     if (c.op === "clear") setPlan((p) => (p ? { ...p, dishes: [] } : p));
@@ -369,7 +382,7 @@ export default function App() {
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => { setWeekNote(null); setAddingOne(k); }}
-          onMore={(d) => { setWeekNote(null); addMeal({ kind: d.kind, recipe: d.recipe, pinned: true }).then((r) => { if (r.problem) setWeekError(r.problem); }); }}
+          onCount={(d, n) => { setWeekNote(null); return countMeal(d, n); }}
           onNewPlan={() => { setWeekNote(null); changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
           onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}

@@ -100,6 +100,21 @@ export async function replaceTab(title: string, rows: string[][]): Promise<void>
   if (!put.ok) throw new Error(`Couldn't write the "${title}" tab (${put.status})`);
 }
 
+/**
+ * Many A1 ranges written in one request (Nov 10: one write per cell ran into Google's limit of about 60 writes a
+ * minute, "It's busy right now", after a few quick taps).
+ */
+export async function updateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
+  if (!data.length) return;
+  const r = await fetch(`${base()}:batchUpdate`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
+    body: JSON.stringify({ valueInputOption: "RAW", data }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!r.ok) throw new Error(`Couldn't update ${data[0].range.split("!")[0]} (${r.status})`);
+}
+
 /** Writes rows at an A1 range ("List!I5:J5"): how one row's cells change without touching anyone else's rows. */
 export async function updateRange(range: string, rows: string[][]): Promise<void> {
   const r = await fetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
