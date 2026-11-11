@@ -91,7 +91,7 @@ export function MealsScreen({ plan, recipes, error, onError, onOpen, onRemove, o
                 {/* Something left to pick: Add. All of the kind planned: nothing more (Matt, Nov 10). None of the kind: says so;
                     recipes are added on the Recipes tab. */}
                 {recipes.some((r) => r.active && kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
-                  ? <Row icon="plus" title={mine.length ? "Add another" : "Add one"} accessory="chevron" onClick={() => onAdd(k)} />
+                  ? <Row icon="plus" title="Add" accessory="chevron" onClick={() => onAdd(k)} />
                   : !mine.length && <Nothing>No recipes</Nothing>}
               </Group>
             );
