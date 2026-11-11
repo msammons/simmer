@@ -62,7 +62,6 @@ export default function App() {
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   const [weekError, setWeekError] = useState<string | null>(null);
-  const [weekNote, setWeekNote] = useState<string | null>(null);
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
   const [addingOne, setAddingOne] = useState<Kind | null>(null); // the kind being added to, from Meals
   const loaded = useRef(false); // the household has loaded from the server this session
@@ -74,7 +73,7 @@ export default function App() {
     tellPanelSignedOut();
     setError("Wrong passcode.");
     setSettings(false); setSheet(null); setAddingOne(null);
-    setListError(null); setRecipesError(null); setWeekError(null); setWeekNote(null);
+    setListError(null); setRecipesError(null); setWeekError(null);
     setPhase("passcode");
   }, []);
   useEffect(() => {
@@ -202,7 +201,6 @@ export default function App() {
     const off = p.removed ?? 0;
     const list = p.added && off ? `${t(p.added)} went on the list, ${off} came off.` : p.added ? `${t(p.added)} went on the list.` : off ? `${t(off)} came off the list.` : already ? "Its groceries were already on the list." : "";
     const note = [lead, list].filter(Boolean).join(" ") || null;
-    setWeekNote(note);
     if (p.added || off) refreshList(); // the list changes show on Lists and Stock right away
     return note ?? undefined;
   }
@@ -339,7 +337,7 @@ export default function App() {
 
   function onTab(t: Tab) {
     setError(null);
-    setWeekNote(null); setWeekError(null); // a change's note belongs to that moment, not to the next visit (Nov 10)
+    setWeekError(null);
     scrollAppTo(0);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
@@ -380,11 +378,11 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
-          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => { setWeekNote(null); setAddingOne(k); }}
-          onCount={(d, n) => { setWeekNote(null); return countMeal(d, n); }}
-          onNewPlan={() => { setWeekNote(null); changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
-          onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
+        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError}
+          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
+          onCount={countMeal}
+          onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
+          onRemove={(d) => { changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}

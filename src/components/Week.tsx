@@ -25,10 +25,9 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
-  /** A note after a change ("Took Tacos off. 3 things came off the list."); tapping it puts it away. */
-  note: string | null; onNote: () => void;
+  // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
@@ -61,7 +60,6 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
       <BrandBar />
       <h1 className="sr-only">Meals</h1>
       {error && <Notice>{error}</Notice>}
-      {note && <Notice tone="info" onClick={onNote}>{note}</Notice>}
       {plan && (
         <>
           {/* No weeks or dates on screen (Matt, Nov 10): it's the plan, until a new one starts. */}
