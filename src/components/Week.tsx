@@ -27,7 +27,7 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  */
 export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null; onError: () => void;
-  /** How many lines on the list are there only for a dinner: what New plan takes off. */
+  /** How many lines are on the lists: what New plan empties. */
   dinnerGroceries: number;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
@@ -59,15 +59,14 @@ export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, on
   }
   return (
     <div className="space-y-6">
-      <BrandBar />
+      {/* New plan, the one fresh start for the whole app, in the pinned top bar beside Settings (Matt, Nov 11: no heading;
+          it's used at the start of each shop, so it lives with planning rather than in Settings). */}
+      <BrandBar trailing={plan && (dishes.length > 0 || dinnerGroceries > 0) && (
+        <button onClick={() => setStarting(true)} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>
+      )} />
       <h1 className="sr-only">Meals</h1>
       {plan && (
         <>
-          {/* No weeks or dates on screen (Matt, Nov 10): it's the plan, until a new one starts. */}
-          <div className="flex items-baseline justify-between px-1">
-            <h2 className="t-title">The plan</h2>
-            {dishes.length > 0 && <button className="t-sub font-semibold text-accent active:opacity-60" onClick={() => setStarting(true)}>New plan</button>}
-          </div>
           {KINDS.map((k) => {
             const mine = dishes.filter((d) => d.kind === k);
             // The same dinner planned more than once shows once, with how many (Nov 10): − and + change it.
@@ -114,8 +113,10 @@ export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, on
         <Sheet label="New plan" title="Start a new plan?" onClose={() => setStarting(false)}>
           <div className="space-y-3 pb-2">
             <p className="t-sub text-muted">
-              {dishes.length === 1 ? "This dinner comes off" : `These ${dishes.length} dinners come off`}
-              {dinnerGroceries ? `, with the ${dinnerGroceries === 1 ? "grocery" : `${dinnerGroceries} groceries`} on the list only for dinners.` : "."} What you added yourself stays.
+              Everything starts fresh: {[
+                dishes.length ? (dishes.length === 1 ? "this dinner comes off" : `these ${dishes.length} dinners come off`) : "",
+                dinnerGroceries ? `the lists are emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
+              ].filter(Boolean).join(" and ")}. What&apos;s in the Safeway cart stays.
             </p>
             <Button className="w-full" onClick={() => { onNewPlan(); setStarting(false); }}>New plan</Button>
             <Button variant="secondary" className="w-full" onClick={() => setStarting(false)}>Cancel</Button>
