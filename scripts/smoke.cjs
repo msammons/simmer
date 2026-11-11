@@ -42,7 +42,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // One Meals page (Nov 10): every kind the same way, each with Add one / Add another, which opens her recipes of that
       // kind to pick from. Simmer picks nothing itself: no Plan, Start over or Something else.
       const groupOf = (name) => page.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
-      ok("meals: every kind shows, each with its Add row or No recipes", ((await groupOf("Dessert").getByRole("button", { name: /^Add (one|another)$/ }).count()) + (await groupOf("Dessert").getByText(/^No (more )?recipes$/).count())) === 1 && (await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).count()) === 1);
+      ok("meals: every kind shows, each with its Add row or No recipes", ((await groupOf("Dessert").getByRole("button", { name: /^Add (one|another)$/ }).count()) + (await groupOf("Dessert").getByText(/^No recipes$/).count())) === 1 && (await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).count()) === 1);
       ok("meals: Simmer picks nothing itself", (await page.getByRole("button", { name: /^(Plan|Start over)$|^Something else/ }).count()) === 0 && (await page.getByText("Also add").count()) === 0);
       ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).tap(); await page.waitForTimeout(500);
@@ -165,7 +165,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
       // Nothing of a kind left to pick (Turkey chili is the sample's only regular dinner): the row goes to adding a recipe.
       const regularGroup = page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) });
-      ok("meals: with nothing left to pick, it says No more recipes, not a button, and no way off to Recipes", (await regularGroup.getByText("No more recipes", { exact: true }).isVisible()) && (await regularGroup.getByRole("button", { name: /^(Add (one|another)|New recipe)$/ }).count()) === 0);
+      ok("meals: with all of a kind planned, no Add row and no line about it", (await regularGroup.getByText(/^No (more )?recipes$/).count()) === 0 && (await regularGroup.getByRole("button", { name: /^(Add (one|another)|New recipe)$/ }).count()) === 0);
       // A search with no match, from any kind that still has recipes to pick.
       const anyAdd = page.getByRole("button", { name: /^Add (one|another)$/ }).first();
       if (await anyAdd.count()) {
