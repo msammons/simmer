@@ -51,11 +51,12 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /** "2 of 5 got" and (once something's ticked) Done shopping: the top of a checklist. */
-function TopLine({ text, onDone }: { text: string; onDone: (() => void) | null }) {
+/** `show`: a checklist with things on it; Done shopping is always there (greyed until something's ticked, Nov 11). */
+function TopLine({ text, show, onDone }: { text: string; show: boolean; onDone: (() => void) | null }) {
   return (
     <div className="flex min-h-10 items-center gap-1 px-4">
       <span className="min-w-0 flex-1 t-sub font-semibold">{text}</span>
-      {onDone && <button onClick={onDone} className="h-9 rounded-full bg-accent px-4 t-sub font-semibold text-on-accent active:scale-95">Done shopping</button>}
+      {show && <button onClick={onDone ?? undefined} disabled={!onDone} className="h-9 rounded-full bg-accent px-4 t-sub font-semibold text-on-accent active:scale-95 disabled:opacity-40 disabled:active:scale-100">Done shopping</button>}
     </div>
   );
 }
@@ -137,7 +138,7 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
             onTick={(it) => act.check(it, !it.checked)} onDone={sw.away && ticked.length ? done : null} />
         : (
           <>
-            <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onDone={ticked.length ? done : null} />
+            <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} show={here.length > 0} onDone={ticked.length ? done : null} />
             {list && !items.length && <EmptyState icon="list" title="Nothing on the lists" />}
             {(where === "all" ? STORES : [where]).map((s) => {
               const rows = items.filter((i) => i.store === s);
@@ -209,7 +210,7 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
   };
   return (
     <>
-      <TopLine text={away ? (waiting.length ? `${got} of ${waiting.length} got` : "") : `${count} in the cart${count ? ` · ${estimate ? "about " : ""}${money(total)}` : ""}`} onDone={onDone} />
+      <TopLine text={away ? (waiting.length ? `${got} of ${waiting.length} got` : "") : `${count} in the cart${count ? ` · ${estimate ? "about " : ""}${money(total)}` : ""}`} show={away && waiting.length > 0} onDone={onDone} />
       {sw.outdated && <UpdateNotice />}
       {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
       {away
