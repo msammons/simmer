@@ -57,19 +57,25 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.unroute("**/api/plan");
       await firstFree.tap();
       ok("meals: picking one adds it, named in the note", (await seen(page.getByText(/^Added .+\./), 8000)) && (await kindSheet.count()) === 0);
-      // How many of one dinner (Nov 10): + adds another helping, − takes one back; no arrows on the rows.
+      // How many of one dinner (Nov 10): taps show at once and go as one change once they stop; no busy errors.
       const quickPlus = groupOf("Quick").getByRole("button", { name: /^One more / }).first();
       const quickCount = () => groupOf("Quick").getByLabel(/: \d+$/).first().innerText();
       const c0 = Number(await quickCount());
-      await quickPlus.tap();
-      ok("meals: + plans one more of that dinner", (await seen(page.getByText(/^Added .+\./), 8000)) && Number(await quickCount()) === c0 + 1);
-      await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap();
-      ok("meals: − takes one back without asking", await seen(page.getByText(/^Took .+ off\./), 8000) && Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0);
+      let planPosts = 0;
+      const countPosts = (r) => { if (r.url().includes("/api/plan") && r.method() === "POST") planPosts++; };
+      page.on("request", countPosts);
+      await quickPlus.tap(); await quickPlus.tap(); await quickPlus.tap();
+      ok("meals: quick taps show at once", Number(await quickCount()) === c0 + 3);
+      ok("meals: and go as one change, with a note", (await seen(page.getByText(new RegExp(`× ${c0 + 3}\\.`)), 8000)) && planPosts === 1, `${planPosts} sent`);
+      await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap(); await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap(); await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap();
+      ok("meals: − takes them back without asking, as one change", (await seen(page.getByText(new RegExp(`× ${c0}\\.`)), 8000)) && Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0 && planPosts === 2, `${planPosts} sent`);
+      page.off("request", countPosts);
+      ok("meals: no busy message", (await page.getByText(/busy right now/i).count()) === 0);
       ok("meals: no arrows on the dinners", (await groupOf("Quick").getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ }).first().locator("svg").count()) === 0);
       // A change's note doesn't follow you around: switching tabs clears it.
       await page.locator("nav button", { hasText: "Lists" }).tap(); await page.waitForTimeout(300);
       await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
-      ok("meals: the note is gone after switching tabs", (await page.getByText(/^(Added|Took) .+\./).count()) === 0);
+      ok("meals: the note is gone after switching tabs", (await page.getByText(/^(Added|Took) .+\.|× \d+\./).count()) === 0);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // A dinner: tapping it opens the recipe on top of Meals; its quiet × takes it off after a confirm (no sheet of
       // choices, no Undo; Nov 9). Back says where it goes and goes there.
