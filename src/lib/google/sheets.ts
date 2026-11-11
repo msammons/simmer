@@ -48,6 +48,10 @@ const base = () => `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}/v
 
 export class ReadFailed extends Error { constructor(tab: string, public status: number) { super(`Couldn't read the "${tab}" tab (${status})`); } }
 
+// Tabs known to be there (read or created by this server), so ensureTab needn't spend a write asking again (an
+// addSheet counts against the same writes-a-minute limit as a change).
+const known = new Set<string>();
+
 export async function readTab(tab: string): Promise<string[][]> {
   const get = async () => fetch(`${base()}/${encodeURIComponent(tab)}`, {
     headers: { authorization: `Bearer ${await accessToken()}` },
@@ -56,7 +60,8 @@ export async function readTab(tab: string): Promise<string[][]> {
   let r = await get();
   // Over the Sheet's reads-a-minute limit: one more try a moment later.
   if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
-  if (!r.ok) throw new ReadFailed(tab, r.status);
+  if (!r.ok) { if (r.status === 400) known.delete(tab); throw new ReadFailed(tab, r.status); }
+  known.add(tab);
   return ((await r.json()).values ?? []) as string[][];
 }
 
@@ -76,6 +81,7 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
 
 /** Creates the tab if it doesn't exist yet. */
 export async function ensureTab(title: string): Promise<void> {
+  if (known.has(title)) return;
   const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}:batchUpdate`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
@@ -83,18 +89,28 @@ export async function ensureTab(title: string): Promise<void> {
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok && !(await r.text()).includes("already exists")) throw new Error(`Couldn't create the "${title}" tab (${r.status})`);
+  known.add(title);
 }
 
-/** Replaces a tab's contents. */
-export async function replaceTab(title: string, rows: string[][]): Promise<void> {
-  await ensureTab(title);
+/**
+ * Replaces a tab's contents. `before`: the tab as it was just read, so the new rows go in one request, with blanks over
+ * whatever is left of the old rows and columns (without it: create if missing, clear, then write).
+ */
+export async function replaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
-  const clear = await fetch(`${base()}/${encodeURIComponent(title)}:clear`, { method: "POST", headers: auth, signal: AbortSignal.timeout(10_000) });
-  if (!clear.ok) throw new Error(`Couldn't clear the "${title}" tab (${clear.status})`);
+  let values = rows;
+  if (before?.length) {
+    const width = Math.max(0, ...before.map((r) => r.length), ...rows.map((r) => r.length));
+    values = Array.from({ length: Math.max(before.length, rows.length) }, (_, i) => { const r = rows[i] ?? []; return [...r, ...Array<string>(width - r.length).fill("")]; });
+  } else {
+    await ensureTab(title);
+    const clear = await fetch(`${base()}/${encodeURIComponent(title)}:clear`, { method: "POST", headers: auth, signal: AbortSignal.timeout(10_000) });
+    if (!clear.ok) throw new Error(`Couldn't clear the "${title}" tab (${clear.status})`);
+  }
   const put = await fetch(`${base()}/${encodeURIComponent(`${title}!A1`)}?valueInputOption=RAW`, {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ values: rows }),
+    body: JSON.stringify({ values }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!put.ok) throw new Error(`Couldn't write the "${title}" tab (${put.status})`);
