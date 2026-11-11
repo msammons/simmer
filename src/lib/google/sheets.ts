@@ -1,6 +1,7 @@
 // Google Sheets via a service account (no SDK). The Sheet must be shared with the service account's email.
 import { createSign } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { getCache } from "@vercel/functions";
 
 type ServiceAccount = { client_email: string; private_key: string };
 let token: { value: string; expires: number } | null = null;
@@ -56,10 +57,43 @@ const viewing = new AsyncLocalStorage<boolean>();
 export const forViewing = <T>(f: () => Promise<T>): Promise<T> => viewing.run(true, f);
 const VIEW_MS = 8_000;
 const kept = new Map<string, { at: number; rows: string[][] }>();
-const keptFor = (tab: string) => { const k = kept.get(tab); return viewing.getStore() && k && Date.now() - k.at < VIEW_MS ? k.rows : null; };
-const keep = (tab: string, rows: string[][]) => kept.set(tab, { at: Date.now(), rows });
+// On Vercel the copies are shared by every running server through its Runtime Cache, and a write anywhere expires that
+// tab's copy for all of them; elsewhere (on the Mac, in tests) each server keeps its own for a few seconds.
+const shared = () => (process.env.VERCEL ? getCache({ namespace: "simmer-sheet" }) : null);
+const SHARED_S = 30;
+const tagOf = (tab: string) => `tab:${sheetId()}:${tab}`.replace(/,/g, " ");
+async function keptFor(tab: string): Promise<string[][] | null> {
+  if (!viewing.getStore()) return null;
+  const c = shared();
+  if (!c) { const k = kept.get(tab); return k && Date.now() - k.at < VIEW_MS ? k.rows : null; }
+  try { const v = (await c.get(`${sheetId()}:${tab}`)) as { rows?: string[][] } | undefined; return v?.rows ?? null; } catch { return null; }
+}
+async function keep(tab: string, rows: string[][]) {
+  const c = shared();
+  if (!c) { kept.set(tab, { at: Date.now(), rows }); return; }
+  try { await c.set(`${sheetId()}:${tab}`, { rows }, { ttl: SHARED_S, tags: [tagOf(tab)], name: "sheet tab" }); } catch { /* reads still work without it */ }
+}
 /** A write to a tab: what was kept for it is out of date. Ranges like "List!A2:K2" name their tab before the "!". */
-const dropKept = (range: string) => kept.delete(range.split("!")[0].replace(/^'|'$/g, ""));
+async function dropKept(range: string) {
+  const tab = range.split("!")[0].replace(/^'|'$/g, "");
+  kept.delete(tab);
+  const c = shared();
+  if (c) try { await c.expireTag(tagOf(tab)); } catch { /* the copy expires in seconds anyway */ }
+}
+
+/**
+ * A request to Google Sheets, waited out and tried again while Google says "too many" (429): its limits are a minute
+ * at a time, so a short wait succeeds where failing at once showed "That didn't go through" (Nov 11). A refused request
+ * changed nothing, so trying a write again is safe.
+ */
+async function sheetsFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const waits = [1_500, 4_000, 8_000];
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+    if (r.status !== 429 || i >= waits.length) return r;
+    await new Promise((ok) => setTimeout(ok, waits[i] + Math.random() * 500));
+  }
+}
 
 export class ReadFailed extends Error { constructor(tab: string, public status: number) { super(`Couldn't read the "${tab}" tab (${status})`); } }
 
@@ -68,19 +102,17 @@ export class ReadFailed extends Error { constructor(tab: string, public status: 
 const known = new Set<string>();
 
 export async function readTab(tab: string): Promise<string[][]> {
-  const hit = keptFor(tab);
+  const hit = await keptFor(tab);
   if (hit) return hit;
-  const get = async () => fetch(`${base()}/${encodeURIComponent(tab)}`, {
-    headers: { authorization: `Bearer ${await accessToken()}` },
-    signal: AbortSignal.timeout(10_000),
+  const get = async () => sheetsFetch(`${base()}/${encodeURIComponent(tab)}`, {
+    headers: { authorization: `Bearer ${await accessToken()}` }
   });
-  let r = await get();
+  const r = await get();
   // Over the Sheet's reads-a-minute limit: one more try a moment later.
-  if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
   if (!r.ok) { if (r.status === 400) known.delete(tab); throw new ReadFailed(tab, r.status); }
   known.add(tab);
   const rows = ((await r.json()).values ?? []) as string[][];
-  keep(tab, rows);
+  await keep(tab, rows);
   return rows;
 }
 
@@ -89,9 +121,8 @@ export async function readTab(tab: string): Promise<string[][]> {
 let titles: { at: number; names: Set<string> } | null = null;
 async function tabTitles(): Promise<Set<string>> {
   if (titles && Date.now() - titles.at < 600_000) return titles.names;
-  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}?fields=sheets.properties.title`, {
-    headers: { authorization: `Bearer ${await accessToken()}` },
-    signal: AbortSignal.timeout(10_000),
+  const r = await sheetsFetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}?fields=sheets.properties.title`, {
+    headers: { authorization: `Bearer ${await accessToken()}` }
   });
   if (!r.ok) throw new ReadFailed("tab list", r.status);
   const names = new Set<string>(((await r.json()).sheets ?? []).map((s: { properties?: { title?: string } }) => s.properties?.title ?? ""));
@@ -105,22 +136,21 @@ async function tabTitles(): Promise<Set<string>> {
  * Google's 60 reads a minute: "That didn't go through"). Tabs that don't exist yet come back empty.
  */
 export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
-  if (tabs.every((t) => keptFor(t))) return tabs.map((t) => keptFor(t)!);
+  const hits = await Promise.all(tabs.map(keptFor));
+  if (hits.every(Boolean)) return hits as string[][][];
   const names = await tabTitles();
   const want = tabs.filter((t) => names.has(t) || known.has(t));
   if (!want.length) return tabs.map(() => []);
-  const get = async () => fetch(`${base()}:batchGet?${want.map((t) => `ranges=${encodeURIComponent(t)}`).join("&")}`, {
-    headers: { authorization: `Bearer ${await accessToken()}` },
-    signal: AbortSignal.timeout(10_000),
+  const get = async () => sheetsFetch(`${base()}:batchGet?${want.map((t) => `ranges=${encodeURIComponent(t)}`).join("&")}`, {
+    headers: { authorization: `Bearer ${await accessToken()}` }
   });
-  let r = await get();
-  if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
+  const r = await get();
   // A tab removed since the names were read: ask again for the names next time, and read these one by one.
   if (r.status === 400) { titles = null; return Promise.all(tabs.map(readTabIfAny)); }
   if (!r.ok) throw new ReadFailed(want.join(", "), r.status);
   const ranges: { values?: string[][] }[] = (await r.json()).valueRanges ?? [];
   const got = new Map<string, string[][]>(ranges.map((v, i) => [want[i], v.values ?? []]));
-  for (const [t, rows] of got) keep(t, rows);
+  await Promise.all([...got].map(([t, rows]) => keep(t, rows)));
   return tabs.map((t) => got.get(t) ?? []);
 }
 
@@ -129,12 +159,11 @@ export const readTabIfAny = (tab: string) => readTab(tab).catch((e) => { if (e i
 
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (!rows.length) return;
-  dropKept(tab);
-  const r = await fetch(`${base()}/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+  await dropKept(tab);
+  const r = await sheetsFetch(`${base()}/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
-    body: JSON.stringify({ values: rows }),
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ values: rows })
   });
   if (!r.ok) throw new Error(`Couldn't write to the "${tab}" tab (${r.status})`);
 }
@@ -142,11 +171,10 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
 /** Creates the tab if it doesn't exist yet. */
 export async function ensureTab(title: string): Promise<void> {
   if (known.has(title)) return;
-  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}:batchUpdate`, {
+  const r = await sheetsFetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}:batchUpdate`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] })
   });
   if (!r.ok && !(await r.text()).includes("already exists")) throw new Error(`Couldn't create the "${title}" tab (${r.status})`);
   known.add(title);
@@ -157,7 +185,7 @@ export async function ensureTab(title: string): Promise<void> {
  * whatever is left of the old rows and columns (without it: create if missing, clear, then write).
  */
 export async function replaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
-  dropKept(title);
+  await dropKept(title);
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
   let values = rows;
   if (before?.length) {
@@ -165,14 +193,13 @@ export async function replaceTab(title: string, rows: string[][], before?: strin
     values = Array.from({ length: Math.max(before.length, rows.length) }, (_, i) => { const r = rows[i] ?? []; return [...r, ...Array<string>(width - r.length).fill("")]; });
   } else {
     await ensureTab(title);
-    const clear = await fetch(`${base()}/${encodeURIComponent(title)}:clear`, { method: "POST", headers: auth, signal: AbortSignal.timeout(10_000) });
+    const clear = await sheetsFetch(`${base()}/${encodeURIComponent(title)}:clear`, { method: "POST", headers: auth });
     if (!clear.ok) throw new Error(`Couldn't clear the "${title}" tab (${clear.status})`);
   }
-  const put = await fetch(`${base()}/${encodeURIComponent(`${title}!A1`)}?valueInputOption=RAW`, {
+  const put = await sheetsFetch(`${base()}/${encodeURIComponent(`${title}!A1`)}?valueInputOption=RAW`, {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ values }),
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ values })
   });
   if (!put.ok) throw new Error(`Couldn't write the "${title}" tab (${put.status})`);
 }
@@ -183,24 +210,22 @@ export async function replaceTab(title: string, rows: string[][], before?: strin
  */
 export async function updateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
   if (!data.length) return;
-  for (const d of data) dropKept(d.range);
-  const r = await fetch(`${base()}:batchUpdate`, {
+  await Promise.all(data.map((d) => dropKept(d.range)));
+  const r = await sheetsFetch(`${base()}:batchUpdate`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
-    body: JSON.stringify({ valueInputOption: "RAW", data }),
-    signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ valueInputOption: "RAW", data })
   });
   if (!r.ok) throw new Error(`Couldn't update ${data[0].range.split("!")[0]} (${r.status})`);
 }
 
 /** Writes rows at an A1 range ("List!I5:J5"): how one row's cells change without touching anyone else's rows. */
 export async function updateRange(range: string, rows: string[][]): Promise<void> {
-  dropKept(range);
-  const r = await fetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+  await dropKept(range);
+  const r = await sheetsFetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
     method: "PUT",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
-    body: JSON.stringify({ values: rows }),
-    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ values: rows })
   });
   if (!r.ok) throw new Error(`Couldn't update ${range.split("!")[0]} (${r.status})`);
 }
