@@ -15,8 +15,8 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   Find is made on the search page the Safeway tab is already showing when it's that search (1.2.5), with no reload.
   Safeway loads pictures as they're scrolled to, so a picture further down is read from its `data-src`; Safeway can
   say "No search results" for a moment while its page builds, so that only counts once it has held for a few seconds. The background
-  (`background.js`) checks for jobs every half minute; once there's activity, or while the panel is open, it checks
-  every couple of seconds until a few minutes pass with nothing. It does each job in a Safeway tab (`safeway.js`): one
+  (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
+  the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
 - **Did the order go through? (1.3)** When the cart page says "Your shopping cart is empty." and Simmer's copy of the
   cart had something in it, the helper opens Safeway's Purchases page (`PAGE.orders.path`), presses its **Online** tab,
@@ -28,9 +28,11 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   Vercel), the helper subscribes to Web Push with Simmer's public key and sends Simmer the subscription (kept on the
   helper's check-in row); every queued job sends an empty push and the helper checks at once. Silent pushes need
   Chrome 121 or later and the `notifications` permission (Chrome requires it for push in an extension; nothing is ever
-  shown). Without the keys nothing is sent and the half-minute alarm does it, as before.
-- **Away.** The half-minute alarm checks in even with nothing to do, so when Simmer hasn't heard from the helper for two
-  minutes, Lists greys the Safeway cart and turns its rows into a checklist until it's back.
+  shown). The push is how the helper hears of a job: without the keys, jobs wait until Chrome starts or the panel opens.
+- **Not answering.** Simmer doesn't guess from when the helper last checked in. A job the helper doesn't pick up within
+  20 seconds is given up, says so, and Lists turns the Safeway rows into a checklist for the rest of that visit.
+- **Updates itself (26.11.11).** Each check-in, Simmer says which helper it ships. A helper older than that reloads
+  itself once, which picks up the newer files if `node scripts/release-helper.mjs` has already put them in `extension/`.
 - **The panel is Simmer.** After the one-time setup (Simmer's address and the household passcode, kept on this computer
   only), the panel shows Simmer itself, opening on Shop. The passcode goes to Simmer by message, never in the address.
   So the computer and the phone are the same experience, and both go through the same jobs.
@@ -56,7 +58,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.10.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.11.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

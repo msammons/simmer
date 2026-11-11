@@ -35,7 +35,7 @@ export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatu
  * no check-in for this long and Lists greys the Safeway cart and makes its rows a checklist (Nov 3). The helper's
  * half-minute alarm checks in whenever Chrome runs, even with nothing to do, so that's four missed checks.
  */
-export const JOB_TIMES = { alive: 90_000, away: 120_000, pickup: 35_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
+export const JOB_TIMES = { alive: 90_000, away: 120_000, pickup: 20_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
 
 const TAB = "Safeway jobs";
 const HEADERS = ["id", "kind", "status", "args", "result", "created", "updated"];
@@ -144,7 +144,9 @@ export const helperAway = (h: Helper | null) => !h || age(h.seen) >= JOB_TIMES.a
 
 export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
   const { helper } = await read();
-  return { answering: helperAnswering(helper), seen: helper?.seen ?? "", away: helperAway(helper), outdated: helperOutdated(helper) };
+  // No timer keeps a check-in fresh any more (Nov 11): the helper only checks in when there's work. So Simmer doesn't
+  // guess from the last check-in; a job the helper doesn't pick up says so (and Lists turns Safeway into a checklist).
+  return { answering: true, seen: helper?.seen ?? "", away: false, outdated: helperOutdated(helper) };
 }
 
 /**
@@ -173,8 +175,8 @@ export async function queueJob(kind: JobKind, args: Record<string, unknown>): Pr
 export async function jobStatus(id: string): Promise<{ job: Job | null; answering: boolean }> {
   const { jobs, helper } = await read();
   const j = jobs.find((x) => x.id === id) ?? null;
-  if (j && overdue(j)) return { job: await write({ ...j, status: "failed", result: { error: j.status === "waiting" ? "not-answering" : "stuck" } }, j.row), answering: helperAnswering(helper) };
-  return { job: j, answering: helperAnswering(helper) };
+  if (j && overdue(j)) return { job: await write({ ...j, status: "failed", result: { error: j.status === "waiting" ? "not-answering" : "stuck" } }, j.row), answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
+  return { job: j, answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
 }
 
 /** Simmer: a job no longer wanted (only while nobody's taken it). */

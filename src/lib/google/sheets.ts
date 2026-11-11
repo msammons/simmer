@@ -21,8 +21,17 @@ const googleConfigured = () => Boolean(sheetId() && process.env.GOOGLE_SERVICE_A
 export function sheetsConfigured() {
   return Boolean(redis()) || googleConfigured();
 }
-/** A tab not in Redis yet comes from the Sheet, once; null when the Sheet doesn't have it (or there's no Sheet). */
-const fromSheet = async (tab: string) => (googleConfigured() ? gReadTabIfAny(tab).then((rows) => (rows.length ? rows : null)) : null);
+/**
+ * A tab not in Redis: before the one-time copy, every tab is copied from the Sheet at once (one read) and the copy is
+ * marked done; after it, the Sheet is never read again (a missing tab is just empty). Nov 11: one copy, no live link.
+ */
+const fromSheet = async (tab: string): Promise<string[][] | null> => {
+  const r = redis();
+  if (!r || !googleConfigured() || (await R.copiedFromSheet(r))) return null;
+  await R.copyFromSheet(r, async () => { const names = [...(await tabTitles())]; const rows = await gReadTabsIfAny(names); return names.map((n, i) => [n, rows[i]] as [string, string[][]]); });
+  const now = await r.get(`simmer:tab:${tab}`);
+  return now === null ? null : (JSON.parse(now) as string[][]);
+};
 
 function serviceAccount(): ServiceAccount {
   // The whole key file's JSON, pasted into one env var (works locally and on Vercel).

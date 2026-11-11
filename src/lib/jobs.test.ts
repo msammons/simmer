@@ -8,8 +8,8 @@ const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 
 describe("jobs for the Safeway helper", () => {
   beforeEach(() => { resetJobs(); resetSafeway(); });
 
-  it("isn't answering until the helper checks in", async () => {
-    expect((await helperStatus()).answering).toBe(false);
+  it("never guesses the helper's away from when it last checked in (Nov 11: no timer keeps that fresh)", async () => {
+    expect(await helperStatus()).toMatchObject({ answering: true, away: false });
     expect(await takeJob("1.0.0", false)).toBeNull();
     expect((await helperStatus()).answering).toBe(true);
   });
@@ -182,8 +182,8 @@ describe("showing Safeway's cart", () => {
 
 describe("whether Safeway can be reached", () => {
   beforeEach(() => { resetJobs(); resetSafeway(); });
-  it("is away until the helper checks in, and says when it last did", async () => {
-    expect(await helperStatus()).toMatchObject({ away: true, seen: "" });
+  it("isn't called away for not checking in, and says when it last did", async () => {
+    expect(await helperStatus()).toMatchObject({ away: false, seen: "" });
     await takeJob("1.3.0", false);
     const s = await helperStatus();
     expect(s.away).toBe(false);

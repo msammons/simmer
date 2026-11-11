@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind } from "@/lib/jobs";
+import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind, HELPER_VERSION } from "@/lib/jobs";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 
@@ -73,7 +73,8 @@ export async function POST(req: Request) {
         const job = await takeJob(text(b.version, 20), b.panel === true);
         // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
         const key = pushKey(), have = key ? (await helperPush())?.key === key : false;
-        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS, ...(key && { push: { key, have } }) }, noStore);
+        // `version`: the helper this Simmer ships, so a helper whose newer files are already on its computer reloads itself (26.11.11).
+        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have } }) }, noStore);
       }
       case "push": {
         const s = b.subscription, key = text(b.key, 200);

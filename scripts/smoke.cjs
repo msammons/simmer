@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
 // Meals (New plan in the top bar), no lunches, no Made it), the tabs, Settings on every screen, Stock (nothing comes back by itself), Lists (All, and Safeway's in-store
-// checklist when the helper can't be reached), Add a meal and a recipe's Add to the plan, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
+// checklist after a job goes unanswered), Add a meal and a recipe's Add to the plan, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
 const { chromium } = require("playwright");
@@ -257,20 +257,21 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: no Clear on Lists`, (await page.getByRole("button", { name: "Clear", exact: true }).count()) === 0);
     ok(`${tag}: ticking turns Done shopping on`, await page.getByRole("button", { name: "Done shopping" }).first().isEnabled());
     await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(800);
-    ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));
-    ok(`${tag}: Safeway shows the top line (a checklist while it can't be reached)`, await seen(page.getByText(/in the cart| got$/)));
+    // No "connected" status (Nov 11: no timer keeps one fresh): Safeway shows its cart until a job goes unanswered.
+    ok(`${tag}: Safeway doesn't guess whether the helper's there`, (await page.getByText(/Can't reach Safeway right now|isn't connected/).count()) === 0);
+    ok(`${tag}: Safeway shows the top line`, await seen(page.getByText(/in the cart| got$/)));
     await page.screenshot({ path: `${dir}/5b-lists-safeway-${tag}.png` });
-    // In the store: no helper, so Safeway is a checklist like the others. Done shopping asks first; Cancel leaves it; Eggs stays off.
-    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(600); // Milk was ticked in All: untick, so only Eggs is done
+    // In the store, on All: Done shopping asks first; Cancel leaves it; Eggs stays off.
+    await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(600);
+    await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(600); // Milk was ticked: untick, so only Eggs is done
     await page.getByRole("checkbox", { name: /Eggs/ }).first().tap(); await page.waitForTimeout(600);
-    await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(400);
-    ok(`${tag}: Done shopping asks first`, await seen(page.getByRole("dialog", { name: "Done shopping" }).getByText(/Done at Safeway/)));
+    await page.getByRole("button", { name: "Done shopping" }).first().tap(); await page.waitForTimeout(400);
+    ok(`${tag}: Done shopping asks first`, await seen(page.getByRole("dialog", { name: "Done shopping" })));
     await page.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(400);
     ok(`${tag}: Cancel leaves the ticks`, (await page.getByRole("checkbox", { name: /Eggs/ }).first().getAttribute("aria-checked")) === "true");
-    await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Done shopping" }).first().tap(); await page.waitForTimeout(300);
     await page.getByRole("dialog", { name: "Done shopping" }).getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(1500);
     ok(`${tag}: bought things don't come back on the list by themselves`, (await page.getByRole("checkbox", { name: /Eggs/ }).count()) === 0);
-    await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(500);
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
     await page.getByRole("checkbox", { name: "Need Milk" }).tap(); await page.waitForTimeout(1500);
     ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Need Milk" }).getAttribute("aria-checked")) === "false");
