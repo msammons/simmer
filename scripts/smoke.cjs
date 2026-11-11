@@ -61,6 +61,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("meals: a failed save takes it back off and says why, over the page", await seen(didnt.getByText("No connection. Check your signal and try again."), 8000) && (await quickRowsNow()) === before);
       ok("meals: and no problem bar on the page", (await page.locator("main > div > [role=alert], main div.space-y-6 > [role=alert]").count()) === 0);
       await didnt.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
+      ok("meals: after the alert, the page scrolls again", (await page.evaluate(() => document.getElementById("scroller").style.overflow)) === "");
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
       await groupOf("Quick").getByRole("button", { name: /^Add$/ }).tap(); await page.waitForTimeout(500);

@@ -360,6 +360,7 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
  * With onPrev/onNext, swiping sideways moves between items, and page dots under the grabber show where you are.
  */
+let openSheets = 0; // sheets open right now (see Sheet: the page behind stays still while any is)
 export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager, wide, tall }: {
   children: ReactNode; onClose: () => void; label: string; footer?: ReactNode; onPrev?: () => void; onNext?: () => void;
   wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
@@ -388,11 +389,13 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
   }, []);
   useEffect(() => { body.current?.scrollTo(0, 0); }, [page]);
   useEffect(() => {
-    const behind = scroller(), prev = behind?.style.overflow ?? "";
-    if (behind) behind.style.overflow = "hidden"; // the list behind shouldn't scroll
+    // The list behind shouldn't scroll while any sheet is open; counted, so sheets that close in another order than they
+    // opened (an alert over the picker) never leave the page locked (Nov 11: Stock and Lists stopped scrolling).
+    const behind = scroller();
+    if (behind && openSheets++ === 0) behind.style.overflow = "hidden";
     const esc = (e: KeyboardEvent) => e.key === "Escape" && close.current();
     window.addEventListener("keydown", esc);
-    return () => { if (behind) behind.style.overflow = prev; window.removeEventListener("keydown", esc); };
+    return () => { if (behind && --openSheets === 0) behind.style.overflow = ""; window.removeEventListener("keydown", esc); };
   }, []);
   useEffect(() => {
     const p = panel.current;

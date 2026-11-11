@@ -1,5 +1,6 @@
 // Google Sheets via a service account (no SDK). The Sheet must be shared with the service account's email.
 import { createSign } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 type ServiceAccount = { client_email: string; private_key: string };
 let token: { value: string; expires: number } | null = null;
@@ -46,6 +47,20 @@ async function accessToken(): Promise<string> {
 
 const base = () => `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}/values`;
 
+/**
+ * Reloads that only show something (the GET routes, wrapped in `forViewing`) reuse what this server read in the last
+ * few seconds (Nov 11: a reset and a few meals sent ~40 reloads a minute and went over Google's 60 reads a minute).
+ * Changes always read the Sheet itself, and every write drops what was kept for that tab.
+ */
+const viewing = new AsyncLocalStorage<boolean>();
+export const forViewing = <T>(f: () => Promise<T>): Promise<T> => viewing.run(true, f);
+const VIEW_MS = 8_000;
+const kept = new Map<string, { at: number; rows: string[][] }>();
+const keptFor = (tab: string) => { const k = kept.get(tab); return viewing.getStore() && k && Date.now() - k.at < VIEW_MS ? k.rows : null; };
+const keep = (tab: string, rows: string[][]) => kept.set(tab, { at: Date.now(), rows });
+/** A write to a tab: what was kept for it is out of date. Ranges like "List!A2:K2" name their tab before the "!". */
+const dropKept = (range: string) => kept.delete(range.split("!")[0].replace(/^'|'$/g, ""));
+
 export class ReadFailed extends Error { constructor(tab: string, public status: number) { super(`Couldn't read the "${tab}" tab (${status})`); } }
 
 // Tabs known to be there (read or created by this server), so ensureTab needn't spend a write asking again (an
@@ -53,6 +68,8 @@ export class ReadFailed extends Error { constructor(tab: string, public status: 
 const known = new Set<string>();
 
 export async function readTab(tab: string): Promise<string[][]> {
+  const hit = keptFor(tab);
+  if (hit) return hit;
   const get = async () => fetch(`${base()}/${encodeURIComponent(tab)}`, {
     headers: { authorization: `Bearer ${await accessToken()}` },
     signal: AbortSignal.timeout(10_000),
@@ -62,7 +79,9 @@ export async function readTab(tab: string): Promise<string[][]> {
   if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
   if (!r.ok) { if (r.status === 400) known.delete(tab); throw new ReadFailed(tab, r.status); }
   known.add(tab);
-  return ((await r.json()).values ?? []) as string[][];
+  const rows = ((await r.json()).values ?? []) as string[][];
+  keep(tab, rows);
+  return rows;
 }
 
 // The Sheet's tab names, asked for at most every ten minutes, so several tabs can be read in one request (a request
@@ -86,6 +105,7 @@ async function tabTitles(): Promise<Set<string>> {
  * Google's 60 reads a minute: "That didn't go through"). Tabs that don't exist yet come back empty.
  */
 export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
+  if (tabs.every((t) => keptFor(t))) return tabs.map((t) => keptFor(t)!);
   const names = await tabTitles();
   const want = tabs.filter((t) => names.has(t) || known.has(t));
   if (!want.length) return tabs.map(() => []);
@@ -100,6 +120,7 @@ export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
   if (!r.ok) throw new ReadFailed(want.join(", "), r.status);
   const ranges: { values?: string[][] }[] = (await r.json()).valueRanges ?? [];
   const got = new Map<string, string[][]>(ranges.map((v, i) => [want[i], v.values ?? []]));
+  for (const [t, rows] of got) keep(t, rows);
   return tabs.map((t) => got.get(t) ?? []);
 }
 
@@ -108,6 +129,7 @@ export const readTabIfAny = (tab: string) => readTab(tab).catch((e) => { if (e i
 
 export async function appendRows(tab: string, rows: string[][]): Promise<void> {
   if (!rows.length) return;
+  dropKept(tab);
   const r = await fetch(`${base()}/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
@@ -135,6 +157,7 @@ export async function ensureTab(title: string): Promise<void> {
  * whatever is left of the old rows and columns (without it: create if missing, clear, then write).
  */
 export async function replaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
+  dropKept(title);
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
   let values = rows;
   if (before?.length) {
@@ -160,6 +183,7 @@ export async function replaceTab(title: string, rows: string[][], before?: strin
  */
 export async function updateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
   if (!data.length) return;
+  for (const d of data) dropKept(d.range);
   const r = await fetch(`${base()}:batchUpdate`, {
     method: "POST",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
@@ -171,6 +195,7 @@ export async function updateRanges(data: { range: string; values: string[][] }[]
 
 /** Writes rows at an A1 range ("List!I5:J5"): how one row's cells change without touching anyone else's rows. */
 export async function updateRange(range: string, rows: string[][]): Promise<void> {
+  dropKept(range);
   const r = await fetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
     method: "PUT",
     headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
