@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
 import { AppError } from "./errors";
 import { parseCsv, records } from "./parse";
 import { isSpice, norm } from "./words";
@@ -263,7 +263,7 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
     const less = n.quantity ? takeAway(now.quantity, n.quantity) : null;
     cut.set(it.id, { quantity: less === null || (n.stay && less === "") ? now.quantity : less, for: others.join(", ") });
   }
-  for (const [id, c] of cut) await setCells(id, { quantity: c.quantity, for: c.for });
+  await setManyCells([...cut].map(([id, c]) => [id, { quantity: c.quantity, for: c.for }]));
   if (drop.size) await removeItems([...drop]);
   return drop.size;
 }
@@ -296,10 +296,7 @@ export async function addItems(entries: { item: string; quantity: string; for: s
   // Filed together, so the few new things that need a guess are asked about at the same time.
   await Promise.all(fresh.map(async (x) => Object.assign(x, await file(x.item))));
   for (const x of fresh) x.check = kept.has(norm(x.item)) || (x.check && x.section === "pantry");
-  for (const [id, m] of merged) {
-    const it = items.find((x) => x.id === id)!;
-    await setCells(id, { quantity: m.quantity, for: m.for, check: it.check ? "yes" : "" });
-  }
+  await setManyCells([...merged].map(([id, m]) => [id, { quantity: m.quantity, for: m.for, check: items.find((x) => x.id === id)!.check ? "yes" : "" }]));
   await appendItems(fresh);
   // What went on a list; the pantry highlighted in Stock isn't counted ("Added 45 things" with 26 on the lists, Nov 3).
   return fresh.filter((x) => !x.check).length + [...merged.keys()].filter((id) => !items.find((x) => x.id === id)!.check).length;
@@ -318,20 +315,34 @@ const COLS: Record<string, string> = { quantity: "quantity", store: "store", sec
 
 /** Changes some of one row's cells, found by its id (the columns by their headers, so hand edits to the order are fine). */
 async function setCells(id: string, change: Partial<Record<keyof typeof COLS, string>>) {
+  await setManyCells([[id, change]], true);
+}
+
+/** Several items' cells changed with one read and one write (`strict`: a missing item is an error). */
+async function setManyCells(changes: [string, Partial<Record<keyof typeof COLS, string>>][], strict = false) {
+  if (!changes.length) return;
   if (!sheetsConfigured()) {
-    const it = (await mem()).list.find((x) => x.id === id);
-    if (it) Object.assign(it, { ...(change.quantity !== undefined && { quantity: change.quantity }), ...(change.store && { store: asStore(change.store) }), ...(change.section && { section: asSection(change.section) }), ...(change.checked !== undefined && { checked: yes(change.checked) }), ...(change.for !== undefined && { for: change.for }), ...(change.check !== undefined && { check: yes(change.check) }) });
+    const m = await mem();
+    for (const [id, change] of changes) {
+      const it = m.list.find((x) => x.id === id);
+      if (!it) { if (strict) throw new AppError("That item isn't on the list anymore."); continue; }
+      Object.assign(it, { ...(change.quantity !== undefined && { quantity: change.quantity }), ...(change.store && { store: asStore(change.store) }), ...(change.section && { section: asSection(change.section) }), ...(change.checked !== undefined && { checked: yes(change.checked) }), ...(change.for !== undefined && { for: change.for }), ...(change.check !== undefined && { check: yes(change.check) }) });
+    }
     return;
   }
   const rows = await rowsOf(LIST);
   const headers = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
-  const at = records(rows).find((r) => r.get("id") === id);
-  if (!at) throw new AppError("That item isn't on the list anymore.");
-  for (const [k, v] of Object.entries(change)) {
-    const i = headers.indexOf(COLS[k]);
-    if (i < 0 || v === undefined) continue;
-    await updateRange(`${LIST}!${col(i)}${at.rowNumber}`, [[v]]);
+  const at = new Map(records(rows).map((r) => [r.get("id"), r.rowNumber]));
+  const data: { range: string; values: string[][] }[] = [];
+  for (const [id, change] of changes) {
+    const n = at.get(id);
+    if (!n) { if (strict) throw new AppError("That item isn't on the list anymore."); continue; }
+    for (const [k, v] of Object.entries(change)) {
+      const i = headers.indexOf(COLS[k as keyof typeof COLS]);
+      if (i >= 0 && v !== undefined) data.push({ range: `${LIST}!${col(i)}${n}`, values: [[v]] });
+    }
   }
+  await updateRanges(data);
 }
 
 export const checkItem = (id: string, checked: boolean) => setCells(id, { checked: checked ? "yes" : "no", checkedAt: checked ? stamp() : "" });

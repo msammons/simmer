@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addItems, addStaple, loadList, removeItem } from "./groceries";
-import { addFrozen, changePlanned, clearPlanned, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
+import { addFrozen, changePlanned, clearPlanned, setCount, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
 import { todayIn } from "./time";
 import { planLunches } from "./week";
 
@@ -145,4 +145,24 @@ describe("a new plan (Nov 10)", () => {
     expect((await turkey())?.quantity).toBe(once);
     expect((await turkey())?.for).toContain("turkey chili");
   });
+
+  it("sets how many of one dinner in one change, groceries following", async () => {
+    await clearPlanned();
+    const turkey = () => loadList().then((l) => l.items.find((i) => i.item === "ground turkey" && !i.checked));
+    const chili = () => loadPlan().then((p) => p.dishes.filter((d) => d.recipe === "turkey-chili-1").length);
+    await setCount("turkey-chili-1", "regular", 1, "Sam");
+    const one = (await turkey())!.quantity;
+    expect(await chili()).toBe(1);
+    const up = await setCount("turkey-chili-1", "regular", 3, "Sam");
+    expect(await chili()).toBe(3);
+    expect(up.added).toBeGreaterThan(0);
+    expect((await turkey())!.quantity).not.toBe(one);
+    await setCount("turkey-chili-1", "regular", 1, "Sam");
+    expect(await chili()).toBe(1);
+    expect((await turkey())!.quantity).toBe(one);
+    const off = await setCount("turkey-chili-1", "regular", 0, "Sam");
+    expect(await chili()).toBe(0);
+    expect(off.removed).toBeGreaterThan(0);
+  });
 });
+

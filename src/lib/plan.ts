@@ -7,7 +7,7 @@
 // Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
@@ -63,15 +63,17 @@ async function upsert(tab: string, recs: Record<string, string>[], keys: string[
   const keyOf = (get: (k: string) => string) => keys.map((k) => get(k).trim().toLowerCase()).join("|");
   const at = new Map(records(all).map((r) => [keyOf(r.get), r.rowNumber]));
   const added: string[][] = [];
+  const changed: { range: string; values: string[][] }[] = [];
   for (const rec of recs) {
     const n = at.get(keyOf((k) => rec[k] ?? ""));
     if (n) {
       const old = all[n - 1] ?? [];
       const row = headers.map((h, i) => (h in rec ? rec[h] : old[i] ?? ""));
       all[n - 1] = row;
-      if (sheetsConfigured()) await updateRange(`${tab}!A${n}:${col(headers.length - 1)}${n}`, [row]);
+      changed.push({ range: `${tab}!A${n}:${col(headers.length - 1)}${n}`, values: [row] });
     } else added.push(headers.map((h) => rec[h] ?? ""));
   }
+  if (sheetsConfigured()) await updateRanges(changed); // one write for all of them
   if (!added.length) { if (!sheetsConfigured()) memory.set(tab, all); return; }
   if (sheetsConfigured()) await appendRows(tab, added);
   else memory.set(tab, [...all, ...added]);
@@ -353,6 +355,30 @@ export async function clearPlanned(): Promise<void> {
   const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
   await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
   await append(MADE, dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
+}
+
+/**
+ * How many of one dinner (Nov 10: − count +, sent once she stops tapping). More: the extra helpings go on the plan and
+ * their groceries on the list (amounts added up). Fewer: helpings come off, and their groceries are cut back, or taken
+ * off when none is left (never what's ticked off, in the cart or added by hand). Answers what went on and came off.
+ */
+export async function setCount(recipe: string, kind: Kind, count: number, by: string): Promise<{ added: number; removed: number }> {
+  const want = Math.max(0, Math.min(MAX_COUNT, Math.round(count)));
+  const today = todayIn();
+  const now = toPlanned(await rows(PLANNED)).dishes.filter((d) => d.recipe === recipe);
+  if (want > now.length) {
+    const more = want - now.length;
+    await append(PLANNED, Array.from({ length: more }, () => ({ id: newId(), kind, recipe, added: today, pinned: "yes" })));
+    const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
+    const r = recipes.find((x) => x.id === recipe);
+    return { added: r ? await addItems(Array.from({ length: more }, () => needFor(r, freezer)).flat(), by) : 0, removed: 0 };
+  }
+  if (want < now.length) {
+    const gone = new Set(now.slice(want).map((d) => d.id));
+    await removeRows(PLANNED, (get) => gone.has(get("id")));
+    return { added: 0, removed: await takeOffDishes(Array.from({ length: gone.size }, () => recipe), want ? new Set([recipe]) : new Set()) };
+  }
+  return { added: 0, removed: 0 };
 }
 
 /** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
