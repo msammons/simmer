@@ -236,9 +236,10 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     const tj = (await page.getByRole("radio", { name: "Trader Joe's" }).boundingBox());
     ok(`${tag}: the store names stay on one line`, Boolean(tj) && tj.height < 44, JSON.stringify(tj));
     await page.screenshot({ path: `${dir}/5a-lists-all-${tag}.png`, fullPage: true });
+    ok(`${tag}: Done shopping is always there, greyed until something's ticked`, (await page.getByRole("button", { name: "Done shopping" }).count()) >= 1 && (await page.getByRole("button", { name: "Done shopping" }).first().isDisabled()));
     await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
     ok(`${tag}: no Clear on Lists`, (await page.getByRole("button", { name: "Clear", exact: true }).count()) === 0);
-    ok(`${tag}: ticking shows Done shopping`, await seen(page.getByRole("button", { name: "Done shopping" })));
+    ok(`${tag}: ticking turns Done shopping on`, await page.getByRole("button", { name: "Done shopping" }).first().isEnabled());
     await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(800);
     ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));
     ok(`${tag}: Safeway shows the top line (a checklist while it can't be reached)`, await seen(page.getByText(/in the cart| got$/)));
