@@ -50,7 +50,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.3 | Pick a recipe there | Sheet closes; it's under its own kind; the note says "Added X. N things went on the list." (or "Its groceries were already on the list.") | L |
 | 4.4 | Search there | Any recipe, of any kind; picked, it goes under its own kind | L |
 | 4.5 | A recipe already planned, in the sheet | Greyed, "Planned" on the right, can't be tapped | L |
-| 4.6 | A kind with no recipes, or a search with no match | "Add a recipe" row: opens Add recipes on the Recipes tab | L |
+| 4.6 | A kind with nothing left to pick (no recipes of it, or all planned), or a search with no match | The kind's row reads "Add a recipe" and opens Add recipes on the Recipes tab; in the sheet, an "Add a recipe" row does the same | L |
 | 4.7 | Groceries follow the plan | What only a removed dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
 | 4.8 | New plan | Asks "Start a new plan?" (these N dinners come off; the grocery list stays as it is); New plan empties every kind, logs them as made, and leaves Lists as they were; Cancel changes nothing | L |
 | 4.9 | − / + on a dinner | + plans one more of it (its groceries go up); − takes one back (cut back, not removed); − at 1 asks "Take X off the plan?"; no note bar on Meals after any change (Nov 10: it made the page jump) | L |
