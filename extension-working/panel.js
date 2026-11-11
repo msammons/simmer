@@ -1,16 +1,20 @@
 // The panel beside the page: after a one-time setup (Simmer's address and the household passcode), it shows Simmer
 // itself, opening on Shop, so the computer and the phone work the same. The passcode goes to Simmer by message, never
-// in the address. Opening the panel also tells the background to check for Simmer's jobs every couple of seconds.
+// in the address. Opening the panel tells the background to look for jobs now (no timers, 26.11.11).
 import { simmer, store, WrongPasscode } from "./safeway.js";
 
 const app = document.getElementById("app");
 const frame = document.getElementById("simmer");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-// The background keeps checking quickly while this is open (and knows which window to bring Safeway forward in).
-const port = chrome.runtime.connect({ name: "panel" });
-chrome.windows.getCurrent().then((w) => port.postMessage({ windowId: w.id })).catch(() => port.postMessage({ windowId: null }));
-setInterval(() => port.postMessage({ ping: Date.now() }), 20_000);
+// Which window jobs use (a Safeway tab here, never brought forward), kept for the session; gone when the panel closes.
+chrome.windows.getCurrent().then((w) => chrome.storage.session.set({ panelWindow: w.id })).catch(() => {});
+window.addEventListener("pagehide", () => { chrome.storage.session.remove("panelWindow").catch(() => {}); });
+// A job done: Simmer, framed here, shows it at once.
+chrome.runtime.onMessage.addListener(async (m) => {
+  if (m?.type !== "simmer:done" || frame.hidden) return;
+  frame.contentWindow?.postMessage({ type: "simmer:jobs-changed" }, await store.get("address", ""));
+});
 
 function setup({ address = "", error = "", busy = false } = {}) {
   frame.hidden = true;
@@ -53,7 +57,7 @@ async function open() {
   app.hidden = true;
   frame.hidden = false;
   frame.src = `${address}/?open=shop`;
-  port.postMessage({ ready: true }); // set up: the background starts checking for jobs now
+  chrome.runtime.sendMessage({ type: "simmer:check" }).catch(() => {}); // set up: the background looks for jobs now
 }
 
 // Simmer, framed here, asks for the passcode when it starts, and says when the passcode was turned down.

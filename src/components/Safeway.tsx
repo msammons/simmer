@@ -63,10 +63,10 @@ export function useSafeway() {
   useEffect(() => {
     queueMicrotask(refresh);
     const visible = () => document.visibilityState === "visible";
-    const t = setInterval(() => { if (visible()) refresh(); }, 30_000);
+    // No timer (Nov 11): the cart loads on open, when the app comes back, and after each job.
     const back = () => { if (visible()) refresh(); };
     document.addEventListener("visibilitychange", back);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
+    return () => document.removeEventListener("visibilitychange", back);
   }, [refresh]);
 
   /**
@@ -99,7 +99,8 @@ export function useSafeway() {
         if (s.job.status === "done") { setAnswering(true); setAway(false); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
           const error = String(s.job.result?.error ?? "");
-          if (error === "not-answering" || error === "stuck") setAnswering(false);
+          // The helper didn't pick it up: Safeway works as a checklist for the rest of this visit (no timer watches it).
+          if (error === "not-answering" || error === "stuck") { setAnswering(false); setAway(true); }
           return { ok: false, problem: error === "cancelled" ? "" : problemText(error) };
         }
       } catch (e) {

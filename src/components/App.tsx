@@ -142,10 +142,10 @@ export default function App() {
     queueMicrotask(listNow);
     if (top.kind === "stock") kitchenNow(); // the freezer: only Stock shows it
     const visible = () => document.visibilityState === "visible";
-    const t = setInterval(() => { if (visible()) listNow(); }, 30_000);
+    // No timer (Nov 11): the list loads when Lists or Stock opens, when the app comes back, and after changes.
     const back = () => { if (visible()) listNow(); };
     document.addEventListener("visibilitychange", back);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
+    return () => document.removeEventListener("visibilitychange", back);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- top.kind only decides the one kitchen read; onShop and visit restart it
   }, [onShop, visit, listNow, kitchenNow]);
 
@@ -351,9 +351,9 @@ export default function App() {
       window.location.reload();
     };
     document.addEventListener("visibilitychange", check);
-    // The helper's panel can stay open for days without ever being hidden, so it also checks every few minutes.
-    const every = framed() ? setInterval(check, 5 * 60_000) : undefined;
-    return () => { document.removeEventListener("visibilitychange", check); clearInterval(every); };
+    // The helper's panel can stay open for days without being hidden: it also checks when it's clicked into (no timer).
+    window.addEventListener("focus", check);
+    return () => { document.removeEventListener("visibilitychange", check); window.removeEventListener("focus", check); };
   }, []);
 
   // A recipe that's gone (removed in the Sheet by hand) closes, back to the screen below.
