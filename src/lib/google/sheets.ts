@@ -2,6 +2,8 @@
 import { createSign } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getCache } from "@vercel/functions";
+import * as R from "./redis-tabs";
+import { redis } from "./redis-tabs";
 
 type ServiceAccount = { client_email: string; private_key: string };
 let token: { value: string; expires: number } | null = null;
@@ -10,10 +12,17 @@ let token: { value: string; expires: number } | null = null;
 const SHEET = "1FOQPuSPWntp6VURMw97-olFmd-xFs3LbuK104Eo6uEM";
 const sheetId = () => process.env.SHEET_ID || SHEET;
 
-/** With the service account key the app uses its Sheet; without it (local dev, tests) it reads data/*.csv. */
+/** The Google Sheet is there (the service account key is set). */
+const googleConfigured = () => Boolean(sheetId() && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+/**
+ * The app keeps its data somewhere lasting: Redis (Nov 11), or the Google Sheet. Without either (local dev, tests) it
+ * reads data/*.csv.
+ */
 export function sheetsConfigured() {
-  return Boolean(sheetId() && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  return Boolean(redis()) || googleConfigured();
 }
+/** A tab not in Redis yet comes from the Sheet, once; null when the Sheet doesn't have it (or there's no Sheet). */
+const fromSheet = async (tab: string) => (googleConfigured() ? gReadTabIfAny(tab).then((rows) => (rows.length ? rows : null)) : null);
 
 function serviceAccount(): ServiceAccount {
   // The whole key file's JSON, pasted into one env var (works locally and on Vercel).
@@ -101,7 +110,7 @@ export class ReadFailed extends Error { constructor(tab: string, public status: 
 // addSheet counts against the same writes-a-minute limit as a change).
 const known = new Set<string>();
 
-export async function readTab(tab: string): Promise<string[][]> {
+async function gReadTab(tab: string): Promise<string[][]> {
   const hit = await keptFor(tab);
   if (hit) return hit;
   const get = async () => sheetsFetch(`${base()}/${encodeURIComponent(tab)}`, {
@@ -135,7 +144,7 @@ async function tabTitles(): Promise<Set<string>> {
  * Several tabs read in one request (Nov 10: loading the plan read nine tabs one by one, and a few taps went over
  * Google's 60 reads a minute: "That didn't go through"). Tabs that don't exist yet come back empty.
  */
-export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
+async function gReadTabsIfAny(tabs: string[]): Promise<string[][][]> {
   const hits = await Promise.all(tabs.map(keptFor));
   if (hits.every(Boolean)) return hits as string[][][];
   const names = await tabTitles();
@@ -146,7 +155,7 @@ export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
   });
   const r = await get();
   // A tab removed since the names were read: ask again for the names next time, and read these one by one.
-  if (r.status === 400) { titles = null; return Promise.all(tabs.map(readTabIfAny)); }
+  if (r.status === 400) { titles = null; return Promise.all(tabs.map(gReadTabIfAny)); }
   if (!r.ok) throw new ReadFailed(want.join(", "), r.status);
   const ranges: { values?: string[][] }[] = (await r.json()).valueRanges ?? [];
   const got = new Map<string, string[][]>(ranges.map((v, i) => [want[i], v.values ?? []]));
@@ -155,9 +164,9 @@ export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
 }
 
 /** A tab's rows, or none when the tab doesn't exist yet. Any other failure throws (it isn't an empty tab). */
-export const readTabIfAny = (tab: string) => readTab(tab).catch((e) => { if (e instanceof ReadFailed && e.status === 400) return [] as string[][]; throw e; });
+const gReadTabIfAny = (tab: string) => gReadTab(tab).catch((e) => { if (e instanceof ReadFailed && e.status === 400) return [] as string[][]; throw e; });
 
-export async function appendRows(tab: string, rows: string[][]): Promise<void> {
+async function gAppendRows(tab: string, rows: string[][]): Promise<void> {
   if (!rows.length) return;
   await dropKept(tab);
   const r = await sheetsFetch(`${base()}/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
@@ -169,7 +178,7 @@ export async function appendRows(tab: string, rows: string[][]): Promise<void> {
 }
 
 /** Creates the tab if it doesn't exist yet. */
-export async function ensureTab(title: string): Promise<void> {
+async function gEnsureTab(title: string): Promise<void> {
   if (known.has(title)) return;
   const r = await sheetsFetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}:batchUpdate`, {
     method: "POST",
@@ -184,7 +193,7 @@ export async function ensureTab(title: string): Promise<void> {
  * Replaces a tab's contents. `before`: the tab as it was just read, so the new rows go in one request, with blanks over
  * whatever is left of the old rows and columns (without it: create if missing, clear, then write).
  */
-export async function replaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
+async function gReplaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
   await dropKept(title);
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
   let values = rows;
@@ -192,7 +201,7 @@ export async function replaceTab(title: string, rows: string[][], before?: strin
     const width = Math.max(0, ...before.map((r) => r.length), ...rows.map((r) => r.length));
     values = Array.from({ length: Math.max(before.length, rows.length) }, (_, i) => { const r = rows[i] ?? []; return [...r, ...Array<string>(width - r.length).fill("")]; });
   } else {
-    await ensureTab(title);
+    await gEnsureTab(title);
     const clear = await sheetsFetch(`${base()}/${encodeURIComponent(title)}:clear`, { method: "POST", headers: auth });
     if (!clear.ok) throw new Error(`Couldn't clear the "${title}" tab (${clear.status})`);
   }
@@ -208,7 +217,7 @@ export async function replaceTab(title: string, rows: string[][], before?: strin
  * Many A1 ranges written in one request (Nov 10: one write per cell ran into Google's limit of about 60 writes a
  * minute, "It's busy right now", after a few quick taps).
  */
-export async function updateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
+async function gUpdateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
   if (!data.length) return;
   await Promise.all(data.map((d) => dropKept(d.range)));
   const r = await sheetsFetch(`${base()}:batchUpdate`, {
@@ -220,7 +229,7 @@ export async function updateRanges(data: { range: string; values: string[][] }[]
 }
 
 /** Writes rows at an A1 range ("List!I5:J5"): how one row's cells change without touching anyone else's rows. */
-export async function updateRange(range: string, rows: string[][]): Promise<void> {
+async function gUpdateRange(range: string, rows: string[][]): Promise<void> {
   await dropKept(range);
   const r = await sheetsFetch(`${base()}/${encodeURIComponent(range)}?valueInputOption=RAW`, {
     method: "PUT",
@@ -228,4 +237,53 @@ export async function updateRange(range: string, rows: string[][]): Promise<void
     body: JSON.stringify({ values: rows })
   });
   if (!r.ok) throw new Error(`Couldn't update ${range.split("!")[0]} (${r.status})`);
+}
+
+// ---- the app's storage: Redis when it has it (each change is one read and one write there, with no per-minute limit
+// the family could reach), else the Google Sheet
+
+export async function readTab(tab: string): Promise<string[][]> {
+  const r = redis();
+  return r ? R.readTab(r, tab, fromSheet) : gReadTab(tab);
+}
+/** A tab's rows, or none when the tab doesn't exist yet. Any other failure throws (it isn't an empty tab). */
+export const readTabIfAny = (tab: string) => { const r = redis(); return r ? R.readTab(r, tab, fromSheet) : gReadTabIfAny(tab); };
+/** Several tabs read at once (on the Sheet, one request: see gReadTabsIfAny). */
+export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
+  const r = redis();
+  return r ? R.readTabs(r, tabs, fromSheet) : gReadTabsIfAny(tabs);
+}
+export async function appendRows(tab: string, rows: string[][]): Promise<void> {
+  const r = redis();
+  return r ? R.appendRows(r, tab, rows, fromSheet) : gAppendRows(tab, rows);
+}
+/** Creates the tab if it doesn't exist yet (Redis needs nothing: a tab is there once it's written). */
+export async function ensureTab(title: string): Promise<void> {
+  if (!redis()) await gEnsureTab(title);
+}
+/** Replaces a tab's contents. `before`: the tab as just read (the Sheet uses it to write in one request). */
+export async function replaceTab(title: string, rows: string[][], before?: string[][]): Promise<void> {
+  const r = redis();
+  return r ? R.writeTab(r, title, rows) : gReplaceTab(title, rows, before);
+}
+export async function updateRanges(data: { range: string; values: string[][] }[]): Promise<void> {
+  const r = redis();
+  return r ? R.updateRanges(r, data, fromSheet) : gUpdateRanges(data);
+}
+export async function updateRange(range: string, rows: string[][]): Promise<void> {
+  const r = redis();
+  return r ? R.updateRanges(r, [{ range, values: rows }], fromSheet) : gUpdateRange(range, rows);
+}
+
+/**
+ * Settings → Copy to Google Sheet: every tab, as the app has it, written over the Sheet's tab of the same name (one
+ * clear and one write per tab, waited out if Google says too many). Answers how many tabs were copied.
+ */
+export async function exportToSheet(): Promise<number> {
+  const r = redis();
+  if (!r) throw new Error("There's nothing to copy: the app already keeps its data in the Sheet.");
+  if (!googleConfigured()) throw new Error("There's no Google Sheet to copy to.");
+  const tabs = await R.allTabs(r);
+  for (const [tab, rows] of tabs) await gReplaceTab(tab, rows);
+  return tabs.length;
 }

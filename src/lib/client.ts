@@ -122,6 +122,8 @@ export const api = {
   savePlan: (dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string) => call<PlanData & { added: number; removed?: number }>("/api/plan", { method: "POST", body: JSON.stringify({ op: "plan", dishes, lunches, counts, by }) }),
   planChange: (c: PlanChange, by: string) => call<PlanData & { added: number; removed?: number }>("/api/plan", { method: "POST", body: JSON.stringify({ ...c, by }) }),
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
+  /** Settings → Copy to Google Sheet: answers how many tabs were copied. */
+  exportSheet: () => call<{ tabs: number }>("/api/export", { method: "POST" }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
   /** The exact Safeway product picked for each item before (by the Safeway helper). */
