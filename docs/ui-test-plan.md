@@ -54,6 +54,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 4.7 | Groceries follow the plan | What only a removed dinner needed comes off Lists; shared things stay with the amount cut back; ticked-off, in-the-cart and hand-added things never come off | L |
 | 4.8 | New plan | Asks "Start a new plan?" (these N dinners come off; the grocery list stays as it is); New plan empties every kind, logs them as made, and leaves Lists as they were; Cancel changes nothing | L |
 | 4.9 | − / + on a dinner | + plans one more of it (its groceries go up); − takes one back (cut back, not removed); − at 1 asks "Take X off the plan?"; no note bar on Meals after any change (Nov 10: it made the page jump) | L |
+| 4.10a | Pick a recipe in the sheet; a save that fails | The sheet closes at once and the dinner shows on Meals (no "Saving…"); if the save fails it comes back off and an alert over the page says why (OK); no bar that moves the page | L |
 | 4.10 | Tap a dinner / its × | Tap opens the recipe (a typed meal has no recipe and says so); × asks "Take X off the plan?" (what only it needed comes off the list; Take it off / Cancel), no Undo after; note "Took X off. N things came off the list." | L |
 | 4.16 | A recipe sharing a thing with one already on the list ("1 lb" + "1½ lb" ground turkey) | One row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 

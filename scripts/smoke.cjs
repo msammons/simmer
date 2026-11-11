@@ -48,14 +48,24 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).tap(); await page.waitForTimeout(500);
       const kindSheet = page.getByRole("dialog", { name: "Add a meal" });
       ok("meals: Add opens that kind's recipes", (await kindSheet.getByRole("heading", { name: "Add a quick dinner" }).isVisible()) && (await kindSheet.getByText("Suggested").count()) === 0);
-      // A pick that fails (the connection drops): the sheet stays and says so; a retry works.
+      // A pick closes the sheet at once and shows on Meals straight away, with no "Saving…" (Nov 10). One that fails (the
+      // connection drops) comes back off and says so on Meals; picking again works.
+      const quickRowsNow = () => groupOf("Quick").getByRole("button", { name: /^One more / }).count();
+      const before = await quickRowsNow();
       await page.route("**/api/plan", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
-      const firstFree = kindSheet.locator("section button:not([disabled])").first();
-      await firstFree.tap(); await page.waitForTimeout(800);
-      ok("meals: a failed add keeps the sheet open and says why", (await kindSheet.isVisible()) && await seen(kindSheet.getByRole("alert").filter({ hasText: "No connection. Check your signal and try again." })));
+      const firstName = (await kindSheet.locator("section button:not([disabled])").first().innerText()).trim();
+      await kindSheet.locator("section button:not([disabled])").first().tap();
+      ok("meals: a pick closes the sheet at once, with no Saving", (await kindSheet.count()) === 0 && (await page.getByText("Saving…").count()) === 0 && (await quickRowsNow()) === before + 1);
+      const didnt = page.getByRole("dialog", { name: "Didn't save" });
+      ok("meals: a failed save takes it back off and says why, over the page", await seen(didnt.getByText("No connection. Check your signal and try again."), 8000) && (await quickRowsNow()) === before);
+      ok("meals: and no problem bar on the page", (await page.locator("main > div > [role=alert], main div.space-y-6 > [role=alert]").count()) === 0);
+      await didnt.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
-      await firstFree.tap();
+      await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).tap(); await page.waitForTimeout(500);
+      await kindSheet.getByRole("button", { name: firstName, exact: true }).tap();
+      await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
+      await page.waitForTimeout(300);
       const noNote = async () => !/went on the list|came off|× \d+\.|^Added |Started a new plan/m.test(await page.locator("main").innerText());
       await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Add a meal"]'), null, { timeout: 8000 }).catch(() => {});
       ok("meals: picking one adds it, with no note bar", (await kindSheet.count()) === 0 && (await groupOf("Quick").getByRole("button", { name: /^One more / }).count()) >= 1 && await noNote());
