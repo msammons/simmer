@@ -219,6 +219,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).
     await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(400);
     await page.screenshot({ path: `${dir}/4-settings-${tag}.png` });
+    ok(`${tag}: Settings offers Copy to Google Sheet`, await page.getByRole("button", { name: /^Copy to Google Sheet/ }).isVisible());
     await page.getByRole("radio", { name: /^Apricot/ }).tap(); await page.waitForTimeout(200);
     ok(`${tag}: theme switches`, (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot");
     await page.getByRole("radio", { name: /^Simmer$/ }).tap();
