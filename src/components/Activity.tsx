@@ -9,7 +9,7 @@ import { api, type Activity } from "@/lib/client";
 import { BrandBar, Button, EmptyState, Group, Row } from "./ui";
 
 /** How long the panel must sit untouched before the phone's work takes it over, and how often it checks. */
-const IDLE = 120_000, EVERY = 10_000; // each check is a Sheet read; the Sheet allows 60 a minute for everyone
+const IDLE = 120_000;
 
 const live = (j: Activity) => j.status === "waiting" || j.status === "working";
 
@@ -69,9 +69,13 @@ export function usePanelActivity(on: boolean) {
         if (phone && Date.now() - touched.current >= IDLE) setLog(true);
       } catch { /* the next check tries again */ }
     };
+    // No timer (Nov 11): it looks when it opens, when it's brought back, and when the helper says a job's done.
     check();
-    const t = setInterval(check, EVERY);
-    return () => { ctl.abort(); clearInterval(t); };
+    const back = () => { if (document.visibilityState === "visible") check(); };
+    const done = (e: MessageEvent) => { if (e.source === window.parent && e.data?.type === "simmer:jobs-changed") check(); };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("message", done);
+    return () => { ctl.abort(); document.removeEventListener("visibilitychange", back); window.removeEventListener("message", done); };
   }, [on]);
 
   const dismiss = useCallback(() => {

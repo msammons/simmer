@@ -1,53 +1,49 @@
-// The helper's background: does Simmer's Safeway jobs (safeway.js). Every half minute it checks for jobs; once there's
-// activity, or while the panel is open, it checks every couple of seconds until a few minutes pass with nothing. The
-// phone and the panel both queue jobs in Simmer, so both get the same thing done the same way. From 1.3, Simmer also
-// sends a push when it queues a job, and the push starts a check at once (the half-minute alarm stays as the backstop).
+// The helper's background: does Simmer's Safeway jobs (safeway.js). No timers (26.11.11, Matt: "timer based updates
+// feel wrong"): it looks for jobs when Simmer pushes it one, when Chrome starts, and when the panel opens, works until
+// none are left, and stops. The phone and the panel both queue jobs in Simmer (which pushes), so both get the same
+// thing done the same way. When a job's done it tells an open panel, so the panel shows it at once.
 import { runJob, simmer, sleep, store, WrongPasscode } from "./safeway.js";
 
 const VERSION = chrome.runtime.getManifest().version;
+/** Whether version `a` is newer than `b`, every part compared (26.11.10.1 is newer than 26.11.10). */
+const newer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-chrome.alarms.create("jobs", { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === "jobs") check(); });
+chrome.alarms.clear("jobs").catch(() => {}); // the half-minute alarm of 1.x
 chrome.runtime.onStartup.addListener(() => check());
 chrome.runtime.onInstalled.addListener(() => check());
-// A push from Simmer (1.3, Nov 3): a job was just queued. It carries nothing; it only says to look now, and to keep
-// looking quickly for a little while in case the job isn't in Simmer's copy yet.
-self.addEventListener("push", (e) => { wakeUntil = Date.now() + 20_000; e.waitUntil(check()); });
+// A push from Simmer (1.3, Nov 3): a job was just queued. It carries nothing; it only says to look now.
+self.addEventListener("push", (e) => { e.waitUntil(check()); });
+// The panel opening (it also says which window jobs should use, kept for the session).
+chrome.runtime.onMessage.addListener((m) => { if (m?.type === "simmer:check") check(); });
 
-// Open panels, each with its window: jobs use a Safeway tab in a window where the panel is open (never brought forward).
-const panels = new Map();
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "panel") return;
-  panels.set(port, null);
-  port.onMessage.addListener((m) => { if (m?.windowId != null) panels.set(port, m.windowId); check(); });
-  port.onDisconnect.addListener(() => panels.delete(port));
-});
-const panelWindow = () => [...panels.values()].find((w) => w != null) ?? null;
+/** The window the panel's open in (jobs use a Safeway tab there, never brought forward), or null. */
+const panelWindow = async () => (await chrome.storage.session.get("panelWindow")).panelWindow ?? null;
 
-let running = false, lastJob = 0, wakeUntil = 0, subscribing = 0;
-let pace = { fastPoll: 2000, idleAfter: 180_000, pause: 1500 };
+let running = false, subscribing = 0;
+let pace = { pause: 1500 };
 
 async function check() {
   if (running || !(await store.get("address", "")) || !(await store.get("passcode", ""))) return;
   running = true;
   try {
     for (;;) {
-      const r = await simmer("POST", { op: "next", version: VERSION, panel: panels.size > 0 }, "/api/safeway/jobs");
+      const r = await simmer("POST", { op: "next", version: VERSION, panel: Boolean(await panelWindow()) }, "/api/safeway/jobs");
       const job = r?.job;
       if (r?.settings) pace = { ...pace, ...r.settings }; // Simmer's pace, even with nothing to do (1.2 on)
-      if (r?.push?.key && !r.push.have) subscribe(r.push.key);
-      if (job) {
-        pace = { ...pace, ...job.settings };
-        lastJob = Date.now();
-        const out = await runJob(job, panelWindow()).catch((e) => ({ ok: false, error: "failed", why: String(e) }));
-        await simmer("POST", out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error }, "/api/safeway/jobs").catch(() => {});
-        lastJob = Date.now();
-        await sleep(pace.pause);
-        continue;
+      // A newer helper in Simmer: reload, which picks up newer files if they're already in this folder (release-helper).
+      // Once per version, so files that aren't there yet can't make it reload over and over.
+      if (r?.version && newer(r.version, VERSION) && (await store.get("reloadedFor", "")) !== r.version) {
+        await store.set("reloadedFor", r.version);
+        chrome.runtime.reload();
+        return;
       }
-      if (!panels.size && Date.now() - lastJob > pace.idleAfter && Date.now() > wakeUntil) break;
-      await sleep(pace.fastPoll);
-      await store.get("address", ""); // keeps the background awake between checks
+      if (r?.push?.key && !r.push.have) subscribe(r.push.key);
+      if (!job) break; // nothing left: stop until the next push, Chrome starting, or the panel opening
+      pace = { ...pace, ...job.settings };
+      const out = await runJob(job, await panelWindow()).catch((e) => ({ ok: false, error: "failed", why: String(e) }));
+      await simmer("POST", out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error }, "/api/safeway/jobs").catch(() => {});
+      chrome.runtime.sendMessage({ type: "simmer:done" }).catch(() => {}); // an open panel shows it at once
+      await sleep(pace.pause);
     }
   } catch (e) {
     if (!(e instanceof WrongPasscode)) console.error("Safeway jobs", e);

@@ -9,6 +9,7 @@ function pretend(): TabStore & { data: Map<string, string>; calls: number } {
     data, calls: 0,
     async get(k: string) { s.calls++; return data.get(k) ?? null; },
     async set(k: string, v: string) { s.calls++; data.set(k, v); return "OK"; },
+    async setnx(k: string, v: string) { s.calls++; if (data.has(k)) return 0; data.set(k, v); return 1; },
     async mget(...ks: string[]) { s.calls++; return ks.map((k) => data.get(k) ?? null); },
     async keys(p: string) { s.calls++; const pre = p.replace(/\*$/, ""); return [...data.keys()].filter((k) => k.startsWith(pre)); },
   };
@@ -78,3 +79,18 @@ describe("the grocery list on Redis", () => {
     } finally { useTabStore(null); }
   });
 });
+
+describe("the one-time copy from the Sheet", () => {
+  it("copies every tab Redis doesn't have, keeps the ones it has, skips backups, and marks it done", async () => {
+    const { copyFromSheet, copiedFromSheet } = await import("./redis-tabs");
+    const s = pretend();
+    await writeTab(s, "Safeway jobs", [["live"]]);
+    expect(await copiedFromSheet(s)).toBe(false);
+    await copyFromSheet(s, async () => [["List", [["id"], ["a"]]], ["Safeway jobs", [["old"]]], ["Backup Nov 2 List", [["x"]]]]);
+    expect(await readTab(s, "List", async () => null)).toEqual([["id"], ["a"]]);
+    expect(await readTab(s, "Safeway jobs", async () => null)).toEqual([["live"]]);
+    expect(s.data.has("simmer:tab:Backup Nov 2 List")).toBe(false);
+    expect(await copiedFromSheet(s)).toBe(true);
+  });
+});
+
