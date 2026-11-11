@@ -245,11 +245,14 @@ export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewa
 const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
   r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: i.section !== "fresh" }));
 
-/** These dinners are off the plan: what only they needed comes off the list (see takeOffFor). Answers how many things. */
-async function takeOffDishes(recipeIds: string[]): Promise<number> {
+/**
+ * These dinners are off the plan: what only they needed comes off the list (see takeOffFor). `still`: recipes still
+ * planned (one planned twice, now once), whose groceries stay with the amount cut back. Answers how many things.
+ */
+async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set()): Promise<number> {
   if (!recipeIds.length) return 0;
   const [recipes, freezer, cart] = await Promise.all([loadRecipes(), loadFreezer(), loadCart().catch(() => [])]);
-  const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer) : []; });
+  const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer).map((n) => ({ ...n, stay: still.has(id) })) : []; });
   return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
 }
 
@@ -354,9 +357,12 @@ export async function clearPlanned(): Promise<void> {
 
 /** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
 export async function removePlanned(id: string): Promise<{ removed: number }> {
-  const dish = toPlanned(await rows(PLANNED)).dishes.find((d) => d.id === id);
+  const all = toPlanned(await rows(PLANNED)).dishes;
+  const dish = all.find((d) => d.id === id);
   await removeRows(PLANNED, (get) => get("id") === id);
-  return { removed: dish ? await takeOffDishes([dish.recipe]) : 0 };
+  // Planned more than once (Nov 10: "×2"): one fewer, so its groceries are cut back by one helping, not taken off.
+  const still = new Set(all.filter((d) => d.id !== id).map((d) => d.recipe));
+  return { removed: dish ? await takeOffDishes([dish.recipe], still) : 0 };
 }
 
 /** The freezer and when the next trips are, for the Groceries tab. */
