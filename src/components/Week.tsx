@@ -25,10 +25,10 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onRecipes, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onRecipes: () => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
@@ -89,7 +89,10 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
                     </div>
                   );
                 })}
-                <Row icon="plus" title={mine.length ? "Add another" : "Add one"} accessory="chevron" onClick={() => onAdd(k)} />
+                {/* Nothing of this kind left to pick (none yet, or all planned): straight to adding a recipe (Nov 10). */}
+                {recipes.some((r) => r.active && kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
+                  ? <Row icon="plus" title={mine.length ? "Add another" : "Add one"} accessory="chevron" onClick={() => onAdd(k)} />
+                  : <Row icon="plus" title="Add a recipe" accessory="chevron" onClick={onRecipes} />}
               </Group>
             );
           })}
