@@ -5,7 +5,7 @@
 // - The cart: what was put in the Safeway cart through Simmer, one row per product, in the "Safeway cart" tab. Safeway's
 //   own cart page can't be read yet, so anything added on Safeway directly doesn't show here. The `cart` column says
 //   which cart a row belongs to ("safeway" for now), so more than one can be kept later.
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { records } from "./parse";
 import { norm } from "./words";
 
@@ -38,15 +38,16 @@ export async function savePick(p: Pick): Promise<void> {
     memory = [...memory.filter((m) => norm(m.item) !== n), { item: p.item, id: p.id, name: p.name, ...(keep && { image: keep }) }];
     return;
   }
-  await ensureTab(TAB);
   const rows = await readTabIfAny(TAB);
+  if (!rows.length) await ensureTab(TAB);
   const at = records(rows).find((r) => norm(r.get("item")) === n);
   const keep = image || (at && at.get("product_id") === p.id ? at.get("product_image") : "");
   const row = [p.item, p.id, p.name, new Date().toISOString().slice(0, 10), keep];
-  // The picture column comes after the older four, so rows written before it still read the same.
-  if (rows.length && !(rows[0] ?? []).map((h) => h.trim().toLowerCase()).includes("product_image")) await updateRange(`${TAB}!A1:E1`, [HEADERS]);
-  if (at) await updateRange(`${TAB}!A${at.rowNumber}:E${at.rowNumber}`, [row]);
-  else await appendRows(TAB, [...(rows.length ? [] : [HEADERS]), row]);
+  // The picture column comes after the older four, so rows written before it still read the same. The headers and
+  // the row go in one write.
+  const headers = rows.length && !(rows[0] ?? []).map((h) => h.trim().toLowerCase()).includes("product_image") ? [{ range: `${TAB}!A1:E1`, values: [HEADERS] }] : [];
+  if (at) await updateRanges([...headers, { range: `${TAB}!A${at.rowNumber}:E${at.rowNumber}`, values: [row] }]);
+  else { await updateRanges(headers); await appendRows(TAB, [...(rows.length ? [] : [HEADERS]), row]); }
 }
 
 // ---- the cart
@@ -59,46 +60,60 @@ let cartMemory: CartLine[] = [];
 
 export async function loadCart(cart = "safeway"): Promise<CartLine[]> {
   if (!sheetsConfigured()) return cartMemory.filter((l) => l.cart === cart).map((l) => ({ ...l }));
-  return (await allCart()).filter((l) => l.cart === cart);
+  return (await allCart()).lines.filter((l) => l.cart === cart);
 }
 
-async function allCart(): Promise<CartLine[]> {
+/** Every cart's lines, and with the Sheet the tab as read (so the save after it is one write). */
+async function allCart(): Promise<{ lines: CartLine[]; rows?: string[][] }> {
+  if (!sheetsConfigured()) return { lines: cartMemory.map((l) => ({ ...l })) };
   // A failed read throws rather than reading as an empty cart (a change written after it would lose the rest).
   const rows = await readTabIfAny(CART);
-  return records(rows).flatMap((r) => {
+  return { rows, lines: records(rows).flatMap((r) => {
     const qty = Number(r.get("qty"));
     return /^\d+$/.test(r.get("product_id")) && qty > 0 ? [{
       cart: r.get("cart") || "safeway", productId: r.get("product_id"), name: r.get("name"), price: r.get("price"), image: r.get("image"),
       qty, itemId: r.get("item_id"), item: r.get("item"), updated: r.get("updated"),
     }] : [];
-  });
+  }) };
 }
 
-async function saveAll(lines: CartLine[]) {
+async function saveAll(lines: CartLine[], before?: string[][]) {
   if (!sheetsConfigured()) { cartMemory = lines; return; }
-  await replaceTab(CART, [CART_HEADERS, ...lines.map((l) => [l.cart, l.productId, l.name, l.price, l.image, String(l.qty), l.itemId, l.item, l.updated])]);
+  await replaceTab(CART, [CART_HEADERS, ...lines.map((l) => [l.cart, l.productId, l.name, l.price, l.image, String(l.qty), l.itemId, l.item, l.updated])], before);
 }
+
+export type CartChange = { productId: string; qty: number; name?: string; price?: string; image?: string; itemId?: string; item?: string };
 
 /**
  * Sets a product's quantity in Simmer's copy of the cart (0 takes it out). Details not given (which list item it's for,
  * its picture) are kept from before.
  */
-export async function setCartLine(change: { productId: string; qty: number; name?: string; price?: string; image?: string; itemId?: string; item?: string }, cart = "safeway"): Promise<CartLine[]> {
-  const all = sheetsConfigured() ? await allCart() : cartMemory.map((l) => ({ ...l }));
-  const at = all.findIndex((l) => l.cart === cart && l.productId === change.productId);
-  const before = at >= 0 ? all[at] : null;
-  const qty = Math.max(0, Math.min(99, Math.round(change.qty)));
-  if (before && before.qty === qty && !change.name && !change.itemId) return all.filter((l) => l.cart === cart);
-  if (qty === 0) { if (at >= 0) all.splice(at, 1); else return all.filter((l) => l.cart === cart); }
-  else {
-    const line: CartLine = {
-      cart, productId: change.productId, qty, updated: new Date().toISOString(),
-      name: change.name || before?.name || "", price: change.price || before?.price || "", image: safeImage(change.image) || before?.image || "",
-      itemId: change.itemId || before?.itemId || "", item: change.item || before?.item || "",
-    };
-    if (at >= 0) all[at] = line; else all.push(line);
+export const setCartLine = (change: CartChange, cart = "safeway") => setCartLines(() => [change], cart);
+
+/**
+ * Several products' quantities set with one read and one write (Nov 10: one save per product ran into Google's limit
+ * of about 60 writes a minute). `changes` is worked out from the cart as read.
+ */
+export async function setCartLines(changes: (mine: CartLine[]) => CartChange[], cart = "safeway"): Promise<CartLine[]> {
+  const { lines: all, rows } = await allCart();
+  let dirty = false;
+  for (const change of changes(all.filter((l) => l.cart === cart))) {
+    const at = all.findIndex((l) => l.cart === cart && l.productId === change.productId);
+    const before = at >= 0 ? all[at] : null;
+    const qty = Math.max(0, Math.min(99, Math.round(change.qty)));
+    if (before && before.qty === qty && !change.name && !change.itemId) continue;
+    if (qty === 0) { if (at >= 0) all.splice(at, 1); else continue; }
+    else {
+      const line: CartLine = {
+        cart, productId: change.productId, qty, updated: new Date().toISOString(),
+        name: change.name || before?.name || "", price: change.price || before?.price || "", image: safeImage(change.image) || before?.image || "",
+        itemId: change.itemId || before?.itemId || "", item: change.item || before?.item || "",
+      };
+      if (at >= 0) all[at] = line; else all.push(line);
+    }
+    dirty = true;
   }
-  await saveAll(all);
+  if (dirty) await saveAll(all, rows);
   return all.filter((l) => l.cart === cart);
 }
 
@@ -108,7 +123,7 @@ export async function setCartLine(change: { productId: string; qty: number; name
  * changes nothing (a page that didn't load reads the same as an empty cart).
  */
 export async function matchCart(seen: { id: string; name: string; price: string; image: string; qty: number }[], cart = "safeway"): Promise<CartLine[]> {
-  const all = sheetsConfigured() ? await allCart() : cartMemory.map((l) => ({ ...l }));
+  const { lines: all, rows } = await allCart();
   const mine = all.filter((l) => l.cart === cart);
   if (!seen.length) return mine;
   const now = new Date().toISOString();
@@ -121,15 +136,15 @@ export async function matchCart(seen: { id: string; name: string; price: string;
       itemId: before?.itemId || "", item: before?.item || "",
     };
   });
-  await saveAll([...all.filter((l) => l.cart !== cart), ...lines]);
+  await saveAll([...all.filter((l) => l.cart !== cart), ...lines], rows);
   return lines;
 }
 
 /** Checked out (Done shopping for Safeway): the cart starts empty again. */
 export async function clearCart(cart = "safeway"): Promise<void> {
-  const all = sheetsConfigured() ? await allCart() : cartMemory;
+  const { lines: all, rows } = await allCart();
   if (!all.some((l) => l.cart === cart)) return;
-  await saveAll(all.filter((l) => l.cart !== cart));
+  await saveAll(all.filter((l) => l.cart !== cart), rows);
 }
 
 /** For tests. */

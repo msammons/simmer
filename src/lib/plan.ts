@@ -7,7 +7,7 @@
 // Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
@@ -47,50 +47,63 @@ async function rows(tab: string): Promise<string[][]> {
   return memory.get(tab)!.map((r) => [...r]);
 }
 
-/** Writes records into a tab: rows whose key columns match are updated in place, the rest added at the end. */
-async function upsert(tab: string, recs: Record<string, string>[], keys: string[]) {
-  if (!recs.length) return;
-  const all = await rows(tab);
+// Each takes the tab as just read when the caller has it (`before`), and answers with the tab as it is after, so one
+// change to a tab is one read and one write (Nov 10: reading the tab again for each step ran into Google's limit of
+// about 60 reads a minute).
+
+/** Records written into a tab's rows: rows whose key columns match are changed in place, the rest added at the end. */
+function upserted(tab: string, before: string[][], recs: Record<string, string>[], keys: string[]) {
+  const all = before.map((r) => [...r]);
   const headers = (all[0] ?? []).map((h) => h.trim().toLowerCase());
-  const want = HEADERS[tab];
-  const missing = want.filter((h) => !headers.includes(h));
+  const missing = HEADERS[tab].filter((h) => !headers.includes(h));
+  const width = headers.length;
   if (!all.length) all.push([]);
-  if (missing.length) {
-    if (sheetsConfigured()) { await ensureTab(tab); await updateRange(`${tab}!${col(headers.length)}1:${col(headers.length + missing.length - 1)}1`, [missing]); }
-    headers.push(...missing);
-    all[0] = [...headers];
-  }
+  if (missing.length) { headers.push(...missing); all[0] = [...headers]; }
   const keyOf = (get: (k: string) => string) => keys.map((k) => get(k).trim().toLowerCase()).join("|");
   const at = new Map(records(all).map((r) => [keyOf(r.get), r.rowNumber]));
   const added: string[][] = [];
-  const changed: { range: string; values: string[][] }[] = [];
+  const changed: number[] = [];
   for (const rec of recs) {
     const n = at.get(keyOf((k) => rec[k] ?? ""));
     if (n) {
       const old = all[n - 1] ?? [];
-      const row = headers.map((h, i) => (h in rec ? rec[h] : old[i] ?? ""));
-      all[n - 1] = row;
-      changed.push({ range: `${tab}!A${n}:${col(headers.length - 1)}${n}`, values: [row] });
+      all[n - 1] = headers.map((h, i) => (h in rec ? rec[h] : old[i] ?? ""));
+      changed.push(n);
     } else added.push(headers.map((h) => rec[h] ?? ""));
   }
-  if (sheetsConfigured()) await updateRanges(changed); // one write for all of them
-  if (!added.length) { if (!sheetsConfigured()) memory.set(tab, all); return; }
-  if (sheetsConfigured()) await appendRows(tab, added);
-  else memory.set(tab, [...all, ...added]);
+  return { all, headers, missing, width, changed, added };
 }
 
-async function append(tab: string, recs: Record<string, string>[]) {
-  if (!recs.length) return;
-  const all = await rows(tab);
+/** Writes records into a tab: rows whose key columns match are updated in place, the rest added at the end. */
+async function upsert(tab: string, recs: Record<string, string>[], keys: string[], before?: string[][]): Promise<string[][]> {
+  if (!recs.length) return before ?? rows(tab);
+  const old = before ?? (await rows(tab));
+  const { all, headers, missing, width, changed, added } = upserted(tab, old, recs, keys);
+  if (!sheetsConfigured()) { memory.set(tab, [...all, ...added]); return [...all, ...added]; }
+  if (missing.length) await ensureTab(tab);
+  // The new headers and every changed row in one write, then the new rows in one more.
+  await updateRanges([
+    ...(missing.length ? [{ range: `${tab}!${col(width)}1:${col(width + missing.length - 1)}1`, values: [missing] }] : []),
+    ...[...new Set(changed)].map((n) => ({ range: `${tab}!A${n}:${col(headers.length - 1)}${n}`, values: [all[n - 1]] })),
+  ]);
+  if (added.length) await appendRows(tab, added);
+  return [...all, ...added];
+}
+
+async function append(tab: string, recs: Record<string, string>[], before?: string[][]): Promise<string[][]> {
+  if (!recs.length) return before ?? rows(tab);
+  const all = before ?? (await rows(tab));
   if (!all.length) {
-    if (sheetsConfigured()) { await ensureTab(tab); await appendRows(tab, [HEADERS[tab], ...recs.map((r) => HEADERS[tab].map((h) => r[h] ?? ""))]); }
-    else memory.set(tab, [HEADERS[tab], ...recs.map((r) => HEADERS[tab].map((h) => r[h] ?? ""))]);
-    return;
+    const fresh = [HEADERS[tab], ...recs.map((r) => HEADERS[tab].map((h) => r[h] ?? ""))];
+    if (sheetsConfigured()) { await ensureTab(tab); await appendRows(tab, fresh); }
+    else memory.set(tab, fresh);
+    return fresh;
   }
   const headers = all[0].map((h) => h.trim().toLowerCase());
   const out = recs.map((r) => headers.map((h) => r[h] ?? ""));
   if (sheetsConfigured()) await appendRows(tab, out);
   else memory.set(tab, [...all, ...out]);
+  return [...all, ...out];
 }
 
 
@@ -199,7 +212,7 @@ function countsFrom(all: string[][], kids: string[]): Counts {
  * both move it, and it never happens twice. Groceries that were still waiting ("later") go on the list now. Answers
  * whether anything was moved.
  */
-async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer">): Promise<boolean> {
+async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer" | "planned" | "options">): Promise<boolean> {
   const today = todayIn();
   const latest = new Map<string, ReturnType<typeof records>[number]>();
   const nightRows = records(t.plan).filter((r) => DATE.test(r.get("date")) && r.get("date") >= today && !yes(r.get("moved")));
@@ -209,11 +222,11 @@ async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer">): Pro
   const lunches = lunchRows.filter((r) => !yes(r.get("no_school")) && LUNCH_PARTS.some((p) => r.get(p)));
   if (!nightRows.length && !lunchRows.length) return false;
 
-  await upsert(PLAN, [...new Set(nightRows.map((r) => r.get("date")))].map((date) => ({ date, moved: "yes" })), ["date"]);
-  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), moved: "yes" })), ["date", "kid"]);
+  await upsert(PLAN, [...new Set(nightRows.map((r) => r.get("date")))].map((date) => ({ date, moved: "yes" })), ["date"], t.plan);
+  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), moved: "yes" })), ["date", "kid"], t.lunchPlan);
   if (!nights.length && !lunches.length) return true;
 
-  const [recipes, options] = await Promise.all([loadRecipes(), rows(LUNCHES)]);
+  const recipes = await loadRecipes(), options = t.options;
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const kindFor = (meal: string, effort: string): Kind => { const r = byId.get(meal); const k = r && kindOf(r); return k ?? (/quick/i.test(effort) ? "quick" : "regular"); };
   const recs: Record<string, string>[] = [];
@@ -229,7 +242,7 @@ async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer">): Pro
   }
   const moved = lunches.map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
   for (const l of moved) recs.push({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today });
-  await append(PLANNED, recs);
+  await append(PLANNED, recs, t.planned);
   const waited = lunches.filter((r) => r.get("groceries") === "later").map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
   for (const it of lunchShopping(waited, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
   if (need.length) await addItems(need, "");
@@ -251,9 +264,9 @@ const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
  * These dinners are off the plan: what only they needed comes off the list (see takeOffFor). `still`: recipes still
  * planned (one planned twice, now once), whose groceries stay with the amount cut back. Answers how many things.
  */
-async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set()): Promise<number> {
+async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set(), read?: { recipes: Recipe[]; freezer: Frozen[] }): Promise<number> {
   if (!recipeIds.length) return 0;
-  const [recipes, freezer, cart] = await Promise.all([loadRecipes(), loadFreezer(), loadCart().catch(() => [])]);
+  const [recipes, freezer, cart] = await Promise.all([read?.recipes ?? loadRecipes(), read?.freezer ?? loadFreezer(), loadCart().catch(() => [])]);
   const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer).map((n) => ({ ...n, stay: still.has(id) })) : []; });
   return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
 }
@@ -273,26 +286,26 @@ export type NewLunch = Omit<Lunch, "id">;
 export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number; removed: number }> {
   const today = todayIn();
   let removed = 0;
-  if (counts) {
-    const before = await rows(PLANNED);
-    const week = toPlanned(before), added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
-    // Starting over (Nov 10): what only the old dinners needed, and isn't bought yet, comes off the list first.
-    removed = await takeOffDishes(week.dishes.map((d) => d.recipe));
-    if (week.dishes.length) {
-      await upsert(PLANNED, week.dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
-      await append(MADE, week.dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
-    }
-    // Lunches go, and what was made more than 60 days ago is dropped, so the tab doesn't grow for ever.
-    const long = addDays(today, -60);
-    await removeRows(PLANNED, (get) => (get("kind") === "lunch" && !get("made")) || (Boolean(get("made")) && get("made") < long));
-  }
-  await append(PLANNED, [
+  // Each tab read once (Nov 10: reading Planned again for every step ran into Google's limit of about 60 reads a minute).
+  const [before, recipes, options, freezer] = await Promise.all([rows(PLANNED), loadRecipes(), rows(LUNCHES), loadFreezer()]);
+  const fresh = [
     ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),
     ...lunches.map((l) => ({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today })),
-  ]);
+  ];
+  let planned: string[][];
+  if (counts) {
+    const week = toPlanned(before), added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
+    // Starting over (Nov 10): what only the old dinners needed, and isn't bought yet, comes off the list first.
+    removed = await takeOffDishes(week.dishes.map((d) => d.recipe), new Set(), { recipes, freezer });
+    // This week's dinners marked made, lunches gone, and what was made more than 60 days ago dropped (so the tab
+    // doesn't grow for ever), with the new ones at the end: one write to Planned.
+    const marked = week.dishes.length ? upserted(PLANNED, before, week.dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]) : null;
+    const long = addDays(today, -60);
+    planned = await removeRows(PLANNED, (get) => (get("kind") === "lunch" && !get("made")) || (Boolean(get("made")) && get("made") < long), marked ? [...marked.all, ...marked.added] : before, fresh);
+    if (week.dishes.length) await append(MADE, week.dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
+  } else planned = await append(PLANNED, fresh, before);
   if (counts) await upsert(COUNTS, [...KINDS.map((k) => ({ what: k, count: String(counts[k]) })), ...Object.entries(counts.lunches).map(([kid, n]) => ({ what: `lunches:${kid}`, count: String(n) }))], ["what"]);
 
-  const [planned, recipes, options, freezer] = await Promise.all([rows(PLANNED), loadRecipes(), rows(LUNCHES), loadFreezer()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
   await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
@@ -307,17 +320,18 @@ export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: C
  * cart (Nov 10: before, it stayed, and a swap left its groceries behind).
  */
 export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string }, by: string): Promise<{ added: number; removed?: number }> {
-  const now = toPlanned(await rows(PLANNED));
+  const before = await rows(PLANNED);
+  const now = toPlanned(before);
   const dish = now.dishes.find((d) => d.id === id), lunch = now.lunches.find((l) => l.id === id);
   if (dish && change.recipe) {
-    await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"]);
-    const removed = await takeOffDishes([dish.recipe]);
+    await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"], before);
     const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
+    const removed = await takeOffDishes([dish.recipe], new Set(), { recipes, freezer });
     const r = recipes.find((x) => x.id === change.recipe);
     return { added: r ? await addItems(needFor(r, freezer), by) : 0, removed };
   }
   if (lunch && change.part && change.item !== undefined) {
-    await upsert(PLANNED, [{ id, [change.part]: change.item }], ["id"]);
+    await upsert(PLANNED, [{ id, [change.part]: change.item }], ["id"], before);
     const need = lunchShopping([{ ...lunch, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, p === change.part ? change.item! : ""])) } as Lunch], toOptions(await rows(LUNCHES)));
     return { added: need.length ? await addItems(need.map((item) => ({ item, quantity: "", for: "lunches", check: false })), by) : 0 };
   }
@@ -329,18 +343,20 @@ export async function changePlanned(id: string, change: { recipe?: string; pinne
  * (so "last made" stays true) and counts the freezer down. The grocery list is left alone.
  */
 export async function markMade(id: string) {
-  const now = toPlanned(await rows(PLANNED));
+  const before = await rows(PLANNED);
+  const now = toPlanned(before);
   const dish = now.dishes.find((d) => d.id === id);
   if (!dish && !now.lunches.some((l) => l.id === id)) return;
   const date = todayIn();
-  await upsert(PLANNED, [{ id, made: date }], ["id"]);
+  await upsert(PLANNED, [{ id, made: date }], ["id"], before);
   if (!dish) return;
   const r = (await loadRecipes()).find((x) => x.id === dish.recipe);
   if (!r) return;
   await append(MADE, [{ date, recipe: r.id }]);
   // The freezer counts down: one of the thing the meal used from it, the oldest first.
-  const f = (await loadFreezer()).find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
-  if (f) await takeFrozen(f.id);
+  const freezer = await rows(FREEZER);
+  const f = freezerFrom(freezer).find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
+  if (f) await takeFrozen(f.id, freezer);
 }
 
 /**
@@ -353,7 +369,7 @@ export async function clearPlanned(): Promise<void> {
   const dishes = toPlanned(before).dishes;
   if (!dishes.length) return;
   const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
-  await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"]);
+  await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"], before);
   await append(MADE, dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
 }
 
@@ -365,17 +381,18 @@ export async function clearPlanned(): Promise<void> {
 export async function setCount(recipe: string, kind: Kind, count: number, by: string): Promise<{ added: number; removed: number }> {
   const want = Math.max(0, Math.min(MAX_COUNT, Math.round(count)));
   const today = todayIn();
-  const now = toPlanned(await rows(PLANNED)).dishes.filter((d) => d.recipe === recipe);
+  const before = await rows(PLANNED);
+  const now = toPlanned(before).dishes.filter((d) => d.recipe === recipe);
   if (want > now.length) {
     const more = want - now.length;
-    await append(PLANNED, Array.from({ length: more }, () => ({ id: newId(), kind, recipe, added: today, pinned: "yes" })));
+    await append(PLANNED, Array.from({ length: more }, () => ({ id: newId(), kind, recipe, added: today, pinned: "yes" })), before);
     const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
     const r = recipes.find((x) => x.id === recipe);
     return { added: r ? await addItems(Array.from({ length: more }, () => needFor(r, freezer)).flat(), by) : 0, removed: 0 };
   }
   if (want < now.length) {
     const gone = new Set(now.slice(want).map((d) => d.id));
-    await removeRows(PLANNED, (get) => gone.has(get("id")));
+    await removeRows(PLANNED, (get) => gone.has(get("id")), before);
     return { added: 0, removed: await takeOffDishes(Array.from({ length: gone.size }, () => recipe), want ? new Set([recipe]) : new Set()) };
   }
   return { added: 0, removed: 0 };
@@ -383,9 +400,10 @@ export async function setCount(recipe: string, kind: Kind, count: number, by: st
 
 /** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
 export async function removePlanned(id: string): Promise<{ removed: number }> {
-  const all = toPlanned(await rows(PLANNED)).dishes;
+  const before = await rows(PLANNED);
+  const all = toPlanned(before).dishes;
   const dish = all.find((d) => d.id === id);
-  await removeRows(PLANNED, (get) => get("id") === id);
+  await removeRows(PLANNED, (get) => get("id") === id, before);
   // Planned more than once (Nov 10: "×2"): one fewer, so its groceries are cut back by one helping, not taken off.
   const still = new Set(all.filter((d) => d.id !== id).map((d) => d.recipe));
   return { removed: dish ? await takeOffDishes([dish.recipe], still) : 0 };
@@ -404,7 +422,10 @@ export const recordTrip = (store: Store) => append(TRIPS, [{ date: todayIn(), st
 
 /** What's in the freezer, oldest first. */
 export async function loadFreezer(): Promise<Frozen[]> {
-  return records(await rows(FREEZER)).flatMap((r) => (r.get("item") ? [{ id: r.get("id") || `row-${r.rowNumber}`, item: r.get("item"), amount: r.get("amount"), added: r.get("added"), store: r.get("store") }] : []))
+  return freezerFrom(await rows(FREEZER));
+}
+function freezerFrom(all: string[][]): Frozen[] {
+  return records(all).flatMap((r) => (r.get("item") ? [{ id: r.get("id") || `row-${r.rowNumber}`, item: r.get("item"), amount: r.get("amount"), added: r.get("added"), store: r.get("store") }] : []))
     .sort((a, b) => (a.added || "9").localeCompare(b.added || "9"));
 }
 
@@ -413,23 +434,29 @@ export async function addFrozen(text: string, store = "") {
   const m = text.trim().match(/^(\d+)\s+(.+)$/);
   const item = (m ? m[2] : text).trim().slice(0, 60), amount = m ? m[1] : "";
   if (!item) return;
-  const same = (await loadFreezer()).find((f) => norm(f.item) === norm(item));
-  if (same && /^\d+$/.test(same.amount) && amount) return upsert(FREEZER, [{ id: same.id, amount: String(Number(same.amount) + Number(amount)) }], ["id"]);
-  await upsert(FREEZER, [{ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, item, amount, added: todayIn(), store }], ["id"]);
+  const before = await rows(FREEZER);
+  const same = freezerFrom(before).find((f) => norm(f.item) === norm(item));
+  if (same && /^\d+$/.test(same.amount) && amount) { await upsert(FREEZER, [{ id: same.id, amount: String(Number(same.amount) + Number(amount)) }], ["id"], before); return; }
+  await upsert(FREEZER, [{ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, item, amount, added: todayIn(), store }], ["id"], before);
 }
 
-/** One used: the amount goes down, and at none (or no amount written) it's gone. */
-export async function takeFrozen(id: string) {
-  const f = (await loadFreezer()).find((x) => x.id === id);
+/** One used: the amount goes down, and at none (or no amount written) it's gone. `before`: the tab as just read. */
+export async function takeFrozen(id: string, before?: string[][]) {
+  const all = before ?? (await rows(FREEZER));
+  const f = freezerFrom(all).find((x) => x.id === id);
   if (!f) return;
   const n = Number(f.amount);
-  if (Number.isFinite(n) && n > 1) await upsert(FREEZER, [{ id, amount: String(n - 1) }], ["id"]);
-  else await removeRows(FREEZER, (get) => get("id") === id);
+  if (Number.isFinite(n) && n > 1) await upsert(FREEZER, [{ id, amount: String(n - 1) }], ["id"], all);
+  else await removeRows(FREEZER, (get) => get("id") === id, all);
 }
 
-async function removeRows(tab: string, drop: (get: (k: string) => string) => boolean) {
-  const all = await rows(tab);
-  const keep = [all[0] ?? HEADERS[tab], ...records(all).filter((r) => !drop(r.get)).map((r) => all[r.rowNumber - 1])];
-  if (sheetsConfigured()) await replaceTab(tab, keep);
+/** Rows off a tab, in one write; `add`: rows to put at the end in the same write. */
+async function removeRows(tab: string, drop: (get: (k: string) => string) => boolean, before?: string[][], add: Record<string, string>[] = []): Promise<string[][]> {
+  const all = before ?? (await rows(tab));
+  const head = all[0] ?? HEADERS[tab];
+  const headers = head.map((h) => h.trim().toLowerCase());
+  const keep = [head, ...records(all).filter((r) => !drop(r.get)).map((r) => all[r.rowNumber - 1]), ...add.map((r) => headers.map((h) => r[h] ?? ""))];
+  if (sheetsConfigured()) await replaceTab(tab, keep, all);
   else memory.set(tab, keep);
+  return keep;
 }
