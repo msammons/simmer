@@ -326,6 +326,7 @@ export default function App() {
 
   function onTab(t: Tab) {
     setError(null);
+    setWeekNote(null); setWeekError(null); // a change's note belongs to that moment, not to the next visit (Nov 10)
     scrollAppTo(0);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
@@ -368,6 +369,7 @@ export default function App() {
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError} note={weekNote} onNote={() => setWeekNote(null)}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => { setWeekNote(null); setAddingOne(k); }}
+          onMore={(d) => { setWeekNote(null); addMeal({ kind: d.kind, recipe: d.recipe, pinned: true }).then((r) => { if (r.problem) setWeekError(r.problem); }); }}
           onNewPlan={() => { setWeekNote(null); changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
           onRemove={(d) => { setWeekNote(null); changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
       )}

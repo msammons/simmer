@@ -148,7 +148,7 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
         : (
           <>
             <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onClear={here.length ? () => askClear(here) : null} onDone={ticked.length ? done : null} />
-            {list && !items.length && <EmptyState icon="list" title="Nothing on the lists">Add what you need, or check Stock.</EmptyState>}
+            {list && !items.length && <EmptyState icon="list" title="Nothing on the lists" />}
             {(where === "all" ? STORES : [where]).map((s) => {
               const rows = items.filter((i) => i.store === s);
               if (!rows.length) return where === "all" ? null : <EmptyState key={s} icon="list" title={`Nothing for ${STORE_NAMES[s]}`} />;

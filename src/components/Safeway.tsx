@@ -269,10 +269,10 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   }, [shownKey, firstOrder]);
 
   if (!items.length) {
-    return <EmptyState icon="bag" title="Nothing to find" action={<Button variant="secondary" onClick={onList}>Back to the list</Button>}>There&apos;s nothing on the list for {store}.</EmptyState>;
+    return <EmptyState icon="bag" title="Nothing to find" action={<Button variant="secondary" onClick={onList}>Back to the list</Button>} />;
   }
   if (!it) {
-    return <EmptyState icon="check" title="That's everything" action={<Button onClick={onCart}>See the cart</Button>}>You&apos;ve been through the whole list for {store}.</EmptyState>;
+    return <EmptyState icon="check" title="That's everything" action={<Button onClick={onCart}>See the cart</Button>} />;
   }
   const s = searches[query];
   // Kept in the order first shown: an Add makes that product the remembered pick, and re-ranking then moved another
@@ -356,7 +356,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             );
           })}
         </div>
-      ) : <EmptyState icon="search" title="Nothing came up">Try other words.</EmptyState>)}
+      ) : <EmptyState icon="search" title="Nothing came up" />)}
       <div className="flex gap-3">
         {index > 0 && <Button variant="secondary" className="flex-1" onClick={() => move(index - 1)}>Back</Button>}
         {inCartForIt
@@ -386,9 +386,7 @@ export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; on
     return (
       <div className="space-y-5">
         {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
-        <EmptyState icon="cart" title="The cart is empty" action={onFind && <Button onClick={onFind}>Find them at {store}</Button>}>
-          What you add from the list shows here.
-        </EmptyState>
+        <EmptyState icon="cart" title="The cart is empty" action={onFind && <Button onClick={onFind}>Find them at {store}</Button>} />
       </div>
     );
   }
