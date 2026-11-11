@@ -265,18 +265,20 @@ export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef
 
 /** How far the on-screen keyboard covers the page, from the visual viewport (0 when it's down). */
 const KEYBOARD_PX = 120; // smaller gaps are the toolbar or the scroll bounce, not a keyboard
-function useKeyboardInset(own?: RefObject<HTMLElement | null>) {
-  const [inset, setInset] = useState(0);
+/**
+ * While someone types in this sheet with the keyboard up: the part of the screen they can see (its top and height).
+ * Safari lets the page slide under the keyboard; a sheet pinned to this box stays put above it (Nov 10).
+ */
+function useTypingView(own: RefObject<HTMLElement | null>) {
+  const [view, setView] = useState<{ top: number; height: number } | null>(null);
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    // The visible area also shifts while scrolling (Safari's toolbar collapsing, the bounce at the ends), so only count
-    // it while someone is typing and the gap is keyboard-sized; otherwise the bar would jump around on scroll.
     const update = () => {
       const el = document.activeElement;
-      const typing = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && (!own || Boolean(own.current?.contains(el)));
+      const typing = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && Boolean(own.current?.contains(el));
       const gap = Math.round(window.innerHeight - vv.height - vv.offsetTop);
-      setInset(typing && gap > KEYBOARD_PX ? gap : 0);
+      setView(typing && gap > KEYBOARD_PX ? { top: Math.round(vv.offsetTop), height: Math.round(vv.height) } : null);
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -286,8 +288,8 @@ function useKeyboardInset(own?: RefObject<HTMLElement | null>) {
       vv.removeEventListener("resize", update); vv.removeEventListener("scroll", update);
       window.removeEventListener("focusin", update); window.removeEventListener("focusout", update);
     };
-  }, []);
-  return inset;
+  }, [own]);
+  return view;
 }
 
 type Gesture = { x: number; y: number; t: number; axis: "x" | "y" | null; ok: boolean };
@@ -374,7 +376,16 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
   const body = useRef<HTMLDivElement>(null);
   // A sheet with a text field rides above the keyboard, like the tab bar; only the sheet being typed in, so one open on
   // top of another leaves the one behind where it is.
-  const keyboard = useKeyboardInset(panel);
+  const view = useTypingView(panel); // typing in this sheet with the keyboard up
+  const root = useRef<HTMLDivElement>(null);
+  // The page behind never moves while a sheet is up: a drag outside the sheet's own list does nothing.
+  useEffect(() => {
+    const r = root.current;
+    if (!r) return;
+    const stop = (ev: TouchEvent) => { if (!(ev.target instanceof Node && body.current?.contains(ev.target))) ev.preventDefault(); };
+    r.addEventListener("touchmove", stop, { passive: false });
+    return () => r.removeEventListener("touchmove", stop);
+  }, []);
   useEffect(() => { body.current?.scrollTo(0, 0); }, [page]);
   useEffect(() => {
     const behind = scroller(), prev = behind?.style.overflow ?? "";
@@ -392,7 +403,10 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
       if (ev.touches.length !== 1) return;
       const t = ev.touches[0];
       // A pull only counts as "close" when the content can't scroll up any further.
-      const fromTop = (body.current?.scrollTop ?? 0) <= 0 || (ev.target instanceof Element && Boolean(ev.target.closest("[data-handle]")));
+      // Never while typing: with the keyboard up a pull moved the whole sheet about (Nov 10); close it with the button.
+      const active = document.activeElement;
+      const typing = (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && p.contains(active);
+      const fromTop = !typing && ((body.current?.scrollTop ?? 0) <= 0 || (ev.target instanceof Element && Boolean(ev.target.closest("[data-handle]"))));
       g = { x: t.clientX, y: t.clientY, t: Date.now(), axis: null, ok: !ownsTouch(ev.target), fromTop };
     };
     const move = (ev: TouchEvent) => {
@@ -437,10 +451,10 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
     };
   }, []);
   return (
-    <div className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
+    <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}
-      <div ref={panel} style={keyboard ? { marginBottom: keyboard + 8, maxHeight: `calc(100dvh - env(safe-area-inset-top) - ${keyboard + 24}px)` } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] ${tall ? "h-[90dvh] " : ""}w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
+      <div ref={panel} style={view ? { marginBottom: 8, maxHeight: view.height - 16, ...(tall && { height: view.height - 16 }) } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] ${tall ? "h-[90dvh] " : ""}w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
