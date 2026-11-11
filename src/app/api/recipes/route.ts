@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { fromDraft, loadRecipes, saveRecipe, sameName, updateRecipe, type Draft } from "@/lib/recipes";
+import { fromDraft, loadRecipes, saveRecipes, sameName, updateRecipe, type Draft, type Recipe } from "@/lib/recipes";
 
 const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
@@ -30,15 +30,22 @@ export async function POST(req: Request) {
         const drafts: Draft[] = (Array.isArray(b.recipes) ? b.recipes.slice(0, 300) : []).filter((d: unknown) => d !== null && typeof d === "object");
         if (!drafts.length) throw new AppError("Nothing to save.");
         const all = await loadRecipes();
-        for (const d of drafts) {
-          const byId = d.id ? all.find((r) => r.id === d.id) : undefined;
-          const twin = byId ? undefined : sameName(all, String(d.name ?? ""));
-          if (twin && b.duplicates === "skip") continue;
-          const existing = byId ?? (twin && b.duplicates === "replace" ? twin : undefined);
-          const r = fromDraft({ ...d, id: existing?.id }, existing);
-          await saveRecipe(r);
-          all.push(r);
-          saved.push(r.id);
+        // Saved together, in one read and a write or two (one save each ran past the Sheet's limit on a big import);
+        // the ones read before a draft that can't be saved are still kept.
+        const ready: Recipe[] = [];
+        try {
+          for (const d of drafts) {
+            const byId = d.id ? all.find((r) => r.id === d.id) : undefined;
+            const twin = byId ? undefined : sameName(all, String(d.name ?? ""));
+            if (twin && b.duplicates === "skip") continue;
+            const existing = byId ?? (twin && b.duplicates === "replace" ? twin : undefined);
+            const r = fromDraft({ ...d, id: existing?.id }, existing);
+            ready.push(r);
+            all.push(r);
+            saved.push(r.id);
+          }
+        } finally {
+          await saveRecipes(ready);
         }
         break;
       }
