@@ -373,7 +373,11 @@ export async function clearPlanned(): Promise<{ removed: number }> {
   const before = await rows(PLANNED);
   const dishes = toPlanned(before).dishes;
   const cart = await loadCart().catch(() => []);
-  const removed = await takeOffDinnerGroceries(new Set(cart.map((l) => l.itemId).filter(Boolean)));
+  const held = new Set(cart.map((l) => l.itemId).filter(Boolean));
+  // First each dinner's own share, so a line added by hand loses just that share ("1 dozen + 1" eggs → "1 dozen");
+  // then anything left that's only for a dinner (an older one, or one whose recipe changed since).
+  const shares = await takeOffDishes(dishes.map((d) => d.recipe));
+  const removed = shares + await takeOffDinnerGroceries(held);
   if (!dishes.length) return { removed };
   const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
   await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"], before);

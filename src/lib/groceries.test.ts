@@ -208,3 +208,11 @@ describe("a line added by hand that a dinner joins (Nov 10)", () => {
   });
 });
 
+describe("taking away from a combined amount (Nov 10)", () => {
+  it("takes it from the part in the same unit", () => {
+    expect(takeAway("1 dozen + 1", "1")).toBe("1 dozen");
+    expect(takeAway("1 lb + 8 oz", "8 oz")).toBe("1 lb");
+    expect(takeAway("1 lb + 8 oz", "1 cup")).toBeNull();
+  });
+});
+
