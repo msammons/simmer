@@ -8,6 +8,8 @@ import { Redis } from "@upstash/redis";
 export type TabStore = {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<unknown>;
+  /** Sets only when the key isn't there (1 = set). */
+  setnx(key: string, value: string): Promise<number>;
   mget(...keys: string[]): Promise<(string | null)[]>;
   keys(pattern: string): Promise<string[]>;
 };
@@ -85,6 +87,17 @@ export async function updateRanges(s: TabStore, data: { range: string; values: s
     }
     await writeTab(s, tab, all);
   }
+}
+
+/**
+ * The one-time copy from the Sheet (Nov 11): every tab the Sheet has, put in Redis unless Redis has it already, and then
+ * a mark so the Sheet is never read again. `sheet` reads every tab in one request.
+ */
+const COPIED = "simmer:copied-from-sheet";
+export async function copiedFromSheet(s: TabStore) { return Boolean(await s.get(COPIED)); }
+export async function copyFromSheet(s: TabStore, sheet: () => Promise<[string, string[][]][]>) {
+  for (const [tab, rows] of await sheet()) if (!/^Backup /.test(tab)) await s.setnx(keyOf(tab), JSON.stringify(rows));
+  await s.set(COPIED, new Date().toISOString());
 }
 
 /** Every tab Redis holds, with its rows: what Copy to Google Sheet sends. */
