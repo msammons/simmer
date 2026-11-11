@@ -298,7 +298,6 @@ export default function App() {
     },
     keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
-    keepWeekly: (item, weekly) => change({ op: "keepWeekly", item, weekly }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, weekly } : x)) })),
     keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
   };
 

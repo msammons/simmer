@@ -139,8 +139,8 @@ describe("the list on the Sheet", () => {
     expect(await g.doneShopping("safeway")).toBe(1);
     expect(table("Bought").slice(1).map((r) => r[0])).toEqual(["milk"]);
     expect(table("List").map((r) => r[0])).toEqual(["id", "a", "c"]);
-    // List and Bought read, Bought written, List written; then Every week reads the list and Staples
-    expect(cost()).toEqual({ reads: 4, writes: 2 });
+    // List and Bought read, Bought written, List written (no Every week refill since Nov 10)
+    expect(cost()).toEqual({ reads: 2, writes: 2 });
   });
 
   it("moves an item and remembers where it goes", async () => {

@@ -6,11 +6,20 @@ import { STORE_NAMES } from "./Shop";
 import { BrandBar, Button, EmptyState, Group, Notice, Sheet } from "./ui";
 
 /**
- * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (checking never moves a row). Simmer assumes we
- * have everything: a tap means we're out and puts it on its store's list; a second tap takes it back off. What this
- * week's meals need is highlighted, with the amount. ⋯ moves a thing to another section, marks it Every week (Done
- * shopping puts it back on the list, Nov 3: lunch foods), or takes it out of Stock.
+ * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (a tap never moves a row). Simmer assumes we
+ * have everything: tick what you need and it goes on its store's list; untick to take it off. What this
+ * plan's meals need is highlighted, with the amount. ⋯ moves a thing to another section, or takes it out of Stock.
+ * Nothing goes on a list by itself (Nov 10: no Every week): the tap is the decision to buy it this time.
  */
+/** Ticked: on the list (we need it). Empty: we have it. */
+function Tick({ on }: { on: boolean }) {
+  return (
+    <span aria-hidden className={`flex size-7 shrink-0 items-center justify-center rounded-full ${on ? "bg-accent text-on-accent" : "border-2 border-muted/50"}`}>
+      {on && <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
+    </span>
+  );
+}
+
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -24,7 +33,6 @@ export type StockActions = {
   takeOut: (f: Frozen) => void;
   keepAdd: (text: string, section?: Section) => void;
   keepMove: (item: string, section: Section) => void;
-  keepWeekly: (item: string, weekly: boolean) => void;
   keepRemove: (s: Staple) => void;
 };
 
@@ -54,13 +62,6 @@ function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRow[] {
   return rows;
 }
 
-function Circle({ on }: { on: boolean }) {
-  return (
-    <span aria-hidden className={`flex size-7 shrink-0 items-center justify-center rounded-full ${on ? "bg-[#2E7D4F] text-white" : "border-2 border-muted/50"}`}>
-      {on && <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
-    </span>
-  );
-}
 
 export function StockScreen({ list, kitchen, error, act }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: StockActions }) {
   const [text, setText] = useState("");
@@ -83,15 +84,11 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
-      <div className="flex items-center gap-1.5 whitespace-nowrap px-4 t-foot text-muted">
-        <span aria-hidden className="flex size-4 items-center justify-center rounded-full bg-[#2E7D4F] text-white">
-          <svg viewBox="0 0 24 24" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-        </span>
-        We have it
-        <span aria-hidden className="ml-3 size-4 rounded-[5px] bg-accent/15" />
-        In meals
-      </div>
-      <p className="-mt-3 px-4 t-foot text-muted">Tap something when it runs out; it goes on the list.</p>
+      {/* Tick what you need (Matt, Nov 10: ticking means "I want it", as on any checklist; it used to mean "we have it"). */}
+      <p className="flex items-center gap-1.5 px-4 t-foot text-muted">
+        Tick what you need; it goes on the list.
+        <span aria-hidden className="ml-2 size-3.5 rounded-[4px] bg-accent/15" /> In meals
+      </p>
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
@@ -100,12 +97,11 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
           <Group key={id} header={name}>
             {here.map((r) => (
               <div key={r.key} className={`flex items-center pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
-                <button role="checkbox" aria-checked={r.have} aria-label={`Have ${r.name}`} onClick={() => tap(r)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
-                  <Circle on={r.have} />
+                <button role="checkbox" aria-checked={!r.have} aria-label={`Need ${r.name}`} onClick={() => tap(r)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
+                  <Tick on={!r.have} />
                   <span className="min-w-0 flex-1">
                     <span className="block t-body">{cap(r.name)}</span>
-                    {!r.have && r.open ? <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>
-                      : r.staple?.weekly && <span className="block t-foot text-muted">Every week</span>}
+                    {!r.have && r.open && <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>}
                   </span>
                   {r.meal?.quantity && <span className="shrink-0 t-sub text-muted">{r.meal.quantity}</span>}
                 </button>
@@ -113,10 +109,9 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
                   <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                     <span aria-hidden>⋯</span>
                     <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                      onChange={(e) => { const v = e.target.value; if (v === "remove") setRemoving(r.staple); else if (v === "weekly") act.keepWeekly(r.name, !r.staple!.weekly); else if (v) act.keepMove(r.name, v as Section); }}>
+                      onChange={(e) => { const v = e.target.value; if (v === "remove") setRemoving(r.staple); else if (v) act.keepMove(r.name, v as Section); }}>
                       <option value="" disabled>{cap(r.name)}</option>
                       {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
-                      <option value="weekly">{r.staple.weekly ? "Not every week" : "Every week"}</option>
                       <option value="remove">Remove from Stock</option>
                     </select>
                   </label>
@@ -129,7 +124,7 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
       {removing && (
         <Sheet label="Remove from Stock" title={`Remove ${cap(removing.item)} from Stock?`} onClose={() => setRemoving(null)}>
           <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">It stops showing here{removing.weekly ? " and stops coming back every week" : ""}.</p>
+            <p className="t-sub text-muted">It stops showing here.</p>
             <Button className="w-full" onClick={() => { act.keepRemove(removing); setRemoving(null); }}>Remove from Stock</Button>
             <Button variant="secondary" className="w-full" onClick={() => setRemoving(null)}>Cancel</Button>
           </div>
