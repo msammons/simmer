@@ -56,7 +56,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       if (process.env.FAILED_SHOT) await page.screenshot({ path: process.env.FAILED_SHOT });
       await page.unroute("**/api/plan");
       await firstFree.tap();
-      ok("meals: picking one adds it, named in the note", (await seen(page.getByText(/^Added .+\./), 8000)) && (await kindSheet.count()) === 0);
+      const noNote = async () => !/went on the list|came off|× \d+\.|^Added |Started a new plan/m.test(await page.locator("main").innerText());
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Add a meal"]'), null, { timeout: 8000 }).catch(() => {});
+      ok("meals: picking one adds it, with no note bar", (await kindSheet.count()) === 0 && (await groupOf("Quick").getByRole("button", { name: /^One more / }).count()) >= 1 && await noNote());
       // How many of one dinner (Nov 10): taps show at once and go as one change once they stop; no busy errors.
       const quickPlus = groupOf("Quick").getByRole("button", { name: /^One more / }).first();
       const quickCount = () => groupOf("Quick").getByLabel(/: \d+$/).first().innerText();
@@ -64,18 +66,23 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       let planPosts = 0;
       const countPosts = (r) => { if (r.url().includes("/api/plan") && r.method() === "POST") planPosts++; };
       page.on("request", countPosts);
+      const planSaved = () => page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
+      let saved = planSaved();
       await quickPlus.tap(); await quickPlus.tap(); await quickPlus.tap();
       ok("meals: quick taps show at once", Number(await quickCount()) === c0 + 3);
-      ok("meals: and go as one change, with a note", (await seen(page.getByText(new RegExp(`× ${c0 + 3}\\.`)), 8000)) && planPosts === 1, `${planPosts} sent`);
+      await saved; await page.waitForTimeout(300);
+      ok("meals: and go as one change, with no note bar", planPosts === 1 && Number(await quickCount()) === c0 + 3 && await noNote(), `${planPosts} sent`);
+      saved = planSaved();
       await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap(); await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap(); await groupOf("Quick").getByRole("button", { name: /^One less / }).first().tap();
-      ok("meals: − takes them back without asking, as one change", (await seen(page.getByText(new RegExp(`× ${c0}\\.`)), 8000)) && Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0 && planPosts === 2, `${planPosts} sent`);
+      await saved; await page.waitForTimeout(300);
+      ok("meals: − takes them back without asking, as one change", Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0 && planPosts === 2, `${planPosts} sent`);
       page.off("request", countPosts);
       ok("meals: no busy message", (await page.getByText(/busy right now/i).count()) === 0);
       ok("meals: no arrows on the dinners", (await groupOf("Quick").getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ }).first().locator("svg").count()) === 0);
       // A change's note doesn't follow you around: switching tabs clears it.
       await page.locator("nav button", { hasText: "Lists" }).tap(); await page.waitForTimeout(300);
       await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
-      ok("meals: the note is gone after switching tabs", (await page.getByText(/^(Added|Took) .+\.|× \d+\./).count()) === 0);
+      ok("meals: still no note bar after switching tabs", await noNote());
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       // A dinner: tapping it opens the recipe on top of Meals; its quiet × takes it off after a confirm (no sheet of
       // choices, no Undo; Nov 9). Back says where it goes and goes there.
@@ -94,7 +101,6 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
         await offs.first().tap(); await page.waitForTimeout(300);
         await page.getByRole("dialog", { name: "Take it off" }).getByRole("button", { name: "Take it off" }).tap(); await page.waitForTimeout(800);
         ok("meals: Take it off takes just that dinner off, with no Undo", ((await dinners.count()) === count - 1 || (await dinners.count()) === 0) && (await page.getByText("Undo").count()) === 0);
-        ok("meals: taking one off says what came off the list", await seen(page.getByText(/^Took .+ off\./), 5000));
         await page.waitForTimeout(400);
         if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("button", { name: /^Add to the list/ }).isVisible(); }
       }
@@ -154,7 +160,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       await page.screenshot({ path: `${dir}/8d-add-a-meal-search-320.png` });
       await page.setViewportSize({ width, height }); await page.waitForTimeout(300);
       await addSheet.getByRole("button", { name: /^Turkey chili/ }).tap();
-      ok("add a meal: picking one closes the sheet and the note names it", await seen(page.getByText(/^Added Turkey chili\. (\d+ things? went on the list|Its groceries were already on the list)\./), 8000) && (await addSheet.count()) === 0);
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Add a meal"]'), null, { timeout: 8000 }).catch(() => {});
+      ok("add a meal: picking one closes the sheet", (await addSheet.count()) === 0);
       ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
       await addRegular(); await page.waitForTimeout(500);
       ok("add a meal: now it shows Planned", await addSheet.getByRole("button", { name: /^Turkey chili.*Planned$/ }).first().isDisabled());
@@ -171,7 +178,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       const fresh = page.getByRole("dialog", { name: "New plan" });
       ok("new plan: asks first, and says the list stays", (await fresh.isVisible()) && (await fresh.getByText("The grocery list stays as it is.").isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
       await fresh.getByRole("button", { name: "New plan" }).tap();
-      ok("new plan: every dinner comes off", await seen(page.getByText(/^Started a new plan\./), 8000) && (await page.getByRole("button", { name: /^Take .* off the plan$/ }).count()) === 0);
+      await page.waitForFunction(() => !document.querySelector('button[aria-label^="Take "]'), null, { timeout: 8000 }).catch(() => {});
+      ok("new plan: every dinner comes off", (await page.getByRole("button", { name: /^Take .* off the plan$/ }).count()) === 0 && (await page.getByRole("button", { name: /^One less / }).count()) === 0);
       const listAfter = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
       ok("new plan: the grocery list stays", listBefore === listAfter, `${listBefore} → ${listAfter}`);
       ok("meals: nothing on Meals says week", !/\bweek\b/i.test(await page.locator("main").innerText()));
