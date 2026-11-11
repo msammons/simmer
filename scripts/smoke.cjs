@@ -202,6 +202,20 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("meals: nothing on Meals says week", !/\bweek\b/i.test(await page.locator("main").innerText()));
     }
 
+    // A request budget (Nov 11: bursts of reloads went over Google's limits). Going round the tabs twice in a row: the
+    // second round asks the server for (almost) nothing, since what was just loaded is still fresh.
+    {
+      let gets = 0;
+      const countGets = (r) => { if (r.url().includes("/api/") && r.method() === "GET") gets++; };
+      page.on("request", countGets);
+      const round = async () => { for (const t of ["Meals", "Stock", "Lists", "Recipes", "Meals"]) { await page.locator("nav button", { hasText: t }).tap(); await page.waitForTimeout(250); } };
+      await round(); await page.waitForTimeout(600);
+      const first = gets;
+      await round(); await page.waitForTimeout(600);
+      page.off("request", countGets);
+      ok(`${tag}: a second round of the tabs asks for almost nothing`, gets - first <= 2, `first round ${first}, second ${gets - first}`);
+    }
+
     // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).
     await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(400);
     await page.screenshot({ path: `${dir}/4-settings-${tag}.png` });

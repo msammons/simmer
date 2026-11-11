@@ -38,6 +38,22 @@ function takeResume(): { tab: Tab; asked: boolean } {
 const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
   && ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].some((el) => el.value);
 
+/**
+ * A reload that doesn't ask again within a few seconds (Nov 11: tab visits, coming back to the app and polls asked for
+ * the same things over and over): one already on its way, or one that just answered, is enough. Changes reload directly.
+ */
+function useSettled(fn: () => Promise<unknown>, ms = 5_000) {
+  const last = useRef(0);
+  const busy = useRef<Promise<unknown> | null>(null);
+  return useCallback(() => {
+    if (busy.current) return busy.current;
+    if (Date.now() - last.current < ms) return Promise.resolve();
+    const p = fn().finally(() => { last.current = Date.now(); busy.current = null; });
+    busy.current = p;
+    return p;
+  }, [fn, ms]);
+}
+
 export default function App() {
   const [phase, setPhase] = useState<"boot" | "passcode" | "app">("boot");
   const [stack, setStack] = useState<Screen[]>([{ kind: "week" }]); // Simmer opens on Meals (Matt, Oct 31)
@@ -118,18 +134,20 @@ export default function App() {
       if (!(e instanceof AuthError)) setListError(errorText(e));
     }
   }, []);
+  const listNow = useSettled(refreshList);
+  const kitchenNow = useSettled(useCallback(() => api.kitchen().then(setKitchen, () => {}), []), 30_000);
   const onShop = phase === "app" && (top.kind === "lists" || top.kind === "stock");
   useEffect(() => {
     if (!onShop) return;
-    queueMicrotask(refreshList);
-    if (top.kind === "stock") api.kitchen().then(setKitchen, () => {}); // the freezer: only Stock shows it
+    queueMicrotask(listNow);
+    if (top.kind === "stock") kitchenNow(); // the freezer: only Stock shows it
     const visible = () => document.visibilityState === "visible";
-    const t = setInterval(() => { if (visible()) refreshList(); }, 30_000);
-    const back = () => { if (visible()) refreshList(); };
+    const t = setInterval(() => { if (visible()) listNow(); }, 30_000);
+    const back = () => { if (visible()) listNow(); };
     document.addEventListener("visibilitychange", back);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- top.kind only decides the one kitchen read; onShop and visit restart it
-  }, [onShop, visit, refreshList]);
+  }, [onShop, visit, listNow, kitchenNow]);
 
   // The collection: loaded when Recipes, a recipe or the week opens (the week shows meal names), and after every change,
   // from the server's answer.
@@ -139,7 +157,8 @@ export default function App() {
     catch (e) { if (!(e instanceof AuthError)) setRecipesError(errorText(e)); }
   }, [gotRecipes]);
   const inRecipes = phase === "app" && top.kind !== "lists" && top.kind !== "stock";
-  useEffect(() => { if (inRecipes) queueMicrotask(refreshRecipes); }, [inRecipes, visit, refreshRecipes]);
+  const recipesNow = useSettled(refreshRecipes, 15_000);
+  useEffect(() => { if (inRecipes) queueMicrotask(recipesNow); }, [inRecipes, visit, recipesNow]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
   const toList = open ?? (listing ? recipeOf(listing) : null); // the add-to-list sheet's recipe: the page you're on, or a row on Recipes
@@ -184,14 +203,15 @@ export default function App() {
   }, []);
   // A recipe's page reads it too: it offers "Add to this week" only when the recipe isn't planned.
   const onWeek = phase === "app" && (top.kind === "week" || top.kind === "recipe");
+  const planNow = useSettled(refreshPlan);
   useEffect(() => {
     if (!onWeek) return;
-    queueMicrotask(refreshPlan);
+    queueMicrotask(planNow);
     // Brought back to the front (an iPhone keeps the app open for days): the plan as it is now.
-    const back = () => { if (document.visibilityState === "visible") refreshPlan(); };
+    const back = () => { if (document.visibilityState === "visible") planNow(); };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, [onWeek, visit, refreshPlan]);
+  }, [onWeek, visit, planNow]);
   /**
    * The plan as the server answered it, and a note saying what changed and what went on or came off the grocery list:
    * "Took Tacos off. 3 things came off the list." `lead` names the change; `already`: a meal whose groceries were there.
