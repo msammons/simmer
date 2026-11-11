@@ -276,15 +276,6 @@ export default function App() {
     check: (it, checked) => change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
     move: (it, to) => change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
     done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
-    clear: async (ids) => {
-      const mine = ++listChanges.current;
-      setList((l) => l && { ...l, items: l.items.filter((x) => !ids.includes(x.id)) });
-      try {
-        const l = await api.change({ op: "clear", ids });
-        if (mine === listChanges.current) { setList(l); store.setList(l); setListError(null); }
-        return l.cleared ?? [];
-      } catch (e) { failed(setListError)(e); refreshList(); return null; }
-    },
     putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
   };
   const stock: StockActions = {
@@ -386,7 +377,7 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).filter((x) => !x.checked && x.for.trim() && x.for.trim().toLowerCase() !== "every week" && !x.for.split(",").map((f) => f.trim()).includes("added by hand")).length /* as forADinner, lib/groceries.ts */} error={saveProblem ?? error ?? weekError} onError={() => { setSaveProblem(null); setWeekError(null); }}
+        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).length} error={saveProblem ?? error ?? weekError} onError={() => { setSaveProblem(null); setWeekError(null); }}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
           onCount={countMeal}
           onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setSaveProblem(p); }); }}

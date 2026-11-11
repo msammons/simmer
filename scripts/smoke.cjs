@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
-// The plan, no lunches, no Made it), the tabs, Settings on every screen, Stock (nothing comes back by itself), Lists (All, and Safeway's in-store
+// Meals (New plan in the top bar), no lunches, no Made it), the tabs, Settings on every screen, Stock (nothing comes back by itself), Lists (All, and Safeway's in-store
 // checklist when the helper can't be reached), Add a meal and a recipe's Add to the plan, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
@@ -43,6 +43,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // kind to pick from. Simmer picks nothing itself: no Plan, Start over or Something else.
       const groupOf = (name) => page.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
       ok("meals: every kind shows, each with its Add row or No recipes", ((await groupOf("Dessert").getByRole("button", { name: /^Add$/ }).count()) + (await groupOf("Dessert").getByText(/^No recipes$/).count())) === 1 && (await groupOf("Quick").getByRole("button", { name: /^Add$/ }).count()) === 1);
+      ok("meals: no heading; New plan sits in the top bar", (await page.getByRole("heading", { name: "The plan" }).count()) === 0 && ((await page.locator(".fixed.max-w-md").getByRole("button", { name: "New plan" }).count()) === 1 || (await page.getByRole("button", { name: /^One less |^Take / }).count()) === 0));
       ok("meals: Simmer picks nothing itself", (await page.getByRole("button", { name: /^(Plan|Start over)$|^Something else/ }).count()) === 0 && (await page.getByText("Also add").count()) === 0);
       ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       await groupOf("Quick").getByRole("button", { name: /^Add$/ }).tap(); await page.waitForTimeout(500);
@@ -191,12 +192,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       const listBefore = await listNow();
       await page.getByRole("button", { name: "New plan", exact: true }).tap(); await page.waitForTimeout(300);
       const fresh = page.getByRole("dialog", { name: "New plan" });
-      ok("new plan: asks first, saying dinner groceries come off and hand-added things stay", (await fresh.isVisible()) && (await fresh.getByText(/What you added yourself stays\./).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
+      ok("new plan: asks first, saying everything starts fresh and the cart stays", (await fresh.isVisible()) && (await fresh.getByText(/Everything starts fresh/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
       await fresh.getByRole("button", { name: "New plan" }).tap();
       await page.waitForFunction(() => !document.querySelector('button[aria-label^="Take "]'), null, { timeout: 8000 }).catch(() => {});
       ok("new plan: every dinner comes off", (await page.getByRole("button", { name: /^Take .* off the plan$/ }).count()) === 0 && (await page.getByRole("button", { name: /^One less / }).count()) === 0);
       const listAfter = await listNow();
-      ok("new plan: dinner groceries come off; what was added by hand stays", listAfter.every((x) => !x.for.trim() || x.for === "every week") && listAfter.some((x) => x.item === "new-plan hand-added bread") && listBefore.some((x) => x.for.trim()), `${listBefore.length} → ${listAfter.length}`);
+      ok("new plan: every list is emptied, hand-added things too", listAfter.length === 0 && listBefore.length > 0, `${listBefore.length} → ${listAfter.length}`);
       ok("meals: nothing on Meals says week", !/\bweek\b/i.test(await page.locator("main").innerText()));
     }
 
@@ -236,6 +237,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: the store names stay on one line`, Boolean(tj) && tj.height < 44, JSON.stringify(tj));
     await page.screenshot({ path: `${dir}/5a-lists-all-${tag}.png`, fullPage: true });
     await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(800);
+    ok(`${tag}: no Clear on Lists`, (await page.getByRole("button", { name: "Clear", exact: true }).count()) === 0);
     ok(`${tag}: ticking shows Done shopping`, await seen(page.getByRole("button", { name: "Done shopping" })));
     await page.getByRole("radio", { name: "Safeway" }).tap(); await page.waitForTimeout(800);
     ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));

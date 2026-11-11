@@ -10,8 +10,8 @@ import { BrandBar, Button, EmptyState, Group, Notice, Row, Segmented, Sheet } fr
 /**
  * Lists (the redesign, Nov 2): one list per store, and All for shopping in person. The Safeway rows are also its cart:
  * "Same as last time" (Add puts the usual in the cart), "To find" (Find opens Safeway's choices), "In the cart" (− / +).
- * Trader Joe's, Costco and All are checklists: tick what you got, then Done shopping (confirmed first). Clear (confirmed,
- * no Undo after) takes a list off at once. When Safeway can't be reached (the helper hasn't checked in for a couple of
+ * Trader Joe's, Costco and All are checklists: tick what you got, then Done shopping (confirmed first). No Clear here
+ * (Nov 11): New plan on Meals is the one fresh start, and it empties the lists. When Safeway can't be reached (the helper hasn't checked in for a couple of
  * minutes), the Safeway rows are a checklist too and the cart is greyed (Nov 3).
  */
 export type Where = "all" | Store;
@@ -25,7 +25,6 @@ export type ListsActions = {
   move: (it: Item, store: Store) => void;
   /** Done shopping: ticked items off; `cart` also takes what's in the Safeway cart off (the order went through). */
   done: (store: Store, cart?: boolean) => Promise<unknown>;
-  clear: (ids: string[]) => Promise<Item[] | null>;
   putBack: (items: Item[]) => void;
 };
 
@@ -51,14 +50,12 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
   ];
 }
 
-/** "2 of 5 got", Clear and (once something's ticked) Done shopping: the top of a checklist. */
-function TopLine({ text, onClear, onDone }: { text: string; onClear: (() => void) | null; onDone: (() => void) | null }) {
+/** "2 of 5 got" and (once something's ticked) Done shopping: the top of a checklist. */
+function TopLine({ text, onDone }: { text: string; onDone: (() => void) | null }) {
   return (
     <div className="flex min-h-10 items-center gap-1 px-4">
       <span className="min-w-0 flex-1 t-sub font-semibold">{text}</span>
-      {/* Done shopping comes in to the left, so Clear stays put under the finger (ticking one moved Clear, Nov 3). */}
       {onDone && <button onClick={onDone} className="h-9 rounded-full bg-accent px-4 t-sub font-semibold text-on-accent active:scale-95">Done shopping</button>}
-      {onClear && <button onClick={onClear} className="h-9 rounded-full px-3 t-sub font-semibold text-muted">Clear</button>}
     </div>
   );
 }
@@ -83,7 +80,6 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   const [findNext, setFindNext] = useState<string | null>(null); // a Safeway item just added: its choices open once it's on the list
-  const [clearing, setClearing] = useState<Item[] | null>(null);
   const [finishing, setFinishing] = useState<Item[] | null>(null); // Done shopping, waiting on its confirm
   const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on a list yet
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
@@ -107,12 +103,6 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
     const store = where === "all" ? undefined : where;
     void act.add(t, store);
     if (where === "safeway") setFindNext(norm(t.replace(/^(\d+(\.\d+)?|a dozen|dozen|a couple|a few)\s+/i, "")));
-  };
-  const askClear = (ids: Item[]) => { if (ids.length) setClearing(ids); };
-  const doClear = async () => {
-    const these = clearing ?? [];
-    setClearing(null);
-    await act.clear(these.map((i) => i.id));
   };
 
   const here = where === "all" ? items.filter((i) => !inCart(i)) : items.filter((i) => i.store === where);
@@ -143,11 +133,11 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
 
       {where === "safeway"
         ? <SafewayList items={items.filter((i) => i.store === "safeway")} toFind={toTick} sw={sw} more={more} onFind={setFinding}
-            onClear={(waiting) => askClear(waiting)} onOrdered={() => act.done("safeway", true)}
+            onOrdered={() => act.done("safeway", true)}
             onTick={(it) => act.check(it, !it.checked)} onDone={sw.away && ticked.length ? done : null} />
         : (
           <>
-            <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onClear={here.length ? () => askClear(here) : null} onDone={ticked.length ? done : null} />
+            <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onDone={ticked.length ? done : null} />
             {list && !items.length && <EmptyState icon="list" title="Nothing on the lists" />}
             {(where === "all" ? STORES : [where]).map((s) => {
               const rows = items.filter((i) => i.store === s);
@@ -179,23 +169,14 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
           </div>
         </Sheet>
       )}
-      {clearing && (
-        <Sheet label="Clear" title={where === "all" ? "Clear all the lists?" : `Clear the ${STORE_NAMES[where]} list?`} onClose={() => setClearing(null)}>
-          <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">Takes off {clearing.length} thing{clearing.length === 1 ? "" : "s"}.{where === "all" || where === "safeway" ? " What's in the Safeway cart stays." : ""}</p>
-            <Button className="w-full" onClick={doClear}>Clear</Button>
-            <Button variant="secondary" className="w-full" onClick={() => setClearing(null)}>Cancel</Button>
-          </div>
-        </Sheet>
-      )}
     </div>
   );
 }
 
 /** The Safeway list and its cart in one: what's the same as last time, what's to find, and what's in the cart. */
-function SafewayList({ items, toFind, sw, more, onFind, onClear, onOrdered, onTick, onDone }: {
+function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDone }: {
   items: Item[]; toFind: FindItem[]; sw: Safeway; more: (it: Item) => React.ReactNode; onFind: (id: string) => void;
-  onClear: (waiting: Item[]) => void; onOrdered: () => void; onTick: (it: Item) => void; onDone: (() => void) | null;
+  onOrdered: () => void; onTick: (it: Item) => void; onDone: (() => void) | null;
 }) {
   const away = sw.away;
   const [filling, setFilling] = useState(false);
@@ -228,8 +209,7 @@ function SafewayList({ items, toFind, sw, more, onFind, onClear, onOrdered, onTi
   };
   return (
     <>
-      <TopLine text={away ? (waiting.length ? `${got} of ${waiting.length} got` : "") : `${count} in the cart${count ? ` · ${estimate ? "about " : ""}${money(total)}` : ""}`}
-        onClear={waiting.length ? () => onClear(waiting.flatMap((f) => itemOf(f.id) ?? [])) : null} onDone={onDone} />
+      <TopLine text={away ? (waiting.length ? `${got} of ${waiting.length} got` : "") : `${count} in the cart${count ? ` · ${estimate ? "about " : ""}${money(total)}` : ""}`} onDone={onDone} />
       {sw.outdated && <UpdateNotice />}
       {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
       {away
