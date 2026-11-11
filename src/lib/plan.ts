@@ -7,7 +7,7 @@
 // Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, readTabsIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, takeOffDinnerGroceries, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
@@ -166,7 +166,11 @@ export type PlanData = {
 /** Everything planning is built from, read once (each tab is one Sheets read). */
 type Tabs = { planned: string[][]; plan: string[][]; lunchPlan: string[][]; made: string[][]; trips: string[][]; options: string[][]; counts: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
 async function readTabs(): Promise<Tabs> {
-  const [planned, plan, lunchPlan, made, trips, options, counts, hh, freezer] = await Promise.all([rows(PLANNED), rows(PLAN), rows(LUNCH_PLAN), rows(MADE), rows(TRIPS), rows(LUNCHES), rows(COUNTS), loadHousehold(), loadFreezer()]);
+  // One read for all eight tabs on the Sheet (the household is kept for a minute by data.ts).
+  const want = [PLANNED, PLAN, LUNCH_PLAN, MADE, TRIPS, LUNCHES, COUNTS, FREEZER];
+  const [read, hh] = await Promise.all([sheetsConfigured() ? readTabsIfAny(want) : Promise.all(want.map(rows)), loadHousehold()]);
+  const [planned, plan, lunchPlan, made, trips, options, counts, frozen] = read;
+  const freezer = freezerFrom(frozen);
   return { planned, plan, lunchPlan, made, trips, options, counts, hh, freezer };
 }
 

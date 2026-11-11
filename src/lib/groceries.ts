@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges, readTabsIfAny } from "./google/sheets";
 import { AppError } from "./errors";
 import { parseCsv, records } from "./parse";
 import { isSpice, norm } from "./words";
@@ -75,7 +75,7 @@ async function mem() {
 
 export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> {
   if (!sheetsConfigured()) { const m = await mem(); return { items: [...m.list], staples: m.staples }; }
-  const [l, s] = await Promise.all([rowsOf(LIST), rowsOf(STAPLES)]);
+  const [l, s] = sheetsConfigured() ? await readTabsIfAny([LIST, STAPLES]) : await Promise.all([rowsOf(LIST), rowsOf(STAPLES)]); // one read
   return { items: toItems(l), staples: toStaples(s) };
 }
 
