@@ -379,7 +379,7 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError}
-          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
+          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)} onRecipes={toRecipes}
           onCount={countMeal}
           onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
           onRemove={(d) => { changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
