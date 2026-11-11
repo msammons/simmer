@@ -17,8 +17,11 @@ export type Section = (typeof SECTIONS)[number];
 
 /** check: a pantry item from the plan, waiting in "Check you have these" until she says she needs it. */
 export type Item = { id: string; item: string; quantity: string; store: Store; section: Section; for: string; addedBy: string; addedAt: string; checked: boolean; check: boolean };
-/** `weekly`: bought every week (Nov 3: lunch foods and the like); Done shopping puts it back on its store's list. */
-export type Staple = { item: string; store: Store; section: Section; quantity: string; product: string; weekly?: boolean };
+/**
+ * A thing the house keeps. It goes on a list only when someone taps it on Stock as out (Nov 10: no Every week; nothing
+ * comes back on a list by itself, since deciding to buy it again is that tap).
+ */
+export type Staple = { item: string; store: Store; section: Section; quantity: string; product: string };
 
 const LIST = "List", STAPLES = "Staples", INGREDIENTS = "Ingredients";
 const LIST_HEADERS = ["id", "item", "quantity", "store", "section", "for", "added_by", "added_at", "checked", "checked_at", "check"];
@@ -59,7 +62,7 @@ function toItems(rows: string[][]): Item[] {
   }] : []));
 }
 function toStaples(rows: string[][]): Staple[] {
-  return records(rows).flatMap((r) => (r.get("item") ? [{ item: r.get("item"), store: asStore(r.get("store")), section: asSection(r.get("section")), quantity: r.get("usual_quantity"), product: r.get("usual_product"), weekly: yes(r.get("weekly")) }] : []));
+  return records(rows).flatMap((r) => (r.get("item") ? [{ item: r.get("item"), store: asStore(r.get("store")), section: asSection(r.get("section")), quantity: r.get("usual_quantity"), product: r.get("usual_product") }] : []));
 }
 
 async function mem() {
@@ -383,7 +386,6 @@ export async function doneShopping(store: Store, alsoIds: Set<string> = new Set(
     const gone = m.list.filter(off);
     await recordBought(gone);
     m.list = m.list.filter((x) => !off(x));
-    await refillWeekly(store);
     return gone.length;
   }
   const rows = await rowsOf(LIST);
@@ -392,15 +394,7 @@ export async function doneShopping(store: Store, alsoIds: Set<string> = new Set(
   await recordBought(toItems([rows[0] ?? LIST_HEADERS, ...goneRecs.map((r) => rows[r.rowNumber - 1])]));
   const drop = new Set(goneRecs);
   await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r)).map((r) => rows[r.rowNumber - 1])]);
-  await refillWeekly(store);
   return goneRecs.length;
-}
-
-/** After a shop, that store's Every week things go back on its list for next time (one already there stays as it is). */
-async function refillWeekly(store: Store) {
-  const { items, staples } = await loadList();
-  for (const s of staples.filter((x) => x.weekly && x.store === store && !items.some((i) => !i.checked && norm(i.item) === norm(x.item))))
-    await addItem(s.item, "Simmer", "every week", { store: s.store, section: s.section }, s.quantity);
 }
 
 export async function removeItem(id: string) {
@@ -429,8 +423,8 @@ export async function putBack(items: Item[]) {
 
 // ---- Stock: the things the house keeps (the Staples tab)
 
-const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product", "weekly"];
-const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product, s.weekly ? "yes" : ""];
+const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product"];
+const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product];
 
 async function writeStaples(change: (all: Staple[]) => Staple[]) {
   if (!sheetsConfigured()) { const m = await mem(); m.staples = change(m.staples); return; }
@@ -449,10 +443,9 @@ export async function addStaple(text: string, section?: Section) {
   const item = text.replace(/\s+/g, " ").trim().slice(0, 80);
   if (!item) return;
   const f = await file(item);
-  await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item)) ? all : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "", weekly: false }]));
+  await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item)) ? all : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "" }]));
 }
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
-export const setWeekly = (item: string, weekly: boolean) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, weekly } : s)));
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 
 /**

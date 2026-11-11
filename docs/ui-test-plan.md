@@ -94,7 +94,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | # | Do | Expect | Where |
 |---|----|--------|-------|
 | 7.1 | Open Stock | Sections Fresh · Pantry · Freezer · Household; each row a filled circle (have) | L |
-| 7.1a | ⋯ on a Stock thing → Every week | "Every week" under its name; Done shopping at its store puts it back on that list (one row, not ticked); ⋯ → Not every week stops it | L |
+| 7.1a | Stock ⋯ menu; a shop finished | No "Every week" anywhere; after Done shopping, bought things stay off the list and show as stocked (Nov 10: nothing comes back by itself) | L |
 | 7.2 | With a planned week | The week's pantry items highlighted with the amount the meals need | L |
 | 7.3 | Tap a row | Out: goes on its store's list ("On the list · Safeway"); tap again: have | L |
 | 7.4 | Add something | New row, checked, in a guessed section | L |
