@@ -42,7 +42,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // One Meals page (Nov 10): every kind the same way, each with Add one / Add another, which opens her recipes of that
       // kind to pick from. Simmer picks nothing itself: no Plan, Start over or Something else.
       const groupOf = (name) => page.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
-      ok("meals: every kind shows, each with its Add row", (await groupOf("Dessert").getByRole("button", { name: /^(Add (one|another)|New recipe)$/ }).count()) === 1 && (await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).count()) === 1);
+      ok("meals: every kind shows, each with its Add row or No recipes", ((await groupOf("Dessert").getByRole("button", { name: /^Add (one|another)$/ }).count()) + (await groupOf("Dessert").getByText(/^No (more )?recipes$/).count())) === 1 && (await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).count()) === 1);
       ok("meals: Simmer picks nothing itself", (await page.getByRole("button", { name: /^(Plan|Start over)$|^Something else/ }).count()) === 0 && (await page.getByText("Also add").count()) === 0);
       ok("meals: no lunches, no Made it", (await page.getByText(/lunch|Made it/i).count()) === 0);
       await groupOf("Quick").getByRole("button", { name: /^Add (one|another)$/ }).tap(); await page.waitForTimeout(500);
@@ -78,7 +78,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("meals: − takes them back without asking, as one change", Number(await quickCount()) === c0 && (await page.getByRole("dialog").count()) === 0 && planPosts === 2, `${planPosts} sent`);
       page.off("request", countPosts);
       ok("meals: no busy message", (await page.getByText(/busy right now/i).count()) === 0);
-      ok("meals: no arrows on the dinners", (await groupOf("Quick").getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^(Add (one|another)|New recipe)$/ }).first().locator("svg").count()) === 0);
+      ok("meals: no arrows on the dinners", (await groupOf("Quick").getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ }).first().locator("svg").count()) === 0);
       // A change's note doesn't follow you around: switching tabs clears it.
       await page.locator("nav button", { hasText: "Lists" }).tap(); await page.waitForTimeout(300);
       await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
@@ -87,7 +87,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       // A dinner: tapping it opens the recipe on top of Meals; its quiet × takes it off after a confirm (no sheet of
       // choices, no Undo; Nov 9). Back says where it goes and goes there.
       const kindSections = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Quick|Regular)$/ }) });
-      const dinners = kindSections.getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^(Add (one|another)|New recipe)$/ });
+      const dinners = kindSections.getByRole("button").filter({ hasText: /\S/ }).filter({ hasNotText: /^Add (one|another)$/ });
       const offs = kindSections.getByRole("button", { name: /^Take .* off the plan$/ });
       let cooked = false;
       if (await dinners.count()) {
@@ -164,30 +164,16 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       ok("add a meal: picking one closes the sheet", (await addSheet.count()) === 0);
       ok("add a meal: it's under its own kind (Regular)", (await chiliPlanned().count()) === 1);
       // Nothing of a kind left to pick (Turkey chili is the sample's only regular dinner): the row goes to adding a recipe.
-      const regularRow = page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) }).getByRole("button", { name: /^(Add |New recipe)/ });
-      ok("meals: with nothing left to pick, the row says New recipe, in grey with a book (unlike the + rows)", (await regularRow.innerText()).trim() === "New recipe" && (await regularRow.locator(".text-muted").count()) >= 1);
-      await regularRow.tap(); await page.waitForTimeout(400);
-      const askGo = page.getByRole("dialog", { name: "Go to Recipes" });
-      ok("meals: New recipe asks before leaving Meals", await askGo.isVisible());
-      await askGo.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
-      ok("meals: Cancel stays on Meals", (await askGo.count()) === 0 && (await page.getByRole("dialog", { name: "Add recipes" }).count()) === 0);
-      await regularRow.tap(); await page.waitForTimeout(400);
-      await askGo.getByRole("button", { name: "Go to Recipes" }).tap(); await page.waitForTimeout(500);
-      ok("meals: Go to Recipes opens Add recipes there", (await page.getByRole("dialog", { name: "Add recipes" }).count()) === 1);
-      await page.getByRole("dialog", { name: "Add recipes" }).getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
-      await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
+      const regularGroup = page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) });
+      ok("meals: with nothing left to pick, it says No more recipes, not a button, and no way off to Recipes", (await regularGroup.getByText("No more recipes", { exact: true }).isVisible()) && (await regularGroup.getByRole("button", { name: /^(Add (one|another)|New recipe)$/ }).count()) === 0);
       // A search with no match, from any kind that still has recipes to pick.
       const anyAdd = page.getByRole("button", { name: /^Add (one|another)$/ }).first();
       if (await anyAdd.count()) {
         await anyAdd.tap(); await page.waitForTimeout(500);
         await addSheet.getByLabel("Find a recipe").fill("Dinner at Grandma's"); await page.waitForTimeout(200);
-        ok("add a meal: no match offers New recipe, and adds nothing", await addSheet.getByText("No recipe called “Dinner at Grandma's” yet").isVisible());
-        await addSheet.getByRole("button", { name: /^New recipe/ }).tap(); await page.waitForTimeout(400);
-        await page.getByRole("dialog", { name: "Go to Recipes" }).getByRole("button", { name: "Go to Recipes" }).tap(); await page.waitForTimeout(500);
-        ok("add a meal: New recipe, after asking, goes to Recipes with Add recipes open", (await page.getByRole("dialog", { name: "Add recipes" }).count()) === 1 && (await addSheet.count()) === 0);
-      } else { ok("add a meal: no match (skipped: nothing left to pick anywhere)", true); await page.locator("nav button", { hasText: "Recipes" }).tap(); await page.getByRole("button", { name: /^Add recipes/ }).first().tap(); }
-      await page.getByRole("dialog", { name: "Add recipes" }).getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
-      await page.locator("nav button", { hasText: "Meals" }).tap(); await page.waitForTimeout(400);
+        ok("add a meal: no match says so, and nothing to tap", (await addSheet.getByText("No recipe called “Dinner at Grandma's”").isVisible()) && (await addSheet.getByRole("button", { name: /New recipe|Add a recipe/ }).count()) === 0);
+        await addSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
+      } else ok("add a meal: no match (skipped: nothing left to pick anywhere)", true);
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
       // New plan (Nov 10): asks first; every dinner comes off; the grocery list stays.
       const listBefore = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
