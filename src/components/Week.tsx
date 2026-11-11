@@ -25,10 +25,10 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onRecipes, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onRecipes: () => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
@@ -89,10 +89,10 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
                     </div>
                   );
                 })}
-                {/* Nothing of this kind left to pick (none yet, or all planned): straight to adding a recipe (Nov 10). */}
+                {/* Nothing of this kind left to pick: says so; recipes are added on the Recipes tab (Nov 10). */}
                 {recipes.some((r) => r.active && kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
                   ? <Row icon="plus" title={mine.length ? "Add another" : "Add one"} accessory="chevron" onClick={() => onAdd(k)} />
-                  : <ToRecipes onClick={onRecipes} />}
+                  : <Nothing>{recipes.some((r) => r.active && kindOf(r) === k) ? "No more recipes" : "No recipes"}</Nothing>}
               </Group>
             );
           })}
@@ -130,12 +130,9 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
 
 // ---- Add a meal (any time)
 
-/**
- * When there's no recipe to pick: the way to the Recipes tab to add one (asks first, App). Grey with a book, so it never
- * reads like the accent + rows that add a dinner (Matt, Nov 10: "Add another" and "Add a recipe" looked the same).
- */
-export function ToRecipes({ missing, onClick }: { missing?: string; onClick: () => void }) {
-  return <Row lead={<Icon name="book" className="size-5 text-muted" strokeWidth={2} />} title={<span className="text-muted">New recipe</span>} subtitle={missing} accessory="chevron" onClick={onClick} />;
+/** Nothing to pick: said plainly, in grey, and not tappable (Matt, Nov 10: Recipes is one tab away; no jump to it). */
+function Nothing({ children }: { children: string }) {
+  return <Row title={<span className="text-muted">{children}</span>} />;
 }
 
 /** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */
@@ -146,7 +143,7 @@ const plannable = (r: Recipe) => kindOf(r) !== null;
  * meals, Nov 10); the search box finds any recipe, which goes in under its own kind. Recipes only. One already planned
  * shows "Planned" and can't go in twice.
  */
-export function AddMealSheet({ kind, plan, recipes, onAdd, onRecipes, onClose }: { kind: Kind; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onRecipes: () => void; onClose: () => void }) {
+export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Kind; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -176,8 +173,8 @@ export function AddMealSheet({ kind, plan, recipes, onAdd, onRecipes, onClose }:
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Group>
           {term ? found.slice(0, 30).map((r) => row(r)) : mine.map((r) => row(r))}
-          {term && !found.length && <ToRecipes missing={`No recipe called “${term.slice(0, 80)}” yet`} onClick={onRecipes} />}
-          {!term && !mine.length && <ToRecipes missing={`No ${KIND_NAMES[kind].toLowerCase()} recipes yet`} onClick={onRecipes} />}
+          {term && !found.length && <Nothing>{`No recipe called “${term.slice(0, 80)}”`}</Nothing>}
+          {!term && !mine.length && <Nothing>No recipes</Nothing>}
         </Group>
       </div>
     </Sheet>
