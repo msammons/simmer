@@ -386,7 +386,7 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={saveProblem ?? error ?? weekError} onError={() => { setSaveProblem(null); setWeekError(null); }}
+        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).filter((x) => !x.checked && x.for.trim() && x.for.trim().toLowerCase() !== "every week").length /* as forADinner, lib/groceries.ts */} error={saveProblem ?? error ?? weekError} onError={() => { setSaveProblem(null); setWeekError(null); }}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
           onCount={countMeal}
           onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setSaveProblem(p); }); }}

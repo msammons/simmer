@@ -25,8 +25,10 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, onError, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null; onError: () => void;
+  /** How many lines on the list are there only for a dinner: what New plan takes off. */
+  dinnerGroceries: number;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
@@ -111,7 +113,10 @@ export function MealsScreen({ plan, recipes, error, onError, onOpen, onRemove, o
       {starting && (
         <Sheet label="New plan" title="Start a new plan?" onClose={() => setStarting(false)}>
           <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">{dishes.length === 1 ? "This dinner comes off." : `These ${dishes.length} dinners come off.`} The grocery list stays as it is.</p>
+            <p className="t-sub text-muted">
+              {dishes.length === 1 ? "This dinner comes off" : `These ${dishes.length} dinners come off`}
+              {dinnerGroceries ? `, with the ${dinnerGroceries === 1 ? "grocery" : `${dinnerGroceries} groceries`} on the list only for dinners.` : "."} What you added yourself stays.
+            </p>
             <Button className="w-full" onClick={() => { onNewPlan(); setStarting(false); }}>New plan</Button>
             <Button variant="secondary" className="w-full" onClick={() => setStarting(false)}>Cancel</Button>
           </div>

@@ -186,15 +186,17 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       } else ok("add a meal: no match (skipped: nothing left to pick anywhere)", true);
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
       // New plan (Nov 10): asks first; every dinner comes off; the grocery list stays.
-      const listBefore = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
+      const listNow = () => page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => (l?.items ?? []).filter((x) => !x.checked).map((x) => ({ item: x.item, for: x.for }))).catch(() => []));
+      await page.evaluate(() => fetch("/api/list", { method: "POST", headers: { "content-type": "application/json", "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") }, body: JSON.stringify({ op: "add", text: "new-plan hand-added bread", by: "Sam" }) }));
+      const listBefore = await listNow();
       await page.getByRole("button", { name: "New plan", exact: true }).tap(); await page.waitForTimeout(300);
       const fresh = page.getByRole("dialog", { name: "New plan" });
-      ok("new plan: asks first, and says the list stays", (await fresh.isVisible()) && (await fresh.getByText("The grocery list stays as it is.").isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
+      ok("new plan: asks first, saying dinner groceries come off and hand-added things stay", (await fresh.isVisible()) && (await fresh.getByText(/What you added yourself stays\./).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
       await fresh.getByRole("button", { name: "New plan" }).tap();
       await page.waitForFunction(() => !document.querySelector('button[aria-label^="Take "]'), null, { timeout: 8000 }).catch(() => {});
       ok("new plan: every dinner comes off", (await page.getByRole("button", { name: /^Take .* off the plan$/ }).count()) === 0 && (await page.getByRole("button", { name: /^One less / }).count()) === 0);
-      const listAfter = await page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => l?.items?.length ?? -1).catch(() => -1));
-      ok("new plan: the grocery list stays", listBefore === listAfter, `${listBefore} → ${listAfter}`);
+      const listAfter = await listNow();
+      ok("new plan: dinner groceries come off; what was added by hand stays", listAfter.every((x) => !x.for.trim() || x.for === "every week") && listAfter.some((x) => x.item === "new-plan hand-added bread") && listBefore.some((x) => x.for.trim()), `${listBefore.length} → ${listAfter.length}`);
       ok("meals: nothing on Meals says week", !/\bweek\b/i.test(await page.locator("main").innerText()));
     }
 

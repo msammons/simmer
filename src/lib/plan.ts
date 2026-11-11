@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
-import { addItems, dropHighlightsNotFor, takeOffFor, type Store } from "./groceries";
+import { addItems, dropHighlightsNotFor, takeOffDinnerGroceries, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
@@ -360,17 +360,21 @@ export async function markMade(id: string) {
 }
 
 /**
- * New plan (Nov 10): every dinner comes off, logged as made on the day it was planned (they were bought and cooked:
- * nothing is ticked off), so "last made" stays true. The grocery list is left alone: what they needed was bought.
+ * New plan (Nov 10): every dinner comes off, logged as made on the day it was planned (nothing is ticked off), so "last
+ * made" stays true; and every grocery on the list only for a dinner comes off with them (Matt: one tap to start fresh).
+ * What was added by hand or ticked on Stock stays, and so does what's bought or in the cart. Answers how many came off.
  */
-export async function clearPlanned(): Promise<void> {
+export async function clearPlanned(): Promise<{ removed: number }> {
   const today = todayIn();
   const before = await rows(PLANNED);
   const dishes = toPlanned(before).dishes;
-  if (!dishes.length) return;
+  const cart = await loadCart().catch(() => []);
+  const removed = await takeOffDinnerGroceries(new Set(cart.map((l) => l.itemId).filter(Boolean)));
+  if (!dishes.length) return { removed };
   const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
   await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"], before);
   await append(MADE, dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
+  return { removed };
 }
 
 /**
