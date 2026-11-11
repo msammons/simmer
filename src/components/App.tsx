@@ -61,7 +61,8 @@ export default function App() {
   const [listing, setListing] = useState<string | null>(null); // the recipe going on the list from the Recipes tab
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
-  const [weekError, setWeekError] = useState<string | null>(null);
+  const [weekError, setWeekError] = useState<string | null>(null); // the plan couldn't be read
+  const [saveProblem, setSaveProblem] = useState<string | null>(null); // a change on Meals didn't save: an alert, until OK
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
   const [addingOne, setAddingOne] = useState<Kind | null>(null); // the kind being added to, from Meals
   const loaded = useRef(false); // the household has loaded from the server this session
@@ -221,10 +222,24 @@ export default function App() {
     const run = counting.current.then(async () => {
       ++planChanges.current;
       try { gotPlan(await api.planChange({ op: "count", recipe: d.recipe, kind: d.kind, count }, me), count ? `${name} × ${count}.` : `Took ${name} off.`); }
-      catch (e) { setWeekError(problemOf(e)); refreshPlan(); throw e; }
+      catch (e) { setSaveProblem(problemOf(e)); refreshPlan(); throw e; }
     });
     counting.current = run.catch(() => {});
     return run;
+  }
+  /**
+   * A dinner picked on Meals: shown at once, saved behind it, in turn with count changes (Nov 10: no "Saving…"). A save
+   * that fails takes it back off and says so on Meals.
+   */
+  function quickAdd(d: NewDish) {
+    const temp = { ...d, id: `adding-${Date.now()}`, added: "" };
+    setPlan((p) => (p ? { ...p, dishes: [...p.dishes, temp] } : p));
+    const run = counting.current.then(async () => {
+      ++planChanges.current;
+      try { gotPlan(await api.savePlan([d], [], null, me)); }
+      catch (e) { setSaveProblem(problemOf(e)); setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((x) => x.id !== temp.id) } : p)); refreshPlan(); }
+    });
+    counting.current = run;
   }
   /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
   async function changePlan(c: PlanChange, lead?: string): Promise<string | null> {
@@ -372,11 +387,11 @@ export default function App() {
       )}
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
-        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={error ?? weekError}
+        <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} error={saveProblem ?? error ?? weekError} onError={() => { setSaveProblem(null); setWeekError(null); }}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
           onCount={countMeal}
-          onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setWeekError(p); }); }}
-          onRemove={(d) => { changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setWeekError(p); }); }} />
+          onNewPlan={() => { changePlan({ op: "clear" }, "Started a new plan.").then((p) => { if (p) setSaveProblem(p); }); }}
+          onRemove={(d) => { changePlan({ op: "remove", id: d.id }, `Took ${mealName(d.recipe, recipes ?? [])} off.`).then((p) => { if (p) setSaveProblem(p); }); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} error={error ?? listError} act={stock} />}
       {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} error={error ?? listError} act={lists} start={listsStart} />}
@@ -391,7 +406,7 @@ export default function App() {
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onClose={() => setAddingOne(null)} />}
+      {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);

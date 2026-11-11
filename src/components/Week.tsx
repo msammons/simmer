@@ -4,7 +4,7 @@ import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, KINDS, kindOf } from "@/lib/week";
 import { Icon, type IconName } from "./icons";
-import { BrandBar, Button, Group, Notice, Row, Sheet } from "./ui";
+import { BrandBar, Button, Group, Row, Sheet } from "./ui";
 
 // The Meals tab is this week's dinners, in any order, by kind; she picks them from her recipes (Nov 10: Simmer doesn't
 // pick meals itself). Lunches aren't planned here: they're Every week things in Stock.
@@ -25,8 +25,8 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
-  plan: PlanData | null; recipes: Recipe[]; error: string | null;
+export function MealsScreen({ plan, recipes, error, onError, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
+  plan: PlanData | null; recipes: Recipe[]; error: string | null; onError: () => void;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
@@ -59,7 +59,6 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
     <div className="space-y-6">
       <BrandBar />
       <h1 className="sr-only">Meals</h1>
-      {error && <Notice>{error}</Notice>}
       {plan && (
         <>
           {/* No weeks or dates on screen (Matt, Nov 10): it's the plan, until a new one starts. */}
@@ -98,6 +97,15 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
             );
           })}
         </>
+      )}
+      {/* A problem shows over the page, never as a bar that pushes it down (Matt, Nov 10). */}
+      {error && (
+        <Sheet label="Didn't save" title="That didn't go through" onClose={onError}>
+          <div className="space-y-3 pb-2">
+            <p role="alert" className="t-sub text-muted">{error}</p>
+            <Button className="w-full" onClick={onError}>OK</Button>
+          </div>
+        </Sheet>
       )}
       {/* A new plan asks first: every dinner comes off; the list stays (what they needed was bought). */}
       {starting && (
@@ -144,20 +152,16 @@ const plannable = (r: Recipe) => kindOf(r) !== null;
  * meals, Nov 10); the search box finds any recipe, which goes in under its own kind. Recipes only. One already planned
  * shows "Planned" and can't go in twice.
  */
-export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Kind; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => Promise<string | null>; onClose: () => void }) {
+export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Kind; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
   const planned = useMemo(() => new Set(plan.dishes.map((d) => d.recipe)), [plan.dishes]);
   const term = q.trim();
   const mine = useMemo(() => recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name)), [recipes, kind]);
   const found = useMemo(() => (term ? searchRecipes(recipes, term).filter(plannable) : []), [recipes, term]);
-  async function add(dish: NewDish) {
-    if (busy) return;
-    setBusy(true); setProblem(null);
-    const bad = await onAdd(dish);
-    if (!bad) return onClose();
-    setProblem(bad); setBusy(false);
+  // Closes at once (Matt, Nov 10: no "Saving…"): the dinner shows on Meals straight away and saves behind it.
+  function add(dish: NewDish) {
+    onAdd(dish);
+    onClose();
   }
   // Just the name (Matt, Nov 10: no lines under rows).
   const row = (r: Recipe) => {
@@ -168,7 +172,6 @@ export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Ki
   return (
     <Sheet label="Add a meal" title={`Add ${ONE[kind]}`} onClose={onClose} tall>
       <div className="space-y-5 pb-2">
-        {busy ? <Notice tone="info">Saving…</Notice> : problem && <Notice>{problem}</Notice>}
         {/* No autofocus: on a phone the keyboard would cover the list. */}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
