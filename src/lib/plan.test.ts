@@ -131,4 +131,18 @@ describe("a new plan (Nov 10)", () => {
     expect(p.lastMade["turkey-chili-1"]).toBe(todayIn());
     expect((await loadList()).items.length).toBe(list);
   });
+
+  it("the same dinner twice doubles its groceries; one fewer cuts them back and keeps them", async () => {
+    await clearPlanned();
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
+    const turkey = () => loadList().then((l) => l.items.find((i) => i.item === "ground turkey" && !i.checked));
+    const once = (await turkey())!.quantity;
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
+    const twice = (await turkey())!.quantity;
+    expect(twice).not.toBe(once);
+    const [one] = (await loadPlan()).dishes.filter((d) => d.recipe === "turkey-chili-1");
+    await removePlanned(one.id);
+    expect((await turkey())?.quantity).toBe(once);
+    expect((await turkey())?.for).toContain("turkey chili");
+  });
 });

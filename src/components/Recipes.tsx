@@ -53,11 +53,10 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
       {error && <Notice>{error}</Notice>}
       {recipes && !all.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
-          Bring in recipes from a link, a photo or a file, or type in the ones you know by heart.
         </EmptyState>
       ) : (
         <>
-          <Group><Row icon="plus" title="Add recipes" subtitle="From a link, a photo, a file, or type it in" accessory="chevron" onClick={onAdd} /></Group>
+          <Group><Row icon="plus" title="Add recipes" accessory="chevron" onClick={onAdd} /></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
@@ -104,10 +103,9 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
       <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel={backLabel}
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
       {error && <Notice>{error}</Notice>}
-      {!r.active && <Notice tone="info">This one isn&apos;t suggested for plans. It stays here for when you want it.</Notice>}
       {added?.problem && <Notice>{added.problem}</Notice>}
       {added?.note && <Notice tone="info">{added.note}</Notice>}
-      {planned && !added?.note && <p className="t-sub px-1 text-muted">On the plan. What it needs went on the list when it was planned.</p>}
+      {planned && !added?.note && <p className="t-sub px-1 text-muted">On the plan.</p>}
       {/* Not planned: putting it on this week is the main thing (Nov 9); just its groceries is the quieter choice. */}
       <div className="space-y-3 empty:hidden">
         {!planned && onAddToWeek && <Button onClick={addToWeek} disabled={adding} icon="calendarPlus" className="w-full">{adding ? "Adding…" : "Add to the plan"}</Button>}
@@ -121,7 +119,7 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
           {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
         </>
       ) : (
-        <Group><Row icon="pencil" title="No ingredients yet" subtitle="Add them, so they can go on the grocery list" accessory="chevron" onClick={onEdit} /></Group>
+        <Group><Row icon="pencil" title="No ingredients yet" value="Add them" accessory="chevron" onClick={onEdit} /></Group>
       )}
       {r.steps.length > 0 && (
         <Group header="Steps">
@@ -171,7 +169,6 @@ export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (buy: 
       </div>}>
       <div className="space-y-5">
         {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => !done && flip(n)} />)}</Group>}
-        {pantry.length > 0 && <p className="t-sub px-4 text-muted">The pantry things are highlighted in Stock.</p>}
       </div>
     </Sheet>
   );
@@ -275,7 +272,7 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
   let body: React.ReactNode, footer: React.ReactNode = null;
   if (step.at === "choose") {
     body = (
-      <Group footer="Simmer shows you what it found. Nothing is added until you say so.">
+      <Group>
         <Row icon="link" title="From a link" accessory="chevron" onClick={() => setStep({ at: "link" })} />
         <Row icon="camera" title="From a photo" accessory="chevron" onClick={() => photo.current?.click()} />
         <Row icon="book" title="From my files" accessory="chevron" onClick={() => files.current?.click()} />
@@ -296,7 +293,7 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
   } else if (step.at === "pick") {
     const flip = (i: number) => setPicked((s) => { const t = new Set(s); if (t.has(i)) t.delete(i); else t.add(i); return t; });
     body = (
-      <Group header={`Found ${step.found.length}`} footer="Untick any you don't want to keep. Ones already in your collection are left out.">
+      <Group header={`Found ${step.found.length}`}>
         {step.found.map((d, i) => (
           <Row key={i} lead={<Check on={picked.has(i)} />} title={d.name} subtitle={twin(d.name) ? "Already in your collection" : undefined} role="checkbox" checked={picked.has(i)} onClick={() => flip(i)} />
         ))}

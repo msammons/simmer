@@ -248,7 +248,7 @@ const forOf = (f: string) => f.split(",").map((x) => x.trim()).filter(Boolean);
  * cart (`held`: list item ids), which may be bought already; never something added by hand (it's for no dinner).
  * Answers how many things came off.
  */
-export async function takeOffFor(needs: { item: string; quantity: string; for: string }[], held: Set<string> = new Set()): Promise<number> {
+export async function takeOffFor(needs: { item: string; quantity: string; for: string; stay?: boolean }[], held: Set<string> = new Set()): Promise<number> {
   if (!needs.length) return 0;
   const { items } = await loadList();
   const drop = new Set<string>();
@@ -257,10 +257,11 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
     const it = items.find((x) => !x.checked && !drop.has(x.id) && norm(x.item) === norm(n.item) && forOf(cut.get(x.id)?.for ?? x.for).includes(n.for));
     if (!it || held.has(it.id)) continue;
     const now = cut.get(it.id) ?? { quantity: it.quantity, for: it.for };
-    const others = forOf(now.for).filter((f) => f !== n.for);
+    // `stay`: the same dinner is still planned (it was planned twice): its amount is cut back, and it stays for it.
+    const others = n.stay ? forOf(now.for) : forOf(now.for).filter((f) => f !== n.for);
     if (!others.length) { drop.add(it.id); cut.delete(it.id); continue; }
     const less = n.quantity ? takeAway(now.quantity, n.quantity) : null;
-    cut.set(it.id, { quantity: less === null ? now.quantity : less, for: others.join(", ") });
+    cut.set(it.id, { quantity: less === null || (n.stay && less === "") ? now.quantity : less, for: others.join(", ") });
   }
   for (const [id, c] of cut) await setCells(id, { quantity: c.quantity, for: c.for });
   if (drop.size) await removeItems([...drop]);
