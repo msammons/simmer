@@ -122,28 +122,15 @@ describe("planning by number", () => {
 });
 
 describe("a new plan (Nov 10)", () => {
-  it("New plan takes every dinner off, logs them as made, and takes off only the groceries for dinners (Nov 10)", async () => {
+  it("New plan starts everything fresh: every dinner off, logged as made, and every list emptied (Nov 11)", async () => {
     await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
-    await addItem("new-plan-test bread", "Robin"); // added by hand: stays
-    const forDinners = () => loadList().then((l) => l.items.filter((i) => !i.checked && i.for.trim() && i.for !== "every week"));
-    expect((await forDinners()).length).toBeGreaterThan(0);
+    await addItem("new-plan-test bread", "Robin"); // added by hand: goes too
     const { removed } = await clearPlanned();
     const p = await loadPlan();
     expect(p.dishes).toEqual([]);
     expect(p.lastMade["turkey-chili-1"]).toBe(todayIn());
     expect(removed).toBeGreaterThan(0);
-    expect(await forDinners()).toEqual([]);
-    expect((await loadList()).items.some((i) => i.item === "new-plan-test bread")).toBe(true);
-  });
-
-  it("New plan takes a dinner's share off a line added by hand, and keeps the rest", async () => {
-    await clearPlanned();
-    await addItem("ground turkey", "Robin", "", undefined, "1 lb"); // added by hand
-    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
-    const turkey = () => loadList().then((l) => l.items.find((i) => i.item === "ground turkey" && !i.checked));
-    expect((await turkey())!.for).toContain("added by hand");
-    await clearPlanned();
-    expect(await turkey()).toMatchObject({ quantity: "1 lb", for: "added by hand" });
+    expect((await loadList()).items).toEqual([]);
   });
 
   it("the same dinner twice doubles its groceries; one fewer cuts them back and keeps them", async () => {

@@ -345,12 +345,12 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
 export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week" && !forOf(x.for).includes(BY_HAND);
 
 /**
- * New plan (Nov 10): every grocery that's on the list only for a dinner comes off, in one write. Kept: what was added by
- * hand or ticked on Stock, what's ticked off as bought, and what's in the cart (`held`). Answers how many came off.
+ * New plan (Nov 11, Matt: "I would expect the whole app to reset"): every list is emptied in one write, except what's in
+ * the Safeway cart (`held`), which stays so the cart and the list agree. Answers how many came off.
  */
-export async function takeOffDinnerGroceries(held: Set<string> = new Set()): Promise<number> {
+export async function emptyLists(held: Set<string> = new Set()): Promise<number> {
   const { items } = await loadList();
-  const ids = items.filter((x) => forADinner(x) && !held.has(x.id)).map((x) => x.id);
+  const ids = items.filter((x) => !held.has(x.id)).map((x) => x.id);
   if (ids.length) await removeItems(ids);
   return ids.length;
 }

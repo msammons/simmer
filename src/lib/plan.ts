@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { appendRows, ensureTab, readTabIfAny, readTabsIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
-import { addItems, dropHighlightsNotFor, takeOffDinnerGroceries, takeOffFor, type Store } from "./groceries";
+import { addItems, dropHighlightsNotFor, emptyLists, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
@@ -364,9 +364,9 @@ export async function markMade(id: string) {
 }
 
 /**
- * New plan (Nov 10): every dinner comes off, logged as made on the day it was planned (nothing is ticked off), so "last
- * made" stays true; and every grocery on the list only for a dinner comes off with them (Matt: one tap to start fresh).
- * What was added by hand or ticked on Stock stays, and so does what's bought or in the cart. Answers how many came off.
+ * New plan: a fresh start for the whole app (Nov 11). Every dinner comes off, logged as made on the day it was planned
+ * (nothing is ticked off), so "last made" stays true; every list is emptied, except what's in the Safeway cart. Answers
+ * how many list lines came off.
  */
 export async function clearPlanned(): Promise<{ removed: number }> {
   const today = todayIn();
@@ -374,10 +374,7 @@ export async function clearPlanned(): Promise<{ removed: number }> {
   const dishes = toPlanned(before).dishes;
   const cart = await loadCart().catch(() => []);
   const held = new Set(cart.map((l) => l.itemId).filter(Boolean));
-  // First each dinner's own share, so a line added by hand loses just that share ("1 dozen + 1" eggs → "1 dozen");
-  // then anything left that's only for a dinner (an older one, or one whose recipe changed since).
-  const shares = await takeOffDishes(dishes.map((d) => d.recipe));
-  const removed = shares + await takeOffDinnerGroceries(held);
+  const removed = await emptyLists(held);
   if (!dishes.length) return { removed };
   const added = new Map(records(before).map((r) => [r.get("id"), r.get("added") || today]));
   await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"], before);
