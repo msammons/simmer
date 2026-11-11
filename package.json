@@ -12,6 +12,7 @@
     "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
+    "@upstash/redis": "1.39.0",
     "@vercel/functions": "3.11.1",
     "next": "16.4.3",
     "react": "19.3.0",
