@@ -7,7 +7,7 @@ import { Icon, type IconName } from "./icons";
 import { BrandBar, Button, Group, Row, Sheet } from "./ui";
 
 // The Meals tab is this week's dinners, in any order, by kind; she picks them from her recipes (Nov 10: Simmer doesn't
-// pick meals itself). Lunches aren't planned here: they're Every week things in Stock.
+// pick meals itself). Lunches aren't planned here: lunch foods are Stock things.
 
 /** A meal's name: the recipe's, or the free text she typed. */
 export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;

@@ -264,7 +264,7 @@ export type NewLunch = Omit<Lunch, "id">;
 /**
  * Plans. With `counts` (the Plan sheet) it's the next shop (Nov 3): this week's dinners are done, whether or not anyone
  * said so (nothing is ticked off; what was bought got cooked), so each is marked made on the day it was planned and
- * logged, which keeps "not made in a while" true; planned lunches go too (lunches are Every week things in Stock now).
+ * logged, which keeps "not made in a while" true; planned lunches go too (lunch foods are Stock things now).
  * Without `counts` (Add one more) the new ones join this week and nothing else is touched. Last time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
  * fresh things to buy, pantry things to check (Nov 3: no more waiting for a night to come close).
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so

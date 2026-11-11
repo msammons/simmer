@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
 // Browser smoke test at iPhone size (light and dark) and iPad size: passcode, planning by number (one shop at a time: Plan replaces
-// The plan, no lunches, no Made it), the tabs, Settings on every screen, Stock (Every week things), Lists (All, and Safeway's in-store
+// The plan, no lunches, no Made it), the tabs, Settings on every screen, Stock (nothing comes back by itself), Lists (All, and Safeway's in-store
 // checklist when the helper can't be reached), Add a meal and a recipe's Add to the plan, the Recipes tab, a recipe and back, saves that fail (the sheet keeps what was entered), and a passcode turned down mid-use. Saves screenshots to .data/shots.
 // Works on any day of the week, with the sample data (no .env.local), whether or not a week is already planned. Needs Playwright (NODE_PATH if it isn't installed here). Run against a server started with
 // HOUSEHOLD_PASSCODE=test123, e.g. HOUSEHOLD_PASSCODE=test123 npx next dev -p 3202, then URL=http://localhost:3202/ node scripts/smoke.cjs
@@ -214,18 +214,16 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await settingsHere("Stock");
     ok(`${tag}: Stock has the add field and the legend`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("In meals").isVisible()));
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
-    const milk = page.getByRole("checkbox", { name: "Have Milk" });
-    if ((await milk.getAttribute("aria-checked")) === "false") { await milk.tap(); await page.waitForTimeout(1200); }
+    const milk = page.getByRole("checkbox", { name: "Need Milk" });
+    if ((await milk.getAttribute("aria-checked")) === "true") { await milk.tap(); await page.waitForTimeout(1200); }
     await milk.tap(); await page.waitForTimeout(1500);
-    ok(`${tag}: a tap marks it out`, (await milk.getAttribute("aria-checked")) === "false");
-    // Every week: a thing that comes back on its list after each shop. Eggs: out, ticked off on the Safeway checklist, Done shopping, and it is back.
-    const eggs = page.getByRole("checkbox", { name: "Have Eggs" });
-    if ((await eggs.getAttribute("aria-checked")) === "false") { await eggs.tap(); await page.waitForTimeout(1200); }
-    if (!(await eggs.getByText("Every week", { exact: true }).count())) { await page.getByLabel("More for Eggs").selectOption("weekly"); await page.waitForTimeout(1200); }
-    ok(`${tag}: ⋯ → Every week shows under the name`, await seen(eggs.getByText("Every week", { exact: true }), 3000));
-    await eggs.tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: ticking puts it on the list`, (await milk.getAttribute("aria-checked")) === "true" && (await milk.getByText(/^On the list/).count()) === 1);
+    // No Every week (Nov 10): a thing goes on a list only when tapped out here, and nothing comes back by itself after a shop.
+    const eggs = page.getByRole("checkbox", { name: "Need Eggs" });
+    ok(`${tag}: no Every week anywhere on Stock`, (await page.getByText(/every week/i).count()) === 0 && (await page.getByLabel("More for Eggs").locator("option", { hasText: /week/i }).count()) === 0);
+    if ((await eggs.getAttribute("aria-checked")) !== "true") { await eggs.tap(); await page.waitForTimeout(1500); }
     await page.getByLabel("Add something to Stock").fill(`frozen waffles ${tag}`); await page.keyboard.press("Enter");
-    ok(`${tag}: Stock add`, await seen(page.getByRole("checkbox", { name: new RegExp(`Have frozen waffles ${tag}`, "i") })));
+    ok(`${tag}: Stock add`, await seen(page.getByRole("checkbox", { name: new RegExp(`Need frozen waffles ${tag}`, "i") })));
 
     // Lists: All, Safeway, Trader Joe's, Costco. What's out in Stock is on its store's list.
     await tabBar.getByRole("button", { name: "Lists" }).tap(); await page.waitForTimeout(800);
@@ -241,7 +239,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: Safeway says when it isn't connected`, await seen(page.getByText(/Can't reach Safeway right now/), 10000));
     ok(`${tag}: Safeway shows the top line (a checklist while it can't be reached)`, await seen(page.getByText(/in the cart| got$/)));
     await page.screenshot({ path: `${dir}/5b-lists-safeway-${tag}.png` });
-    // In the store: no helper, so Safeway is a checklist like the others. Done shopping asks first; Cancel leaves it; Eggs (Every week) comes straight back.
+    // In the store: no helper, so Safeway is a checklist like the others. Done shopping asks first; Cancel leaves it; Eggs stays off.
     await page.getByRole("checkbox", { name: /Milk/ }).first().tap(); await page.waitForTimeout(600); // Milk was ticked in All: untick, so only Eggs is done
     await page.getByRole("checkbox", { name: /Eggs/ }).first().tap(); await page.waitForTimeout(600);
     await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(400);
@@ -250,14 +248,12 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: Cancel leaves the ticks`, (await page.getByRole("checkbox", { name: /Eggs/ }).first().getAttribute("aria-checked")) === "true");
     await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(300);
     await page.getByRole("dialog", { name: "Done shopping" }).getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(1500);
-    ok(`${tag}: an Every week thing is back on the list, not ticked, as one row`, (await page.getByRole("checkbox", { name: /Eggs/ }).count()) === 1 && (await page.getByRole("checkbox", { name: /Eggs/ }).first().getAttribute("aria-checked")) === "false");
+    ok(`${tag}: bought things don't come back on the list by themselves`, (await page.getByRole("checkbox", { name: /Eggs/ }).count()) === 0);
     await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(500);
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
-    await page.getByRole("checkbox", { name: "Have Milk" }).tap(); await page.waitForTimeout(1500);
-    ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Have Milk" }).getAttribute("aria-checked")) === "true");
-    if ((await eggs.getAttribute("aria-checked")) === "false") { await eggs.tap(); await page.waitForTimeout(1200); } // tidy up: Eggs in, and not every week
-    await page.getByLabel("More for Eggs").selectOption("weekly"); await page.waitForTimeout(1200);
-    ok(`${tag}: ⋯ → Not every week stops it`, (await eggs.getByText("Every week", { exact: true }).count()) === 0);
+    await page.getByRole("checkbox", { name: "Need Milk" }).tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Need Milk" }).getAttribute("aria-checked")) === "false");
+    ok(`${tag}: after the shop, Eggs isn't on the list any more`, (await eggs.getAttribute("aria-checked")) === "false");
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });

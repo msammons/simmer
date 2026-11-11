@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, setWeekly, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -126,19 +126,13 @@ describe("bought history", () => {
     expect((await loadList()).items.some((x) => x.id === a.id)).toBe(false);
   });
 
-  it("puts Every week things back on their store's list after a shop", async () => {
+  it("nothing comes back on a list by itself after a shop (Nov 10: no Every week)", async () => {
     await addStaple("tortillas");
-    await setWeekly("tortillas", true);
     const t = (await loadList()).staples.find((x) => x.item === "tortillas")!;
-    expect(t.weekly).toBe(true);
     const a = await addItem("tortillas", "Robin");
     await checkItem(a.id, true);
     await doneShopping(t.store);
-    const back = (await loadList()).items.filter((i) => i.item === "tortillas");
-    expect(back).toHaveLength(1);
-    expect(back[0]).toMatchObject({ checked: false, for: "every week", store: t.store });
-    await doneShopping(t.store); // not ticked: stays one row
-    expect((await loadList()).items.filter((i) => i.item === "tortillas")).toHaveLength(1);
+    expect((await loadList()).items.some((i) => i.item === "tortillas")).toBe(false);
   });
 });
 
