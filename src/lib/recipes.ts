@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTab, readTabIfAny, sheetsConfigured, updateRange } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
 import { known, type Section, type Store } from "./groceries";
@@ -118,29 +118,45 @@ export function fromDraft(d: Draft, existing?: Recipe): Recipe {
 }
 
 /** Saves a recipe: a new row, or only its own row when it's already in the collection (matched by id). */
-export async function saveRecipe(r: Recipe): Promise<Recipe> {
+export const saveRecipe = async (r: Recipe): Promise<Recipe> => (await saveRecipes([r]))[0];
+
+/**
+ * Saves several recipes as saveRecipe does, with one read and at most two writes however many there are (Nov 10: an
+ * import of many saved each with its own read and writes, past Google's limit of about 60 a minute).
+ */
+export async function saveRecipes(rs: Recipe[]): Promise<Recipe[]> {
+  if (!rs.length) return rs;
   if (!sheetsConfigured()) {
     const m = (memory ??= toRecipes(await local()));
-    const i = m.findIndex((x) => x.id === r.id);
-    if (i >= 0) m[i] = r; else m.push(r);
-    return r;
+    for (const r of rs) { const i = m.findIndex((x) => x.id === r.id); if (i >= 0) m[i] = r; else m.push(r); }
+    return rs;
   }
-  await ensureTab(TAB);
-  const rows = await readTab(TAB);
-  const c = cells(r);
-  if (!rows.length) { await appendRows(TAB, [HEADERS, HEADERS.map((h) => c[h])]); return r; }
+  const byId = new Map<string, Recipe>();
+  for (const r of rs) byId.set(r.id, r); // the same recipe twice: the later one, in the first one's place
+  const rows = await readTabIfAny(TAB);
+  if (!rows.length) {
+    await ensureTab(TAB);
+    await appendRows(TAB, [HEADERS, ...[...byId.values()].map((r) => { const c = cells(r); return HEADERS.map((h) => c[h]); })]);
+    return rs;
+  }
   const headers = rows[0].map((h) => h.trim().toLowerCase());
-  const at = records(rows).find((x) => x.get("id") === r.id);
-  if (!at) {
-    // A column the tab doesn't have yet is added at the end, so nothing's lost.
-    const missing = HEADERS.filter((h) => !headers.includes(h));
-    if (missing.length) { await updateRange(`${TAB}!${col(headers.length)}1:${col(headers.length + missing.length - 1)}1`, [missing]); headers.push(...missing); }
-    await appendRows(TAB, [headers.map((h) => c[h] ?? "")]);
-    return r;
+  const at = new Map<string, number>();
+  for (const x of records(rows)) if (!at.has(x.get("id"))) at.set(x.get("id"), x.rowNumber);
+  const fresh = [...byId.values()].filter((r) => !at.has(r.id));
+  // A column the tab doesn't have yet is added at the end when a new recipe comes in, so nothing's lost.
+  const width = headers.length;
+  const missing = fresh.length ? HEADERS.filter((h) => !headers.includes(h)) : [];
+  headers.push(...missing);
+  const data: { range: string; values: string[][] }[] = missing.length ? [{ range: `${TAB}!${col(width)}1:${col(width + missing.length - 1)}1`, values: [missing] }] : [];
+  for (const r of byId.values()) {
+    const n = at.get(r.id);
+    if (!n) continue;
+    const old = rows[n - 1], c = cells(r);
+    data.push({ range: `${TAB}!A${n}:${col(headers.length - 1)}${n}`, values: [headers.map((h, i) => (h in c ? c[h] : old[i] ?? ""))] });
   }
-  const old = rows[at.rowNumber - 1];
-  await updateRange(`${TAB}!A${at.rowNumber}:${col(headers.length - 1)}${at.rowNumber}`, [headers.map((h, i) => (h in c ? c[h] : old[i] ?? ""))]);
-  return r;
+  await updateRanges(data);
+  if (fresh.length) await appendRows(TAB, fresh.map((r) => { const c = cells(r); return headers.map((h) => c[h] ?? ""); }));
+  return rs;
 }
 
 export async function updateRecipe(id: string, change: (r: Recipe) => Recipe): Promise<Recipe> {
