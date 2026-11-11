@@ -101,6 +101,20 @@ describe("the list on the Sheet", () => {
     expect(cost()).toEqual({ reads: 1, writes: 0 });
   });
 
+  it("a reload only for showing reuses a read from seconds ago; a change drops it (Nov 11)", async () => {
+    const { loadList, addItem } = await import("./groceries");
+    const { forViewing } = await import("./google/sheets");
+    await forViewing(loadList);
+    reset();
+    await forViewing(loadList);
+    expect(cost()).toEqual({ reads: 0, writes: 0 });
+    await addItem("view-test pears", "Robin"); // a change reads fresh and writes
+    reset();
+    const l = await forViewing(loadList);
+    expect(cost().reads).toBe(1);
+    expect(l.items.some((x) => x.item === "view-test pears")).toBe(true);
+  });
+
   it("adds many things with each tab read once, the new guesses remembered together", async () => {
     const { addItems } = await import("./groceries");
     await addItems([
