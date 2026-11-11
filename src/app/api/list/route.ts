@@ -4,7 +4,6 @@ import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { clearCart, loadCart } from "@/lib/safeway";
 import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, needItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, SECTIONS, STORES, type Item, type Section, type Store } from "@/lib/groceries";
-import { forViewing } from "@/lib/google/sheets";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
 const isSection = (s: unknown): s is Section => typeof s === "string" && (SECTIONS as readonly string[]).includes(s);
@@ -14,7 +13,7 @@ const clean = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
-    return Response.json(await forViewing(loadList), { headers: { "cache-control": "no-store" } });
+    return Response.json(await loadList(), { headers: { "cache-control": "no-store" } });
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }
