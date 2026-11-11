@@ -4,10 +4,10 @@
 // does the oldest, and reports back. The phone and the panel at the computer use the same path, so they behave the
 // same. Kept in the "Safeway jobs" tab (in memory without the Sheet), pruned as it goes. The helper's last check-in is a
 // row of the same tab (id "helper"), so Simmer can say plainly when the computer isn't answering.
-import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange } from "./google/sheets";
+import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
 import { records } from "./parse";
 import manifest from "../../extension-working/manifest.json";
-import { clearCart, loadCart, matchCart, savePick, setCartLine } from "./safeway";
+import { clearCart, loadCart, matchCart, savePick, setCartLine, setCartLines } from "./safeway";
 import { imageFor, orderSince } from "./safeway-helper.mjs";
 import { doneShopping } from "./groceries";
 import { recordTrip } from "./plan";
@@ -184,18 +184,20 @@ export async function cancelJob(id: string): Promise<void> {
   if (j?.status === "waiting") await write({ ...j, status: "failed", result: { error: "cancelled" } }, j.row);
 }
 
-/** The helper: note that it's there (written down at most every 20 seconds, or when the panel opens or closes). */
-async function checkIn(version: string, panel: boolean) {
-  const { helper } = await read();
-  if (helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version) return;
-  await writeHelper({ seen: now(), version, panel, push: helper?.push ?? null });
-}
+/**
+ * The helper's check-in to write down, or null when there's nothing new: it's written at most every 20 seconds (so
+ * `alive` stays true), or when the panel opens or closes or the version changes.
+ */
+const checkInDue = (helper: Helper | null, version: string, panel: boolean): Helper | null =>
+  helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version ? null : { seen: now(), version, panel, push: helper?.push ?? null };
+
+const helperRowCells = (h: Helper) => [HELPER, "check-in", "", "", helperCell(h), "", h.seen];
 
 /** The helper's row, written where it's read from (the latest, when there are several), so what's written is what's read. */
 async function writeHelper(h: Helper) {
   if (!sheetsConfigured()) { memory.helper = h; return; }
   const { helperRow, rows } = await read();
-  const row = [HELPER, "check-in", "", "", helperCell(h), "", h.seen];
+  const row = helperRowCells(h);
   if (helperRow) await updateRange(`${TAB}!A${helperRow}:G${helperRow}`, [row]);
   else { if (!rows) await ensureTab(TAB); await appendRows(TAB, [...(rows ? [] : [HEADERS]), row]); cache = lastGood = null; return; }
   for (const t of [cache, lastGood]) if (t) t.helper = h;
@@ -211,11 +213,23 @@ export async function savePush(push: { key: string; sub: PushSub } | null): Prom
 }
 export const helperPush = async () => (await read()).helper?.push ?? null;
 
-/** The helper: check in, and take the oldest waiting job (null when there's none). */
+/**
+ * The helper: check in, and take the oldest waiting job (null when there's none). The helper asks every few seconds, so
+ * this is at most one write (Nov 10): none when there's nothing new to note and no job, and the check-in and the job
+ * taken together when there's both.
+ */
 export async function takeJob(version: string, panel: boolean): Promise<Job | null> {
-  await checkIn(version, panel).catch((e) => console.error("couldn't note the helper", e));
-  const { jobs } = await read();
-  const j = jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
+  const tab = await read();
+  const h = checkInDue(tab.helper, version, panel);
+  const j = tab.jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
+  if (h && j && tab.helperRow && sheetsConfigured()) {
+    const job: Row = { ...j, status: "working", updated: now() };
+    await updateRanges([{ range: `${TAB}!A${tab.helperRow}:G${tab.helperRow}`, values: [helperRowCells(h)] }, { range: `${TAB}!A${j.row}:G${j.row}`, values: [cells(job)] }]);
+    for (const t of [cache, lastGood]) if (t) t.helper = h;
+    if (cache) cache.jobs = cache.jobs.map((x) => (x.id === job.id ? job : x));
+    return job;
+  }
+  if (h) await writeHelper(h).catch((e) => console.error("couldn't note the helper", e));
   if (!j) return null;
   return write({ ...j, status: "working" }, j.row);
 }
@@ -245,12 +259,13 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
     // Safeway's search results don't reliably show what's in the cart (a product in it came back "not in the cart",
     // Oct 31), so a search only ever brings Simmer's quantity up; the cart page (kind "cart") decides what's gone.
+    // All of them in one save (one read, and one write only when a quantity went up).
     if (result.signedIn) {
-      const cart = await loadCart();
-      for (const p of result.products as ReturnType<typeof productsOf>) {
+      const products = result.products as ReturnType<typeof productsOf>;
+      await setCartLines((cart) => products.flatMap((p) => {
         const line = cart.find((l) => l.productId === p.id);
-        if (line && p.inCart && p.qty > line.qty) await setCartLine({ productId: p.id, qty: p.qty });
-      }
+        return line && p.inCart && p.qty > line.qty ? [{ productId: p.id, qty: p.qty }] : [];
+      }));
     }
   }
   if (ok && j.kind === "setQty") {
