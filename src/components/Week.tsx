@@ -92,7 +92,7 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
                 {/* Nothing of this kind left to pick (none yet, or all planned): straight to adding a recipe (Nov 10). */}
                 {recipes.some((r) => r.active && kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
                   ? <Row icon="plus" title={mine.length ? "Add another" : "Add one"} accessory="chevron" onClick={() => onAdd(k)} />
-                  : <Row icon="plus" title="Add a recipe" accessory="chevron" onClick={onRecipes} />}
+                  : <ToRecipes onClick={onRecipes} />}
               </Group>
             );
           })}
@@ -130,9 +130,12 @@ export function MealsScreen({ plan, recipes, error, onOpen, onRemove, onCount, o
 
 // ---- Add a meal (any time)
 
-/** When the recipe isn't there: a way straight to adding it on the Recipes tab (Matt, Nov 10), not just a pointer to it. */
-function ToRecipes({ missing, onClick }: { missing: string; onClick: () => void }) {
-  return <Row icon="plus" title="Add a recipe" subtitle={missing} accessory="chevron" onClick={onClick} />;
+/**
+ * When there's no recipe to pick: the way to the Recipes tab to add one (asks first, App). Grey with a book, so it never
+ * reads like the accent + rows that add a dinner (Matt, Nov 10: "Add another" and "Add a recipe" looked the same).
+ */
+export function ToRecipes({ missing, onClick }: { missing?: string; onClick: () => void }) {
+  return <Row lead={<Icon name="book" className="size-5 text-muted" strokeWidth={2} />} title={<span className="text-muted">New recipe</span>} subtitle={missing} accessory="chevron" onClick={onClick} />;
 }
 
 /** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */

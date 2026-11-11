@@ -11,7 +11,7 @@ import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen, mealName } from "./Week";
 import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
-import { OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
+import { Button, OpenSettings, Sheet, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
 type Tab = "recipes" | "week" | "stock" | "lists";
 /**
@@ -344,9 +344,12 @@ export default function App() {
     setListsStart("all");
   }
   /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
-  function toRecipes() {
+  /** From Meals or its picker, when there's no recipe to pick: asks first (Nov 10), then Recipes with Add recipes open. */
+  const [askRecipes, setAskRecipes] = useState(false);
+  function toRecipes() { setAskRecipes(true); }
+  function goRecipes() {
+    setAskRecipes(false);
     setAddingOne(null);
-
     onTab("recipes");
     setSheet("add");
   }
@@ -398,6 +401,15 @@ export default function App() {
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={async (d) => (await addMeal(d)).problem} onRecipes={toRecipes} onClose={() => setAddingOne(null)} />}
+      {askRecipes && (
+        <Sheet label="Go to Recipes" title="Go to Recipes?" onClose={() => setAskRecipes(false)}>
+          <div className="space-y-3 pb-2">
+            <p className="t-sub text-muted">Add the recipe there. The plan stays as it is.</p>
+            <Button className="w-full" onClick={goRecipes}>Go to Recipes</Button>
+            <Button variant="secondary" className="w-full" onClick={() => setAskRecipes(false)}>Cancel</Button>
+          </div>
+        </Sheet>
+      )}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
         gotRecipes(all);
         setSheet(null);
