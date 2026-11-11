@@ -270,8 +270,21 @@ export function addUp(a: string, b: string): string {
   return [numberText(n), unit].filter(Boolean).join(" ");
 }
 
-/** Less of an amount: "2½ lb" less "1 lb" → "1½ lb", "" when none is left; null when it can't be worked out. */
+/**
+ * Less of an amount: "2½ lb" less "1 lb" → "1½ lb", "" when none is left; null when it can't be worked out. A combined
+ * amount loses it from the part in the same unit: "1 dozen + 1" less "1" → "1 dozen".
+ */
 export function takeAway(a: string, b: string): string | null {
+  if (a.includes(" + ")) {
+    const parts = a.split(" + ");
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const less = takeAway(parts[i], b);
+      if (less === null) continue;
+      const rest = [...parts.slice(0, i), ...(less ? [less] : []), ...parts.slice(i + 1)];
+      return rest.join(" + ");
+    }
+    return null;
+  }
   const x = amountOf(a), y = amountOf(b);
   if (!x || !y || x.unit !== y.unit) return null;
   const n = x.n - y.n;
