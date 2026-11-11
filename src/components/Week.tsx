@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, KINDS, kindOf } from "@/lib/week";
@@ -25,15 +25,37 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onMore, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[]; error: string | null;
   /** A note after a change ("Took Tacos off. 3 things came off the list."); tapping it puts it away. */
   note: string | null; onNote: () => void;
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMore: (d: Dish) => void; onAdd: (kind: Kind) => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onCount: (d: Dish, count: number) => Promise<unknown>; onAdd: (kind: Kind) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
+  // How many of each dinner, as tapped (Nov 10): shown at once; sent as one change once the taps stop, so quick taps
+  // never pile up requests (they ran into "It's busy right now" and lost changes).
+  const [want, setWant] = useState<Record<string, number>>({});
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+  const counted = (recipe: string) => dishes.filter((d) => d.recipe === recipe).length;
+  // Once the plan shows what was asked for, the tapped number isn't needed.
+  useEffect(() => {
+    const settled = Object.entries(want).filter(([r, n]) => counted(r) === n && !timers.current[r]);
+    if (settled.length) queueMicrotask(() => setWant((w) => { const x = { ...w }; for (const [r] of settled) delete x[r]; return x; }));
+  });
+  function tap(d: Dish, by: number) {
+    const n = Math.max(0, (want[d.recipe] ?? counted(d.recipe)) + by);
+    if (n === 0) return setTaking(d); // the last one off asks first
+    setWant((w) => ({ ...w, [d.recipe]: n }));
+    clearTimeout(timers.current[d.recipe]);
+    timers.current[d.recipe] = setTimeout(() => {
+      delete timers.current[d.recipe];
+      // A change that fails shows the plan as it is again.
+      onCount(d, n).catch(() => {}).finally(() => setWant((w) => { if (w[d.recipe] !== n) return w; const x = { ...w }; delete x[d.recipe]; return x; }));
+    }, 700);
+  }
   return (
     <div className="space-y-6">
       <BrandBar />
@@ -57,14 +79,15 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
                   const d = same[same.length - 1];
                   const r = recipes.find((x) => x.id === d.recipe);
                   const name = mealName(d.recipe, recipes);
+                  const n = want[d.recipe] ?? same.length;
                   return (
                     <div key={d.recipe} className="flex items-center gap-1.5 pr-3">
                       <div className="min-w-0 flex-1">
                         <Row title={name} onClick={r ? () => onOpen(d) : undefined} />
                       </div>
-                      <RoundButton quiet icon="minus" label={same.length > 1 ? `One less ${name}` : `Take ${name} off the plan`} onClick={() => (same.length > 1 ? onRemove(d) : setTaking(d))} />
-                      <span className="w-5 text-center t-headline tabular-nums" aria-label={`${name}: ${same.length}`}>{same.length}</span>
-                      <RoundButton quiet icon="plus" label={`One more ${name}`} onClick={() => onMore(d)} />
+                      <RoundButton quiet icon="minus" label={n > 1 ? `One less ${name}` : `Take ${name} off the plan`} onClick={() => tap(d, -1)} />
+                      <span className="w-5 text-center t-headline tabular-nums" aria-label={`${name}: ${n}`}>{n}</span>
+                      <RoundButton quiet icon="plus" label={`One more ${name}`} onClick={() => tap(d, 1)} />
                     </div>
                   );
                 })}
@@ -89,7 +112,13 @@ export function MealsScreen({ plan, recipes, error, note, onNote, onOpen, onRemo
         <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off the plan?`} onClose={() => setTaking(null)}>
           <div className="space-y-3 pb-2">
             <p className="t-sub text-muted">What only it needed comes off the grocery list.</p>
-            <Button className="w-full" onClick={() => { onRemove(taking); setTaking(null); }}>Take it off</Button>
+            <Button className="w-full" onClick={() => {
+              // All of them: one change for however many there are.
+              clearTimeout(timers.current[taking.recipe]); delete timers.current[taking.recipe];
+              if (counted(taking.recipe) > 1) onCount(taking, 0).catch(() => {}); else onRemove(taking);
+              setWant((w) => { const x = { ...w }; delete x[taking.recipe]; return x; });
+              setTaking(null);
+            }}>Take it off</Button>
             <Button variant="secondary" className="w-full" onClick={() => setTaking(null)}>Cancel</Button>
           </div>
         </Sheet>
