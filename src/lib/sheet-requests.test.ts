@@ -43,6 +43,13 @@ async function fakeFetch(input: string | URL, init?: RequestInit): Promise<Respo
     return ok();
   }
   if (path.endsWith("/values:batchUpdate")) { count.writes++; for (const d of body.data) put(d.range, d.values); return ok(); }
+  if (method === "GET" && !path.includes("/values")) { count.reads++; return ok({ sheets: [...tabs.keys()].map((title) => ({ properties: { title } })) }); }
+  if (method === "GET" && path.endsWith("/values:batchGet")) {
+    count.reads++;
+    const ranges = new URL(url).searchParams.getAll("ranges");
+    if (ranges.some((t) => !tabs.has(t))) return new Response("", { status: 400 });
+    return ok({ valueRanges: ranges.map((t) => ({ values: trimmed(tabs.get(t)!) })) });
+  }
   const rest = path.split("/values/")[1];
   if (method === "GET") {
     count.reads++;
@@ -83,6 +90,15 @@ describe("the list on the Sheet", () => {
     tabs.set("Ingredients", [["name", "section", "store"]]);
     tabs.set("Bought", [["item", "quantity", "store", "date_bought", "for"]]);
     reset();
+  });
+
+  it("reads the list and Stock in one request (Nov 10: reads ran over Google's limit)", async () => {
+    const { loadList } = await import("./groceries");
+    await loadList(); // the tab names, the first time
+    reset();
+    const l = await loadList();
+    expect(l.items.map((x) => x.item)).toEqual(["lemons", "milk", "onions", "cilantro"]);
+    expect(cost()).toEqual({ reads: 1, writes: 0 });
   });
 
   it("adds many things with each tab read once, the new guesses remembered together", async () => {

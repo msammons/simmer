@@ -65,6 +65,44 @@ export async function readTab(tab: string): Promise<string[][]> {
   return ((await r.json()).values ?? []) as string[][];
 }
 
+// The Sheet's tab names, asked for at most every ten minutes, so several tabs can be read in one request (a request
+// for a tab that isn't there fails the whole batch).
+let titles: { at: number; names: Set<string> } | null = null;
+async function tabTitles(): Promise<Set<string>> {
+  if (titles && Date.now() - titles.at < 600_000) return titles.names;
+  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}?fields=sheets.properties.title`, {
+    headers: { authorization: `Bearer ${await accessToken()}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new ReadFailed("tab list", r.status);
+  const names = new Set<string>(((await r.json()).sheets ?? []).map((s: { properties?: { title?: string } }) => s.properties?.title ?? ""));
+  for (const n of names) known.add(n);
+  titles = { at: Date.now(), names };
+  return names;
+}
+
+/**
+ * Several tabs read in one request (Nov 10: loading the plan read nine tabs one by one, and a few taps went over
+ * Google's 60 reads a minute: "That didn't go through"). Tabs that don't exist yet come back empty.
+ */
+export async function readTabsIfAny(tabs: string[]): Promise<string[][][]> {
+  const names = await tabTitles();
+  const want = tabs.filter((t) => names.has(t) || known.has(t));
+  if (!want.length) return tabs.map(() => []);
+  const get = async () => fetch(`${base()}:batchGet?${want.map((t) => `ranges=${encodeURIComponent(t)}`).join("&")}`, {
+    headers: { authorization: `Bearer ${await accessToken()}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  let r = await get();
+  if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1500)); r = await get(); }
+  // A tab removed since the names were read: ask again for the names next time, and read these one by one.
+  if (r.status === 400) { titles = null; return Promise.all(tabs.map(readTabIfAny)); }
+  if (!r.ok) throw new ReadFailed(want.join(", "), r.status);
+  const ranges: { values?: string[][] }[] = (await r.json()).valueRanges ?? [];
+  const got = new Map<string, string[][]>(ranges.map((v, i) => [want[i], v.values ?? []]));
+  return tabs.map((t) => got.get(t) ?? []);
+}
+
 /** A tab's rows, or none when the tab doesn't exist yet. Any other failure throws (it isn't an empty tab). */
 export const readTabIfAny = (tab: string) => readTab(tab).catch((e) => { if (e instanceof ReadFailed && e.status === 400) return [] as string[][]; throw e; });
 
