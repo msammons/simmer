@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, forADinner, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -65,9 +65,9 @@ describe("adding amounts up (Nov 9)", () => {
     expect(addUp("1 head", "2 heads")).toBe("3 heads");
     expect(addUp("1 bunch", "1 bunch")).toBe("2 bunches");
   });
-  it("keeps today's behaviour when the units differ or an amount isn't one number", () => {
-    expect(addUp("1 lb", "2")).toBe("2");
-    expect(addUp("1 lb", "8 oz")).toBe("8 oz");
+  it("keeps both when the units differ (Nov 10), and the newer when an amount isn't one number", () => {
+    expect(addUp("1 lb", "2")).toBe("1 lb + 2"); // both kept since Nov 10
+    expect(addUp("1 lb", "8 oz")).toBe("1 lb + 8 oz");
     expect(addUp("", "1 lb")).toBe("1 lb");
     expect(addUp("1 lb", "")).toBe("1 lb");
     expect(addUp("1 medium", "1 medium")).toBe("1 medium");
@@ -176,3 +176,35 @@ describe("taking a dinner's groceries off (Nov 10)", () => {
     expect((await loadList()).items.some((x) => x.id === it0.id)).toBe(true);
   });
 });
+
+describe("a line added by hand that a dinner joins (Nov 10)", () => {
+  it("keeps both amounts when the units differ", () => {
+    expect(addUp("1 dozen", "1")).toBe("1 dozen + 1");
+    expect(addUp("1 lb", "8 oz")).toBe("1 lb + 8 oz");
+    expect(addUp("1 lb", "1 lb")).toBe("2 lb");
+  });
+  it("stays added by hand, so taking the dinner off leaves it", async () => {
+    await addItem("hand-test eggs", "Robin", "", undefined, "1 dozen");
+    await addItems([{ item: "hand-test eggs", quantity: "1", for: "hand-lasagna" }], "Robin");
+    let eggs = (await loadList()).items.find((x) => x.item === "hand-test eggs")!;
+    expect(eggs.for).toBe("added by hand, hand-lasagna");
+    expect(eggs.quantity).toBe("1 dozen + 1");
+    expect(forADinner(eggs)).toBe(false);
+    await takeOffFor([{ item: "hand-test eggs", quantity: "1", for: "hand-lasagna" }]);
+    eggs = (await loadList()).items.find((x) => x.item === "hand-test eggs")!;
+    expect(eggs.for).toBe("added by hand");
+  });
+  it("a hand add onto a dinner's line marks it too", async () => {
+    await addItems([{ item: "hand-test lemons", quantity: "2", for: "hand-fish" }], "Robin");
+    await addItem("hand-test lemons", "Robin");
+    const lemons = (await loadList()).items.find((x) => x.item === "hand-test lemons")!;
+    expect(lemons.for).toBe("added by hand, hand-fish");
+    expect(forADinner(lemons)).toBe(false);
+  });
+  it("matches dinners by their whole name, not part of one", async () => {
+    await addItems([{ item: "hand-test crust", quantity: "1", for: "tuesday's pie" }], "Robin");
+    await addItems([{ item: "hand-test crust", quantity: "1", for: "pie" }], "Robin");
+    expect((await loadList()).items.find((x) => x.item === "hand-test crust")!.for).toBe("tuesday's pie, pie");
+  });
+});
+
