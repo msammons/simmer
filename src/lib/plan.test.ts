@@ -136,6 +136,16 @@ describe("a new plan (Nov 10)", () => {
     expect((await loadList()).items.some((i) => i.item === "new-plan-test bread")).toBe(true);
   });
 
+  it("New plan takes a dinner's share off a line added by hand, and keeps the rest", async () => {
+    await clearPlanned();
+    await addItem("ground turkey", "Robin", "", undefined, "1 lb"); // added by hand
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
+    const turkey = () => loadList().then((l) => l.items.find((i) => i.item === "ground turkey" && !i.checked));
+    expect((await turkey())!.for).toContain("added by hand");
+    await clearPlanned();
+    expect(await turkey()).toMatchObject({ quantity: "1 lb", for: "added by hand" });
+  });
+
   it("the same dinner twice doubles its groceries; one fewer cuts them back and keeps them", async () => {
     await clearPlanned();
     await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
