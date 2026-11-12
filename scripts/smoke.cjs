@@ -254,7 +254,21 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     const tabBar = page.getByRole("navigation", { name: "Main" });
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
     await settingsHere("Stock");
-    ok(`${tag}: Stock has the add field and the legend`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("In meals").isVisible()));
+    ok(`${tag}: Stock has the add field and the line about ticking`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("Tick what you need; it goes on the list.").isVisible()) && (await page.getByText("In meals").count()) === 0);
+    // For this plan (Nov 11): each dinner's thing answered Have or Need with one switch; the lit side tapped again clears it.
+    const plan = page.getByRole("group", { name: /^Have or need / });
+    if (await plan.count()) {
+      const first = plan.first(), have = first.getByRole("button", { name: /^Have: / }), need = first.getByRole("button", { name: /^Need: / });
+      const pressed = async () => [await have.getAttribute("aria-pressed"), await need.getAttribute("aria-pressed")].join();
+      if ((await pressed()) !== "false,false") { await (await have.getAttribute("aria-pressed") === "true" ? have : need).tap(); await page.waitForTimeout(1200); }
+      const before = await page.getByText(/^\d+ to check$|^All checked$/).innerText();
+      await have.tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: Have lights, and one fewer to check`, (await pressed()) === "true,false" && (await page.getByText(/^\d+ to check$|^All checked$/).innerText()) !== before);
+      await need.tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: Need switches it (never both)`, (await pressed()) === "false,true");
+      await need.tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: tapping the lit side again makes it to check`, (await pressed()) === "false,false" && (await page.getByText(/^\d+ to check$|^All checked$/).innerText()) === before);
+    } else ok(`${tag}: For this plan (no dinner needs anything from the house in the sample)`, true);
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
     const milk = page.getByRole("checkbox", { name: "Need Milk" });
     if ((await milk.getAttribute("aria-checked")) === "true") { await milk.tap(); await page.waitForTimeout(1200); }
