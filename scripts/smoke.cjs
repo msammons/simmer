@@ -262,6 +262,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     const before = (await milk.boundingBox())?.height;
     ok(`${tag}: ticking puts it on the list`, (await milk.getAttribute("aria-checked")) === "true");
     ok(`${tag}: a ticked row says nothing more and keeps its height`, (await milk.getByText(/on the list/i).count()) === 0 && Math.abs(((await page.getByRole("checkbox", { name: "Need Eggs" }).boundingBox())?.height ?? 0) - (before ?? 0)) < 1, `${before}`);
+    // Every row with something to offer has ⋯, and the rest keep its space, so the amounts line up (Nov 11).
+    ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("checkbox", { name: /^Need / }).evaluateAll((bs) => bs.length > 3 && bs.every((b) => { const n = b.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
     // No Every week (Nov 10): a thing goes on a list only when tapped out here, and nothing comes back by itself after a shop.
     const eggs = page.getByRole("checkbox", { name: "Need Eggs" });
     ok(`${tag}: no Every week anywhere on Stock`, (await page.getByText(/every week/i).count()) === 0 && (await page.getByLabel("More for Eggs").locator("option", { hasText: /week/i }).count()) === 0);
