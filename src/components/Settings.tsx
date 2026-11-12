@@ -1,18 +1,22 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, errorText, THEMES, type Theme } from "@/lib/client";
 import { Alert, Group, Row, Sheet } from "./ui";
 
 export function SettingsSheet({ theme, onTheme, onClose }: {
   theme: Theme; onTheme: (t: Theme) => void; onClose: () => void;
 }) {
-  // The Google Sheet is a copy now (Nov 11): the app keeps its data itself, and this writes it all over the Sheet. No
-  // "Copying…" (Nov 11): the row rests while it copies, then says Copied; a problem shows as the alert.
-  const [copy, setCopy] = useState<"idle" | "busy" | "done">("idle");
+  // The Google Sheet is a copy now (Nov 11): the app keeps its data itself, and this writes it all over the Sheet. It says
+  // Copied at once and copies behind it (Nov 11: always responsive, as in every Morales app); if that fails, the row goes
+  // back and the alert says why.
+  const [copied, setCopied] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  async function copyToSheet() {
-    setCopy("busy");
-    try { await api.exportSheet(); setCopy("done"); } catch (e) { setCopy("idle"); setProblem(errorText(e)); }
+  const copying = useRef(false);
+  function copyToSheet() {
+    if (copying.current) return;
+    copying.current = true;
+    setCopied(true);
+    api.exportSheet().catch((e) => { setCopied(false); setProblem(errorText(e)); }).finally(() => { copying.current = false; });
   }
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
@@ -31,7 +35,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
           ))}
         </Group>
         <Group header="Data">
-          <Row icon="external" title="Copy to Google Sheet" value={copy === "done" ? "Copied" : undefined} onClick={copy === "busy" ? undefined : copyToSheet} />
+          <Row icon="external" title="Copy to Google Sheet" value={copied ? "Copied" : undefined} onClick={copyToSheet} />
         </Group>
         {/* The release, as YY.M.D (Nov 11: the last line of Settings in every Morales app). */}
         <p className="px-4 text-center t-foot text-muted">{process.env.NEXT_PUBLIC_VERSION}</p>
