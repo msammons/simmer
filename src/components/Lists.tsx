@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import { framed, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { buyAmount, cartTotal, needBeside, findItems, money, qtyFor, type FindItem } from "@/lib/shop";
 import { norm } from "@/lib/words";
-import { FindView, ProductImage, Stepper, UpdateNotice, useSafeway, type Safeway } from "./Safeway";
+import { FindView, ProductImage, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
 import { Check, STORE_NAMES } from "./Shop";
-import { BrandBar, Button, EmptyState, Group, Notice, Row, Segmented, Sheet } from "./ui";
+import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Segmented, Sheet } from "./ui";
 
 /**
  * Lists (the redesign, Nov 2): one list per store, and All for shopping in person. The Safeway rows are also its cart:
@@ -75,7 +75,7 @@ function TickRow({ it, inCart, onTick, more }: { it: Item; inCart: number; onTic
   );
 }
 
-export function ListsScreen({ list, error, act, start }: { list: ListState | null; error: string | null; act: ListsActions; start: Where }) {
+export function ListsScreen({ list, act, start }: { list: ListState | null; act: ListsActions; start: Where }) {
   const sw = useSafeway();
   const [where, setWhere] = useState<Where>(start);
   const [text, setText] = useState("");
@@ -125,14 +125,13 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
     <div className="space-y-5">
       <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />} />
       <h1 className="sr-only">Lists</h1>
-      {error && <Notice>{error}</Notice>}
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something" enterKeyHint="done"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
 
-      {where === "safeway"
+      {!list ? <Held /> : where === "safeway"
         ? <SafewayList items={items.filter((i) => i.store === "safeway")} toFind={toTick} sw={sw} more={more} onFind={setFinding}
             onOrdered={() => act.done("safeway", true)}
             onTick={(it) => act.check(it, !it.checked)} onDone={sw.away && ticked.length ? done : null} />
@@ -161,15 +160,11 @@ export function ListsScreen({ list, error, act, start }: { list: ListState | nul
           </div>
         </Sheet>
       )}
-      {finishing && (
-        <Sheet label="Done shopping" title={where === "all" ? "Done shopping?" : `Done at ${STORE_NAMES[where]}?`} onClose={() => setFinishing(null)}>
-          <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">{finishing.length} thing{finishing.length === 1 ? " comes" : "s come"} off the list{where === "all" ? "s" : ""}.</p>
-            <Button className="w-full" onClick={doDone}>Done shopping</Button>
-            <Button variant="secondary" className="w-full" onClick={() => setFinishing(null)}>Cancel</Button>
-          </div>
-        </Sheet>
-      )}
+      <ConfirmSheet open={Boolean(finishing)} title={where === "all" ? "Done shopping?" : `Done at ${STORE_NAMES[where]}?`} confirm="Done shopping"
+        message={finishing ? `${finishing.length} thing${finishing.length === 1 ? " comes" : "s come"} off the list${where === "all" ? "s" : ""}.` : ""}
+        onConfirm={doDone} onCancel={() => setFinishing(null)} />
+      {/* Safeway's problems (a search or a cart change that didn't happen) show over the page, Find's sheet too. */}
+      <Alert open={Boolean(sw.problem)} title="That didn't go through" message={sw.problem ?? ""} onClose={() => sw.setProblem(null)} />
     </div>
   );
 }
@@ -181,6 +176,7 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
 }) {
   const away = sw.away;
   const [filling, setFilling] = useState(false);
+  const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   // In the helper's panel, the Safeway tab beside it shows Safeway's own cart while this is open, and Simmer's copy
   // takes the quantities shown there.
   const { run, refresh } = sw;
@@ -211,11 +207,8 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
   return (
     <>
       <TopLine text={away ? (waiting.length ? `${got} of ${waiting.length} got` : "") : `${count} in the cart${count ? ` · ${estimate ? "about " : ""}${money(total)}` : ""}`} show={away && waiting.length > 0} onDone={onDone} />
-      {sw.outdated && <UpdateNotice />}
-      {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
-      {away
-        ? <Notice tone="info">Can&apos;t reach Safeway right now. Check things off in the store instead.</Notice>
-        : sw.answering === false && <Notice tone="info">Safeway isn&apos;t connected right now. Changes wait until it is.</Notice>}
+      {/* Can't reach Safeway: the alert said so when a job went unanswered; the rows are now ticks (no bar, Nov 11). */}
+      {!sw.loaded && <Held groups={[3]} />}
       {usual.length > 0 && (
         <Group header="Same as last time" aside={usual.length > 1 && <button disabled={filling || away} onClick={autoFill} className="t-foot font-semibold text-accent disabled:opacity-40">Auto-fill {usual.length}</button>}>
           {usual.map((f) => (
@@ -264,7 +257,11 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
       {sw.loaded && !waiting.length && !lines.length && <EmptyState icon="cart" title="Nothing to get at Safeway" />}
       {/* For when Simmer can't tell by itself that the order went through (it reads Safeway's Purchases page once the
           cart page says it's empty, Nov 3). */}
-      {lines.length > 0 && <button onClick={onOrdered} className="w-full py-2 t-sub font-semibold text-muted">Ordered? Take the cart off the list</button>}
+      {lines.length > 0 && <button onClick={() => setOrdering(true)} className="w-full py-2 t-sub font-semibold text-muted">Ordered? Take the cart off the list</button>}
+      {/* Last, so it never pushes the list down when it shows. */}
+      {sw.outdated && <UpdateNote />}
+      <ConfirmSheet open={ordering} title="Take the cart off the list?" message="Everything in the cart comes off the Safeway list, as bought." confirm="Take it off"
+        onConfirm={() => { setOrdering(false); onOrdered(); }} onCancel={() => setOrdering(false)} />
     </>
   );
 }

@@ -5,7 +5,7 @@ import { freezerMatch } from "@/lib/week";
 import { isSpice, norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
-import { BrandBar, Button, EmptyState, Group, IconButton, Notice, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
+import { Alert, BrandBar, Button, EmptyState, Group, Held, IconButton, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 
 const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
@@ -39,8 +39,8 @@ function Some({ header, items, onOpen }: { header: string; items: Recipe[] } & O
 }
 
 /** The Recipes tab: her collection by kind, each kind opening to all of it. */
-export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
-  recipes: Recipe[] | null; error: string | null; freezer?: Frozen[]; onAdd: () => void;
+export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
+  recipes: Recipe[] | null; freezer?: Frozen[]; onAdd: () => void;
 } & Opens) {
   const opens = { onOpen };
   const all = useMemo(() => recipes ?? [], [recipes]);
@@ -50,8 +50,7 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
     <div className="space-y-6">
       <BrandBar />
       <h1 className="sr-only">Recipes</h1>
-      {error && <Notice>{error}</Notice>}
-      {recipes && !all.length ? (
+      {!recipes ? <Held groups={[1, 5, 4]} /> : !all.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
         </EmptyState>
       ) : (
@@ -70,21 +69,16 @@ export function RecipesScreen({ recipes, error, onOpen, onAdd, freezer = [] }: {
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, onAddToList, planned, onAddToWeek }: {
-  r: Recipe; error: string | null; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void; onAddToList: () => void;
+export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, onAddToList, planned, onAddToWeek }: {
+  r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void; onAddToList: () => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
-  /** Puts it on this week's plan with its groceries, as Add a meal does (absent for snacks and sauces, never planned). */
-  onAddToWeek?: () => Promise<{ problem: string | null; note?: string }>;
+  /**
+   * Puts it on the plan with its groceries, as Add a meal does (absent for snacks and sauces, never planned): at once,
+   * saved behind it (Nov 11: no "Adding…"); one that fails comes back off, and the alert says why.
+   */
+  onAddToWeek?: () => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState<{ problem: string | null; note?: string } | null>(null);
-  async function addToWeek() {
-    if (!onAddToWeek || adding) return;
-    setAdding(true); setAdded(null);
-    setAdded(await onAddToWeek());
-    setAdding(false);
-  }
   const screen = useRef<HTMLDivElement>(null);
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
   useEffect(() => {
@@ -102,13 +96,10 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
     <div ref={screen} className="space-y-6">
       <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel={backLabel}
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
-      {error && <Notice>{error}</Notice>}
-      {added?.problem && <Notice>{added.problem}</Notice>}
-      {added?.note && <Notice tone="info">{added.note}</Notice>}
-      {planned && !added?.note && <p className="t-sub px-1 text-muted">On the plan.</p>}
+      {planned && <p className="t-sub px-1 text-muted">On the plan.</p>}
       {/* Not planned: putting it on this week is the main thing (Nov 9); just its groceries is the quieter choice. */}
       <div className="space-y-3 empty:hidden">
-        {!planned && onAddToWeek && <Button onClick={addToWeek} disabled={adding} icon="calendarPlus" className="w-full">{adding ? "Adding…" : "Add to the plan"}</Button>}
+        {!planned && onAddToWeek && <Button onClick={onAddToWeek} icon="calendarPlus" className="w-full">Add to the plan</Button>}
         {r.ingredients.length > 0 && (planned || onAddToWeek
           ? <Button onClick={onAddToList} icon="list" variant="secondary" className="w-full">{planned ? "Add to the list again" : "Just add to the list"}</Button>
           : <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>)}
@@ -142,33 +133,23 @@ export function RecipeScreen({ r, error, onBack, backLabel, onEdit, onActive, on
  * Adding a recipe to the list (Nov 3): the fresh things to buy are listed, each can be unticked; the pantry things and
  * spices aren't a checklist, they're highlighted in Stock for her to check, as planning does.
  */
-export function AddToListSheet({ r, onAdd, onClose }: { r: Recipe; onAdd: (buy: Ingredient[], pantry: Ingredient[]) => Promise<{ problem: string | null; note?: string }>; onClose: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+export function AddToListSheet({ r, ticks, onAdd, onClose }: {
+  r: Recipe;
+  /** The ticks as they were, when adding failed and the sheet opens again. */
+  ticks?: number[];
+  /** Closes the sheet and adds behind it (Nov 11: no "Adding…"); `ticks` come back if it fails. */
+  onAdd: (buy: Ingredient[], pantry: Ingredient[], ticks: number[]) => void; onClose: () => void;
+}) {
   const fresh = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section === "fresh" && !isSpice(i.item));
   const pantry = r.ingredients.filter((i) => i.section !== "fresh" || isSpice(i.item));
-  const [on, setOn] = useState(() => new Set(fresh.map(([, n]) => n)));
+  const [on, setOn] = useState(() => new Set(ticks ?? fresh.map(([, n]) => n)));
   const flip = (n: number) => setOn((s) => { const t = new Set(s); if (t.has(n)) t.delete(n); else t.add(n); return t; });
-  // Stays open with a note once added; if adding fails, the ticks stay and the problem shows above the button.
-  async function add() {
-    setBusy(true); setProblem(null);
-    const res = await onAdd(fresh.filter(([, n]) => on.has(n)).map(([i]) => i), pantry);
-    setBusy(false);
-    if (res.problem) return setProblem(res.problem);
-    if (res.note) setDone(res.note); else onClose();
-  }
+  const add = () => onAdd(fresh.filter(([, n]) => on.has(n)).map(([i]) => i), pantry, [...on]);
   return (
     <Sheet label="Add to the list" title={r.name} onClose={onClose}
-      footer={<div className="space-y-3">
-        {problem && <Notice>{problem}</Notice>}
-        {done && <Notice tone="info">{done}</Notice>}
-        {done
-          ? <Button className="w-full" onClick={onClose}>Done</Button>
-          : <Button className="w-full" disabled={busy || (!on.size && !pantry.length)} onClick={add}>{busy ? "Adding…" : on.size ? `Add ${on.size} to the list` : "Highlight in Stock"}</Button>}
-      </div>}>
+      footer={<Button className="w-full" disabled={!on.size && !pantry.length} onClick={add}>{on.size ? `Add ${on.size} to the list` : "Highlight in Stock"}</Button>}>
       <div className="space-y-5">
-        {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => !done && flip(n)} />)}</Group>}
+        {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => flip(n)} />)}</Group>}
       </div>
     </Sheet>
   );
@@ -208,24 +189,12 @@ function Editor({ d, onChange }: { d: Draft; onChange: (d: Draft) => void }) {
 
 const tidy = (d: Draft): Draft => ({ ...d, ingredients: d.ingredients.filter((l) => l.trim()), steps: d.steps.filter((s) => s.trim()), tags: d.tags.map((t) => t.trim()).filter(Boolean) });
 
-/** Editing a saved recipe. */
-export function EditSheet({ r, onSave, onClose }: { r: Recipe; onSave: (d: Draft) => Promise<string | null>; onClose: () => void }) {
-  const [d, setD] = useState(() => draftOf(r));
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  // Closes once saved; if the save fails, the edits stay, the problem shows above the button, and it can be tried again.
-  async function save() {
-    setBusy(true); setProblem(null);
-    const p = await onSave(tidy(d));
-    if (!p) return onClose();
-    setProblem(p); setBusy(false);
-  }
+/** Editing a saved recipe. Save closes it at once (Nov 11: no "Saving…"); if the save fails it opens again with `initial`. */
+export function EditSheet({ r, initial, onSave, onClose }: { r: Recipe; initial?: Draft; onSave: (d: Draft) => void; onClose: () => void }) {
+  const [d, setD] = useState(() => initial ?? draftOf(r));
   return (
     <Sheet label={`Edit ${r.name}`} title="Edit" onClose={onClose}
-      footer={<div className="space-y-3">
-        {problem && <Notice>{problem}</Notice>}
-        <Button className="w-full" disabled={busy || !d.name.trim()} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
-      </div>}>
+      footer={<Button className="w-full" disabled={!d.name.trim()} onClick={() => onSave(tidy(d))}>Save</Button>}>
       <Editor d={d} onChange={setD} />
     </Sheet>
   );
@@ -279,17 +248,22 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
         <Row icon="pencil" title="Type it in" accessory="chevron" onClick={() => setStep({ at: "text" })} />
       </Group>
     );
-    if (busy) body = <div className="py-10 text-center"><p className="t-headline">Reading it…</p><p className="t-sub mt-1 text-muted">A page full of recipes can take a minute.</p></div>;
+    // Reading a photo or a file: the shimmer, as every first load looks (Nov 11: no "Reading it…").
+    if (busy) body = <Held groups={[4]} label="Reading the recipe" />;
   } else if (step.at === "link") {
-    body = <Field label="Link to the recipe"><input className={FIELD} type="url" inputMode="url" autoFocus value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste the link" /></Field>;
-    footer = <Button className="w-full" disabled={busy || !link.trim()} onClick={() => read({ link })}>{busy ? "Reading the page…" : "Read it"}</Button>;
+    body = <>
+      <Field label="Link to the recipe"><input className={FIELD} type="url" inputMode="url" autoFocus value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste the link" /></Field>
+      {busy && <Held groups={[4]} label="Reading the recipe" />}
+    </>;
+    footer = <Button className="w-full" disabled={busy || !link.trim()} onClick={() => read({ link })}>Read it</Button>;
   } else if (step.at === "text") {
     body = (
       <Field label="The recipe, or a list of meal ideas">
         <textarea className={`${FIELD} min-h-56`} autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grandma's enchiladas\n2 cups shredded chicken\n…\n\nOr one idea per line:\nTacos\nSalmon and broccoli"} />
       </Field>
     );
-    footer = <Button className="w-full" disabled={busy || !text.trim()} onClick={() => read({ text })}>{busy ? "Reading it…" : "Read it"}</Button>;
+    if (busy) body = <Held groups={[4]} label="Reading the recipe" />;
+    footer = <Button className="w-full" disabled={busy || !text.trim()} onClick={() => read({ text })}>Read it</Button>;
   } else if (step.at === "pick") {
     const flip = (i: number) => setPicked((s) => { const t = new Set(s); if (t.has(i)) t.delete(i); else t.add(i); return t; });
     body = (
@@ -299,31 +273,31 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
         ))}
       </Group>
     );
-    footer = <Button className="w-full" disabled={busy || !picked.size} onClick={() => save(step.found.filter((_, i) => picked.has(i)), "skip")}>{busy ? "Saving…" : `Save ${picked.size}`}</Button>;
+    footer = <Button className="w-full" disabled={busy || !picked.size} onClick={() => save(step.found.filter((_, i) => picked.has(i)), "skip")}>{`Save ${picked.size}`}</Button>;
   } else {
     const t = twin(step.d.name);
     body = (
       <div className="space-y-4">
         {t && (
           <div className="space-y-3">
-            <Notice tone="info">You already have {t.name}.</Notice>
+            <p className="px-4 t-foot text-muted">You already have {t.name}.</p>
             <Segmented label="Already in your collection" value={dup} onChange={setDup} options={[{ value: "replace", label: "Replace it" }, { value: "both", label: "Keep both" }]} />
           </div>
         )}
         <Editor d={step.d} onChange={(d) => setStep({ at: "review", d })} />
       </div>
     );
-    footer = <Button className="w-full" disabled={busy || !step.d.name.trim()} onClick={() => save([step.d], t && dup === "replace" ? "replace" : undefined)}>{busy ? "Saving…" : "Save"}</Button>;
+    footer = <Button className="w-full" disabled={busy || !step.d.name.trim()} onClick={() => save([step.d], t && dup === "replace" ? "replace" : undefined)}>Save</Button>;
   }
   return (
     <Sheet label="Add recipes" title="Add recipes" onClose={onClose} footer={footer}>
       <div className="space-y-4 pb-2">
-        {back && <button className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
-        {error && <Notice>{error}</Notice>}
+        {back && <button aria-label="Back to Add recipes" className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
         {body}
         <input ref={photo} type="file" accept="image/*" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         <input ref={files} type="file" accept="application/pdf,image/*,text/plain,.pdf,.txt" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
+      <Alert open={Boolean(error)} title="That didn't go through" message={error ?? ""} onClose={() => setError(null)} />
     </Sheet>
   );
 }

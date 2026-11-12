@@ -37,7 +37,12 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - `TabBar`: the three tabs in one Liquid Glass capsule. There is no search; the Recipes tab lists the collection by
   kind, each kind opening to all of it (the plan's recipe picker still searches).
 - `Group`/`Row` (inset grouped lists), `Button` (primary is tinted glass; no gradients on anything you tap), `Sheet`
-  (one grabber, pull down to close, page dots, rides above the keyboard), `EmptyState`, `Notice`, `IconBadge`.
+  (one grabber, pull down to close, page dots, rides above the keyboard), `EmptyState`, `IconBadge`.
+- Problems are one `Alert` over the page (a short headline, the reason, OK), never a bar that pushes the page; risky
+  actions ask first with one `ConfirmSheet` (headline, one muted line, the action, Cancel). No Undo, no toasts, no
+  "Saving…": a change shows at once and saves behind it; one that fails is put back and the alert says why. A first
+  load with nothing saved here shows `Held`, grey rows with Head Out's `.shimmer`; no loading words, no spinners.
+- Settings ends with the release as YY.M.D (`NEXT_PUBLIC_VERSION`, worked out in `next.config.ts`).
 - Type scale `t-*` utilities and colors as CSS variables in `app/globals.css`. Themes set `--accent` and a brand gradient
   (`--g1..g3`) used only on non-interactive brand surfaces. Simmer (calm sage, matching the icon), Apricot (the original warm orange), then plain iOS colors.
 - One line-icon set (`components/icons.tsx`). No emoji anywhere.
@@ -51,7 +56,8 @@ then − / +) and **Cart** (Simmer's copy of the Safeway cart, the total, and "C
 
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
 Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" tab,
-pruned as it goes), the helper takes it, does it on safeway.com and reports back; a quantity set on Safeway goes into
+pruned as it goes), the helper takes it, does it on safeway.com and reports back (the app follows it with one request at a
+time that the server answers once the job's finished, or after about 20 s: `waitForJob`, no timer in the app); a quantity set on Safeway goes into
 Simmer's cart ("Safeway cart" tab, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway tab, now with the product's picture address; pictures
 are shown from Safeway, never stored). The helper's last check-in is kept too, so when the computer isn't answering
@@ -74,7 +80,7 @@ passcode by message from its parent, only from a Chrome helper page, never from 
   from this phone's recent waits. Never a spinner with no way out.
 - **Offline.** The shell is cached; data saved on the phone (in Head Out, plans) still shows. Coming back online reloads
   what's needed. `localStorage` reads and writes are always wrapped in try/catch.
-- **Wrong passcode says so.** The passcode screen shows the error and a "Checking…" state.
+- **Wrong passcode says so.** The passcode screen shows it as the alert; the button waits for a passcode.
 - **Lists built from choices go stale.** If the choices behind a list change, clear it, so tabs and swipes don't bring
   back results for old choices.
 - **Swipes inside a sheet stay in the sheet.**
