@@ -137,7 +137,9 @@ export const api = {
    */
   cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean; away?: boolean; seen?: string; outdated?: boolean }>("/api/safeway/cart", { signal }),
   /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
-  queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) }),
+  // Queued from the helper's panel: the panel is told too, so the helper looks at once (Nov 12: it doesn't wait on the push).
+  queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) })
+    .then((r) => { if (framed() && panelOrigin) window.parent.postMessage({ type: "simmer:queued" }, panelOrigin); return r; }),
   /** The helper's recent searches and cart changes, for the panel's activity log. */
   activity: (signal?: AbortSignal) => call<{ jobs: Activity[]; answering: boolean }>("/api/safeway/jobs?recent=1", { signal }),
   /** How a job stands, answered once it's finished (or after about 20 seconds, still going): the server waits, not the app. */
