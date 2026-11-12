@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type Ref } from "react";
+import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
@@ -32,8 +33,7 @@ export function Brand({ size = "sm" }: { size?: "sm" | "md" }) {
   const s = { sm: ["size-7 rounded-[8px]", "text-[19px]", "gap-2"], md: ["size-20 rounded-[1.4rem]", "text-[36px]", "gap-4 flex-col"] }[size];
   return (
     <span className={`inline-flex items-center ${s[2]}`}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG; next/image adds nothing here */}
-      <img src="/icon.svg" alt="" className={`${s[0]} shadow-[0_4px_14px_color-mix(in_srgb,var(--g2)_30%,transparent)]`} />
+      <span aria-hidden className={`block shrink-0 overflow-hidden ${s[0]} shadow-[0_4px_14px_color-mix(in_srgb,var(--g2)_30%,transparent)] [&>svg]:size-full [&>svg]:block`} dangerouslySetInnerHTML={{ __html: APP_ICON }} />
       <span className="inline-flex items-center gap-1.5">
         <span className={`font-brand font-extrabold leading-none tracking-[-0.03em] text-ink ${s[1]}`}>Simmer</span>
         {/* Still being tried out (Matt, Nov 10). */}
