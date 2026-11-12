@@ -39,7 +39,13 @@ async function safewayTab(windowId) {
   const [here] = inPanel ? await chrome.tabs.query({ url: `${SAFEWAY}/*`, windowId }) : [];
   const [open] = here ? [here] : await chrome.tabs.query({ url: `${SAFEWAY}/*` });
   if (open) return open.id;
-  return (await chrome.tabs.create({ url: SAFEWAY, active: false, ...(inPanel && { windowId }) })).id;
+  // The panel's window may be gone (closed since; Nov 12, searches "failed" at once): then any window will do.
+  try { return (await chrome.tabs.create({ url: SAFEWAY, active: false, ...(inPanel && { windowId }) })).id; }
+  catch (e) {
+    if (!inPanel) throw e;
+    await chrome.storage.session.remove("panelWindow").catch(() => {});
+    return (await chrome.tabs.create({ url: SAFEWAY, active: false })).id;
+  }
 }
 
 function go(tabId, url) {

@@ -70,6 +70,8 @@ async function subscribe(key) {
     await simmer("POST", { op: "push", key, subscription: sub.toJSON() }, "/api/safeway/jobs");
   } catch (e) {
     console.error("Simmer can't wake this helper", e);
+    // Said to Simmer too (Nov 12), so it shows in Simmer's logs: without it, jobs from the phone wait for the panel.
+    await simmer("POST", { op: "note", what: `can't subscribe for wake-ups: ${String(e?.message ?? e)}` }, "/api/safeway/jobs").catch(() => {});
   }
 }
 
