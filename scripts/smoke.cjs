@@ -259,22 +259,20 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     const haveOf = (n) => page.getByRole("button", { name: `Have: ${n}`, exact: true });
     const answerOf = async (n) => ((await haveOf(n).getAttribute("aria-pressed")) === "true" ? "have" : (await needOf(n).getAttribute("aria-pressed")) === "true" ? "need" : "check");
     const clear = async (n) => { const a = await answerOf(n); if (a !== "check") { await (a === "have" ? haveOf(n) : needOf(n)).tap(); await page.waitForTimeout(1200); } };
-    ok(`${tag}: Stock has the add field and the line about Need`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("Need puts it on the list.").isVisible()));
+    ok(`${tag}: Stock has the add field and no legend`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText(/Need puts it on the list|In meals|to check/).count()) === 0);
     ok(`${tag}: no For this plan group; everything stays in its section`, (await page.getByText("For this plan").count()) === 0);
     const meal = page.locator(".bg-accent\\/15").filter({ has: page.getByRole("group", { name: /^Have or need / }) });
     if (await meal.count()) {
       const name = (await meal.first().getByRole("group").getAttribute("aria-label")).replace(/^Have or need /, "");
       await clear(name);
-      const count = async () => page.getByText(/In meals · (\d+ to check|all checked)/).innerText();
-      const before = await count();
       await haveOf(name).tap(); await page.waitForTimeout(1200);
       ok(`${tag}: a meal thing shows how much`, (await meal.first().locator("span.t-foot").count()) === 1 || !(await meal.first().locator("span.t-foot").count()));
       const mealHeight = (await meal.filter({ hasText: new RegExp(name, "i") }).boundingBox())?.height;
-      ok(`${tag}: a meal thing: Have lights, and one fewer to check`, (await answerOf(name)) === "have" && (await count()) !== before, `${before} → ${await count()}`);
+      ok(`${tag}: a meal thing: Have lights`, (await answerOf(name)) === "have");
       await needOf(name).tap(); await page.waitForTimeout(1200);
       ok(`${tag}: Need switches it (never both), still highlighted`, (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
       await needOf(name).tap(); await page.waitForTimeout(1200);
-      ok(`${tag}: tapping the lit side again makes it to check, same height throughout`, (await answerOf(name)) === "check" && (await count()) === before && Math.abs(((await meal.filter({ hasText: new RegExp(name, "i") }).boundingBox())?.height ?? 0) - (mealHeight ?? 0)) < 1);
+      ok(`${tag}: tapping the lit side again makes it to check, same height throughout`, (await answerOf(name)) === "check" && Math.abs(((await meal.filter({ hasText: new RegExp(name, "i") }).boundingBox())?.height ?? 0) - (mealHeight ?? 0)) < 1);
     } else ok(`${tag}: meal things (none need anything from the house in the sample)`, true);
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
     // A kept thing works the same way.
