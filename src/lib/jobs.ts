@@ -32,7 +32,7 @@ export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatu
  * failed. `keep`: finished jobs are kept this long. `seenEvery`: how often a check-in is written down (so `alive` survives
  * a lost write or two). `cache`: how long one read of the tab answers everyone's checks. `stale`: when the Sheet can't
  * be read (it allows 60 reads a minute), the last copy answers for this long instead of the tab looking empty. `away`:
- * no check-in for this long and Lists greys the Safeway cart and makes its rows a checklist (Nov 3). The helper's
+ * no check-in for this long and Shop drops its Safeway controls and makes its rows a checklist (Nov 3). The helper's
  * half-minute alarm checks in whenever Chrome runs, even with nothing to do, so that's four missed checks.
  */
 export const JOB_TIMES = { alive: 90_000, away: 120_000, pickup: 20_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
@@ -145,7 +145,7 @@ export const helperAway = (h: Helper | null) => !h || age(h.seen) >= JOB_TIMES.a
 export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
   const { helper } = await read();
   // No timer keeps a check-in fresh any more (Nov 11): the helper only checks in when there's work. So Simmer doesn't
-  // guess from the last check-in; a job the helper doesn't pick up says so (and Lists turns Safeway into a checklist).
+  // guess from the last check-in; a job the helper doesn't pick up says so (and Shop turns Safeway into a checklist).
   return { answering: true, seen: helper?.seen ?? "", away: false, outdated: helperOutdated(helper) };
 }
 
