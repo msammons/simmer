@@ -39,7 +39,9 @@ async function check() {
         chrome.runtime.reload();
         return;
       }
-      if (r?.push?.key && !r.push.have) subscribe(r.push.key);
+      // Subscribe when Simmer has none made with its key, or when this Chrome's isn't the one Simmer has: Chrome drops an
+      // extension's subscription when it reloads (Nov 12: after the update to 26.11.12.1, the phone couldn't wake it).
+      if (r?.push?.key && (!r.push.have || (await self.registration.pushManager.getSubscription())?.endpoint !== r.push.at)) subscribe(r.push.key);
       if (!job) break; // nothing left: stop until the next push, Chrome starting, or the panel opening
       pace = { ...pace, ...job.settings };
       const out = await runJob(job, await panelWindow()).catch((e) => ({ ok: false, error: "failed", why: String(e) }));
