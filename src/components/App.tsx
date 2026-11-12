@@ -1,14 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen } from "./Week";
 import { kindOf } from "@/lib/week";
-import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
+import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
+import { AddRecipesSheet, type AddStep, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
 type Tab = "recipes" | "week" | "stock" | "lists";
@@ -52,6 +53,21 @@ function useSettled(fn: () => Promise<unknown>, ms = 5_000) {
   }, [fn, ms]);
 }
 
+/** Stand-in rows and recipes are told apart by their ids until the server's answer replaces them. */
+let standIns = 0;
+const standInId = (kind: "new" | "saving") => `${kind}-${Date.now()}-${++standIns}`;
+const isStandIn = (id: string) => id.startsWith("new-") || id.startsWith("saving-");
+/** A list row shown at once for something just added, filed where Simmer would file it, until the server's list comes back. */
+function standInItem(name: string, quantity: string, more: Partial<Item> = {}, store?: Store, section?: Section): Item {
+  const f = known(name);
+  return { id: standInId("new"), item: name, quantity, store: store ?? f?.store ?? "safeway", section: section ?? f?.section ?? "pantry", for: "", addedBy: "", addedAt: "", checked: false, check: false, ...more };
+}
+/** A recipe as it will be saved, shown at once (Nov 11: always responsive). */
+const draftRecipe = (d: Draft, id: string, existing?: Recipe): Recipe => ({
+  ...existing, ...d, id, active: d.active ?? existing?.active ?? true, addedAt: existing?.addedAt ?? "",
+  ingredients: d.ingredients.map((l) => l.trim()).filter(Boolean).map(parseIngredient),
+});
+
 export default function App() {
   const [phase, setPhase] = useState<"boot" | "passcode" | "app">("boot");
   const [stack, setStack] = useState<Screen[]>([{ kind: "week" }]); // Simmer opens on Meals (Matt, Oct 31)
@@ -74,7 +90,7 @@ export default function App() {
   const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
   const [listing, setListing] = useState<string | null>(null); // the recipe going on the list from the Recipes tab
   // What was entered in a sheet whose save failed, so it opens again as it was: Edit's draft, or Add to the list's ticks.
-  const [retry, setRetry] = useState<{ edit?: Draft; ticks?: number[] } | null>(null);
+  const [retry, setRetry] = useState<{ edit?: Draft; ticks?: number[]; add?: AddStep } | null>(null);
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
@@ -127,12 +143,15 @@ export default function App() {
   // the front, so both phones see the same list. No background work: only while someone's looking.
   // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
   // (otherwise a read answering just after a tap would undo the tap on screen until the change's own answer came).
+  // A read that answers while a change is still on its way is dropped too: it doesn't have the change yet, and would take
+  // a stand-in row away until the change's answer came.
   const listChanges = useRef(0);
+  const listSaving = useRef(0);
   const refreshList = useCallback(async () => {
     const at = listChanges.current;
     try {
       const l = await api.list();
-      if (at !== listChanges.current) return;
+      if (at !== listChanges.current || listSaving.current) return;
       setList(l);
       store.setList(l);
     } catch (e) {
@@ -168,6 +187,7 @@ export default function App() {
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
   const toList = open ?? (listing ? recipeOf(listing) : null); // the add-to-list sheet's recipe: the page you're on, or a row on Recipes
   async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
+    if (isStandIn(c.id)) return; // still being saved: it answers once the save is back
     setRecipes((rs) => rs && rs.map((r) => (r.id === c.id ? show(r) : r)));
     try { gotRecipes((await api.recipeChange(c)).recipes); }
     catch (e) { failed(e); refreshRecipes(); }
@@ -180,8 +200,8 @@ export default function App() {
    */
   function saveEdit(r: Recipe, d: Draft) {
     setSheet(null);
-    const { ingredients: _lines, ...rest } = d; void _lines;
-    setRecipes((rs) => rs && rs.map((x) => (x.id === r.id ? { ...x, ...rest } : x)));
+    if (isStandIn(r.id)) return;
+    setRecipes((rs) => rs && rs.map((x) => (x.id === r.id ? draftRecipe(d, r.id, x) : x)));
     api.saveRecipes([d]).then((res) => gotRecipes(res.recipes), (e) => {
       if (e instanceof AuthError) return;
       setRecipes((rs) => rs && rs.map((x) => (x.id === r.id ? r : x)));
@@ -197,7 +217,18 @@ export default function App() {
   function addToList(r: Recipe, buy: Ingredient[], pantry: Ingredient[], ticks: number[]) {
     setSheet(null); setListing(null);
     const line = (i: Ingredient, check: boolean) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), ...(check && { check }) });
-    change({ op: "many", items: [...buy.map((i) => line(i, false)), ...pantry.map((i) => line(i, true))], for: r.name, by: me }).then((problem) => {
+    const lines = [...buy.map((i) => line(i, false)), ...pantry.map((i) => line(i, true))];
+    // Shown at once: a stand-in row for each thing not already on the list (what the house keeps is highlighted in Stock).
+    const show = (l: ListState) => {
+      const items = [...l.items];
+      for (const x of lines) {
+        if (items.some((y) => !y.checked && norm(y.item) === norm(x.item))) continue;
+        const kept = l.staples.some((s) => norm(s.item) === norm(x.item));
+        items.push(standInItem(x.item, x.quantity, { for: r.name, check: Boolean(x.check) || kept }));
+      }
+      return { ...l, items };
+    };
+    change({ op: "many", items: lines, for: r.name, by: me }, show).then((problem) => {
       if (!problem) return;
       setRetry({ ticks });
       setListing(r.id);
@@ -205,14 +236,50 @@ export default function App() {
     });
   }
 
+  /**
+   * Add recipes' Save: the sheet closes at once and the recipe shows straight away (one: its page; several: the
+   * collection), as a stand-in until the server answers with its id. A save that fails takes the stand-ins off and opens
+   * Add recipes again where it was, under the alert.
+   */
+  function saveNew(ds: Draft[], duplicates: "skip" | "replace" | undefined, step: AddStep) {
+    setSheet(null);
+    const all = recipes ?? [];
+    const twin = (d: Draft) => all.find((r) => norm(r.name) === norm(d.name));
+    const shown = ds.flatMap((d) => {
+      const t = twin(d);
+      if (t && duplicates === "skip") return [];
+      return [t && duplicates === "replace" ? { replaces: t, r: draftRecipe(d, t.id, t) } : { replaces: null, r: draftRecipe(d, standInId("saving")) }];
+    });
+    setRecipes((rs) => {
+      const now = (rs ?? []).map((x) => shown.find((s) => s.replaces?.id === x.id)?.r ?? x);
+      return [...now, ...shown.filter((s) => !s.replaces).map((s) => s.r)];
+    });
+    const one = ds.length === 1 ? shown[0]?.r.id : undefined;
+    if (one) { scrollAppTo(0); setStack((st) => [...(st[st.length - 1].kind === "recipe" ? st.slice(0, -1) : st), { kind: "recipe", id: one }]); }
+    else onTab("recipes"); // several (her meal ideas): the whole collection, where they now are
+    api.saveRecipes(ds, duplicates).then((res) => {
+      gotRecipes(res.recipes);
+      // The page open on a stand-in becomes the saved recipe's.
+      if (one && res.saved[0] && one !== res.saved[0]) setStack((st) => st.map((x) => (x.kind === "recipe" && x.id === one ? { kind: "recipe", id: res.saved[0] } : x)));
+    }, (e) => {
+      if (e instanceof AuthError) return;
+      setRecipes(all);
+      if (one) setStack((st) => { const rest = st.filter((x) => !(x.kind === "recipe" && x.id === one)); return rest.length ? rest : [{ kind: "recipes" }]; });
+      didntSave(errorText(e));
+      setRetry({ add: step });
+      setSheet("add");
+    });
+  }
+
   // What's planned: loaded when Meals opens and whenever the app comes back to the front. Each change counts up, so an
   // answer that started before one of them doesn't put the old plan back.
   const planChanges = useRef(0);
+  const planSaving = useRef(0); // changes still on their way: a read answering meanwhile doesn't have them yet
   const refreshPlan = useCallback(async () => {
     const at = ++planChanges.current;
     try {
       const p = await api.plan();
-      if (at !== planChanges.current) return;
+      if (at !== planChanges.current || planSaving.current) return;
       setPlan(p); store.setPlan(p);
     } catch (e) {
       notLoaded(planShowing.current)(e);
@@ -238,10 +305,12 @@ export default function App() {
   const counting = useRef<Promise<unknown>>(Promise.resolve());
   /** How many of one dinner, sent once the taps stop (Meals); rejects on a problem, which shows on Meals. */
   function countMeal(d: { recipe: string; kind: Kind }, count: number): Promise<void> {
+    ++planSaving.current;
     const run = counting.current.then(async () => {
       ++planChanges.current;
       try { gotPlan(await api.planChange({ op: "count", recipe: d.recipe, kind: d.kind, count }, me)); }
       catch (e) { didntSave(problemOf(e)); refreshPlan(); throw e; }
+      finally { --planSaving.current; }
     });
     counting.current = run.catch(() => {});
     return run;
@@ -253,28 +322,35 @@ export default function App() {
   function quickAdd(d: NewDish) {
     const temp = { ...d, id: `adding-${Date.now()}`, added: "" };
     setPlan((p) => (p ? { ...p, dishes: [...p.dishes, temp] } : p));
+    ++planSaving.current;
     const run = counting.current.then(async () => {
       ++planChanges.current;
       try { gotPlan(await api.savePlan([d], [], null, me)); }
       catch (e) { didntSave(problemOf(e)); setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((x) => x.id !== temp.id) } : p)); refreshPlan(); }
+      finally { --planSaving.current; }
     });
     counting.current = run;
   }
   /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
   async function changePlan(c: PlanChange): Promise<string | null> {
-    if (c.op === "clear") setPlan((p) => (p ? { ...p, dishes: [] } : p));
+    // A new plan empties the lists too (what's in the Safeway cart comes back with the server's list).
+    const clearing = c.op === "clear";
+    if (clearing) { setPlan((p) => (p ? { ...p, dishes: [] } : p)); ++listChanges.current; ++listSaving.current; setList((l) => l && { ...l, items: [] }); }
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
+    ++planSaving.current;
     try {
       ++planChanges.current;
       gotPlan(await api.planChange(c, me));
       return null;
-    } catch (e) { refreshPlan(); return problemOf(e); }
+    } catch (e) { refreshPlan(); if (clearing) refreshList(); return problemOf(e); }
+    finally { --planSaving.current; if (clearing) --listSaving.current; }
   }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
   async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState): Promise<string | null> {
     const mine = ++listChanges.current;
     if (show) setList((l) => (l ? show(l) : l));
+    ++listSaving.current;
     try {
       const l = await api.change(c);
       if (mine !== listChanges.current) return null; // a later change's answer is newer
@@ -286,13 +362,19 @@ export default function App() {
       didntSave(errorText(e));
       refreshList();
       return errorText(e);
-    }
+    } finally { --listSaving.current; }
   }
   const lists: ListsActions = {
-    add: (text, store) => change({ op: "add", text, by: me, ...(store && { store }) }),
-    check: (it, checked) => change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
-    move: (it, to) => change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
-    done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked)) })),
+    // Shown at once as a stand-in row (Nov 11: always responsive); one already on the list adds up there, on the server.
+    add: (text, store) => {
+      const e = parseEntry(text);
+      return change({ op: "add", text, by: me, ...(store && { store }) }, (l) => (l.items.some((x) => !x.checked && !x.check && norm(x.item) === norm(e.item) && (!store || x.store === store))
+        ? l : { ...l, items: [...l.items, standInItem(e.item, e.quantity, {}, store)] }));
+    },
+    check: (it, checked) => isStandIn(it.id) ? undefined : change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
+    move: (it, to) => isStandIn(it.id) ? undefined : change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
+    // `cart`: the ids in the Safeway cart, which come off as bought too.
+    done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked) && !cart?.includes(x.id)) })),
     putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
   };
   const stock: StockActions = {
@@ -301,7 +383,7 @@ export default function App() {
     // marked Have. Unanswered again: a dinner's thing waits to be checked; anything else's row goes.
     answer: (r, ans) => {
       const it = r.item;
-      if (it?.id.startsWith("new-")) return; // its save is on the way; the row answers again once it's back
+      if (it && isStandIn(it.id)) return; // its save is on the way; the row answers again once it's back
       const mark = (check: boolean, have: boolean) => (l: ListState) => ({ ...l, items: l.items.map((x) => (x.id === it!.id ? { ...x, check, have } : x)) });
       if (it && ans === "need") return change({ op: "need", id: it.id }, mark(false, false));
       if (it && ans === "have") return change({ op: "haveIt", id: it.id }, mark(true, true));
@@ -309,7 +391,7 @@ export default function App() {
       if (it) return change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }));
       if (ans === "check") return;
       // Shown at once (Nov 11, Matt: "a long lag tapping Have Need"): a stand-in row until the server's list comes back.
-      const temp: Item = { id: `new-${Date.now()}`, item: r.name, quantity: r.staple?.quantity ?? "", store: r.store, section: r.section, for: "", addedBy: me, addedAt: "", checked: false, check: ans === "have", have: ans === "have" };
+      const temp = standInItem(r.name, r.staple?.quantity ?? "", { check: ans === "have", have: ans === "have" }, r.store, r.section);
       const showNew = (l: ListState) => ({ ...l, items: [...l.items, temp] });
       if (ans === "need" && r.frozen) {
         const f = r.frozen;
@@ -318,7 +400,12 @@ export default function App() {
       }
       change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) }, showNew);
     },
-    keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
+    // Shown at once (Nov 11): the new thing's row, filed where Simmer would file it, until the server's list comes back.
+    keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }, (l) => {
+      if (l.staples.some((x) => norm(x.item) === norm(text))) return l;
+      const f = known(text);
+      return { ...l, staples: [...l.staples, { item: text, store: f?.store ?? "safeway", section: section ?? f?.section ?? "pantry", quantity: "", product: "" }] };
+    }),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
     mealMove: (it, section) => change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
     keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
@@ -423,17 +510,13 @@ export default function App() {
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
           onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
-          onAddToWeek={kindOf(open) ? () => quickAdd({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
+          onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => quickAdd({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
-      {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} onClose={() => setSheet(null)} onSaved={(all, saved) => {
-        gotRecipes(all);
-        setSheet(null);
-        if (saved.length === 1) { const id = saved[0]; scrollAppTo(0); setStack((st) => [...(st[st.length - 1].kind === "recipe" ? st.slice(0, -1) : st), { kind: "recipe", id }]); }
-        else onTab("recipes"); // several saved (her meal ideas): show the whole collection, where they now are
-      }} />}
+      {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}
+        onSave={(ds, duplicates, step) => { setRetry(null); saveNew(ds, duplicates, step); }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onClose={() => { setSheet(null); setRetry(null); }} />}
       {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} ticks={retry?.ticks} onAdd={(buy, pantry, ticks) => { setRetry(null); addToList(toList, buy, pantry, ticks); }} onClose={() => { setSheet(null); setListing(null); setRetry(null); }} />}
       {settings && (
