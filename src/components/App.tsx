@@ -303,7 +303,8 @@ export default function App() {
     have: (it) => (fromDinner(it)
       ? change({ op: "unneed", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: true } : x)) }))
       : change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }))),
-    need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
+    answer: (it, ans) => change(ans === "need" ? { op: "need", id: it.id } : ans === "have" ? { op: "haveIt", id: it.id } : { op: "unneed", id: it.id },
+      (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: ans !== "need", have: ans === "have" } : x)) })),
     takeOut: (f) => {
       setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
       api.freezer({ op: "use", id: f.id }).then(setKitchen, failed);
