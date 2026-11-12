@@ -1,5 +1,5 @@
 "use client";
-// Shop's Find and Cart: searching Safeway for a list item and putting products in the Safeway cart, and the cart itself.
+// Shop's Safeway side: searching Safeway for a list item (Find) and putting products in the Safeway cart.
 // Searches and cart changes are jobs done by the Safeway helper in Chrome on a computer (lib/jobs.ts); the panel at
 // the computer shows this same screen, so it works the same everywhere. Product pictures are Safeway's own, shown from
 // Safeway's addresses (nothing's stored).
@@ -14,7 +14,7 @@ import manifest from "../../extension-working/manifest.json";
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /**
- * Simmer on the computer is older than this one: where to get the new one. A quiet group at the end of the Safeway list,
+ * Simmer on the computer is older than this one: where to get the new one. A quiet group at the end of Shop,
  * so it never pushes the list down when it shows (Nov 11: no bars).
  */
 export function UpdateNote() {
@@ -48,7 +48,7 @@ export function useSafeway() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [answering, setAnswering] = useState<boolean | null>(null);
-  // Not heard from for a couple of minutes: Lists greys the cart and turns the Safeway rows into a checklist (Nov 3).
+  // A job the helper didn't pick up: Shop drops its Safeway controls and the Safeway rows are a plain checklist (Nov 3).
   const [away, setAway] = useState(false);
   const [outdated, setOutdated] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -175,14 +175,15 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
  * responsive); quick taps go to Safeway as one change (useSafeway's setQty). `off`: Safeway can't be reached just now,
  * so neither can be pressed (Nov 3).
  */
-export function Stepper({ qty, name, off, onChange }: { qty: number; name: string; off?: boolean; onChange: (n: number) => void }) {
-  const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
+export function Stepper({ qty, name, off, compact, onChange }: { qty: number; name: string; off?: boolean; compact?: boolean; onChange: (n: number) => void }) {
+  // `compact`: on a Shop row, beside the name, so the name keeps room.
+  const btn = `glass flex ${compact ? "size-8" : "size-9"} items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100`;
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className={`flex shrink-0 items-center ${compact ? "gap-1" : "gap-1.5"}`}>
       <button className={btn} disabled={off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
         <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
       </button>
-      <span className="flex w-6 justify-center t-headline tabular-nums" aria-label={`${qty} in the cart`}>{qty}</span>
+      <span className={`flex ${compact ? "w-5" : "w-6"} justify-center t-headline tabular-nums`} aria-label={`${qty} in the cart`}>{qty}</span>
       <button className={btn} aria-label={`One more ${name}`} disabled={off || qty >= 24} onClick={() => onChange(qty + 1)}>
         <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
       </button>

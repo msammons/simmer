@@ -29,12 +29,12 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   button top right (`OpenSettings`, set once in `App.tsx`, so screens don't pass it), then one large title in the same
   place. Settings holds who's using the phone, Add recipes, and the look. Drill-in screens get a round back chevron
   before the title, named for the screen below; swiping right also goes back (`useSwipe`).
-- Navigation is one back stack in `App.tsx`: a tab (Meals, Shop, or Recipes) with screens pushed on it (a
+- Navigation is one back stack in `App.tsx`: a tab (Recipes, Meals, Stock or Shop) with screens pushed on it (a
   recipe). Back pops; a tab tap starts that tab fresh. The tab bar shows on every screen, the stack's tab lit. Sheets
   name what they show (a week, a night, an item) rather than holding a copy, so a refresh shows in them. A passcode
   turned down by any request (the client sends `SIGNED_OUT`) closes everything and asks for it again.
-- `BrandBar`'s `below` pins a switch inside the top bar, under the same blurred backing (Shop's List · Find · Cart).
-- `TabBar`: the three tabs in one Liquid Glass capsule. There is no search; the Recipes tab lists the collection by
+- `BrandBar`'s `below` pins a switch inside the top bar, under the same blurred backing (no screen uses one now).
+- `TabBar`: the four tabs in one Liquid Glass capsule. There is no search; the Recipes tab lists the collection by
   kind, each kind opening to all of it (the plan's recipe picker still searches).
 - `Group`/`Row` (inset grouped lists), `Button` (primary is tinted glass; no gradients on anything you tap), `Sheet`
   (one grabber, pull down to close, page dots, rides above the keyboard), `EmptyState`, `IconBadge`.
@@ -49,10 +49,15 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 
 ## Shop and Safeway
 
-The Shop tab (`components/Shop.tsx`, `Safeway.tsx`, logic in `lib/shop.ts` with tests) switches between **List** (the
-shared list by store; Safeway items show "In the cart · 2" once added, and tapping one opens Find on it), **Find** (one
-Safeway item at a time: Simmer's own search words, Safeway's results with pictures and prices, the usual first, Add
-then − / +) and **Cart** (Simmer's copy of the Safeway cart, the total, and "Check out on Safeway").
+The Shop tab (`components/Shop.tsx`, with Find and the cart's workings in `Safeway.tsx`, logic in `lib/shop.ts` with
+tests) is one page, grouped by store: Safeway, then Trader Joe's, then Costco (a store with nothing doesn't show). Every
+row is the same height with a tick (got it, in the store or delivered), the household's name for the thing, and one small
+line: for a Safeway thing with a chosen product, Safeway's product name and "Need …"; otherwise the amount. While Safeway
+can be reached, a Safeway row also has Add (its usual into the cart), Find (Safeway's choices with pictures, in a sheet)
+or − n + once it's in the cart; the Safeway header shows what's in the cart and Auto-fill, and things put in the cart on
+Safeway's own site end the Safeway group. One Done shopping (confirmed) takes what's ticked off in every store; "Ordered?
+Take the cart off the list" ends the Safeway group while the cart has things in it. Old `?open=lists` addresses land on
+Shop, as the helper panel's `?open=shop` does.
 
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
 Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" tab,
@@ -61,10 +66,10 @@ time that the server answers once the job's finished, or after about 20 s: `wait
 Simmer's cart ("Safeway cart" tab, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway tab, now with the product's picture address; pictures
 are shown from Safeway, never stored). The helper's last check-in is kept too, so when the computer isn't answering
-Find says so at once rather than waiting; after two minutes without one, Lists greys the cart and the Safeway rows
-become a checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
+Find says so at once rather than waiting; a job the helper doesn't pick up drops Shop's Safeway controls, and the Safeway
+rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
-order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Done shopping for Safeway clears what's ticked or in the cart, and empties the cart. Simmer may be
+order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Ordered? takes what's in the cart off the list and empties the cart. Simmer may be
 framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the
 passcode by message from its parent, only from a Chrome helper page, never from the address.
 
@@ -102,8 +107,9 @@ passcode by message from its parent, only from a Chrome helper page, never from 
 
 - `npm run dev` for local work (no Sheet needed: it reads `data/*.csv`).
 - `npm test` (vitest), `npm run lint`, `npx tsc --noEmit`.
-- Browser smoke test (any day, sample data, phone and iPad sizes): start a server with `HOUSEHOLD_PASSCODE=test123`
-  (e.g. `npx next dev -p 3202`), then `URL=http://localhost:3202/ node scripts/smoke.cjs`.
+- Browser smoke test (any day, sample data; behaviour once at phone size, layout in phone light, phone dark and one
+  1000 px wide run): start a server with `HOUSEHOLD_PASSCODE=test123` and blank Redis and Google settings (e.g.
+  `npx next start -p 3202`), then `URL=http://localhost:3202/ node scripts/smoke.cjs`.
 - After changing `public/icon.svg`: `npm run icons`.
 
 ## Setting up production

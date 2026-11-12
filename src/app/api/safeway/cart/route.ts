@@ -7,7 +7,7 @@ import { loadCart, loadPicks } from "@/lib/safeway";
 /**
  * GET: the Safeway cart as Simmer knows it (what was added through Simmer), the picks (each item's usual product, with
  * its picture), whether the helper on the computer is answering (and when it last checked in, and whether that's long
- * enough ago that Lists greys the cart),
+ * enough ago that Shop drops its Safeway controls),
  * and whether it's older than the one this Simmer ships. Changes to the cart go through jobs
  * (/api/safeway/jobs, setQty), so they happen in the real Safeway cart first.
  */
