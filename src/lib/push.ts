@@ -27,7 +27,7 @@ export async function wakeHelper(): Promise<void> {
     await webpush.sendNotification(push.sub, null, { vapidDetails: keys, TTL: 60, urgency: "high", timeout: 5000 });
   } catch (e) {
     const code = (e as { statusCode?: number }).statusCode;
-    if (code === 404 || code === 410) await savePush(null);
+    if (code === 404 || code === 410) { console.error("the helper's wake-up subscription is gone; it subscribes again when it next looks for jobs"); await savePush(null); }
     else console.error("couldn't wake the helper", code ?? e);
   }
 }

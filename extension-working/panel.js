@@ -66,6 +66,8 @@ window.addEventListener("message", async (e) => {
   if (e.source !== frame.contentWindow || e.origin !== address) return;
   if (e.data?.type === "simmer:ready") frame.contentWindow.postMessage({ type: "simmer:passcode", passcode: await store.get("passcode", "") }, address);
   if (e.data?.type === "simmer:signed-out") setup({ address, error: "Wrong passcode." });
+  // A job queued from here (Nov 12): look for it now, without waiting for Simmer's wake-up push.
+  if (e.data?.type === "simmer:queued") chrome.runtime.sendMessage({ type: "simmer:check" }).catch(() => {});
 });
 
 open();

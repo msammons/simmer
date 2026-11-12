@@ -82,7 +82,10 @@ export async function POST(req: Request) {
       case "push": {
         const s = b.subscription, key = text(b.key, 200);
         const endpoint = text(s?.endpoint, 1000), p256dh = text(s?.keys?.p256dh, 200), auth = text(s?.keys?.auth, 100);
-        if (!key || key !== pushKey() || !pushService(endpoint) || !p256dh || !auth) return Response.json({ error: "Unknown change." }, { status: 400 });
+        if (!key || key !== pushKey() || !pushService(endpoint) || !p256dh || !auth) {
+          console.error("helper's wake-up subscription turned down", { sameKey: key === pushKey(), host: (() => { try { return new URL(endpoint).hostname; } catch { return ""; } })(), keys: Boolean(p256dh && auth) });
+          return Response.json({ error: "Unknown change." }, { status: 400 });
+        }
         await savePush({ key, sub: { endpoint, keys: { p256dh, auth } } });
         return Response.json({ ok: true }, noStore);
       }
@@ -90,6 +93,8 @@ export async function POST(req: Request) {
         const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40) };
         return Response.json({ job: await finishJob(text(b.id, 40), b.op === "done", result) }, noStore);
       }
+      // Something the helper wants seen in Simmer's logs (Nov 12: why it can't be woken).
+      case "note": console.error("helper:", text(b.what, 300)); return Response.json({ ok: true }, noStore);
       default: return Response.json({ error: "Unknown change." }, { status: 400 });
     }
   } catch (e) { return failed(e); }
