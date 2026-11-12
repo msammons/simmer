@@ -3,7 +3,7 @@ import { recordTrip } from "@/lib/plan";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { clearCart, loadCart } from "@/lib/safeway";
-import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, needItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, SECTIONS, STORES, type Item, type Section, type Store } from "@/lib/groceries";
+import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, SECTIONS, STORES, type Item, type Section, type Store } from "@/lib/groceries";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
 const isSection = (s: unknown): s is Section => typeof s === "string" && (SECTIONS as readonly string[]).includes(s);
@@ -45,6 +45,7 @@ export async function POST(req: Request) {
         break;
       }
       case "need": await needItem(clean(b.id, 40)); break;
+      case "unneed": await unneedItem(clean(b.id, 40)); break;
       case "have": await haveTheRest(); break;
       case "remove": await removeItem(clean(b.id, 40)); break;
       case "clear": {

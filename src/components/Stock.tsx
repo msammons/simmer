@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
-import { norm } from "@/lib/words";
+import { rowsOf, type StockRow } from "@/lib/stock-rows";
 import { STORE_NAMES } from "./Shop";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
 
@@ -35,33 +35,6 @@ export type StockActions = {
   keepMove: (item: string, section: Section) => void;
   keepRemove: (s: Staple) => void;
 };
-
-type StockRow = { key: string; name: string; section: Section; have: boolean; meal: Item | null; open: Item | null; staple: Staple | null; frozen: Frozen | null; store: Store };
-
-function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRow[] {
-  const items = list?.items ?? [];
-  const onList = (name: string) => items.find((i) => !i.checked && !i.check && norm(i.item) === norm(name)) ?? null;
-  const mealOf = (name: string) => items.find((i) => i.check && !i.checked && norm(i.item) === norm(name)) ?? null;
-  const rows: StockRow[] = (list?.staples ?? []).map((s) => {
-    const open = onList(s.item);
-    return { key: `s|${norm(s.item)}`, name: s.item, section: s.section, have: !open, meal: mealOf(s.item), open, staple: s, frozen: null, store: s.store };
-  });
-  const known = new Set(rows.map((r) => norm(r.name)));
-  // What the meals need that isn't kept as a staple: highlighted in its section until it's checked.
-  for (const it of items) {
-    if (!it.check || it.checked || known.has(norm(it.item))) continue;
-    known.add(norm(it.item));
-    rows.push({ key: `m|${it.id}`, name: it.item, section: it.section, have: true, meal: it, open: null, staple: null, frozen: null, store: it.store });
-  }
-  for (const f of kitchen?.freezer ?? []) {
-    if (known.has(norm(f.item))) continue;
-    known.add(norm(f.item));
-    const open = onList(f.item);
-    rows.push({ key: `f|${f.id}`, name: f.item, section: "freezer", have: !open, meal: null, open, staple: null, frozen: f, store: (f.store as Store) || "safeway" });
-  }
-  return rows;
-}
-
 
 export function StockScreen({ list, kitchen, act }: { list: ListState | null; kitchen: Kitchen | null; act: StockActions }) {
   const [text, setText] = useState("");
