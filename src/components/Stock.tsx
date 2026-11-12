@@ -8,7 +8,7 @@ import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
  * (Nov 11, Matt): every row is answered with one switch, Have | Need (you can't have and need a thing at once); Need puts
  * it on its store's list, Have marks it checked, and the lit side tapped again makes it unanswered. What the planned
- * dinners need is highlighted in its own section, and counted until each is answered. ⋯ moves a thing to
+ * dinners need is highlighted in its own section, with how much, and counted until each is answered. ⋯ moves a thing to
  * another section, takes it out of Stock, or keeps a dinner's thing in Stock for good. A new plan clears every answer.
  * Nothing goes on a list by itself (Nov 10: no Every week).
  */
@@ -63,7 +63,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   );
 }
 
-/** One thing: its name (whole on a phone: no amount beside it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
+/** One thing: its name (a meal thing's amount under it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
 function StockItem({ r, act, onRemove }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void }) {
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
@@ -76,8 +76,13 @@ function StockItem({ r, act, onRemove }: { r: StockRow; act: StockActions; onRem
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div className={`flex min-h-[3.25rem] items-center gap-2 py-1.5 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
-      <span className="min-w-0 flex-1 truncate t-body">{cap(r.name)}</span>
+    <div className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
+      {/* A meal thing's amount on its own line (Matt, Nov 11: "we need to know amounts"), so the name stays whole. Every
+          row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate t-body">{cap(r.name)}</span>
+        {r.amount && <span className="block truncate t-foot text-muted">{r.amount}</span>}
+      </span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">
         {side("have", "Have")}
         {side("need", "Need")}
