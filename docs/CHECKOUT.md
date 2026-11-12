@@ -23,7 +23,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 **Turning it on**
 - Off by default: a Settings switch, plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
-- A spending limit per order, set in Settings. Over it: refused before the helper touches Safeway.
+- A spending limit per order, set in Settings. Over it: refused before the helper touches Safeway. It starts at $0
+  (Sam, Nov 12), so no order can go through until someone in the household raises it; a missing or unreadable limit
+  counts as $0.
 - The pickup store and the card's last 4 digits are set once in Settings. Safeway showing a different store or card: stop.
 
 **Each order**
