@@ -278,7 +278,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     // A kept thing works the same way.
     await clear("Milk");
     const milkHeight = (await page.getByRole("group", { name: "Have or need Milk" }).boundingBox())?.height;
-    await needOf("Milk").tap(); await page.waitForTimeout(1500);
+    await needOf("Milk").tap(); await page.waitForTimeout(150);
+    ok(`${tag}: Need lights at once, before the save comes back`, (await answerOf("Milk")) === "need");
+    await page.waitForTimeout(1500);
     ok(`${tag}: Need puts a kept thing on the list`, (await answerOf("Milk")) === "need");
     await haveOf("Milk").tap(); await page.waitForTimeout(1500);
     ok(`${tag}: Have switches it off the list, marked checked`, (await answerOf("Milk")) === "have");

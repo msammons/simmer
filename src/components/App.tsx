@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Kind, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
@@ -301,18 +301,22 @@ export default function App() {
     // marked Have. Unanswered again: a dinner's thing waits to be checked; anything else's row goes.
     answer: (r, ans) => {
       const it = r.item;
+      if (it?.id.startsWith("new-")) return; // its save is on the way; the row answers again once it's back
       const mark = (check: boolean, have: boolean) => (l: ListState) => ({ ...l, items: l.items.map((x) => (x.id === it!.id ? { ...x, check, have } : x)) });
       if (it && ans === "need") return change({ op: "need", id: it.id }, mark(false, false));
       if (it && ans === "have") return change({ op: "haveIt", id: it.id }, mark(true, true));
       if (it && r.meal) return change({ op: "unneed", id: it.id }, mark(true, false));
       if (it) return change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }));
       if (ans === "check") return;
+      // Shown at once (Nov 11, Matt: "a long lag tapping Have Need"): a stand-in row until the server's list comes back.
+      const temp: Item = { id: `new-${Date.now()}`, item: r.name, quantity: r.staple?.quantity ?? "", store: r.store, section: r.section, for: "", addedBy: me, addedAt: "", checked: false, check: ans === "have", have: ans === "have" };
+      const showNew = (l: ListState) => ({ ...l, items: [...l.items, temp] });
       if (ans === "need" && r.frozen) {
         const f = r.frozen;
         setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
         api.freezer({ op: "use", id: f.id }).then(setKitchen, failed);
       }
-      change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) });
+      change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) }, showNew);
     },
     keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
