@@ -1,0 +1,61 @@
+# Ordering from Simmer (Safeway pickup) — design and protections
+
+Agreed with Sam, Nov 12 2026. This is the most sensitive thing Simmer does: it spends money. **No room for error.** Every
+change to checkout code follows this file; if a change would weaken a rule here, it needs Sam's explicit yes first.
+
+## Scope
+
+Pickup only, at the household's usual store. Delivery may come later (a Pickup / Delivery switch and a tip row).
+
+## The flow
+
+1. Shop → Safeway heading → **Check out** (only with something in the cart and the helper reachable, and only when
+   ordering is turned on in Settings).
+2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then what
+   the helper reads from Safeway's checkout: the pickup store, the windows (earliest free one chosen), substitutions,
+   the card, the total. Shimmer while it reads.
+3. **Place order · $128.40** → Face ID → the confirm sheet (store, window, card, total; unusual items highlighted) →
+   the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's change/cancel cutoff and a link.
+   The cart comes off the list as bought.
+4. Checking in on arrival stays in Safeway's own app.
+
+## Protections (all required)
+
+**Turning it on**
+- Off by default: a Settings switch, plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
+- A spending limit per order, set in Settings. Over it: refused before the helper touches Safeway.
+- The pickup store and the card's last 4 digits are set once in Settings. Safeway showing a different store or card: stop.
+
+**Each order**
+- Face ID (a passkey) on the phone to place it.
+- The approval is fixed at the tap: every product and count, the store, the window, the card's last 4, the total. The
+  helper checks Safeway's final page against all of it; any difference (a cent, an item) stops it, and Simmer shows the
+  new figures to approve again.
+- The cart freezes at the tap: any cart change after it cancels the approval.
+- The approval expires after 2 minutes.
+- Single use, never retried. If the helper loses track after the click, it reads Safeway's order history to find out;
+  it never clicks again. Worst case: "Simmer isn't sure; check Safeway". Never a double order.
+- The helper presses only Safeway's Place order button, found by its exact words on the final page; nothing else. Not
+  where expected: stop.
+- Unusual things are highlighted on the confirm sheet: a count of 5 or more, one item over $30, a total more than 15%
+  above Simmer's estimate (tunable).
+- Only a helper version that has passed a dry run on this account can place orders (an update needs a new dry run).
+- A record of every attempt (what was approved, what Safeway showed, what was pressed, the order number), kept even
+  when it fails.
+
+**Testing**
+- Automated tests never touch Safeway: they run against saved copies of Safeway's checkout pages, including broken ones
+  (a changed total, a missing button, a page that stalls, a different card or store).
+- Dry runs: every step for real on the account, stopping one press short ("would place $128.40, Thu 4–5 pm"). Several
+  before the real button is turned on.
+- No one but the household places a real order, and only by their own tap. The first real one: a small cart, with the
+  Mac in view.
+- An independent adversarial review of the checkout code before it ships.
+
+## Phases
+
+1. **Read-only look** (now): a helper job that loads Safeway's checkout pages by address and saves what each shows.
+   It presses nothing. If going further would need a press, it stops and says so. Started from a temporary Settings
+   row ("Look at Safeway's checkout"), removed afterwards.
+2. The sheet, the protections and dry runs, built to match what the look found.
+3. Turning on real orders, after dry runs match.
