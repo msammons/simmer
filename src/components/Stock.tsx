@@ -32,6 +32,8 @@ export type StockActions = {
   takeOut: (f: Frozen) => void;
   keepAdd: (text: string, section?: Section) => void;
   keepMove: (item: string, section: Section) => void;
+  /** A dinner's thing that isn't kept in Stock: moved to another section (it's on the list under that section too). */
+  mealMove: (it: Item, section: Section) => void;
   keepRemove: (s: Staple) => void;
 };
 
@@ -75,17 +77,24 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                   <span className="min-w-0 flex-1 truncate t-body">{cap(r.name)}</span>
                   {r.meal?.quantity && <span className="shrink-0 t-sub text-muted">{r.meal.quantity}</span>}
                 </button>
-                {r.staple && (
+                {/* ⋯ on every row that has something to offer (Matt, Nov 11: meal things had none); the rest keep its space. */}
+                {r.staple || r.meal ? (
                   <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                     <span aria-hidden>⋯</span>
                     <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                      onChange={(e) => { const v = e.target.value; if (v === "remove") setRemoving(r.staple); else if (v) act.keepMove(r.name, v as Section); }}>
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "remove") setRemoving(r.staple);
+                        else if (v === "keep") act.keepAdd(r.name, r.section);
+                        else if (v && r.staple) act.keepMove(r.name, v as Section);
+                        else if (v && r.meal) act.mealMove(r.meal, v as Section);
+                      }}>
                       <option value="" disabled>{cap(r.name)}</option>
                       {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
-                      <option value="remove">Remove from Stock</option>
+                      {r.staple ? <option value="remove">Remove from Stock</option> : <option value="keep">Always keep in Stock</option>}
                     </select>
                   </label>
-                )}
+                ) : <span aria-hidden className="size-9 shrink-0" />}
               </div>
             ))}
           </Group>
