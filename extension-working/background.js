@@ -34,6 +34,8 @@ async function check() {
       // Once per version, so files that aren't there yet can't make it reload over and over.
       if (r?.version && newer(r.version, VERSION) && (await store.get("reloadedFor", "")) !== r.version) {
         await store.set("reloadedFor", r.version);
+        // A job taken in the same breath goes back, for the reloaded helper to take (Nov 12: one was lost this way).
+        if (job) await simmer("POST", { op: "again", id: job.id }, "/api/safeway/jobs").catch(() => {});
         chrome.runtime.reload();
         return;
       }
