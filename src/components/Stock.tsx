@@ -1,14 +1,14 @@
 "use client";
 import { useState } from "react";
 import { type Item, type Kitchen, type ListState, type Section, type Staple } from "@/lib/client";
-import { rowsOf, toCheck, type Answer, type StockRow } from "@/lib/stock-rows";
+import { rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
  * (Nov 11, Matt): every row is answered with one switch, Have | Need (you can't have and need a thing at once); Need puts
  * it on its store's list, Have marks it checked, and the lit side tapped again makes it unanswered. What the planned
- * dinners need is highlighted in its own section, with how much, and counted until each is answered. ⋯ moves a thing to
+ * dinners need is highlighted in its own section, with how much (no legend: Matt, Nov 11). ⋯ moves a thing to
  * another section, takes it out of Stock, or keeps a dinner's thing in Stock for good. A new plan clears every answer.
  * Nothing goes on a list by itself (Nov 10: no Every week).
  */
@@ -29,7 +29,6 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const [text, setText] = useState("");
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const rows = rowsOf(list, kitchen);
-  const left = toCheck(rows);
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { act.keepAdd(text.trim()); setText(""); } };
   return (
     <div className="space-y-5">
@@ -41,12 +40,6 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
       {!list && <Held />}
-      {list && rows.length > 0 && (
-        <p className="flex items-center gap-1.5 px-4 t-foot text-muted">
-          <span className="flex-1">Need puts it on the list.</span>
-          {rows.some((r) => r.meal) && <><span aria-hidden className="size-3.5 rounded-[4px] bg-accent/15" /> {left ? `In meals · ${left} to check` : "In meals · all checked"}</>}
-        </p>
-      )}
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
