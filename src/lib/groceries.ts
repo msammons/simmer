@@ -16,7 +16,11 @@ export const SECTIONS = ["fresh", "pantry", "freezer", "household"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** check: a pantry item from the plan, waiting in "Check you have these" until she says she needs it. */
-export type Item = { id: string; item: string; quantity: string; store: Store; section: Section; for: string; addedBy: string; addedAt: string; checked: boolean; check: boolean };
+/**
+ * check: a dinner's thing waiting in Stock's "For this plan" (not on a list). have: she checked and has it (Nov 11: Have |
+ * Need), so it stays off the list and shows as Have; still a check, so every list leaves it out.
+ */
+export type Item = { id: string; item: string; quantity: string; store: Store; section: Section; for: string; addedBy: string; addedAt: string; checked: boolean; check: boolean; have?: boolean };
 /**
  * A thing the house keeps. It goes on a list only when someone taps it on Stock as out (Nov 10: no Every week; nothing
  * comes back on a list by itself, since deciding to buy it again is that tap).
@@ -55,10 +59,11 @@ async function local(tab: string) {
 // A failed read throws: read as empty, it would show an empty list or Stock, and a change written after it would erase the tab.
 const rowsOf = (tab: string) => (sheetsConfigured() ? readTabIfAny(tab) : local(tab));
 
+const haveIt = (v: string) => v.trim().toLowerCase() === "have";
 function toItems(rows: string[][]): Item[] {
   return records(rows).flatMap((r) => (r.get("id") && r.get("item") ? [{
     id: r.get("id"), item: r.get("item"), quantity: r.get("quantity"), store: asStore(r.get("store")), section: asSection(r.get("section")),
-    for: r.get("for"), addedBy: r.get("added_by"), addedAt: r.get("added_at"), checked: yes(r.get("checked")), check: yes(r.get("check")),
+    for: r.get("for"), addedBy: r.get("added_by"), addedAt: r.get("added_at"), checked: yes(r.get("checked")), check: yes(r.get("check")) || haveIt(r.get("check")), have: haveIt(r.get("check")),
   }] : []));
 }
 function toStaples(rows: string[][]): Staple[] {
@@ -202,7 +207,7 @@ export async function addItem(text: string, by: string, forWhat = "", filing?: {
 
 const cellsOf = (row: Item): Record<string, string> => ({
   id: row.id, item: row.item, quantity: row.quantity, store: row.store, section: row.section, for: row.for, added_by: row.addedBy, added_at: row.addedAt,
-  checked: row.checked ? "yes" : "no", checked_at: "", check: row.check ? "yes" : "", // ticked stays ticked when Undo puts it back
+  checked: row.checked ? "yes" : "no", checked_at: "", check: checkCell(row), // ticked stays ticked when Undo puts it back
 });
 
 /** New rows at the end of the List tab, written by its own headers (a missing column is added first). `existing`: the tab as just read. */
@@ -384,7 +389,7 @@ export async function addItems(entries: { item: string; quantity: string; for: s
   const filings = await fileAll(fresh.map((x) => x.item));
   fresh.forEach((x, i) => Object.assign(x, filings[i]));
   for (const x of fresh) x.check = kept.has(norm(x.item)) || (x.check && x.section === "pantry");
-  await setManyCells([...merged].map(([id, m]) => [id, { quantity: m.quantity, for: m.for, check: items.find((x) => x.id === id)!.check ? "yes" : "" }]), false, rows);
+  await setManyCells([...merged].map(([id, m]) => [id, { quantity: m.quantity, for: m.for, check: checkCell(items.find((x) => x.id === id)!) }]), false, rows);
   await appendItems(fresh, rows);
   // What went on a list; the pantry highlighted in Stock isn't counted ("Added 45 things" with 26 on the lists, Nov 3).
   return fresh.filter((x) => !x.check).length + [...merged.keys()].filter((id) => !items.find((x) => x.id === id)!.check).length;
@@ -392,6 +397,10 @@ export async function addItems(entries: { item: string; quantity: string; for: s
 
 /** "Check you have these": she needs this one (it joins the list), or has the rest (they come off). */
 export const needItem = (id: string) => setCells(id, { check: "" });
+/** Checked in the cupboard and there (Have): off every list, shown as Have in "For this plan". */
+export const haveItem = (id: string) => setCells(id, { check: "have" });
+/** What the check cell holds for an item. */
+const checkCell = (x: Pick<Item, "check" | "have">) => (x.have ? "have" : x.check ? "yes" : "");
 /** Unticked on Stock after all (Nov 11): a dinner's pantry thing goes back to highlighted, not off the list for good. */
 export const unneedItem = (id: string) => setCells(id, { check: "yes" });
 export async function haveTheRest(): Promise<void> {
@@ -434,7 +443,7 @@ async function setManyCells(changes: CellChanges, strict = false, rows?: string[
     for (const [id, change] of changes) {
       const it = m.list.find((x) => x.id === id);
       if (!it) { if (strict) throw new AppError("That item isn't on the list anymore."); continue; }
-      Object.assign(it, { ...(change.quantity !== undefined && { quantity: change.quantity }), ...(change.store && { store: asStore(change.store) }), ...(change.section && { section: asSection(change.section) }), ...(change.checked !== undefined && { checked: yes(change.checked) }), ...(change.for !== undefined && { for: change.for }), ...(change.check !== undefined && { check: yes(change.check) }) });
+      Object.assign(it, { ...(change.quantity !== undefined && { quantity: change.quantity }), ...(change.store && { store: asStore(change.store) }), ...(change.section && { section: asSection(change.section) }), ...(change.checked !== undefined && { checked: yes(change.checked) }), ...(change.for !== undefined && { for: change.for }), ...(change.check !== undefined && { check: yes(change.check) || haveIt(change.check), have: haveIt(change.check) }) });
     }
     return;
   }
