@@ -18,7 +18,9 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
   const onList = (name: string) => items.find((i) => !i.checked && !i.check && norm(i.item) === norm(name)) ?? null;
   // Highlighted for a dinner: still to decide (check), or ticked since (a dinner's pantry thing now on the list).
   const forMeal = (i: Item) => !i.checked && (i.check || (i.section !== "fresh" && fromDinner(i)));
-  const mealOf = (name: string) => items.find((i) => forMeal(i) && norm(i.item) === norm(name)) ?? null;
+  // A kept thing a dinner needs stays highlighted ticked or not, whatever its section (Matt, Nov 11: tortillas, filed
+  // under Fresh, lost it when ticked). Only the rows for things not kept leave out a dinner's fresh groceries.
+  const mealOf = (name: string) => items.find((i) => !i.checked && (i.check || fromDinner(i)) && norm(i.item) === norm(name)) ?? null;
   const rows: StockRow[] = (list?.staples ?? []).map((s) => {
     const open = onList(s.item);
     return { key: `s|${norm(s.item)}`, name: s.item, section: s.section, have: !open, meal: mealOf(s.item), open, staple: s, frozen: null, store: s.store };
