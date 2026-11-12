@@ -200,19 +200,24 @@ export function EditSheet({ r, initial, onSave, onClose }: { r: Recipe; initial?
   );
 }
 
+export type AddStep = Step;
 type Step = { at: "choose" } | { at: "link" } | { at: "text" } | { at: "pick"; found: Draft[] } | { at: "review"; d: Draft };
 
 /**
  * Add recipes: from a link or typed in. Simmer reads it and shows what it found; nothing is saved until she says so.
  * One recipe goes straight to its review page; a list (her meal ideas) gets a checkbox each.
  */
-export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe[]; onSaved: (all: Recipe[], saved: string[]) => void; onClose: () => void }) {
-  const [step, setStep] = useState<Step>({ at: "choose" });
+export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
+  recipes: Recipe[]; initial?: Step;
+  /** Save: the sheet closes at once and the recipes show straight away; `step` is where to open again if it fails. */
+  onSave: (ds: Draft[], duplicates: "skip" | "replace" | undefined, step: Step) => void; onClose: () => void;
+}) {
+  const [step, setStep] = useState<Step>(initial ?? { at: "choose" });
   const [link, setLink] = useState("");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(() => (initial?.at === "pick" ? new Set(initial.found.map((_, i) => i)) : new Set()));
   const [dup, setDup] = useState<"both" | "replace">("replace");
   const twin = (name: string) => recipes.find((r) => norm(r.name) === norm(name));
 
@@ -231,11 +236,8 @@ export function AddRecipesSheet({ recipes, onSaved, onClose }: { recipes: Recipe
     } catch (e) { setError(errorText(e)); }
     setBusy(false);
   }
-  async function save(ds: Draft[], duplicates: "skip" | "replace" | undefined) {
-    setBusy(true); setError(null);
-    try { const res = await api.saveRecipes(ds.map(tidy), duplicates); onSaved(res.recipes, res.saved); }
-    catch (e) { setError(errorText(e)); setBusy(false); }
-  }
+  // Saved behind the scenes (Nov 11: always responsive): the sheet closes and the recipe shows at once.
+  const save = (ds: Draft[], duplicates: "skip" | "replace" | undefined) => onSave(ds.map(tidy), duplicates, step);
 
   const back = step.at === "choose" ? undefined : () => { setError(null); setStep({ at: "choose" }); };
   let body: React.ReactNode, footer: React.ReactNode = null;

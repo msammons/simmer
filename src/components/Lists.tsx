@@ -23,8 +23,8 @@ export type ListsActions = {
   add: (text: string, store?: Store) => Promise<unknown>;
   check: (it: Item, checked: boolean) => void;
   move: (it: Item, store: Store) => void;
-  /** Done shopping: ticked items off; `cart` also takes what's in the Safeway cart off (the order went through). */
-  done: (store: Store, cart?: boolean) => Promise<unknown>;
+  /** Done shopping: ticked items off; `cart` (the list ids in the Safeway cart) also takes what's in the cart off (the order went through). */
+  done: (store: Store, cart?: string[]) => Promise<unknown>;
   putBack: (items: Item[]) => void;
 };
 
@@ -92,7 +92,8 @@ export function ListsScreen({ list, act, start }: { list: ListState | null; act:
   // Added on Safeway: its choices open as soon as it's on the list.
   useEffect(() => {
     if (!findNext) return;
-    const it = items.find((i) => i.store === "safeway" && !i.checked && norm(i.item) === findNext);
+    // Not its stand-in row: Find opens on the row the server saved.
+    const it = items.find((i) => i.store === "safeway" && !i.checked && norm(i.item) === findNext && !i.id.startsWith("new-"));
     if (it) queueMicrotask(() => { setFinding(it.id); setFindNext(null); });
   }, [findNext, items]);
 
@@ -114,7 +115,7 @@ export function ListsScreen({ list, act, start }: { list: ListState | null; act:
     const off = finishing ?? [];
     setFinishing(null);
     const stores = STORES.filter((s) => off.some((i) => i.store === s));
-    for (const s of stores) await act.done(s, false);
+    for (const s of stores) await act.done(s);
   };
   const more = (it: Item) => (
     <More name={cap(it.item)} options={moreFor(it, inCart(it), it.store === "safeway" && !inCart(it) && Boolean(findOf(it.id)?.picked))}
@@ -133,7 +134,12 @@ export function ListsScreen({ list, act, start }: { list: ListState | null; act:
 
       {!list ? <Held /> : where === "safeway"
         ? <SafewayList items={items.filter((i) => i.store === "safeway")} toFind={toTick} sw={sw} more={more} onFind={setFinding}
-            onOrdered={() => act.done("safeway", true)}
+            onOrdered={() => {
+              // Shown at once: the cart and what it was for come off, then Safeway's cart is read again.
+              const ids = sw.cart.map((l) => l.itemId).filter(Boolean);
+              sw.forget();
+              act.done("safeway", ids).then(() => sw.refresh());
+            }}
             onTick={(it) => act.check(it, !it.checked)} onDone={sw.away && ticked.length ? done : null} />
         : (
           <>
@@ -175,7 +181,6 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
   onOrdered: () => void; onTick: (it: Item) => void; onDone: (() => void) | null;
 }) {
   const away = sw.away;
-  const [filling, setFilling] = useState(false);
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   // In the helper's panel, the Safeway tab beside it shows Safeway's own cart while this is open, and Simmer's copy
   // takes the quantities shown there.
@@ -186,7 +191,8 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
     run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
     return () => c.abort();
   }, [run, refresh]);
-  const lines = sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) }));
+  // Taken out (0 on its way to Safeway): gone from the cart at once.
+  const lines = sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })).filter((l) => l.qty > 0);
   const { total, estimate } = cartTotal(lines);
   const count = lines.reduce((n, l) => n + l.qty, 0);
   const waiting = toFind.filter((f) => !qtyFor(sw.cart, f.id));
@@ -194,7 +200,8 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
   const find = waiting.filter((f) => !f.picked);
   const itemOf = (id: string) => items.find((i) => i.id === id);
   const addUsual = (f: FindItem) => f.picked && sw.setQty({ id: f.picked.id, name: f.picked.name, price: "", image: f.picked.image ?? "" }, Math.max(1, f.want), f.query, f);
-  const autoFill = async () => { setFilling(true); for (const f of usual) await addUsual(f); setFilling(false); };
+  // Every row shows its count at once; Safeway takes them one after another.
+  const autoFill = async () => { const all = usual.filter((f) => f.picked && !sw.pending[f.picked.id]); all.forEach((f) => sw.show(f.picked!.id, Math.max(1, f.want))); for (const f of all) await addUsual(f); };
   const sub = (f: FindItem, last?: boolean) => [buyAmount(f.quantity) && `Need ${buyAmount(f.quantity)}`, last && "Last time"].filter(Boolean).join(" · ") || undefined;
   const got = waiting.filter((f) => itemOf(f.id)?.checked).length;
   // A row's words, and with Safeway out of reach a tick to tap (struck through once got), as Trader Joe's rows are.
@@ -210,11 +217,11 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
       {/* Can't reach Safeway: the alert said so when a job went unanswered; the rows are now ticks (no bar, Nov 11). */}
       {!sw.loaded && <Held groups={[3]} />}
       {usual.length > 0 && (
-        <Group header="Same as last time" aside={usual.length > 1 && <button disabled={filling || away} onClick={autoFill} className="t-foot font-semibold text-accent disabled:opacity-40">Auto-fill {usual.length}</button>}>
+        <Group header="Same as last time" aside={usual.length > 1 && <button disabled={away} onClick={autoFill} className="t-foot font-semibold text-accent disabled:opacity-40">Auto-fill {usual.length}</button>}>
           {usual.map((f) => (
             <div key={f.id} className="flex items-center pr-2">
               <div className="min-w-0 flex-1">{line(f, <ProductImage src={f.picked?.image} small />, f.picked?.name ?? cap(f.item), sub(f, true))}</div>
-              {f.picked && f.picked.id in sw.pending ? <Stepper qty={1} name={f.item} busy onChange={() => {}} />
+              {f.picked && (sw.pending[f.picked.id] ?? 0) > 0 ? <Stepper qty={sw.pending[f.picked.id]} name={f.item} off={away} onChange={(n) => sw.setQty({ id: f.picked!.id, name: f.picked!.name, price: "", image: f.picked!.image ?? "" }, n, f.query, f)} />
                 : <Button size="md" variant="secondary" className="shrink-0" disabled={away} onClick={() => addUsual(f)}>Add</Button>}
               {itemOf(f.id) && more(itemOf(f.id)!)}
             </div>
@@ -246,7 +253,7 @@ function SafewayList({ items, toFind, sw, more, onFind, onOrdered, onTick, onDon
                   <p className="line-clamp-2 t-body">{l.name}</p>
                   <p className="mt-0.5 t-foot text-muted">{[l.price, it && needBeside(it.quantity, l.name, l.qty) ? `Need ${needBeside(it.quantity, l.name, l.qty)}` : ""].filter(Boolean).join(" · ")}</p>
                 </div>
-                <Stepper qty={l.qty} name={l.name} busy={l.productId in sw.pending} off={away} onChange={(n) => sw.setQty(p, n, l.item || l.name, null, { alt: l.name, on: "cart" })} />
+                <Stepper qty={l.qty} name={l.name} off={away} onChange={(n) => sw.setQty(p, n, l.item || l.name, null, { alt: l.name, on: "cart" })} />
                 {it && <More name={cap(it.item)} options={[{ value: "pick", label: "Pick another", off: away }]} onPick={() => onFind(it.id)} />}
               </div>
             );

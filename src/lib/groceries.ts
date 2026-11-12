@@ -8,7 +8,7 @@ import { generateJson } from "./google/gemini";
 import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges, readTabsIfAny } from "./google/sheets";
 import { AppError } from "./errors";
 import { parseCsv, records } from "./parse";
-import { isSpice, norm } from "./words";
+import { known, norm, parseEntry } from "./words";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
@@ -37,17 +37,8 @@ const asStore = (s: string): Store => {
 const asSection = (s: string): Section => (SECTIONS as readonly string[]).includes(s.toLowerCase()) ? (s.toLowerCase() as Section) : "fresh";
 const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 
-export { norm };
+export { known, norm, parseEntry };
 
-/** "2 lemons" → 2, lemons; "2 lb ground beef" → 2 lb, ground beef; "1 1/2 lb beef" → 1 1/2 lb, beef; "lemons x2" → 2, lemons; "TP" → TP. */
-export function parseEntry(text: string): { item: string; quantity: string } {
-  const t = text.trim().replace(/\s+/g, " ");
-  const lead = t.match(/^((?:\d+\s+\d+\/\d+|\d+(?:\.\d+)?|\d+\/\d+)(?:\s*(?:lbs?|pounds?|oz|ounces?|gallons?|gal|quarts?|pints?|liters?|kg|g)\.?(?=\s))?|a dozen|dozen|a couple|a few)\s+(.+)$/i);
-  if (lead) return { quantity: lead[1].toLowerCase().replace(/^a /, ""), item: lead[2] };
-  const tail = t.match(/^(.+?)\s*(?:x|×)\s*(\d+)$/i);
-  if (tail) return { quantity: tail[2], item: tail[1] };
-  return { quantity: "", item: t };
-}
 
 // ---- reading
 
@@ -96,28 +87,6 @@ async function readList(): Promise<{ items: Item[]; rows?: string[][] }> {
 
 // ---- filing: which store and section an item goes in
 
-/**
- * Common things, so most items are filed without asking anyone (spices first, by isSpice in words.ts). Entries are
- * phrases, comma-separated: "ice cream" and "peanut butter" are whole, so cream stays fresh and butter isn't pantry (split
- * into words they filed cream as freezer and milk as pantry, Nov 3). A stem like "strawberr" matches the word's start.
- */
-const KNOWN: Record<string, [Store, Section]> = Object.fromEntries(([
-  ["milk, egg, yogurt, butter, cheese, cream, sour cream, half and half, banana, apple, orange, lemon, lime, grape, strawberr, raspberr, blueberr, berry, avocado, tomato, onion, garlic, potato, carrot, celery, lettuce, spinach, broccoli, cucumber, bell pepper, cilantro, parsley, fresh basil, herb, bread, tortilla, ground beef, ground turkey, chicken, salmon, fish, shrimp, bacon, ham, deli, turkey, salad, zucchini, squash, mushroom, kale, cabbage, ginger root, jalapeno, scallion, green onion, mint, thyme, rosemary, dill, shallot, leek, asparagus, green bean, pork, sausage, steak, tofu, mozzarella, parmesan, cheddar, feta, ricotta, hummus, pie crust", "safeway", "fresh"],
-  ["rice, pasta, spaghetti, penne, macaroni, lasagna noodle, flour, sugar, salt, oil, olive oil, vinegar, cereal, oat, oatmeal, peanut butter, jam, jelly, honey, cracker, goldfish, chip, pretzel, snack, granola, granola bar, canned, broth, stock, soup, sauce, salsa, ketchup, mustard, mayo, spice, coffee, tea, cumin, paprika, oregano, chili powder, cinnamon, vanilla, baking soda, baking powder, breadcrumb, panko, soy sauce, coconut milk, evaporated milk, condensed milk, tomato paste, tomato sauce, crushed tomato, diced tomato, noodle, quinoa, lentil, chickpea, black bean, refried bean, kidney bean, pinto bean, brown sugar, corn syrup, seasoning, taco seasoning, pecan, walnut, almond", "safeway", "pantry"],
-  ["frozen, ice cream, nugget, frozen pizza, frozen vegetable", "safeway", "freezer"],
-  ["toilet paper, tp, paper towel, napkin, soap, detergent, dish soap, trash bag, foil, plastic wrap, sponge, tissue, shampoo, toothpaste", "costco", "household"],
-] as const).flatMap(([words, st, sec]) => words.split(",").map((w) => [w.trim(), [st, sec]])));
-
-export function known(name: string): { store: Store; section: Section } | null {
-  // Spices first: "ground cumin" isn't ground beef, "black pepper" isn't a bell pepper.
-  if (isSpice(name)) return { store: "safeway", section: "pantry" };
-  const n = norm(name);
-  // The longest entry that matches from the start of a word wins: "goldfish crackers" is goldfish (pantry), not fish
-  // (fresh); "graham crackers" isn't ham.
-  const at = (w: string) => ` ${n} `.includes(` ${norm(w)}`);
-  const hit = KNOWN[n] ?? Object.entries(KNOWN).filter(([w]) => w.length > 2 && at(w)).sort((x, y) => y[0].length - x[0].length)[0]?.[1];
-  return hit ? { store: hit[0], section: hit[1] } : null;
-}
 
 type Filing = { store: Store; section: Section };
 
