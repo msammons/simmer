@@ -3,7 +3,7 @@ import { useState } from "react";
 import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
 import { norm } from "@/lib/words";
 import { STORE_NAMES } from "./Shop";
-import { BrandBar, Button, EmptyState, Group, Notice, Sheet } from "./ui";
+import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (a tap never moves a row). Simmer assumes we
@@ -63,7 +63,7 @@ function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRow[] {
 }
 
 
-export function StockScreen({ list, kitchen, error, act }: { list: ListState | null; kitchen: Kitchen | null; error: string | null; act: StockActions }) {
+export function StockScreen({ list, kitchen, act }: { list: ListState | null; kitchen: Kitchen | null; act: StockActions }) {
   const [text, setText] = useState("");
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const rows = rowsOf(list, kitchen);
@@ -78,7 +78,6 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
     <div className="space-y-5">
       <BrandBar />
       <h1 className="sr-only">Stock</h1>
-      {error && <Notice>{error}</Notice>}
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something to Stock" enterKeyHint="done"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
@@ -89,6 +88,7 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
         Tick what you need; it goes on the list.
         <span aria-hidden className="ml-2 size-3.5 rounded-[4px] bg-accent/15" /> In meals
       </p>
+      {!list && <Held />}
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
@@ -121,15 +121,8 @@ export function StockScreen({ list, kitchen, error, act }: { list: ListState | n
           </Group>
         );
       })}
-      {removing && (
-        <Sheet label="Remove from Stock" title={`Remove ${cap(removing.item)} from Stock?`} onClose={() => setRemoving(null)}>
-          <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">It stops showing here.</p>
-            <Button className="w-full" onClick={() => { act.keepRemove(removing); setRemoving(null); }}>Remove from Stock</Button>
-            <Button variant="secondary" className="w-full" onClick={() => setRemoving(null)}>Cancel</Button>
-          </div>
-        </Sheet>
-      )}
+      <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from Stock?` : ""} message="It stops showing here." confirm="Remove from Stock" danger
+        onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
     </div>
   );
 }

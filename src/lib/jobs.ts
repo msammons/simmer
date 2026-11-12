@@ -173,10 +173,23 @@ export async function queueJob(kind: JobKind, args: Record<string, unknown>): Pr
 
 /** Simmer: how a job stands. One left waiting too long is given up, so the app can say so instead of waiting on. */
 export async function jobStatus(id: string): Promise<{ job: Job | null; answering: boolean }> {
-  const { jobs, helper } = await read();
+  const { jobs } = await read();
   const j = jobs.find((x) => x.id === id) ?? null;
   if (j && overdue(j)) return { job: await write({ ...j, status: "failed", result: { error: j.status === "waiting" ? "not-answering" : "stuck" } }, j.row), answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
   return { job: j, answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
+}
+
+/**
+ * Simmer: how a job stands, answered once it's finished or after `ms` (Nov 11: the app has no timers, so it doesn't keep
+ * asking; the server waits here, between reads, and the app asks again only when an answer says it's still going).
+ */
+export async function waitForJob(id: string, ms = 20_000): Promise<{ job: Job | null; answering: boolean }> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const s = await jobStatus(id);
+    if (!s.job || (s.job.status !== "waiting" && s.job.status !== "working") || Date.now() >= end) return s;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 /** Simmer: a job no longer wanted (only while nobody's taken it). */

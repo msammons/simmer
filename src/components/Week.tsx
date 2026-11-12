@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, KINDS, kindOf } from "@/lib/week";
 import { Icon, type IconName } from "./icons";
-import { BrandBar, Button, Group, Row, Sheet } from "./ui";
+import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
 
 // The Meals tab is this week's dinners, in any order, by kind; she picks them from her recipes (Nov 10: Simmer doesn't
 // pick meals itself). Lunches aren't planned here: lunch foods are Stock things.
@@ -25,8 +25,8 @@ const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular
  * what a new dinner needs goes on, and what only a dinner taken off needed comes off, unless it's ticked off or in the
  * cart (server side, lib/plan.ts).
  */
-export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
-  plan: PlanData | null; recipes: Recipe[]; error: string | null; onError: () => void;
+export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, onCount, onAdd, onNewPlan }: {
+  plan: PlanData | null; recipes: Recipe[];
   /** How many lines are on the lists: what New plan empties. */
   dinnerGroceries: number;
   // No note bar after a change (Matt, Nov 10: it made the page jump); the dinners and counts show what changed.
@@ -35,27 +35,34 @@ export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, on
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
-  // How many of each dinner, as tapped (Nov 10): shown at once; sent as one change once the taps stop, so quick taps
-  // never pile up requests (they ran into "It's busy right now" and lost changes).
+  // How many of each dinner, as tapped (Nov 10): shown at once and sent at once. Taps while one is on its way aren't
+  // sent one by one: when it answers, the latest number goes as one change (Nov 11: no timer waits for the taps to
+  // stop), so quick taps never pile up requests (they ran into "It's busy right now" and lost changes).
   const [want, setWant] = useState<Record<string, number>>({});
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+  const wanted = useRef<Record<string, number>>({}); // the same, for sends that finish later
+  const sending = useRef<Record<string, boolean>>({});
   const counted = (recipe: string) => dishes.filter((d) => d.recipe === recipe).length;
-  // Once the plan shows what was asked for, the tapped number isn't needed.
-  useEffect(() => {
-    const settled = Object.entries(want).filter(([r, n]) => counted(r) === n && !timers.current[r]);
-    if (settled.length) queueMicrotask(() => setWant((w) => { const x = { ...w }; for (const [r] of settled) delete x[r]; return x; }));
+  const settle = (recipe: string, n: number) => setWant((w) => {
+    if (w[recipe] !== n) return w;
+    const x = { ...w }; delete x[recipe]; delete wanted.current[recipe]; return x;
   });
+  function send(d: Dish, n: number) {
+    sending.current[d.recipe] = true;
+    // A change that fails shows the plan as it is again (and the alert says why).
+    onCount(d, n).then(() => true, () => false).then((ok) => {
+      sending.current[d.recipe] = false;
+      const latest = wanted.current[d.recipe];
+      if (ok && latest !== undefined && latest !== n) return send(d, latest);
+      if (!ok) { delete wanted.current[d.recipe]; setWant((w) => { const x = { ...w }; delete x[d.recipe]; return x; }); return; }
+      settle(d.recipe, n);
+    });
+  }
   function tap(d: Dish, by: number) {
     const n = Math.max(0, (want[d.recipe] ?? counted(d.recipe)) + by);
     if (n === 0) return setTaking(d); // the last one off asks first
+    wanted.current[d.recipe] = n;
     setWant((w) => ({ ...w, [d.recipe]: n }));
-    clearTimeout(timers.current[d.recipe]);
-    timers.current[d.recipe] = setTimeout(() => {
-      delete timers.current[d.recipe];
-      // A change that fails shows the plan as it is again.
-      onCount(d, n).catch(() => {}).finally(() => setWant((w) => { if (w[d.recipe] !== n) return w; const x = { ...w }; delete x[d.recipe]; return x; }));
-    }, 700);
+    if (!sending.current[d.recipe]) send(d, n);
   }
   return (
     <div className="space-y-6">
@@ -65,6 +72,7 @@ export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, on
         <button onClick={() => setStarting(true)} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>
       )} />
       <h1 className="sr-only">Meals</h1>
+      {!plan && <Held groups={[2, 2, 1]} />}
       {plan && (
         <>
           {KINDS.map((k) => {
@@ -99,46 +107,24 @@ export function MealsScreen({ plan, recipes, error, onError, dinnerGroceries, on
           })}
         </>
       )}
-      {/* A problem shows over the page, never as a bar that pushes it down (Matt, Nov 10). */}
-      {error && (
-        <Sheet label="Didn't save" title="That didn't go through" onClose={onError}>
-          <div className="space-y-3 pb-2">
-            <p role="alert" className="t-sub text-muted">{error}</p>
-            <Button className="w-full" onClick={onError}>OK</Button>
-          </div>
-        </Sheet>
-      )}
-      {/* A new plan asks first: every dinner comes off; the list stays (what they needed was bought). */}
-      {starting && (
-        <Sheet label="New plan" title="Start a new plan?" onClose={() => setStarting(false)}>
-          <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">
-              Everything starts fresh: {[
-                dishes.length ? (dishes.length === 1 ? "this dinner comes off" : `these ${dishes.length} dinners come off`) : "",
-                dinnerGroceries ? `the lists are emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
-              ].filter(Boolean).join(" and ")}. What&apos;s in the Safeway cart stays.
-            </p>
-            <Button className="w-full" onClick={() => { onNewPlan(); setStarting(false); }}>New plan</Button>
-            <Button variant="secondary" className="w-full" onClick={() => setStarting(false)}>Cancel</Button>
-          </div>
-        </Sheet>
-      )}
+      {/* A new plan asks first: every dinner comes off and the lists are emptied; the Safeway cart stays. */}
+      <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
+        message={`Everything starts fresh: ${[
+          dishes.length ? (dishes.length === 1 ? "this dinner comes off" : `these ${dishes.length} dinners come off`) : "",
+          dinnerGroceries ? `the lists are emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
+        ].filter(Boolean).join(" and ")}. What's in the Safeway cart stays.`}
+        onConfirm={() => { onNewPlan(); setStarting(false); }} onCancel={() => setStarting(false)} />
       {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
-      {taking && (
-        <Sheet label="Take it off" title={`Take ${mealName(taking.recipe, recipes)} off the plan?`} onClose={() => setTaking(null)}>
-          <div className="space-y-3 pb-2">
-            <p className="t-sub text-muted">What only it needed comes off the grocery list.</p>
-            <Button className="w-full" onClick={() => {
-              // All of them: one change for however many there are.
-              clearTimeout(timers.current[taking.recipe]); delete timers.current[taking.recipe];
-              if (counted(taking.recipe) > 1) onCount(taking, 0).catch(() => {}); else onRemove(taking);
-              setWant((w) => { const x = { ...w }; delete x[taking.recipe]; return x; });
-              setTaking(null);
-            }}>Take it off</Button>
-            <Button variant="secondary" className="w-full" onClick={() => setTaking(null)}>Cancel</Button>
-          </div>
-        </Sheet>
-      )}
+      <ConfirmSheet open={Boolean(taking)} title={taking ? `Take ${mealName(taking.recipe, recipes)} off the plan?` : ""} confirm="Take it off" danger
+        message="What only it needed comes off the grocery list."
+        onConfirm={() => {
+          if (!taking) return;
+          // All of them: one change for however many there are.
+          if (counted(taking.recipe) > 1) onCount(taking, 0).catch(() => {}); else onRemove(taking);
+          delete wanted.current[taking.recipe];
+          setWant((w) => { const x = { ...w }; delete x[taking.recipe]; return x; });
+          setTaking(null);
+        }} onCancel={() => setTaking(null)} />
     </div>
   );
 }
