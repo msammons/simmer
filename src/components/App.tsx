@@ -4,7 +4,7 @@ import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
-import { ListsScreen, type ListsActions, type Where } from "./Lists";
+import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen } from "./Week";
 import { kindOf } from "@/lib/week";
@@ -12,26 +12,30 @@ import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
 import { AddRecipesSheet, type AddStep, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
-type Tab = "recipes" | "week" | "stock" | "lists";
+type Tab = "recipes" | "week" | "stock" | "shop";
 /**
  * Where you are: a tab at the bottom of a stack of screens opened from it (a recipe). Back pops one; a tab starts a new
  * stack. The tab lit is the stack's first; the back button names the screen below.
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
-// Recipes · Meals · Stock · Lists (Matt, Nov 2); Simmer still opens on Meals (Oct 31).
-const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "Stock", icon: "home" }, { id: "lists", label: "Lists", icon: "list" }];
-const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "Stock", lists: "Lists" };
+// Recipes · Meals · Stock · Shop (Matt, Nov 2; Lists became Shop, Nov 12); Simmer still opens on Meals (Oct 31).
+const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "Stock", icon: "home" }, { id: "shop", label: "Shop", icon: "list" }];
+const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "Stock", shop: "Shop" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
 const saveResume = (root: Tab) => { try { sessionStorage.setItem("sm.resume", root); } catch {} };
 /** The first screen, and whether it's the one the address asked for (not a resume after reloading). */
 function takeResume(): { tab: Tab; asked: boolean } {
-  // The Safeway helper's panel opens Simmer on Shop (?open=shop): Lists, on Safeway.
+  // The Safeway helper's panel opens Simmer on Shop (?open=shop); an older address's ?open=lists lands there too.
   const open = typeof location !== "undefined" ? new URLSearchParams(location.search).get("open") : null;
-  const asked = open === "shop" ? "lists" : open;
+  const asked = open === "lists" ? "shop" : open;
   const first = { tab: isTab(asked) ? asked : "week" as Tab, asked: isTab(asked) };
-  try { const v = sessionStorage.getItem("sm.resume"); sessionStorage.removeItem("sm.resume"); return isTab(v) ? { tab: v, asked: false } : first; } catch { return first; }
+  try {
+    const saved = sessionStorage.getItem("sm.resume"), v = saved === "lists" ? "shop" : saved; // saved by a version before Shop
+    sessionStorage.removeItem("sm.resume");
+    return isTab(v) ? { tab: v, asked: false } : first;
+  } catch { return first; }
 }
 /** Nothing would be lost by reloading now: no sheet open (the panel's activity log doesn't count) and nothing typed. */
 const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
@@ -74,7 +78,6 @@ export default function App() {
   const top = stack[stack.length - 1];
   const root = stack[0].kind as Tab;
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
-  const [listsStart, setListsStart] = useState<Where>("all"); // the store Lists opens on: Safeway in the helper's panel
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
   const [, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's; only Settings read it, until "Who's using this?" went (Nov 3)
@@ -139,7 +142,7 @@ export default function App() {
     }
   }, []);
 
-  // The shared list: loaded when Lists or Stock opens, whenever the app comes back to
+  // The shared list: loaded when Shop or Stock opens, whenever the app comes back to
   // the front, so both phones see the same list. No background work: only while someone's looking.
   // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
   // (otherwise a read answering just after a tap would undo the tap on screen until the change's own answer came).
@@ -160,13 +163,13 @@ export default function App() {
   }, []);
   const listNow = useSettled(refreshList);
   const kitchenNow = useSettled(useCallback(() => api.kitchen().then(setKitchen, () => {}), []), 30_000);
-  const onShop = phase === "app" && (top.kind === "lists" || top.kind === "stock");
+  const onShop = phase === "app" && (top.kind === "shop" || top.kind === "stock");
   useEffect(() => {
     if (!onShop) return;
     queueMicrotask(listNow);
     if (top.kind === "stock") kitchenNow(); // the freezer: only Stock shows it
     const visible = () => document.visibilityState === "visible";
-    // No timer (Nov 11): the list loads when Lists or Stock opens, when the app comes back, and after changes.
+    // No timer (Nov 11): the list loads when Shop or Stock opens, when the app comes back, and after changes.
     const back = () => { if (visible()) listNow(); };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
@@ -180,7 +183,7 @@ export default function App() {
     try { gotRecipes((await api.recipes()).recipes); }
     catch (e) { notLoaded(recipesShowing.current)(e); }
   }, [gotRecipes]);
-  const inRecipes = phase === "app" && top.kind !== "lists" && top.kind !== "stock";
+  const inRecipes = phase === "app" && top.kind !== "shop" && top.kind !== "stock";
   const recipesNow = useSettled(refreshRecipes, 15_000);
   useEffect(() => { if (inRecipes) queueMicrotask(recipesNow); }, [inRecipes, visit, recipesNow]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
@@ -296,7 +299,7 @@ export default function App() {
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [onWeek, visit, planNow]);
-  /** The plan as the server answered it; when the grocery list changed with it, the list is read again for Lists and Stock. */
+  /** The plan as the server answered it; when the grocery list changed with it, the list is read again for Shop and Stock. */
   function gotPlan(p: PlanData & { added: number; removed?: number }) {
     setPlan(p); store.setPlan(p);
     if (p.added || p.removed) refreshList();
@@ -333,7 +336,7 @@ export default function App() {
   }
   /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
   async function changePlan(c: PlanChange): Promise<string | null> {
-    // A new plan empties the lists too (what's in the Safeway cart comes back with the server's list).
+    // A new plan empties the list too (what's in the Safeway cart comes back with the server's list).
     const clearing = c.op === "clear";
     if (clearing) { setPlan((p) => (p ? { ...p, dishes: [] } : p)); ++listChanges.current; ++listSaving.current; setList((l) => l && { ...l, items: [] }); }
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
@@ -364,7 +367,7 @@ export default function App() {
       return errorText(e);
     } finally { --listSaving.current; }
   }
-  const lists: ListsActions = {
+  const shop: ShopActions = {
     // Shown at once as a stand-in row (Nov 11: always responsive); one already on the list adds up there, on the server.
     add: (text, store) => {
       const e = parseEntry(text);
@@ -375,7 +378,13 @@ export default function App() {
     move: (it, to) => isStandIn(it.id) ? undefined : change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
     // `cart`: the ids in the Safeway cart, which come off as bought too.
     done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked) && !cart?.includes(x.id)) })),
-    putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
+    // Done shopping: every ticked thing off at once; each store's change goes after the one before, so they never cross.
+    doneTicked: async (off) => {
+      const ids = new Set(off.map((x) => x.id));
+      const gone = (l: ListState) => ({ ...l, items: l.items.filter((x) => !ids.has(x.id)) });
+      setList((l) => l && gone(l));
+      for (const s of [...new Set(off.map((x) => x.store))]) await change({ op: "done", store: s, cart: false }, gone);
+    },
   };
   const stock: StockActions = {
     // Have | Need on any row (Nov 11). Its List row, if it has one, changes in place; a thing with none gets one: on the
@@ -426,8 +435,6 @@ export default function App() {
       else loadHousehold().then((ok) => {
         if (!ok) return;
         setStack([{ kind: resume.tab }]);
-        // The helper's panel opens Lists on Safeway, the list that's also the cart.
-        if (resume.asked && resume.tab === "lists") setListsStart("safeway");
         setPhase("app");
       });
     });
@@ -463,7 +470,6 @@ export default function App() {
     scrollAppTo(0);
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
-    setListsStart("all");
   }
   /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
   function back() {
@@ -502,7 +508,7 @@ export default function App() {
           onRemove={(d) => { changePlan({ op: "remove", id: d.id }).then(didntSave); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} act={stock} />}
-      {phase === "app" && top.kind === "lists" && <ListsScreen key={visit} list={list} act={lists} start={listsStart} />}
+      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} act={shop} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? plan?.freezer ?? []} recipes={recipes}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />
