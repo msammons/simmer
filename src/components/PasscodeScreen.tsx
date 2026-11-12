@@ -33,7 +33,7 @@ export function PasscodeScreen({ error, onClearError, onDone }: { error: string 
         <Button type="submit" disabled={!code.trim() || busy} className="w-full">Get started</Button>
         <p className="text-center t-foot text-muted">You only need to do this once.</p>
       </div>
-      <Alert open={Boolean(error) && !busy} title="That didn't work" message={error === "Wrong passcode." ? "That passcode didn't work. Try again." : error ?? ""} onClose={onClearError} />
+      <Alert open={Boolean(error) && !busy} title={error === "Wrong passcode." ? "That passcode didn't work" : "That didn't go through"} message={error === "Wrong passcode." ? "Check it and try again." : error ?? ""} onClose={onClearError} />
     </form>
   );
 }
