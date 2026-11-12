@@ -1,9 +1,8 @@
-// Stock's "For this plan" (Nov 11, Matt: checking stock means flagging what you've checked; you can't have and need a
-// thing at once): every dinner's thing from the house is there with its answer, Have, Need or still to check, and the
-// sections below don't repeat it.
+// Stock's rows (Nov 11, Matt: checking stock means flagging what you've checked; you can't have and need a thing at once;
+// everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { fromDinner, planRows, rowsOf } from "./stock-rows";
+import { fromDinner, rowsOf, toCheck } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -11,31 +10,30 @@ const item = (p: Partial<Item>): Item => ({
 });
 const staple = (name: string, section = "pantry") => ({ item: name, section, store: "safeway", quantity: "", product: "" }) as ListState["staples"][number];
 const list = (items: Item[], staples: ListState["staples"] = []): ListState => ({ items, staples });
+const one = (l: ListState) => rowsOf(l, null)[0];
 
-describe("For this plan", () => {
-  it("answers each dinner's thing: to check, Have or Need", () => {
-    expect(planRows(list([item({})]))[0]).toMatchObject({ name: "tomato paste", amount: "1 can", answer: "check" });
-    expect(planRows(list([item({ have: true })]))[0].answer).toBe("have");
-    expect(planRows(list([item({ check: false })]))[0].answer).toBe("need");
+describe("Stock rows", () => {
+  it("answers a dinner's thing: to check, Have or Need, highlighted with how much, in its own section", () => {
+    expect(one(list([item({})]))).toMatchObject({ name: "tomato paste", section: "pantry", answer: "check", meal: true, amount: "1 can" });
+    expect(one(list([item({ have: true })])).answer).toBe("have");
+    expect(one(list([item({ check: false })])).answer).toBe("need");
   });
 
-  it("keeps a kept fresh thing a dinner needs (tortillas), answered either way", () => {
-    for (const [check, answer] of [[true, "check"], [false, "need"]] as const) {
-      const [r] = planRows(list([item({ item: "tortillas", section: "fresh", for: "chicken tacos", check })], [staple("Tortillas", "fresh")]));
-      expect(r).toMatchObject({ name: "tortillas", answer });
-    }
+  it("answers a kept thing the same way: unanswered with no List row, Need when on the list, Have when marked", () => {
+    expect(one(list([], [staple("Rice")]))).toMatchObject({ name: "Rice", answer: "check", meal: false, item: null });
+    expect(one(list([item({ item: "rice", check: false, for: "added by hand" })], [staple("Rice")]))).toMatchObject({ answer: "need", meal: false });
+    expect(one(list([item({ item: "rice", have: true, for: "" })], [staple("Rice")]))).toMatchObject({ answer: "have", meal: false });
   });
 
-  it("leaves out a dinner's fresh groceries, things added by hand, and what's been bought", () => {
-    expect(planRows(list([item({ section: "fresh", check: false, item: "cilantro" })]))).toHaveLength(0);
-    expect(planRows(list([item({ check: false, for: "added by hand" })]))).toHaveLength(0);
-    expect(planRows(list([item({ check: false, checked: true })]))).toHaveLength(0);
+  it("highlights a kept thing a dinner needs, whatever its section (tortillas)", () => {
+    const r = one(list([item({ item: "tortillas", section: "fresh", for: "chicken tacos", check: false })], [staple("Tortillas", "fresh")]));
+    expect(r).toMatchObject({ name: "Tortillas", section: "fresh", answer: "need", meal: true });
   });
 
-  it("doesn't repeat a planned thing in its section below", () => {
-    const l = list([item({ item: "rice", check: false })], [staple("Rice"), staple("Flour")]);
-    expect(planRows(l).map((r) => r.name)).toEqual(["rice"]);
-    expect(rowsOf(l, null).map((r) => r.name)).toEqual(["Flour"]);
+  it("leaves out a dinner's fresh groceries and what's been bought, and counts what's left to check", () => {
+    expect(rowsOf(list([item({ section: "fresh", check: false, item: "cilantro" })]), null)).toHaveLength(0);
+    expect(rowsOf(list([item({ check: false, checked: true })]), null)).toHaveLength(0);
+    expect(toCheck(rowsOf(list([item({ id: "a" }), item({ id: "b", item: "rice", have: true }), item({ id: "c", item: "beans", check: false })]), null))).toBe(1);
   });
 
   it("tells a dinner's thing from one added by hand", () => {

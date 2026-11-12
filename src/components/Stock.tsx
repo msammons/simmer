@@ -1,36 +1,23 @@
 "use client";
 import { useState } from "react";
-import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
-import { planRows, rowsOf, type PlanAnswer, type PlanRow, type StockRow } from "@/lib/stock-rows";
+import { type Item, type Kitchen, type ListState, type Section, type Staple } from "@/lib/client";
+import { rowsOf, toCheck, type Answer, type StockRow } from "@/lib/stock-rows";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
 
 /**
- * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (a tap never moves a row). Simmer assumes we
- * have everything: tick what you need and it goes on its store's list; untick to take it off. ⋯ moves a thing to
- * another section, or takes it out of Stock. Nothing goes on a list by itself (Nov 10: no Every week).
- * At the top, "For this plan" (Nov 11): what the planned dinners need from the house, each answered Have or Need with one
- * switch (you can't have and need a thing at once); tapping the lit side again makes it "to check" again.
+ * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
+ * (Nov 11, Matt): every row is answered with one switch, Have | Need (you can't have and need a thing at once); Need puts
+ * it on its store's list, Have marks it checked, and the lit side tapped again makes it unanswered. What the planned
+ * dinners need is highlighted in its own section, and counted until each is answered. ⋯ moves a thing to
+ * another section, takes it out of Stock, or keeps a dinner's thing in Stock for good. A new plan clears every answer.
+ * Nothing goes on a list by itself (Nov 10: no Every week).
  */
-/** Ticked: on the list (we need it). Empty: we have it. */
-function Tick({ on }: { on: boolean }) {
-  return (
-    <span aria-hidden className={`flex size-7 shrink-0 items-center justify-center rounded-full ${on ? "bg-accent text-on-accent" : "border-2 border-muted/50"}`}>
-      {on && <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
-    </span>
-  );
-}
-
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export type StockActions = {
-  /** Out: on its store's list. */
-  out: (name: string, store: Store, section: Section, amount?: string) => void;
-  /** Have it after all: off the list again. */
-  have: (it: Item) => void;
-  /** A dinner's thing answered: have (off the list), need (on it), or back to "to check". */
-  answer: (it: Item, a: PlanAnswer) => void;
-  takeOut: (f: Frozen) => void;
+  /** A row answered: have, need, or back to unanswered. */
+  answer: (r: StockRow, a: Answer) => void;
   keepAdd: (text: string, section?: Section) => void;
   keepMove: (item: string, section: Section) => void;
   /** A dinner's thing that isn't kept in Stock: moved to another section (it's on the list under that section too). */
@@ -42,13 +29,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const [text, setText] = useState("");
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const rows = rowsOf(list, kitchen);
-  const plan = planRows(list);
-  const left = plan.filter((r) => r.answer === "check").length;
-  const tap = (r: StockRow) => {
-    if (!r.have && r.open) return act.have(r.open);
-    if (r.frozen) act.takeOut(r.frozen);
-    act.out(r.name, r.store, r.section, r.staple?.quantity);
-  };
+  const left = toCheck(rows);
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { act.keepAdd(text.trim()); setText(""); } };
   return (
     <div className="space-y-5">
@@ -60,44 +41,19 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
       {!list && <Held />}
-      {plan.length > 0 && (
-        <Group header="For this plan" aside={<span className="t-foot text-muted">{left ? `${left} to check` : "All checked"}</span>}>
-          {plan.map((r) => <PlanItem key={r.key} r={r} act={act} kept={list?.staples.some((s) => s.item.toLowerCase() === r.name.toLowerCase()) ?? false} />)}
-        </Group>
+      {list && rows.length > 0 && (
+        <p className="flex items-center gap-1.5 px-4 t-foot text-muted">
+          <span className="flex-1">Need puts it on the list.</span>
+          {rows.some((r) => r.meal) && <><span aria-hidden className="size-3.5 rounded-[4px] bg-accent/15" /> {left ? `In meals · ${left} to check` : "In meals · all checked"}</>}
+        </p>
       )}
-      {/* Tick what you need (Matt, Nov 10: ticking means "I want it", as on any checklist; it used to mean "we have it"). */}
-      {list && rows.length > 0 && <p className="px-4 t-foot text-muted">Tick what you need; it goes on the list.</p>}
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
         if (!here.length) return null;
         return (
           <Group key={id} header={name}>
-            {here.map((r) => (
-              <div key={r.key} className="flex items-center pr-2">
-                <button role="checkbox" aria-checked={!r.have} aria-label={`Need ${r.name}`} onClick={() => tap(r)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
-                  <Tick on={!r.have} />
-                  {/* One line, ticked or not (Matt, Nov 11: rows changed height; which list it's on matters only on Lists). */}
-                  <span className="min-w-0 flex-1 truncate t-body">{cap(r.name)}</span>
-                </button>
-                {/* ⋯ on every row that has something to offer (Matt, Nov 11: meal things had none); the rest keep its space. */}
-                {r.staple ? (
-                  <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-                    <span aria-hidden>⋯</span>
-                    <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === "remove") setRemoving(r.staple);
-                        else if (v) act.keepMove(r.name, v as Section);
-                      }}>
-                      <option value="" disabled>{cap(r.name)}</option>
-                      {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
-                      <option value="remove">Remove from Stock</option>
-                    </select>
-                  </label>
-                ) : <span aria-hidden className="size-9 shrink-0" />}
-              </div>
-            ))}
+            {here.map((r) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} />)}
           </Group>
         );
       })}
@@ -107,37 +63,42 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   );
 }
 
-/** One of the plan's things: its amount, Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
-function PlanItem({ r, act, kept }: { r: PlanRow; act: StockActions; kept: boolean }) {
+/** One thing: its name (whole on a phone: no amount beside it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
+function StockItem({ r, act, onRemove }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void }) {
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
     return (
-      <button type="button" aria-pressed={on} aria-label={`${label}: ${r.name}`} onClick={() => act.answer(r.item, on ? "check" : a)}
-        className={`min-w-[3.25rem] rounded-full px-3 py-1.5 t-sub font-semibold transition-colors ${on ? "bg-accent text-on-accent" : "text-muted"}`}>
+      <button type="button" aria-pressed={on} aria-label={`${label}: ${r.name}`} onClick={() => act.answer(r, on ? "check" : a)}
+        className={`min-w-[3rem] rounded-full px-2.5 py-1.5 t-sub font-semibold transition-colors ${on ? "bg-accent text-on-accent" : "text-muted"}`}>
         {label}
       </button>
     );
   };
+  const menu = r.staple || (r.meal && r.item);
   return (
-    <div className="flex min-h-[3.75rem] items-center gap-2 py-2 pl-4 pr-2">
-      {/* Two lines on every row, so they're all one height: the name, then how much and for which dinner. */}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate t-body">{cap(r.name)}</span>
-        <span className="block truncate t-foot text-muted">{[r.amount, cap(r.item.for)].filter(Boolean).join(" · ")}</span>
-      </span>
+    <div className={`flex min-h-[3.25rem] items-center gap-2 py-1.5 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
+      <span className="min-w-0 flex-1 truncate t-body">{cap(r.name)}</span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">
         {side("have", "Have")}
         {side("need", "Need")}
       </span>
-      <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-        <span aria-hidden>⋯</span>
-        <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-          onChange={(e) => { const v = e.target.value; if (v === "keep") act.keepAdd(r.name, r.item.section); else if (v) act.mealMove(r.item, v as Section); }}>
-          <option value="" disabled>{cap(r.name)}</option>
-          {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.item.section}>Move to {s.name}</option>)}
-          {!kept && <option value="keep">Always keep in Stock</option>}
-        </select>
-      </label>
+      {menu ? (
+        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
+          <span aria-hidden>⋯</span>
+          <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "remove" && r.staple) onRemove(r.staple);
+              else if (v === "keep") act.keepAdd(r.name, r.section);
+              else if (v && r.staple) act.keepMove(r.name, v as Section);
+              else if (v && r.item) act.mealMove(r.item, v as Section);
+            }}>
+            <option value="" disabled>{cap(r.name)}</option>
+            {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
+            {r.staple ? <option value="remove">Remove from Stock</option> : <option value="keep">Always keep in Stock</option>}
+          </select>
+        </label>
+      ) : <span aria-hidden className="size-9 shrink-0" />}
     </div>
   );
 }

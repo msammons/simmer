@@ -1,6 +1,6 @@
-// Stock's rows (Nov 11, Matt: "you're checking stock, so flagging what you've checked matters"). At the top, "For this
-// plan": what the planned dinners need from the house, each answered Have or Need (or not yet, "to check"). Below, by
-// section: everything else the house keeps and the freezer, each with one tick (on the list this time or not).
+// Stock's rows (Nov 11, Matt: checking stock means flagging what you've checked; you can't have and need a thing at once;
+// keep everything in its section, with the meal highlight). Every row is answered Have or Need, or not yet ("check"):
+// the things kept, what the planned dinners need from the house (highlighted, with the amount), and the freezer.
 import type { Frozen, Item, Kitchen, ListState, Section, Staple, Store } from "./client";
 import { norm } from "./words";
 
@@ -10,50 +10,47 @@ export const fromDinner = (it: Pick<Item, "for" | "checked">) => {
   return !it.checked && Boolean(f) && f !== "every week" && !f.split(",").map((x) => x.trim()).includes("added by hand");
 };
 
-/** check: not answered yet; have: there, so it stays off the list; need: on the list. */
-export type PlanAnswer = "check" | "have" | "need";
-export type PlanRow = { key: string; name: string; amount: string; answer: PlanAnswer; item: Item };
+/** check: not answered yet; have: checked and there (off every list); need: on the list. */
+export type Answer = "check" | "have" | "need";
 
-export type StockRow = { key: string; name: string; section: Section; have: boolean; open: Item | null; staple: Staple | null; frozen: Frozen | null; store: Store };
+export type StockRow = {
+  key: string; name: string; section: Section; store: Store; answer: Answer;
+  /** A planned dinner needs it: highlighted, with how much. */
+  meal: boolean; amount: string;
+  /** Its List row, if it has one (on the list, answered Have, or waiting for a dinner). */
+  item: Item | null; staple: Staple | null; frozen: Frozen | null;
+};
 
-/**
- * What the dinners need from the house: things waiting to be checked (a dinner's pantry things, and anything kept in
- * Stock), and the ones already answered, so an answer can be seen and changed. A dinner's fresh groceries go straight on
- * the list and aren't here, unless they're kept in Stock (tortillas).
- */
-export function planRows(list: ListState | null): PlanRow[] {
-  const kept = new Set((list?.staples ?? []).map((s) => norm(s.item)));
-  const seen = new Set<string>();
-  const out: PlanRow[] = [];
-  for (const it of list?.items ?? []) {
-    if (it.checked) continue;
-    const needed = !it.check && fromDinner(it) && (it.section !== "fresh" || kept.has(norm(it.item)));
-    if (!it.check && !needed) continue;
-    if (seen.has(norm(it.item))) continue;
-    seen.add(norm(it.item));
-    out.push({ key: it.id, name: it.item, amount: it.quantity, answer: it.have ? "have" : it.check ? "check" : "need", item: it });
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
-}
+const answerOf = (it: Item | null): Answer => (!it ? "check" : it.have ? "have" : it.check ? "check" : "need");
 
-/** Everything else in Stock, by section: the things kept and the freezer, minus what's in "For this plan". */
 export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRow[] {
-  const items = list?.items ?? [];
-  const inPlan = new Set(planRows(list).map((r) => norm(r.name)));
-  const onList = (name: string) => items.find((i) => !i.checked && !i.check && norm(i.item) === norm(name)) ?? null;
+  const items = (list?.items ?? []).filter((i) => !i.checked);
+  const find = (name: string) => items.find((i) => norm(i.item) === norm(name)) ?? null;
+  const row = (key: string, name: string, section: Section, store: Store, it: Item | null, staple: Staple | null, frozen: Frozen | null): StockRow => {
+    const meal = Boolean(it && fromDinner(it));
+    return { key, name, section, store, answer: answerOf(it), meal, amount: meal ? it!.quantity : "", item: it, staple, frozen };
+  };
   const rows: StockRow[] = [];
-  const known = new Set(inPlan);
+  const known = new Set<string>();
   for (const s of list?.staples ?? []) {
     if (known.has(norm(s.item))) continue;
     known.add(norm(s.item));
-    const open = onList(s.item);
-    rows.push({ key: `s|${norm(s.item)}`, name: s.item, section: s.section, have: !open, open, staple: s, frozen: null, store: s.store });
+    rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, find(s.item), s, null));
+  }
+  // What the dinners need from the house that isn't kept: a dinner's pantry things (its fresh groceries go straight on the
+  // list), in their own sections, highlighted.
+  for (const it of items) {
+    if (known.has(norm(it.item)) || !fromDinner(it) || (!it.check && it.section === "fresh")) continue;
+    known.add(norm(it.item));
+    rows.push(row(`m|${it.id}`, it.item, it.section, it.store, it, null, null));
   }
   for (const f of kitchen?.freezer ?? []) {
     if (known.has(norm(f.item))) continue;
     known.add(norm(f.item));
-    const open = onList(f.item);
-    rows.push({ key: `f|${f.id}`, name: f.item, section: "freezer", have: !open, open, staple: null, frozen: f, store: (f.store as Store) || "safeway" });
+    rows.push(row(`f|${f.id}`, f.item, "freezer", (f.store as Store) || "safeway", find(f.item), null, f));
   }
   return rows;
 }
+
+/** How many highlighted (meal) things haven't been answered yet. */
+export const toCheck = (rows: StockRow[]) => rows.filter((r) => r.meal && r.answer === "check").length;
