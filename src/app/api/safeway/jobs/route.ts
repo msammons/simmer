@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind, HELPER_VERSION } from "@/lib/jobs";
+import { cancelJob, finishJob, returnJob, helperPush, helperStatus, jobStatus, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind, HELPER_VERSION } from "@/lib/jobs";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 
@@ -72,6 +72,7 @@ export async function POST(req: Request) {
         return Response.json({ job, answering }, noStore);
       }
       case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
+      case "again": await returnJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
       case "next": {
         const job = await takeJob(text(b.version, 20), b.panel === true);
         // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -28,6 +28,15 @@ describe("jobs for the Safeway helper", () => {
     expect(products[1].image).toMatch(/^https:\/\/images\.albertsons-media\.com\/is\/image\/ABS\/2\?/);
     expect((await takeJob("1.0.0", true))?.id).toBe(b.id);
     expect(await takeJob("1.0.0", true)).toBeNull();
+  });
+
+  it("takes back a job the helper hands back as it reloads, for the reloaded helper to take", async () => {
+    const j = await queueJob("checkoutLook", {});
+    expect((await takeJob("1.0.0", false))?.id).toBe(j.id);
+    await returnJob(j.id);
+    expect((await jobStatus(j.id)).job?.status).toBe("waiting");
+    expect((await takeJob("2.0.0", false))?.id).toBe(j.id);
+    await returnJob("nope"); // nothing to hand back: nothing changes
   });
 
   it("puts a quantity set on Safeway in the cart, and keeps the pick with its picture", async () => {

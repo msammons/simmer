@@ -200,6 +200,16 @@ export async function cancelJob(id: string): Promise<void> {
 }
 
 /**
+ * The helper handing back a job it took just as it reloads for a newer version (Nov 12: the checkout look was lost that
+ * way): waiting again, its pickup time starting over, for the reloaded helper to take.
+ */
+export async function returnJob(id: string): Promise<void> {
+  const { jobs } = await read();
+  const j = jobs.find((x) => x.id === id);
+  if (j?.status === "working") await write({ ...j, status: "waiting", created: now(), updated: now() }, j.row);
+}
+
+/**
  * The helper's check-in to write down, or null when there's nothing new: it's written at most every 20 seconds (so
  * `alive` stays true), or when the panel opens or closes or the version changes.
  */
