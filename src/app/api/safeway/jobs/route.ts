@@ -76,9 +76,10 @@ export async function POST(req: Request) {
       case "next": {
         const job = await takeJob(text(b.version, 20), b.panel === true);
         // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
-        const key = pushKey(), have = key ? (await helperPush())?.key === key : false;
+        // `at`: where Simmer would send the push, so a helper whose subscription Chrome dropped (a reload drops it, Nov 12) makes a new one.
+        const key = pushKey(), saved = key ? await helperPush() : null, have = saved?.key === key;
         // `version`: the helper this Simmer ships, so a helper whose newer files are already on its computer reloads itself (26.11.11).
-        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have } }) }, noStore);
+        return Response.json({ job: job && { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
       }
       case "push": {
         const s = b.subscription, key = text(b.key, 200);
