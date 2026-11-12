@@ -140,7 +140,8 @@ export const api = {
   queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) }),
   /** The helper's recent searches and cart changes, for the panel's activity log. */
   activity: (signal?: AbortSignal) => call<{ jobs: Activity[]; answering: boolean }>("/api/safeway/jobs?recent=1", { signal }),
-  job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}`, { signal }),
+  /** How a job stands, answered once it's finished (or after about 20 seconds, still going): the server waits, not the app. */
+  job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}&wait=1`, { signal }),
   cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };
 
