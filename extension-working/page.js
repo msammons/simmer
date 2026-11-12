@@ -1,6 +1,6 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
-// time. It never signs in and never goes near checkout.
+// time. It never signs in. On checkout pages it only reads ("look"): it presses nothing there (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
 // comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
@@ -13,6 +13,7 @@
  * safewayPage("setQty", { id, qty, wait }) → { ok, qty, name, price, image }
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
  * safewayPage("orders", { pressed }) → Safeway's Purchases page, Online tab: { signedIn, online, pressed, none, entries, text }
+ * safewayPage("look") → { url, title, text, links: [{ text, href }], buttons: [label] } — reads only, presses nothing
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -258,6 +259,15 @@ export async function safewayPage(action, arg, P) {
   }
 
   if (action === "snapshot") return snapshot(arg.id);
+
+  // Checkout, read-only (Nov 12, docs/CHECKOUT.md phase 1): what the page says, its links (with where they go) and its
+  // buttons' words. Nothing here presses, types, or changes anything.
+  if (action === "look") {
+    const words = (el) => (el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
+    const links = deepAll(document, "a[href]").filter(visible).map((a) => ({ text: label(a).slice(0, 80), href: a.href })).filter((l) => l.text).slice(0, 80);
+    const buttons = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).map((b) => (label(b) || b.value || "").slice(0, 80)).filter(Boolean).slice(0, 80);
+    return { url: location.href, title: document.title, text: words(document.body).slice(0, 12000), links, buttons };
+  }
 
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
   // Answers { signedIn, online (the Online tab found and showing), pressed, none ("no orders" said), entries (the words

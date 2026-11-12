@@ -30,7 +30,7 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
       alt: text(b.alt, 120), ...(b.on === "cart" && { on: "cart" }),
     };
   }
-  if (kind === "cart") return {};
+  if (kind === "cart" || kind === "checkoutLook") return {};
   if (kind === "snapshot") return query && /^\d+$/.test(text(b.productId, 20)) ? { query, productId: text(b.productId, 20) } : null;
   // A sample of a search page, or of the cart page (`on: "cart"`, helper 1.2 on), to learn how Safeway builds it.
   return { query: query || "milk", ...(b.on === "cart" && { on: "cart" }) };
