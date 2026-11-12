@@ -2,9 +2,12 @@ import { after } from "next/server";
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind, HELPER_VERSION } from "@/lib/jobs";
+import { cancelJob, finishJob, helperPush, helperStatus, jobStatus, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type JobKind, HELPER_VERSION } from "@/lib/jobs";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
+
+// A job's status can wait for the job to finish (?wait=1, about 20 seconds at most).
+export const maxDuration = 60;
 
 const text = (s: unknown, max = 160) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 /** Chrome's push service (the helper runs in Chrome), so Simmer only ever sends its wake-ups there. */
@@ -34,7 +37,7 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * GET ?id=…: how a job stands, and whether the helper is answering. GET ?recent=1: the panel's activity log. GET with
+ * GET ?id=…: how a job stands, and whether the helper is answering (&wait=1: once it's finished, or after ~20 s). GET ?recent=1: the panel's activity log. GET with
  * neither: just whether it's answering.
  */
 export async function GET(req: Request) {
@@ -44,7 +47,7 @@ export async function GET(req: Request) {
     if (params.get("recent")) return Response.json({ jobs: await recentJobs(), ...(await helperStatus()) }, noStore);
     const id = text(params.get("id"), 40);
     if (!id) return Response.json(await helperStatus(), noStore);
-    return Response.json(await jobStatus(id), noStore);
+    return Response.json(params.get("wait") ? await waitForJob(id) : await jobStatus(id), noStore);
   } catch (e) { return failed(e); }
 }
 

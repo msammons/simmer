@@ -4,27 +4,31 @@
 // the computer shows this same screen, so it works the same everywhere. Product pictures are Safeway's own, shown from
 // Safeway's addresses (nothing's stored).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AuthError, errorText, framed, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
-import { nameWords, PAGE, searchWords } from "@/lib/safeway-helper.mjs";
-import { addedFor, buyAmount, cartTotal, money, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
+import { PAGE } from "@/lib/safeway-helper.mjs";
+import { addedFor, buyAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
-import { Button, EmptyState, Group, Notice } from "./ui";
+import { Button, EmptyState, Group } from "./ui";
 import manifest from "../../extension-working/manifest.json";
 
-export const cartUrl = () => `${PAGE.site}${PAGE.cartPath}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Simmer on the computer is older than this one: where to get the new one. */
-export function UpdateNotice() {
+/**
+ * Simmer on the computer is older than this one: where to get the new one. A quiet group at the end of the Safeway list,
+ * so it never pushes the list down when it shows (Nov 11: no bars).
+ */
+export function UpdateNote() {
   return (
-    <Notice tone="info">
-      Simmer in Chrome needs an update.{" "}
-      <a className="font-semibold text-accent" href={`/simmer-helper-v${manifest.version}.zip`} download>Get the new one</a>, open it, put what&apos;s inside in place of the old Simmer folder, then press reload on Simmer in Chrome&apos;s extensions page.
-    </Notice>
+    <Group footer="Open it, put what's inside in place of the old Simmer folder, then press reload on Simmer in Chrome's extensions page.">
+      <a href={`/simmer-helper-v${manifest.version}.zip`} download className="flex items-center gap-3 px-4 py-3 active:bg-sunk">
+        <span className="min-w-0 flex-1 t-body">Simmer in Chrome needs an update</span>
+        <span className="shrink-0 t-sub text-accent">Get the new one</span>
+      </a>
+    </Group>
   );
 }
 
-export const NOT_ANSWERING = "Can't reach Safeway right now. Check the connection and try again.";
+export const NOT_ANSWERING = "Can't reach Safeway right now. Check things off in the store instead.";
 /** Plain words for why a job didn't happen. */
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
@@ -70,32 +74,21 @@ export function useSafeway() {
   }, [refresh]);
 
   /**
-   * Queues a job and follows it. When the computer hasn't checked in lately it says so at once instead of waiting; a
-   * job nobody takes is given up by Simmer after about 35 seconds.
+   * Queues a job and follows it. Each answer about it comes once the job's finished, or after about 20 seconds while it's
+   * still going (the server waits, Nov 11: no timer in the app); a job nobody takes is given up by Simmer after 20 seconds.
    */
   const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal): Promise<JobOutcome> => {
-    let job: Job, heard = true;
+    let job: Job;
     try {
       const q = await api.queueJob(kind, args);
-      heard = q.answering;
       setAnswering(q.answering);
       job = q.job;
     } catch (e) { return { ok: false, problem: errorText(e) }; }
-    // Not heard from lately: give it a few seconds (the panel may have just opened), then say so rather than wait on.
-    // Checked every second and a half: each check is a read of the Sheet, which allows 60 a minute for everyone.
-    let quiet = heard ? 0 : Date.now() + 5000;
-    for (const end = Date.now() + 120_000; Date.now() < end;) {
-      await new Promise((r) => setTimeout(r, 1500));
+    for (const end = Date.now() + 150_000; Date.now() < end;) {
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
         const s = await api.job(job.id, signal);
         if (!s.job) return { ok: false, problem: problemText("") };
-        if (quiet && s.job.status === "waiting" && !s.answering && Date.now() > quiet) {
-          api.cancelJob(job.id).catch(() => {});
-          setAnswering(false);
-          return { ok: false, problem: NOT_ANSWERING };
-        }
-        if (s.job.status !== "waiting" || s.answering) quiet = 0;
         if (s.job.status === "done") { setAnswering(true); setAway(false); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
           const error = String(s.job.result?.error ?? "");
@@ -104,8 +97,9 @@ export function useSafeway() {
           return { ok: false, problem: error === "cancelled" ? "" : problemText(error) };
         }
       } catch (e) {
-        if (signal?.aborted) return { ok: false, problem: "" };
+        if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
         if (e instanceof AuthError) return { ok: false, problem: "" };
+        return { ok: false, problem: errorText(e) };
       }
     }
     return { ok: false, problem: NOT_ANSWERING };
@@ -156,12 +150,11 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
     : <span className={`flex ${size} shrink-0 items-center justify-center bg-sunk text-muted`}><Icon name="bag" className={small ? "size-5" : "size-6"} /></span>;
 }
 
-/** − qty +, with a trash in place of − at one. */
 /**
- * − / count / +. While a change is on its way to Safeway (busy) the product is locked: both buttons are off and the count
- * is a spinner, so a second tap can't send a second change before the first is done (Sam, Oct 31).
+ * − / count / +, with a trash in place of − at one. The count changes at once; while the change is on its way to Safeway
+ * (busy) both buttons are off, so a second tap can't send a second change before the first is done (Sam, Oct 31), and
+ * the count is greyed (Nov 11: no spinner). `off`: Safeway can't be reached just now, so neither can be pressed (Nov 3).
  */
-/** − / count / +. `off`: Safeway can't be reached just now, so neither can be pressed (Nov 3). */
 export function Stepper({ qty, name, busy, off, onChange }: { qty: number; name: string; busy?: boolean; off?: boolean; onChange: (n: number) => void }) {
   const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
   return (
@@ -169,9 +162,7 @@ export function Stepper({ qty, name, busy, off, onChange }: { qty: number; name:
       <button className={btn} disabled={busy || off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
         <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
       </button>
-      <span className="flex w-6 justify-center t-headline tabular-nums" aria-label={busy ? `Changing ${name} on Safeway` : `${qty} in the cart`} role={busy ? "status" : undefined}>
-        {busy ? <span aria-hidden className="size-[18px] animate-spin rounded-full border-2 border-accent/25 border-t-accent" /> : qty}
-      </span>
+      <span className={`flex w-6 justify-center t-headline tabular-nums ${busy ? "text-muted" : ""}`} aria-label={`${qty} in the cart`}>{qty}</span>
       <button className={btn} aria-label={`One more ${name}`} disabled={busy || off || qty >= 24} onClick={() => onChange(qty + 1)}>
         <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
       </button>
@@ -212,7 +203,7 @@ function FindProduct({ p, sub, control }: { p: { name: string; image?: string };
   );
 }
 
-type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean; problem: string; slow: boolean };
+type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean };
 
 /**
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
@@ -236,18 +227,20 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
     ctl.current?.abort();
     const c = new AbortController();
     ctl.current = c;
-    setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true, problem: "", slow: false } }));
-    const slow = setTimeout(() => setSearches((s) => (s[q]?.state === "loading" ? { ...s, [q]: { ...s[q], slow: true } } : s)), 6000);
+    setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true } }));
     let r = await sw.run("search", { query: q }, c.signal);
     // Safeway can say "no results" for a moment while its page is still building (Oct 31: "canned pumpkin" came back
     // empty, then full the next time), so an empty answer is asked once more before it's shown.
     if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await sw.run("search", { query: q }, c.signal);
-    clearTimeout(slow);
     if (c.signal.aborted) return;
+    const signedIn = !r.ok || r.result.signedIn !== false;
     setSearches((s) => ({ ...s, [q]: r.ok
-      ? { query: q, state: "done", products: (r.result.products as Product[]) ?? [], signedIn: r.result.signedIn !== false, problem: "", slow: false }
-      : { query: q, state: "failed", products: [], signedIn: true, problem: r.problem || NOT_ANSWERING, slow: false } }));
-  }, [sw]);
+      ? { query: q, state: "done", products: (r.result.products as Product[]) ?? [], signedIn }
+      : { query: q, state: "failed", products: [], signedIn: true } }));
+    // A problem shows over the page (Nov 11: no bars); the results place says what's left to do.
+    if (!r.ok) sw.setProblem(r.problem || NOT_ANSWERING);
+    else if (!signedIn) sw.setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`);
+  }, [sw, store]);
   // The item showing is searched for when it comes up (once; going back to it shows what was found). Its search words
   // are kept from then on, so a pick saved while it shows doesn't start another search.
   const itemId = it?.id ?? "";
@@ -307,27 +300,22 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" variant="secondary" disabled={!query.trim() || s?.state === "loading"} className="shrink-0 px-5">Search</Button>
       </form>
-      {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
       {(!s || s.state === "loading") && (
         <section className="space-y-1.5">
           <div className={GRID}>
             {[0, 1, 2].map((k) => (
               <div key={k} className={TILE} aria-hidden>
-                <span className="size-14 shrink-0 animate-pulse rounded-xl bg-sunk min-[640px]:h-32 min-[640px]:w-full" />
-                <span className="flex-1 space-y-2"><span className="block h-3.5 w-3/4 animate-pulse rounded-full bg-sunk" /><span className="block h-3 w-1/4 animate-pulse rounded-full bg-sunk" /></span>
+                <span className="shimmer size-14 shrink-0 rounded-xl min-[640px]:h-32 min-[640px]:w-full" />
+                <span className="flex-1 space-y-2"><span className="shimmer block h-3.5 w-3/4 rounded-full" /><span className="shimmer block h-3 w-1/4 rounded-full" /></span>
               </div>
             ))}
           </div>
-          {s?.slow && <p className="px-4 t-foot text-muted">The first search can take up to half a minute.</p>}
           <p className="sr-only" role="status">Looking on {store}</p>
         </section>
       )}
       {s?.state === "failed" && (
         <>
-          <Notice>
-            {s.problem}{" "}
-            <button className="font-semibold text-accent" onClick={() => search(query, true)}>Try again</button>
-          </Notice>
+          <EmptyState icon="search" title="Nothing came back" action={<Button variant="secondary" onClick={() => search(query, true)}>Try again</Button>} />
           {/* Without the computer: the usual product, and Safeway's own search, to add it there; then tick it off here. */}
           <Group header={`Add it on ${store} instead`} footer={`Opens ${store}. Once it's in the cart there, tap Got it.`}>
             {it.picked && (
@@ -342,7 +330,6 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
           </Group>
         </>
       )}
-      {s?.state === "done" && !s.signedIn && <Notice>{store} isn&apos;t signed in. Sign in to {store} to add things.</Notice>}
       {s?.state === "done" && (results.length ? (
         <div className={GRID}>
           {results.map(({ product: p, usual }) => {
@@ -359,7 +346,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
         </div>
       ) : <EmptyState icon="search" title="Nothing came up" />)}
       <div className="flex gap-3">
-        {index > 0 && <Button variant="secondary" className="flex-1" onClick={() => move(index - 1)}>Back</Button>}
+        {index > 0 && <button type="button" aria-label={`Back to ${cap(items[index - 1].item)}`} onClick={() => move(index - 1)} className="glass inline-flex h-[52px] flex-1 items-center justify-center rounded-full px-6 t-headline text-accent transition active:scale-[0.97]">Back</button>}
         {inCartForIt
           ? <Button className="flex-1" onClick={next}>{to < 0 ? "See the cart" : "Next item"}</Button>
           : s?.state === "failed"
@@ -367,50 +354,6 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             : <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
         {s?.state === "failed" && !inCartForIt && <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
       </div>
-    </div>
-  );
-}
-
-/** A store's cart as Simmer knows it: change quantities, take things out, and check out on Safeway. */
-export function CartView({ store, sw, onFind }: { store: string; sw: Safeway; onFind: (() => void) | null }) {
-  const { total, estimate } = cartTotal(sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })));
-  // In the helper's panel, the Safeway tab beside it shows Safeway's own cart while this is open (and Simmer's copy
-  // takes the quantities shown there).
-  const { run, refresh } = sw;
-  useEffect(() => {
-    if (!framed()) return;
-    const c = new AbortController();
-    run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
-    return () => c.abort();
-  }, [run, refresh]);
-  if (sw.loaded && !sw.cart.length) {
-    return (
-      <div className="space-y-5">
-        {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
-        <EmptyState icon="cart" title="The cart is empty" action={onFind && <Button onClick={onFind}>Find them at {store}</Button>} />
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-5">
-      {sw.problem && <Notice onClick={() => sw.setProblem(null)}>{sw.problem}</Notice>}
-      {sw.answering === false && <Notice tone="info">{NOT_ANSWERING} Changes here wait until it is.</Notice>}
-      <Group footer={`Only what was added here shows. Anything added on ${store} itself is in the cart there too.`}>
-        {sw.cart.map((l) => {
-          const qty = sw.qtyOf(l.productId, l.qty);
-          const p = { id: l.productId, name: l.name, price: l.price, image: l.image };
-          return (
-            <ProductRow key={l.productId} p={p} sub={l.price}
-              control={<Stepper qty={qty} name={l.name} busy={l.productId in sw.pending}
-                onChange={(n) => sw.setQty(p, n, l.item ? searchWords(l.item) : nameWords(l.name), null, { alt: nameWords(l.name), on: "cart" })} />} />
-          );
-        })}
-        <div className="flex items-baseline justify-between px-4 py-3">
-          <span className="t-headline">{estimate ? "About" : "Total"}</span>
-          <span className="t-headline tabular-nums">{money(total)}</span>
-        </div>
-      </Group>
-      <Button href={cartUrl()} icon="external" className="w-full">Check out on {store}</Button>
     </div>
   );
 }

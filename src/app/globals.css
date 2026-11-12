@@ -169,6 +169,18 @@ button, a, [role="button"] {
 @keyframes dash {
   to { stroke-dashoffset: -64; }
 }
+
+/* Loading looks the same in every Morales app (Head Out's): grey shapes where the content will be, with a soft sweep. */
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@utility shimmer {
+  background-color: var(--sunk);
+  background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--card) 70%, transparent) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; }
 }

@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type Ref } from "react";
+import { createPortal } from "react-dom";
 import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
 
@@ -65,8 +66,10 @@ export function IconButton({ icon, label, onClick, href, tone = "ink" }: { icon:
  * 16px under the bar and 16px above the content, with an optional line under it. Tab screens have no title. On screens you drill into, a round back button sits
  * just before the title (swiping right also goes back), so the lockup never moves.
  */
-export function TopBar({ title, subtitle, onBack, backLabel = "Back", trailing }: {
-  title: ReactNode; subtitle?: ReactNode; onBack?: () => void; backLabel?: string; trailing?: ReactNode;
+export function TopBar({ title, subtitle, onBack, backLabel = "", trailing }: {
+  title: ReactNode; subtitle?: ReactNode; onBack?: () => void;
+  /** "Back to Meals": names the screen below (Nov 11, as in every Morales app). */
+  backLabel?: string; trailing?: ReactNode;
 }) {
   return (
     <>
@@ -209,11 +212,66 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
   return <div className={cls}>{inner}</div>;
 }
 
-/** A message in the flow of a screen: warn for problems, info for notes. */
-export function Notice({ children, tone = "warn", onClick }: { children: ReactNode; tone?: "warn" | "info"; onClick?: () => void }) {
-  const cls = `flex w-full items-start gap-2.5 rounded-[1.375rem] px-4 py-3 text-left t-sub ${tone === "warn" ? "bg-warn-bg text-warn-ink" : "bg-card text-ink"}`;
-  const inner = <><Icon name="info" className="mt-px size-[18px]" />{<span className="min-w-0 flex-1">{children}</span>}</>;
-  return onClick ? <button onClick={onClick} className={cls}>{inner}</button> : <div role={tone === "warn" ? "alert" : undefined} className={cls}>{inner}</div>;
+/**
+ * A problem, shown over the page (never a bar that pushes it down): a short headline, the reason, OK. The same in every
+ * studio app, so it can be copied across.
+ */
+export function Alert({ open, title, message, onClose }: { open: boolean; title: string; message: ReactNode; onClose: () => void }) {
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <Sheet label={title} title={title} onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        <p role="alert" className="t-sub text-muted">{message}</p>
+        <Button className="w-full" onClick={onClose}>OK</Button>
+      </div>
+    </Sheet>,
+    document.body,
+  );
+}
+
+/**
+ * Asks before something risky: a headline, one muted line, the action as a full-width button, then Cancel. The same in
+ * every studio app, so it can be copied across. danger: the action takes something away (red).
+ */
+export function ConfirmSheet({ open, title, message, confirm, onConfirm, onCancel, danger }: {
+  open: boolean; title: string; message?: ReactNode; confirm: string; onConfirm: () => void; onCancel: () => void; danger?: boolean;
+}) {
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <Sheet label={title} title={title} onClose={onCancel}>
+      <div className="space-y-3 pb-2">
+        {message && <p className="t-sub text-muted">{message}</p>}
+        {danger ? (
+          <button type="button" onClick={onConfirm} className={`inline-flex h-[52px] w-full items-center justify-center rounded-full bg-alert px-6 t-headline text-white ${PRESS}`}>{confirm}</button>
+        ) : (
+          <Button className="w-full" onClick={onConfirm}>{confirm}</Button>
+        )}
+        <Button variant="secondary" className="w-full" onClick={onCancel}>Cancel</Button>
+      </div>
+    </Sheet>,
+    document.body,
+  );
+}
+
+/**
+ * Still loading, the first time (nothing saved here yet): grey rows in the shape of a list, with Head Out's shimmer, the
+ * same in every app. No words, no spinner.
+ */
+export function Held({ groups = [4, 3], label = "Loading" }: { groups?: number[]; label?: string }) {
+  return (
+    <div className="space-y-6" role="status" aria-label={label}>
+      {groups.map((rows, i) => (
+        <section key={i} className="space-y-1.5">
+          <div className="shimmer ml-4 h-3 w-20 rounded-full" />
+          <div className="space-y-4 rounded-[1.375rem] bg-card px-4 py-4">
+            {Array.from({ length: rows }, (_, n) => (
+              <div key={n} className={`shimmer h-[15px] rounded-full ${n % 3 === 1 ? "w-1/2" : n % 3 === 2 ? "w-2/3" : "w-5/6"}`} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 /** Pick one, iOS-style. */
