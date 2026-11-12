@@ -196,6 +196,7 @@ export async function runJob(job, windowId) {
     if (!done) return { ok: false, error: loaded ? "not-found" : "not-loaded" };
     return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image } };
   }
+  if (job.kind === "checkoutLook") return { ok: true, result: await checkoutLook(tabId, page) };
   if (job.kind === "sample" || job.kind === "snapshot") {
     const onCart = args.on === "cart";
     if (onCart) await openCart(tabId, page, settings); else await search(tabId, args.query, page, settings);
@@ -203,4 +204,31 @@ export async function runJob(job, windowId) {
     return { ok: true, result: { text: text || "" } };
   }
   return { ok: false, error: "failed" };
+}
+
+/**
+ * A read-only look at Safeway's checkout (Nov 12, docs/CHECKOUT.md phase 1): the cart page, then the pages its checkout
+ * links lead to, each loaded by its address (going to an address places nothing). It never presses, types or picks
+ * anything. A link that sounds like ordering or paying is never followed. When checkout is a button and not a link, it
+ * stops there and says so ("needs a press").
+ */
+async function checkoutLook(tabId, page) {
+  const NEVER = /place|submit|confirm|pay|purchase|order now|complete/i;
+  const pages = [];
+  const read = async () => {
+    await sleep(2500); // the page builds itself after it loads
+    const r = await onPage(tabId, "look", null, page);
+    if (r) pages.push(r);
+    return r;
+  };
+  await go(tabId, `${page.site}${page.cartPath}`);
+  let here = await read();
+  for (let step = 0; step < 3 && here; step++) {
+    const next = here.links.find((l) => /check\s*out|continue|review|pick\s*up/i.test(`${l.text} ${l.href}`) && !NEVER.test(`${l.text} ${l.href}`)
+      && l.href.startsWith(page.site) && !pages.some((p) => p.url === l.href));
+    if (!next) return { pages, stopped: here.buttons.some((b) => /check\s*out|continue/i.test(b)) ? "needs a press" : "no checkout link" };
+    await go(tabId, next.href);
+    here = await read();
+  }
+  return { pages, stopped: "looked" };
 }

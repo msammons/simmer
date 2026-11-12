@@ -14,7 +14,7 @@ import { recordTrip } from "./plan";
 import { todayIn } from "./time";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
-export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot"] as const;
+export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
@@ -298,6 +298,15 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
   if (ok && (j.kind === "sample" || j.kind === "snapshot")) result = { text: str(raw.text, 8000) };
+  // The read-only checkout look (docs/CHECKOUT.md phase 1): each page's words, links and buttons, kept to read once.
+  if (ok && j.kind === "checkoutLook") {
+    const pages = (Array.isArray(raw.pages) ? raw.pages : []).slice(0, 5).map((p: Record<string, unknown>) => ({
+      url: str(p?.url, 300), title: str(p?.title, 120), text: typeof p?.text === "string" ? p.text.slice(0, 12000) : "",
+      links: (Array.isArray(p?.links) ? p.links : []).slice(0, 80).map((l: Record<string, unknown>) => ({ text: str(l?.text, 80), href: str(l?.href, 300) })),
+      buttons: (Array.isArray(p?.buttons) ? p.buttons : []).slice(0, 80).map((b: unknown) => str(b, 80)),
+    }));
+    result = { pages, stopped: str(raw.stopped, 40) };
+  }
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }
 
