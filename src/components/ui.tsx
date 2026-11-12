@@ -519,8 +519,8 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
-          <button aria-label="Close" onClick={onClose} className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full bg-sunk text-muted active:scale-90">
-            <Icon name="close" className="size-4" strokeWidth={2.4} />
+          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-accent transition active:scale-90">
+            <Icon name="close" className="size-[18px]" strokeWidth={2.2} />
           </button>
           {pager && pager.total > 1 && <Dots {...pager} />}
           {title && <h2 className="t-headline px-12 text-center text-balance">{title}</h2>}

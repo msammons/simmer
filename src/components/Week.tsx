@@ -87,13 +87,13 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                   const name = mealName(d.recipe, recipes);
                   const n = want[d.recipe] ?? same.length;
                   return (
-                    <div key={d.recipe} className="flex items-center gap-1.5 pr-3">
+                    <div key={d.recipe} className="flex items-center gap-1 pr-3">
                       <div className="min-w-0 flex-1">
                         <Row title={name} onClick={r ? () => onOpen(d) : undefined} />
                       </div>
-                      <RoundButton quiet icon="minus" label={n > 1 ? `One less ${name}` : `Take ${name} off the plan`} onClick={() => tap(d, -1)} />
-                      <span className="w-5 text-center t-headline tabular-nums" aria-label={`${name}: ${n}`}>{n}</span>
-                      <RoundButton quiet icon="plus" label={`One more ${name}`} onClick={() => tap(d, 1)} />
+                      <RoundButton icon="minus" label={n > 1 ? `One less ${name}` : `Take ${name} off the plan`} onClick={() => tap(d, -1)} />
+                      <span className="flex w-5 justify-center t-headline tabular-nums" aria-label={`${name}: ${n}`}>{n}</span>
+                      <RoundButton icon="plus" label={`One more ${name}`} onClick={() => tap(d, 1)} />
                     </div>
                   );
                 })}
@@ -179,9 +179,9 @@ export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Ki
 
 // ---- Small pieces
 
-function RoundButton({ icon, label, onClick, quiet }: { icon: IconName; label: string; onClick: () => void; quiet?: boolean }) {
+function RoundButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
   return (
-    <button aria-label={label} onClick={onClick} className={`flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-90 ${quiet ? "text-muted" : "glass text-accent"}`}>
+    <button aria-label={label} onClick={onClick} className="glass flex size-8 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100">
       <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
     </button>
   );
