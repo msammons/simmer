@@ -105,7 +105,7 @@ export type Kitchen = { freezer: Frozen[]; trips: PlanData["trips"] };
 /** A change to one planned thing: another recipe, another part of a lunch, made (or packed), or off. */
 export type PlanChange = { op: "change"; id: string; recipe: string; pinned?: boolean } | { op: "change"; id: string; part: LunchPart; item: string } | { op: "made"; id: string } | { op: "remove"; id: string } | { op: "clear" } | { op: "count"; recipe: string; kind: Kind; count: number };
 export type ListState = { items: Item[]; staples: Staple[] };
-type Change = { op: "need"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section; amount?: string } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
+type Change = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section; amount?: string } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
   | { op: "clear"; ids: string[] } | { op: "putBack"; items: Item[] } | { op: "keepAdd"; text: string; section?: Section } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
 
 /** Every request takes an optional AbortSignal, so it can be stopped. */

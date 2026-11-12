@@ -392,6 +392,8 @@ export async function addItems(entries: { item: string; quantity: string; for: s
 
 /** "Check you have these": she needs this one (it joins the list), or has the rest (they come off). */
 export const needItem = (id: string) => setCells(id, { check: "" });
+/** Unticked on Stock after all (Nov 11): a dinner's pantry thing goes back to highlighted, not off the list for good. */
+export const unneedItem = (id: string) => setCells(id, { check: "yes" });
 export async function haveTheRest(): Promise<void> {
   if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !(x.check && !x.checked)); return; }
   const rows = await rowsOf(LIST);
