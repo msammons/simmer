@@ -6,7 +6,6 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
-import { fromDinner } from "@/lib/stock-rows";
 import { AddMealSheet, MealsScreen } from "./Week";
 import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
@@ -297,17 +296,23 @@ export default function App() {
     putBack: (items) => change({ op: "putBack", items }, (l) => ({ ...l, items: [...l.items, ...items.filter((x) => !l.items.some((y) => y.id === x.id))] })),
   };
   const stock: StockActions = {
-    // The usual amount goes alongside, not in front: "1 loaf bread" filed as "loaf bread", which Stock never matched (Nov 3).
-    out: (name, s, section, amount) => change({ op: "add", text: name, by: me, store: s, section, ...(amount && { amount }) }),
-    // A dinner's thing goes back to highlighted (it's still for that dinner); anything else comes off the list.
-    have: (it) => (fromDinner(it)
-      ? change({ op: "unneed", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: true } : x)) }))
-      : change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }))),
-    answer: (it, ans) => change(ans === "need" ? { op: "need", id: it.id } : ans === "have" ? { op: "haveIt", id: it.id } : { op: "unneed", id: it.id },
-      (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: ans !== "need", have: ans === "have" } : x)) })),
-    takeOut: (f) => {
-      setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
-      api.freezer({ op: "use", id: f.id }).then(setKitchen, failed);
+    // Have | Need on any row (Nov 11). Its List row, if it has one, changes in place; a thing with none gets one: on the
+    // list for Need (the usual amount alongside, not in front: "1 loaf bread" was filed as "loaf bread", Nov 3), or
+    // marked Have. Unanswered again: a dinner's thing waits to be checked; anything else's row goes.
+    answer: (r, ans) => {
+      const it = r.item;
+      const mark = (check: boolean, have: boolean) => (l: ListState) => ({ ...l, items: l.items.map((x) => (x.id === it!.id ? { ...x, check, have } : x)) });
+      if (it && ans === "need") return change({ op: "need", id: it.id }, mark(false, false));
+      if (it && ans === "have") return change({ op: "haveIt", id: it.id }, mark(true, true));
+      if (it && r.meal) return change({ op: "unneed", id: it.id }, mark(true, false));
+      if (it) return change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }));
+      if (ans === "check") return;
+      if (ans === "need" && r.frozen) {
+        const f = r.frozen;
+        setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
+        api.freezer({ op: "use", id: f.id }).then(setKitchen, failed);
+      }
+      change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) });
     },
     keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),

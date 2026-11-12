@@ -250,46 +250,54 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     ok(`${tag}: sheets have a close button`, await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Close" }).last().isVisible());
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
-    // Stock: what the house keeps, assumed in. A tap means out: it goes on its store's list; a second tap takes it back off.
+    // Stock (Nov 11): every row answered with one switch, Have | Need (never both); the lit side tapped again clears it.
+    // Need puts it on its store's list. A dinner's things are highlighted in their own sections and counted.
     const tabBar = page.getByRole("navigation", { name: "Main" });
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
     await settingsHere("Stock");
-    ok(`${tag}: Stock has the add field and the line about ticking`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("Tick what you need; it goes on the list.").isVisible()) && (await page.getByText("In meals").count()) === 0);
-    // For this plan (Nov 11): each dinner's thing answered Have or Need with one switch; the lit side tapped again clears it.
-    const plan = page.getByRole("group", { name: /^Have or need / });
-    if (await plan.count()) {
-      const first = plan.first(), have = first.getByRole("button", { name: /^Have: / }), need = first.getByRole("button", { name: /^Need: / });
-      const pressed = async () => [await have.getAttribute("aria-pressed"), await need.getAttribute("aria-pressed")].join();
-      if ((await pressed()) !== "false,false") { await (await have.getAttribute("aria-pressed") === "true" ? have : need).tap(); await page.waitForTimeout(1200); }
-      const before = await page.getByText(/^\d+ to check$|^All checked$/).innerText();
-      await have.tap(); await page.waitForTimeout(1200);
-      ok(`${tag}: Have lights, and one fewer to check`, (await pressed()) === "true,false" && (await page.getByText(/^\d+ to check$|^All checked$/).innerText()) !== before);
-      await need.tap(); await page.waitForTimeout(1200);
-      ok(`${tag}: Need switches it (never both)`, (await pressed()) === "false,true");
-      await need.tap(); await page.waitForTimeout(1200);
-      ok(`${tag}: tapping the lit side again makes it to check`, (await pressed()) === "false,false" && (await page.getByText(/^\d+ to check$|^All checked$/).innerText()) === before);
-    } else ok(`${tag}: For this plan (no dinner needs anything from the house in the sample)`, true);
+    const needOf = (n) => page.getByRole("button", { name: `Need: ${n}`, exact: true });
+    const haveOf = (n) => page.getByRole("button", { name: `Have: ${n}`, exact: true });
+    const answerOf = async (n) => ((await haveOf(n).getAttribute("aria-pressed")) === "true" ? "have" : (await needOf(n).getAttribute("aria-pressed")) === "true" ? "need" : "check");
+    const clear = async (n) => { const a = await answerOf(n); if (a !== "check") { await (a === "have" ? haveOf(n) : needOf(n)).tap(); await page.waitForTimeout(1200); } };
+    ok(`${tag}: Stock has the add field and the line about Need`, (await page.getByLabel("Add something to Stock").isVisible()) && (await page.getByText("Need puts it on the list.").isVisible()));
+    ok(`${tag}: no For this plan group; everything stays in its section`, (await page.getByText("For this plan").count()) === 0);
+    const meal = page.locator(".bg-accent\\/15").filter({ has: page.getByRole("group", { name: /^Have or need / }) });
+    if (await meal.count()) {
+      const name = (await meal.first().getByRole("group").getAttribute("aria-label")).replace(/^Have or need /, "");
+      await clear(name);
+      const count = async () => page.getByText(/In meals · (\d+ to check|all checked)/).innerText();
+      const before = await count();
+      await haveOf(name).tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: a meal thing: Have lights, and one fewer to check`, (await answerOf(name)) === "have" && (await count()) !== before, `${before} → ${await count()}`);
+      await needOf(name).tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: Need switches it (never both), still highlighted`, (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
+      await needOf(name).tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: tapping the lit side again makes it to check`, (await answerOf(name)) === "check" && (await count()) === before);
+    } else ok(`${tag}: meal things (none need anything from the house in the sample)`, true);
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
-    const milk = page.getByRole("checkbox", { name: "Need Milk" });
-    if ((await milk.getAttribute("aria-checked")) === "true") { await milk.tap(); await page.waitForTimeout(1200); }
-    await milk.tap(); await page.waitForTimeout(1500);
-    const before = (await milk.boundingBox())?.height;
-    ok(`${tag}: ticking puts it on the list`, (await milk.getAttribute("aria-checked")) === "true");
-    ok(`${tag}: a ticked row says nothing more and keeps its height`, (await milk.getByText(/on the list/i).count()) === 0 && Math.abs(((await page.getByRole("checkbox", { name: "Need Eggs" }).boundingBox())?.height ?? 0) - (before ?? 0)) < 1, `${before}`);
-    // Every row with something to offer has ⋯, and the rest keep its space, so the amounts line up (Nov 11).
-    ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("checkbox", { name: /^Need / }).evaluateAll((bs) => bs.length > 3 && bs.every((b) => { const n = b.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
-    // No Every week (Nov 10): a thing goes on a list only when tapped out here, and nothing comes back by itself after a shop.
-    const eggs = page.getByRole("checkbox", { name: "Need Eggs" });
+    // A kept thing works the same way.
+    await clear("Milk");
+    const milkHeight = (await page.getByRole("group", { name: "Have or need Milk" }).boundingBox())?.height;
+    await needOf("Milk").tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: Need puts a kept thing on the list`, (await answerOf("Milk")) === "need");
+    await haveOf("Milk").tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: Have switches it off the list, marked checked`, (await answerOf("Milk")) === "have");
+    await haveOf("Milk").tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: and the lit side again clears it`, (await answerOf("Milk")) === "check" && Math.abs(((await page.getByRole("group", { name: "Have or need Milk" }).boundingBox())?.height ?? 0) - (milkHeight ?? 0)) < 1);
+    await needOf("Milk").tap(); await page.waitForTimeout(1500);
+    // Every row has ⋯ or its space, so the switches line up (Nov 11).
+    ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => gs.length > 3 && gs.every((g) => { const n = g.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
+    // No Every week (Nov 10): a thing goes on a list only when answered Need here, and nothing comes back by itself after a shop.
     ok(`${tag}: no Every week anywhere on Stock`, (await page.getByText(/every week/i).count()) === 0 && (await page.getByLabel("More for Eggs").locator("option", { hasText: /week/i }).count()) === 0);
-    if ((await eggs.getAttribute("aria-checked")) !== "true") { await eggs.tap(); await page.waitForTimeout(1500); }
+    if ((await answerOf("Eggs")) !== "need") { await needOf("Eggs").tap(); await page.waitForTimeout(1500); }
     // Remove from Stock asks first (the shared confirm); Cancel keeps it.
     await page.getByLabel("More for Eggs").selectOption("remove"); await page.waitForTimeout(300);
     const removeAsk = page.getByRole("dialog", { name: "Remove Eggs from Stock?" });
     ok(`${tag}: Remove from Stock asks first`, (await removeAsk.isVisible()) && (await removeAsk.getByRole("button", { name: "Remove from Stock" }).isVisible()));
     await removeAsk.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
-    ok(`${tag}: Cancel keeps it in Stock`, (await removeAsk.count()) === 0 && (await eggs.count()) === 1);
+    ok(`${tag}: Cancel keeps it in Stock`, (await removeAsk.count()) === 0 && (await needOf("Eggs").count()) === 1);
     await page.getByLabel("Add something to Stock").fill(`frozen waffles ${tag}`); await page.keyboard.press("Enter");
-    ok(`${tag}: Stock add`, await seen(page.getByRole("checkbox", { name: new RegExp(`Need frozen waffles ${tag}`, "i") })));
+    ok(`${tag}: Stock add`, await seen(page.getByRole("group", { name: new RegExp(`Have or need frozen waffles ${tag}`, "i") })));
 
     // Lists: All, Safeway, Trader Joe's, Costco. What's out in Stock is on its store's list.
     await tabBar.getByRole("button", { name: "Lists" }).tap(); await page.waitForTimeout(800);
@@ -320,9 +328,9 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByRole("dialog", { name: "Done shopping?" }).getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(1500);
     ok(`${tag}: bought things don't come back on the list by themselves`, (await page.getByRole("checkbox", { name: /Eggs/ }).count()) === 0);
     await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
-    await page.getByRole("checkbox", { name: "Need Milk" }).tap(); await page.waitForTimeout(1500);
-    ok(`${tag}: a second tap in Stock takes it back off`, (await page.getByRole("checkbox", { name: "Need Milk" }).getAttribute("aria-checked")) === "false");
-    ok(`${tag}: after the shop, Eggs isn't on the list any more`, (await eggs.getAttribute("aria-checked")) === "false");
+    await needOf("Milk").tap(); await page.waitForTimeout(1500);
+    ok(`${tag}: tapping Need again in Stock takes it back off`, (await answerOf("Milk")) === "check");
+    ok(`${tag}: after the shop, Eggs isn't on the list any more`, (await answerOf("Eggs")) === "check");
 
     // The Recipes tab, a recipe, and back.
     const nav = page.getByRole("navigation", { name: "Main" });
