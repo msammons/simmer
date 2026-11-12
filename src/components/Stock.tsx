@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { type Frozen, type Item, type Kitchen, type ListState, type Section, type Staple, type Store } from "@/lib/client";
 import { rowsOf, type StockRow } from "@/lib/stock-rows";
-import { STORE_NAMES } from "./Shop";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held } from "./ui";
 
 /**
@@ -72,10 +71,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               <div key={r.key} className={`flex items-center pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
                 <button role="checkbox" aria-checked={!r.have} aria-label={`Need ${r.name}`} onClick={() => tap(r)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
                   <Tick on={!r.have} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block t-body">{cap(r.name)}</span>
-                    {!r.have && r.open && <span className="block t-foot text-muted">On the list · {STORE_NAMES[r.open.store]}</span>}
-                  </span>
+                  {/* One line, ticked or not (Matt, Nov 11: rows changed height; which list it's on matters only on Lists). */}
+                  <span className="min-w-0 flex-1 truncate t-body">{cap(r.name)}</span>
                   {r.meal?.quantity && <span className="shrink-0 t-sub text-muted">{r.meal.quantity}</span>}
                 </button>
                 {r.staple && (
