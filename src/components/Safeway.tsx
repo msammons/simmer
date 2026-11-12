@@ -152,7 +152,7 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
   const size = `${small ? "size-10 rounded-lg" : "size-14 rounded-xl"}${tile ? " min-[640px]:h-32 min-[640px]:w-full" : ""}`;
   return src && broken !== src
     // eslint-disable-next-line @next/next/no-img-element -- Safeway's own picture, shown from Safeway
-    ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} className={`${size} shrink-0 bg-white object-contain p-1`} />
+    ? <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(src)} className={`${size} shrink-0 bg-white object-contain p-1`} />
     : <span className={`flex ${size} shrink-0 items-center justify-center bg-sunk text-muted`}><Icon name="bag" className={small ? "size-5" : "size-6"} /></span>;
 }
 
