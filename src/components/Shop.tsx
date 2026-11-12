@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { framed, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { buyAmount, cartFor, cartTotal, findItems, money, needBeside, type FindItem } from "@/lib/shop";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
-import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Sheet } from "./ui";
+import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet } from "./ui";
 
 /**
  * Shop (Matt, Nov 12): one page, grouped by store (Safeway, Trader Joe's, Costco; a store with nothing doesn't show).
@@ -17,6 +17,9 @@ import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Sheet }
  */
 export const STORE_NAMES: Record<Store, string> = { safeway: "Safeway", "trader-joes": "Trader Joe's", costco: "Costco" };
 const STORES = Object.keys(STORE_NAMES) as Store[];
+/** The filter at the top (Matt, Nov 12): every store, or one store's rows only, the same rows either way. */
+type Where = "all" | Store;
+const WHERE: { value: Where; label: string }[] = [{ value: "all", label: "All" }, ...STORES.map((s) => ({ value: s as Where, label: STORE_NAMES[s] }))];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** A round check, filled when it's got. */
@@ -103,6 +106,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   const [finishing, setFinishing] = useState<Item[] | null>(null); // Done shopping, waiting on its confirm
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
+  const [where, setWhere] = useState<Where>("all");
   const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on the list yet
   // What Find goes through: the Safeway things not got yet.
   const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
@@ -146,7 +150,9 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     void act.add(t);
   };
 
-  const ticked = items.filter((i) => i.checked);
+  // What the filter shows; "got" and Done shopping go by it (at Trader Joe's, only Trader Joe's ticks come off).
+  const here = where === "all" ? items : items.filter((i) => i.store === where);
+  const ticked = here.filter((i) => i.checked);
   // Done shopping asks first (Nov 3: it replaced the Undo after it), since it can be tapped by mistake.
   const done = () => { if (ticked.length) setFinishing([...ticked]); };
 
@@ -174,11 +180,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     );
   };
 
-  const shown = STORES.filter((s) => items.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));
+  const shown = (where === "all" ? STORES : [where]).filter((s) => items.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));
 
   return (
     <div className="space-y-5">
-      <BrandBar />
+      <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />} />
       <h1 className="sr-only">Shop</h1>
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something" enterKeyHint="done"
@@ -186,9 +192,9 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
 
-      {!list ? <Held /> : !shown.length ? <EmptyState icon="list" title="Nothing on the list" /> : (
+      {!list ? <Held /> : !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine text={items.length ? `${ticked.length} of ${items.length} got` : ""} onDone={ticked.length ? done : null} />
+          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onDone={ticked.length ? done : null} />
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && (count > 0 || usual.length > 1) && (
@@ -219,7 +225,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) act.check(x, true); }} />
         </Sheet>
       )}
-      <ConfirmSheet open={Boolean(finishing)} title="Done shopping?" confirm="Done shopping"
+      <ConfirmSheet open={Boolean(finishing)} title={where === "all" ? "Done shopping?" : `Done at ${STORE_NAMES[where]}?`} confirm="Done shopping"
         message={finishing ? `${finishing.length} thing${finishing.length === 1 ? " comes" : "s come"} off the list.` : ""}
         onConfirm={() => { const off = finishing ?? []; setFinishing(null); void act.doneTicked(off); }} onCancel={() => setFinishing(null)} />
       <ConfirmSheet open={ordering} title="Take the cart off the list?" message="Everything in the cart comes off the Safeway list, as bought." confirm="Take it off"

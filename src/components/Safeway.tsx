@@ -171,7 +171,7 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
 }
 
 /**
- * − / count / +, with a trash in place of − at one. The count changes at once and the buttons never wait (Nov 11: always
+ * − / count / +; − at one takes it out of the cart (a minus, never a trash: Matt, Nov 12). The count changes at once and the buttons never wait (Nov 11: always
  * responsive); quick taps go to Safeway as one change (useSafeway's setQty). `off`: Safeway can't be reached just now,
  * so neither can be pressed (Nov 3).
  */
@@ -181,7 +181,7 @@ export function Stepper({ qty, name, off, compact, onChange }: { qty: number; na
   return (
     <div className={`flex shrink-0 items-center ${compact ? "gap-1" : "gap-1.5"}`}>
       <button className={btn} disabled={off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
-        <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
+        <Icon name="minus" className="size-[18px]" strokeWidth={2.2} />
       </button>
       <span className={`flex ${compact ? "w-5" : "w-6"} justify-center t-headline tabular-nums`} aria-label={`${qty} in the cart`}>{qty}</span>
       <button className={btn} aria-label={`One more ${name}`} disabled={off || qty >= 24} onClick={() => onChange(qty + 1)}>

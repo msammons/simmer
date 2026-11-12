@@ -382,7 +382,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: and is still there once it's saved", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 1);
       await page.screenshot({ path: `${dir}/5-stock-behaviour.png`, fullPage: true });
 
-      // Shop (Nov 12): one page grouped by store, no store switch. What's out in Stock is on the list. Safeway's side is
+      // Shop (Nov 12): one page grouped by store, with a store filter at the top. What's out in Stock is on the list. Safeway's side is
       // stood in for (its cart, the usual products, and the helper doing cart changes a moment later).
       await postList({ op: "add", text: "Coffee", by: "Sam", store: "costco" });
       await postList({ op: "add", text: "Salad dressing", by: "Sam", store: "trader-joes" });
@@ -421,11 +421,19 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const ordered = page.getByRole("dialog", { name: "Take the cart off the list?" });
       ok("shop: Ordered? asks first", await ordered.isVisible());
       await ordered.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
-      // None of the old things are back on Shop: the store switch, the Safeway groups, thumbnails on rows, Clear, a
+      // The store filter (Nov 12): All shows every store; a store shows only its rows, and Done shopping goes by it.
+      {
+        await page.getByRole("radio", { name: "Trader Joe's" }).tap();
+        const only = await within150(async () => (await page.locator("main section h2").allInnerTexts()).join() === "Trader Joe's");
+        ok("shop: the filter shows one store's rows, within 150 ms", only, (await page.locator("main section h2").allInnerTexts()).join());
+        ok("shop: the same rows, checkbox and all", (await page.getByRole("checkbox", { name: /^Salad dressing/ }).count()) === 1 && (await page.getByRole("checkbox", { name: /^Milk/ }).count()) === 0);
+        await page.getByRole("radio", { name: "All" }).tap(); await page.waitForTimeout(300);
+        ok("shop: All shows every store again", (await page.locator("main section h2").allInnerTexts()).join() === "Safeway,Trader Joe's,Costco");
+      }
+      // None of the old things are back on Shop: the Safeway groups, thumbnails on rows, Clear, a
       // "connected" status (no timer keeps one fresh, Nov 11).
       {
         const old = [];
-        if (await page.getByRole("radio", { name: /^(All|Safeway|Trader Joe's|Costco)$/ }).count()) old.push("store switch");
         if (await page.getByRole("heading", { name: /^(Same as last time|To find|In the cart)$/ }).count()) old.push("the Safeway groups");
         if (await page.locator("main img").count()) old.push("thumbnails");
         if (await page.getByRole("button", { name: "Clear", exact: true }).count()) old.push("Clear");
