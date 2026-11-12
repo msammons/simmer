@@ -33,7 +33,9 @@ export async function POST(req: Request) {
         // A store alone (added on that store's list): the section is still Simmer's to work out.
         const text = clean(b.text);
         const filing = isStore(b.store) ? { store: b.store, section: isSection(b.section) ? b.section : (await file(parseEntry(text).item)).section } : undefined;
-        await addItem(text, clean(b.by, 20), "", filing, typeof b.amount === "string" ? clean(b.amount, 30) : undefined);
+        const added = await addItem(text, clean(b.by, 20), "", filing, typeof b.amount === "string" ? clean(b.amount, 30) : undefined);
+        // Answered Have on Stock (Nov 11): kept as checked and there, off every list.
+        if (b.have === true) await haveItem(added.id);
         break;
       }
       case "check": await checkItem(clean(b.id, 40), Boolean(b.checked)); break;
