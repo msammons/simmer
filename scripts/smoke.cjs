@@ -36,7 +36,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     // The one passcode screen (Nov 11): the button waits for a passcode; a wrong one is the shared alert.
     ok(`${tag}: passcode: Get started waits for a passcode, and says it's once`, (await page.getByRole("button", { name: "Get started" }).isDisabled()) && await seen(page.getByText("You only need to do this once.")));
     await page.getByLabel("Household passcode").fill("nope"); await page.getByRole("button", { name: "Get started" }).tap();
-    const wrong = page.getByRole("dialog", { name: "That didn't work" });
+    const wrong = page.getByRole("dialog", { name: "That passcode didn't work" });
     ok(`${tag}: wrong passcode is an alert over the page`, await seen(wrong.getByText("That passcode didn't work")) && (await page.getByText("Checking…").count()) === 0);
     await wrong.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
     await page.getByLabel("Household passcode").fill("test123"); await page.getByRole("button", { name: "Get started" }).tap();
@@ -382,7 +382,7 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await page.getByRole("radio", { name: "Costco" }).tap(); await page.waitForTimeout(300);
     await page.getByLabel("Add something").fill("paper towels"); await page.keyboard.press("Enter");
     ok(`${tag}: a turned-down passcode asks again`, await seen(page.getByLabel("Household passcode"), 8000));
-    ok(`${tag}: and closes what was open (only the wrong-passcode alert shows)`, (await page.getByRole("dialog").count()) === (await page.getByRole("dialog", { name: "That didn't work" }).count()));
+    ok(`${tag}: and closes what was open (only the wrong-passcode alert shows)`, (await page.getByRole("dialog").count()) === (await page.getByRole("dialog", { name: "That passcode didn't work" }).count()));
     await page.screenshot({ path: `${dir}/7-signed-out-${tag}.png` });
 
     ok(`${tag}: no busy words or problem bars anywhere seen`, !busySeen.length, busySeen.join(", "));
