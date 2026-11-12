@@ -31,6 +31,15 @@ describe("Stock rows for a dinner's things", () => {
     expect(r.meal?.id).toBe("x");
   });
 
+  it("keeps a kept fresh thing highlighted when a dinner needs it, ticked or not (tortillas)", () => {
+    const kept = [{ item: "Tortillas", section: "fresh", store: "safeway", quantity: "" } as ListState["staples"][number]];
+    for (const check of [true, false]) {
+      const [r] = rowsOf(list([item({ item: "tortillas", section: "fresh", for: "chicken tacos", check })], kept), null);
+      expect(r).toMatchObject({ name: "Tortillas", have: check });
+      expect(r.meal?.item).toBe("tortillas");
+    }
+  });
+
   it("doesn't fill Stock with a dinner's fresh groceries or things added by hand", () => {
     expect(rowsOf(list([item({ section: "fresh", check: false, item: "cilantro" })]), null)).toHaveLength(0);
     expect(rowsOf(list([item({ check: false, for: "added by hand" })]), null)).toHaveLength(0);
