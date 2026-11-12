@@ -6,6 +6,7 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ListsScreen, type ListsActions, type Where } from "./Lists";
 import { StockScreen, type StockActions } from "./Stock";
+import { fromDinner } from "@/lib/stock-rows";
 import { AddMealSheet, MealsScreen } from "./Week";
 import { kindOf } from "@/lib/week";
 import { AddRecipesSheet, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
@@ -298,7 +299,10 @@ export default function App() {
   const stock: StockActions = {
     // The usual amount goes alongside, not in front: "1 loaf bread" filed as "loaf bread", which Stock never matched (Nov 3).
     out: (name, s, section, amount) => change({ op: "add", text: name, by: me, store: s, section, ...(amount && { amount }) }),
-    have: (it) => change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) })),
+    // A dinner's thing goes back to highlighted (it's still for that dinner); anything else comes off the list.
+    have: (it) => (fromDinner(it)
+      ? change({ op: "unneed", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: true } : x)) }))
+      : change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }))),
     need: (it) => change({ op: "need", id: it.id }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, check: false } : x)) })),
     takeOut: (f) => {
       setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
