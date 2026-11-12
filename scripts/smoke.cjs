@@ -268,11 +268,13 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
       const count = async () => page.getByText(/In meals · (\d+ to check|all checked)/).innerText();
       const before = await count();
       await haveOf(name).tap(); await page.waitForTimeout(1200);
+      ok(`${tag}: a meal thing shows how much`, (await meal.first().locator("span.t-foot").count()) === 1 || !(await meal.first().locator("span.t-foot").count()));
+      const mealHeight = (await meal.filter({ hasText: new RegExp(name, "i") }).boundingBox())?.height;
       ok(`${tag}: a meal thing: Have lights, and one fewer to check`, (await answerOf(name)) === "have" && (await count()) !== before, `${before} → ${await count()}`);
       await needOf(name).tap(); await page.waitForTimeout(1200);
       ok(`${tag}: Need switches it (never both), still highlighted`, (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
       await needOf(name).tap(); await page.waitForTimeout(1200);
-      ok(`${tag}: tapping the lit side again makes it to check`, (await answerOf(name)) === "check" && (await count()) === before);
+      ok(`${tag}: tapping the lit side again makes it to check, same height throughout`, (await answerOf(name)) === "check" && (await count()) === before && Math.abs(((await meal.filter({ hasText: new RegExp(name, "i") }).boundingBox())?.height ?? 0) - (mealHeight ?? 0)) < 1);
     } else ok(`${tag}: meal things (none need anything from the house in the sample)`, true);
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
     // A kept thing works the same way.
@@ -285,6 +287,8 @@ const SIZES = [["light", 390, 844, true], ["dark", 390, 844, true], ["light", 82
     await haveOf("Milk").tap(); await page.waitForTimeout(1500);
     ok(`${tag}: and the lit side again clears it`, (await answerOf("Milk")) === "check" && Math.abs(((await page.getByRole("group", { name: "Have or need Milk" }).boundingBox())?.height ?? 0) - (milkHeight ?? 0)) < 1);
     await needOf("Milk").tap(); await page.waitForTimeout(1500);
+    // Every row is one height, with or without an amount (Nov 11: uneven heights are annoying).
+    ok(`${tag}: every Stock row is the same height`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => new Set(gs.map((g) => Math.round(g.parentElement.getBoundingClientRect().height))).size === 1));
     // Every row has ⋯ or its space, so the switches line up (Nov 11).
     ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => gs.length > 3 && gs.every((g) => { const n = g.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
     // No Every week (Nov 10): a thing goes on a list only when answered Need here, and nothing comes back by itself after a shop.
