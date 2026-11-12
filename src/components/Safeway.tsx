@@ -108,16 +108,32 @@ export function useSafeway() {
   /**
    * Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. `query`:
    * the search that brings the product up; `alt`, other words to try; `on: "cart"`, change it on Safeway's cart page
-   * first, where it's listed (from Cart).
+   * first, where it's listed (from Cart). The number shows at once (`pending`); taps while a change is on its way to
+   * Safeway aren't sent one by one: when it's done, the latest number goes as one change (Nov 11: always responsive,
+   * so the buttons never wait, and two changes for one product still never cross). One that fails puts the cart back
+   * and says why.
    */
+  const latest = useRef<Record<string, number>>({});
+  const sending = useRef<Record<string, boolean>>({});
   const setQty = useCallback(async (p: Product, qty: number, query: string, forItem?: { id: string; item: string } | null, how?: { alt?: string; on?: "cart" }) => {
     setProblem(null);
     setPending((x) => ({ ...x, [p.id]: qty }));
-    const r = await run("setQty", { productId: p.id, qty, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how });
+    latest.current[p.id] = qty;
+    if (sending.current[p.id]) return;
+    sending.current[p.id] = true;
+    let sent = qty;
+    let r: JobOutcome;
+    for (;;) {
+      r = await run("setQty", { productId: p.id, qty: sent, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how });
+      if (!r.ok || !alive.current || latest.current[p.id] === sent) break;
+      sent = latest.current[p.id];
+    }
+    sending.current[p.id] = false;
+    delete latest.current[p.id];
     if (!alive.current) return;
-    setPending((x) => { if (x[p.id] !== qty) return x; const { [p.id]: _gone, ...rest } = x; void _gone; return rest; });
+    setPending((x) => { const { [p.id]: _gone, ...rest } = x; void _gone; return rest; });
     if (r.ok) {
-      const now = Number(r.result.qty ?? qty);
+      const now = Number(r.result.qty ?? sent);
       setCart((c) => {
         const at = c.find((l) => l.productId === p.id);
         if (!now) return c.filter((l) => l.productId !== p.id);
@@ -128,11 +144,15 @@ export function useSafeway() {
       refresh();
     } else if (r.problem) setProblem(r.problem);
   }, [run, refresh]);
+  /** The order went through: the cart shows empty at once (the server's answer follows with `refresh`). */
+  const forget = useCallback(() => setCart([]), []);
+  /** A number shown at once for a product whose change is about to be sent (Auto-fill shows every row's together). */
+  const show = useCallback((id: string, qty: number) => setPending((x) => ({ ...x, [id]: qty })), []);
 
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, answering, away, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf };
+  return { cart, picks, answering, away, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf, forget, show };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
@@ -151,19 +171,19 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
 }
 
 /**
- * − / count / +, with a trash in place of − at one. The count changes at once; while the change is on its way to Safeway
- * (busy) both buttons are off, so a second tap can't send a second change before the first is done (Sam, Oct 31), and
- * the count is greyed (Nov 11: no spinner). `off`: Safeway can't be reached just now, so neither can be pressed (Nov 3).
+ * − / count / +, with a trash in place of − at one. The count changes at once and the buttons never wait (Nov 11: always
+ * responsive); quick taps go to Safeway as one change (useSafeway's setQty). `off`: Safeway can't be reached just now,
+ * so neither can be pressed (Nov 3).
  */
-export function Stepper({ qty, name, busy, off, onChange }: { qty: number; name: string; busy?: boolean; off?: boolean; onChange: (n: number) => void }) {
+export function Stepper({ qty, name, off, onChange }: { qty: number; name: string; off?: boolean; onChange: (n: number) => void }) {
   const btn = "glass flex size-9 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100";
   return (
-    <div className="flex shrink-0 items-center gap-1.5" aria-busy={busy || undefined}>
-      <button className={btn} disabled={busy || off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
+    <div className="flex shrink-0 items-center gap-1.5">
+      <button className={btn} disabled={off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>
         <Icon name={qty <= 1 ? "trash" : "minus"} className="size-[18px]" strokeWidth={2.2} />
       </button>
-      <span className={`flex w-6 justify-center t-headline tabular-nums ${busy ? "text-muted" : ""}`} aria-label={`${qty} in the cart`}>{qty}</span>
-      <button className={btn} aria-label={`One more ${name}`} disabled={busy || off || qty >= 24} onClick={() => onChange(qty + 1)}>
+      <span className="flex w-6 justify-center t-headline tabular-nums" aria-label={`${qty} in the cart`}>{qty}</span>
+      <button className={btn} aria-label={`One more ${name}`} disabled={off || qty >= 24} onClick={() => onChange(qty + 1)}>
         <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
       </button>
     </div>
@@ -339,7 +359,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             return (
               <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
                 control={qty > 0
-                  ? <Stepper qty={qty} name={p.name} busy={p.id in sw.pending} onChange={(n) => sw.setQty(p, n, query, forIt)} />
+                  ? <Stepper qty={qty} name={p.name} onChange={(n) => sw.setQty(p, n, query, forIt)} />
                   : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, 1, query, forIt)}>Add</Button>} />
             );
           })}

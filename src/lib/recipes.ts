@@ -7,8 +7,10 @@ import { generateJson } from "./google/gemini";
 import { appendRows, ensureTab, readTabIfAny, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
-import { known, type Section, type Store } from "./groceries";
-import { norm } from "./words";
+import { type Section, type Store } from "./groceries";
+import { FRACTIONS, norm, parseIngredient } from "./words";
+
+export { parseIngredient };
 import { parseCsv, records } from "./parse";
 
 export type Effort = "quick" | "regular";
@@ -37,24 +39,6 @@ const asStore = (s: string): Store | "" => {
   return !k ? "" : k.startsWith("trader") || k === "tj" || k === "tjs" ? "trader-joes" : k.startsWith("costco") ? "costco" : k.startsWith("safeway") ? "safeway" : "";
 };
 
-// ---- ingredient lines
-
-const FRACTIONS: Record<string, string> = { "½": "1/2", "¼": "1/4", "¾": "3/4", "⅓": "1/3", "⅔": "2/3", "⅛": "1/8" };
-const UNITS = "cups?|c|tablespoons?|tbsps?|tbsp|T|teaspoons?|tsps?|tsp|t|pounds?|lbs?|ounces?|oz|grams?|g|kilograms?|kg|ml|liters?|l|quarts?|qt|pints?|pt|cans?|jars?|packages?|pkgs?|bags?|boxes|box|bunch(?:es)?|heads?|cloves?|sticks?|slices?|pinch(?:es)?|dash(?:es)?|sprigs?|stalks?|handfuls?|containers?|bottles?|packets?|envelopes?|pouch(?:es)?|loaf|loaves|dozen";
-const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\s*(?:-|to)\s*(?:\d+/\d+|\d+(?:\.\d+)?))?|an?|one|two|three|four)\s+(?:\((?:[^)]*)\)\s*)?(?:(${UNITS})\.?\s+(?:of\s+)?)?(.+)$`, "i");
-
-/** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
-export function parseIngredient(raw: string): Ingredient {
-  const line = raw.replace(/[½¼¾⅓⅔⅛]/g, (f) => ` ${FRACTIONS[f]}`).replace(/(\d)\s+(\d\/)/, "$1 $2").replace(/\s+/g, " ").trim();
-  const m = line.match(LINE);
-  let quantity = "", unit = "", item = line;
-  if (m) { quantity = m[1].toLowerCase().replace(/^(an?|one)$/, "1").replace(/^two$/, "2").replace(/^three$/, "3").replace(/^four$/, "4"); unit = (m[2] ?? "").toLowerCase(); item = m[3]; }
-  // "15 ounce can pumpkin": the size came first, so the container is still on the name.
-  if (unit) item = item.replace(/^(?:cans?|jars?|packages?|pkgs?|bags?|boxes|box|containers?|bottles?|cartons?)\s+(?:of\s+)?/i, "");
-  // What's bought, not how it's cut: "onion, diced" → onion; "garlic (minced)" → garlic; "salt to taste" → salt.
-  item = item.replace(/\([^)]*\)/g, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
-  return { line: raw.trim(), quantity, unit, item: item || line.toLowerCase(), section: known(item)?.section ?? "fresh" };
-}
 
 // ---- reading
 
