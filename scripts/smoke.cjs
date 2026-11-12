@@ -281,6 +281,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         const last = (await settings.locator("p").last().innerText()).trim();
         ok("settings: ends with the version", /^\d{2}\.\d{1,2}\.\d{1,2}(\.\d+)?$/.test(last), last);
       }
+      // Copy says Copied at once and copies behind it; here (no Google) it doesn't go through: back, and the alert says why.
+      await page.getByRole("button", { name: /^Copy to Google Sheet/ }).tap();
+      ok("settings: Copy says Copied within 150 ms", await within150(() => page.getByRole("button", { name: /^Copy to Google Sheet.*Copied/ }).isVisible()));
+      const copyAlert = page.getByRole("dialog", { name: "That didn't go through" });
+      ok("settings: a copy that doesn't go through says why, and the row goes back", await seen(copyAlert, 10000) && await copyAlert.getByRole("button", { name: "OK" }).tap().then(async () => { await page.waitForTimeout(300); return !(await page.getByRole("button", { name: /Copied/ }).count()); }));
       await page.getByRole("radio", { name: /^Apricot/ }).tap();
       ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
       await page.getByRole("radio", { name: /^Simmer$/ }).tap();
