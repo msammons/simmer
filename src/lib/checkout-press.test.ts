@@ -19,6 +19,7 @@ function cart(buttons: string[], path = "/erums/cart") {
 type Press = { pressed: boolean; found: number; label: string };
 const CART = { path: "/erums/cart", words: ["checkout", "safeway"] };
 const SUGGESTIONS = { path: "/erums/cart/dnf", words: ["continue", "to", "checkout", "safeway"] };
+const CHECKOUT = { path: "/erums/checkout", words: ["continue"] };
 const press = async (step = CART) => (await safewayPage("pressCheckout", step, PAGE)) as unknown as Press;
 const saved = ["Set substitutions for all items", "Decrease quantity", "Increase quantity", "Remove Iceberg Lettuce", "Add Note Iceberg Lettuce"];
 
@@ -55,6 +56,20 @@ describe("the checkout look's one press", () => {
     expect((await press(SUGGESTIONS)).pressed).toBe(false);
     cart(["Continue", "Place order"], "/erums/checkout");
     expect((await press(SUGGESTIONS)).pressed).toBe(false);
+    expect(pressedLabels).toEqual([]);
+  });
+
+  it("presses the checkout page's Order info Continue, never Place Order, a payment or a donation", async () => {
+    const page = ["Order info", "Pickup date & time", "Payment heading level 2 edit Payment", "Make this order a gift", "Place Order",
+      "Round order to $22.00", "$1.00", "Promo code Promo code"];
+    cart([...page, "Continue"], "/erums/checkout");
+    expect(await press(CHECKOUT)).toMatchObject({ pressed: true, found: 1 });
+    expect(pressedLabels).toEqual(["Continue"]);
+    pressedLabels.length = 0;
+    cart([...page, "Continue to payment"], "/erums/checkout");
+    expect((await press(CHECKOUT)).pressed).toBe(false);
+    cart([...page, "Continue", "Continue"], "/erums/checkout");
+    expect((await press(CHECKOUT)).pressed).toBe(false);
     expect(pressedLabels).toEqual([]);
   });
 
