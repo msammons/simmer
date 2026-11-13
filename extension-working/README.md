@@ -31,6 +31,8 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   shown). The push is how the helper hears of a job: without the keys, jobs wait until Chrome starts or the panel opens.
 - **Not answering.** Simmer doesn't guess from when the helper last checked in. A job the helper doesn't pick up within
   20 seconds is given up, says so, and Lists turns the Safeway rows into a checklist for the rest of that visit.
+- **…and one pickup day (26.11.12.7).** On the checkout page, the look presses the first day not chosen yet, to see its
+  windows, and reads them; never a time window. Order info's Continue is skipped when it's already done.
 - **Notes the button's words before pressing (26.11.12.6).** Safeway's Continue turns into "Processing" once pressed.
 - **…and Order info's Continue (26.11.12.5).** On the checkout page, the look presses the one button that says exactly
   "Continue", to open Pickup date & time, then reads; never Place Order.
@@ -74,7 +76,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.12.6.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.12.7.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

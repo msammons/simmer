@@ -1,7 +1,8 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
 // time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue and the checkout
-// page's Order info Continue, nothing further (never Place Order); past them, it only reads ("look") (docs/CHECKOUT.md).
+// page's Order info Continue and one pickup day, nothing further (never a time, never Place Order); past them, it only
+// reads ("look") (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
 // comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
@@ -17,6 +18,8 @@
  * safewayPage("look") → { url, title, text, links: [{ text, href }], buttons: [label] } — reads only, presses nothing
  * safewayPage("pressCheckout", { path, words }) → { pressed, found, label } — on that page only: presses its one
  *   Checkout or Continue button made only of `words`, and nothing else
+ * safewayPage("pressDay", { path }) → { pressed, found, label } — on the checkout page only: presses the first pickup
+ *   day not chosen yet (never a time), and nothing else
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -289,6 +292,20 @@ export async function safewayPage(action, arg, P) {
     const said = label(found[0]).slice(0, 80); // before the press: Safeway's button turns into "Processing"
     found[0].click();
     return { pressed: true, found: 1, label: said };
+  }
+
+  // A pickup day on the checkout page (Sam, Nov 12: "a day only"), to see that day's windows: only on that page, only a
+  // button that reads exactly "select slots for <WEEKDAY> <Mon>, <day> …" (Safeway's day tabs), the first one not already
+  // chosen, pressed once. Never a time window. Anything else: nothing is pressed.
+  if (action === "pressDay") {
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
+    const day = /^select slots for (MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY) [A-Z][a-z]{2}, \d{1,2} (Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} \d{1,2}$/;
+    const found = deepAll(document, "button, [role=button]").filter(visible)
+      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && day.test(label(b)));
+    if (!found.length) return { pressed: false, found: 0, label: "" };
+    const said = label(found[0]).slice(0, 80);
+    found[0].click();
+    return { pressed: true, found: found.length, label: said };
   }
 
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
