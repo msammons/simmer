@@ -328,6 +328,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("settings: Cancel leaves ordering off", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible());
       // Face ID (Nov 12): none set up on a fresh server, so the row offers Set up (Face ID itself can't be driven here).
       ok("settings: Face ID starts at Set up", await settings.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible());
+      // Adding a phone (Nov 12) only comes up once one has Face ID: nothing to approve or wait for yet.
+      ok("settings: no phone to approve or set up after approving", (await settings.getByRole("button", { name: /^(Approve a new phone|Set up after approving)/ }).count()) === 0);
       await page.getByRole("radio", { name: /^Apricot/ }).tap();
       ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
       await page.getByRole("radio", { name: /^Simmer$/ }).tap();

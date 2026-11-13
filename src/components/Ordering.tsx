@@ -3,13 +3,27 @@
 // changes it here; the pickup store and the card's last 4 digits are set once, and Safeway showing anything else stops
 // an order. Every tap shows at once and saves behind it; turning it on asks first. Face ID (Nov 12): each phone that
 // will place orders sets it up here, once; the server checks it, single use, before an order (src/lib/passkeys.ts).
+// Once one phone has it, another is added only when a phone with Face ID approves it (Sam, Nov 12): the new phone asks
+// and shows a code, the other shows "Approve a new phone" with the same code, and the new phone then taps to set up
+// (no waiting or checking in the background: the household taps when it's approved).
 import { useEffect, useRef, useState } from "react";
-import type { PublicKeyCredentialCreationOptionsJSON } from "@simplewebauthn/browser";
-import { api, errorText, setUpFaceId, type CheckoutSettings } from "@/lib/client";
+import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
+import { api, approveWithFaceId, errorText, setUpFaceId, type CheckoutSettings } from "@/lib/client";
 import { Alert, Button, ConfirmSheet, Group, Row, Sheet } from "./ui";
 
 const OFF: CheckoutSettings = { on: false, limitCents: 0, store: "", card: "" };
 const dollars = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
+/** A new phone's request is good for 5 minutes on the server (src/lib/passkeys.ts). */
+const ADD_MS = 5 * 60_000;
+/**
+ * This phone's request to be added (Nov 12): the token goes back with its set-up. Kept for this visit, outside the
+ * component, so closing and reopening Settings keeps it; never saved, as it's only good for 5 minutes anyway.
+ */
+type MyAdd = { token: string; code: string; at: number };
+let myAdd: MyAdd | null = null;
+/** What Face ID needs, fetched before the tap: setting up here, or approving a new phone (with the code it's for). */
+type Ready = { options: PublicKeyCredentialCreationOptionsJSON } | { options: PublicKeyCredentialRequestOptionsJSON; code: string };
+type Prepared = { at: number; ready: Ready | null; fetch: () => Promise<Ready>; wait: Promise<unknown> };
 const FIELD = "w-full rounded-2xl bg-card px-4 py-3 text-base outline-none ring-accent focus:ring-2";
 
 export function OrderingSettings() {
@@ -19,50 +33,110 @@ export function OrderingSettings() {
   const [editing, setEditing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [faceIds, setFaceIds] = useState(0);
-  const [askingFace, setAskingFace] = useState(false);
-  const [faceProblem, setFaceProblem] = useState<string | null>(null);
+  const [adding, setAdding] = useState<{ code: string } | null>(null);
+  const [mine, setMine] = useState<MyAdd | null>(myAdd);
+  const [sheet, setSheet] = useState<"setup" | "ask" | "approve" | null>(null);
+  const [approveCode, setApproveCode] = useState("");
+  const [faceProblem, setFaceProblem] = useState<{ title: string; message: string } | null>(null);
   // Safari shows Face ID only straight from a tap, so what the phone needs is fetched when the question opens and is
-  // ready by the time Set up is tapped (a challenge is good for 2 minutes; an older one is fetched again).
-  const prepared = useRef<{ at: number; ready: PublicKeyCredentialCreationOptionsJSON | null; wait: Promise<unknown> } | null>(null);
-  const settingUp = useRef(false);
+  // ready by the time its button is tapped (a challenge is good for 2 minutes; an older one is fetched again).
+  const prepared = useRef<Prepared | null>(null);
+  const busy = useRef(false);
+  const fresh = mine && Date.now() - mine.at < ADD_MS ? mine : null;
 
   useEffect(() => {
     const ac = new AbortController();
-    api.checkout(ac.signal).then((r) => { setS(r.settings); setServer(r.server); setFaceIds(r.faceId ?? 0); }).catch(() => {});
+    api.checkout(ac.signal).then((r) => { setS(r.settings); setServer(r.server); setFaceIds(r.faceId ?? 0); setAdding(r.adding ?? null); }).catch(() => {});
     return () => ac.abort();
   }, []);
 
-  function prepare() {
-    const p: NonNullable<typeof prepared.current> = { at: Date.now(), ready: null, wait: Promise.resolve() };
-    p.wait = api.faceIdOptions("register-options").then((r) => { p.ready = r.options; });
-    p.wait.catch(() => {}); // a failure shows when Set up is tapped
+  const keepMine = (m: MyAdd | null) => { myAdd = m; setMine(m); };
+
+  /** Opens a question and fetches what its Face ID needs; if that's refused, the question closes and the alert says why. */
+  function open(which: "setup" | "approve", fetch: () => Promise<Ready>, title: string) {
+    if (busy.current) return;
+    const p: Prepared = { at: Date.now(), fetch, ready: null, wait: Promise.resolve() };
+    p.wait = fetch().then((r) => { p.ready = r; if ("code" in r) setApproveCode(r.code); });
+    p.wait.catch((e) => {
+      if (prepared.current !== p) return;
+      prepared.current = null;
+      setSheet(null);
+      if (which === "setup" && myAdd && Date.now() - myAdd.at >= ADD_MS) keepMine(null);
+      if (which === "approve") setAdding(null);
+      setFaceProblem({ title, message: errorText(e) });
+    });
     prepared.current = p;
+    setSheet(which);
   }
 
-  function askFace() {
-    if (settingUp.current) return;
-    prepare();
-    setAskingFace(true);
+  /** What's ready for the tap (fetched again when older than 100 s, which may lose Safari's tap). */
+  async function ready() {
+    let p = prepared.current;
+    if (!p) throw new Error("That didn't go through. Try again.");
+    if (Date.now() - p.at > 100_000) { const f = p.fetch; p = { at: Date.now(), fetch: f, ready: null, wait: f().then((r) => { p!.ready = r; }) }; prepared.current = p; }
+    if (!p.ready) await p.wait;
+    return p.ready!;
+  }
+
+  function tapFaceId() {
+    if (faceIds === 0) open("setup", () => api.faceIdSetUpOptions(), "Face ID wasn't set up");
+    else if (fresh) setUpAfterApproving();
+    else setSheet("ask");
+  }
+  function setUpAfterApproving() {
+    const token = myAdd?.token;
+    if (!token) return; // still asking: the code (and this) come with the answer
+    open("setup", () => api.faceIdSetUpOptions(token), "Face ID wasn't set up");
   }
 
   async function setUpFace() {
-    setAskingFace(false);
-    if (settingUp.current) return;
-    settingUp.current = true;
+    setSheet(null);
+    if (busy.current) return;
+    busy.current = true;
     const before = faceIds;
     try {
-      let p = prepared.current;
-      if (!p || Date.now() - p.at > 100_000) { prepare(); p = prepared.current!; }
-      if (!p.ready) await p.wait;
+      const r = await ready();
+      if ("code" in r) throw new Error("That didn't go through. Try again.");
       // Shown as soon as Face ID answers; the server's count follows, and a failure puts it back.
-      const count = await setUpFaceId(p.ready!, () => setFaceIds(before + 1));
+      const count = await setUpFaceId(r.options, () => setFaceIds(before + 1));
       setFaceIds(count);
+      keepMine(null);
     } catch (e) {
       setFaceIds(before);
-      setFaceProblem(errorText(e));
+      setFaceProblem({ title: "Face ID wasn't set up", message: errorText(e) });
     } finally {
       prepared.current = null;
-      settingUp.current = false;
+      busy.current = false;
+    }
+  }
+
+  /** A new phone asks to be added: the row with its code shows at once, the code fills in when the answer comes. */
+  function askToAdd() {
+    setSheet(null);
+    if (busy.current) return;
+    const asked: MyAdd = { token: "", code: "", at: Date.now() };
+    keepMine(asked);
+    api.faceIdAsk().then((r) => { if (myAdd === asked) keepMine({ ...r, at: asked.at }); }).catch((e) => {
+      if (myAdd === asked) keepMine(null);
+      setFaceProblem({ title: "This phone wasn't added", message: errorText(e) });
+    });
+  }
+
+  async function approve() {
+    setSheet(null);
+    if (busy.current) return;
+    busy.current = true;
+    const before = adding;
+    try {
+      const r = await ready();
+      if (!("code" in r)) throw new Error("That didn't go through. Try again.");
+      await approveWithFaceId(r.options, () => setAdding(null));
+    } catch (e) {
+      setAdding(before);
+      setFaceProblem({ title: "The new phone wasn't approved", message: errorText(e) });
+    } finally {
+      prepared.current = null;
+      busy.current = false;
     }
   }
 
@@ -79,7 +153,11 @@ export function OrderingSettings() {
         <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => setEditing(true)} />
         <Row icon="home" title="Pickup store" value={s.store || "Not set"} onClick={() => setEditing(true)} />
         <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "Not set"} onClick={() => setEditing(true)} />
-        <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={askFace} />
+        <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={tapFaceId} />
+        {fresh && <Row icon="face" title="Set up after approving" subtitle="Approve this phone on one with Face ID, then tap here." value={fresh.code} onClick={setUpAfterApproving} />}
+        {adding && faceIds > 0 && adding.code !== fresh?.code && (
+          <Row icon="face" title="Approve a new phone" value={adding.code} onClick={() => { setApproveCode(adding.code); open("approve", () => api.faceIdApproveOptions(), "The new phone wasn't approved"); }} />
+        )}
       </Group>
       <ConfirmSheet
         open={asking}
@@ -90,16 +168,32 @@ export function OrderingSettings() {
         onCancel={() => setAsking(false)}
       />
       <ConfirmSheet
-        open={askingFace}
-        title={faceIds ? "Add this phone?" : "Set up Face ID?"}
+        open={sheet === "setup"}
+        title={faceIds ? "Set up Face ID here?" : "Set up Face ID?"}
         message={faceIds ? "Face ID on this phone will also be able to place orders." : "Face ID on this phone will be needed to place each order."}
-        confirm={faceIds ? "Add this phone" : "Set up"}
+        confirm="Set up"
         onConfirm={setUpFace}
-        onCancel={() => { setAskingFace(false); prepared.current = null; }}
+        onCancel={() => { setSheet(null); prepared.current = null; }}
+      />
+      <ConfirmSheet
+        open={sheet === "ask"}
+        title="Add this phone?"
+        message="A phone that already has Face ID will need to approve it."
+        confirm="Add this phone"
+        onConfirm={askToAdd}
+        onCancel={() => setSheet(null)}
+      />
+      <ConfirmSheet
+        open={sheet === "approve"}
+        title="Approve a new phone?"
+        message={`Check the new phone shows ${approveCode}. Face ID here approves it.`}
+        confirm="Approve"
+        onConfirm={approve}
+        onCancel={() => { setSheet(null); prepared.current = null; }}
       />
       {editing && <OrderingEditor value={s} onSave={(v) => { setEditing(false); save(v); }} onClose={() => setEditing(false)} />}
       <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
-      <Alert open={Boolean(faceProblem)} title="Face ID wasn't set up" message={faceProblem ?? ""} onClose={() => setFaceProblem(null)} />
+      <Alert open={Boolean(faceProblem)} title={faceProblem?.title ?? ""} message={faceProblem?.message ?? ""} onClose={() => setFaceProblem(null)} />
     </>
   );
 }
