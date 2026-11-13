@@ -107,7 +107,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    earliest free REGULAR window; never FLASH, a priced one, or one whose price can't be read) and the helper's window
    reading and choosing (only the radio with the exact id Simmer chose, only when its words say "price Free", only on
    the checkout page), tested against copies; and Face ID on the household's phones (Settings → Ordering), checked by
-   the server, single use, expiring in 2 minutes. **Open:** anyone with the household passcode can add a phone's Face ID
-   (outside review, Nov 12); before real orders, adding one needs a decision on how it's guarded. Still to build: the helper's prepare and dry-run jobs, the Check out
+   the server, single use, expiring in 2 minutes. Adding a phone (Sam, Nov 12: "existing phone approves"): the first
+   phone sets up with the passcode; after that a new phone asks, both show a 6-digit code, an existing phone approves
+   with Face ID (bound to that request), and the new phone sets up within 5 minutes, once. Removing phones isn't built;
+   when it is, removing needs Face ID too, and the last phone can't be removed by passcode alone (outside review: else
+   removing all and starting over skips the approval). Still to build: the helper's prepare and dry-run jobs, the Check out
    sheet, the approval, and dry runs on the account. No code presses Place Order.
 3. Turning on real orders, after dry runs match.
