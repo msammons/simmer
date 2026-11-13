@@ -114,6 +114,8 @@ type Change = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: 
 /** Ordering's settings, as /api/checkout keeps them (src/lib/checkout.ts). */
 export type CheckoutSettings = { on: boolean; limitCents: number; store: string; card: string };
 
+const passkey = <T>(body: Record<string, unknown>) => call<T>("/api/checkout/passkey", { method: "POST", body: JSON.stringify(body) });
+
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
   change: (c: Change) => call<ListState & { cleared?: Item[] }>("/api/list", { method: "POST", body: JSON.stringify(c) }),
@@ -130,12 +132,18 @@ export const api = {
   /** Settings → Copy to Google Sheet: answers how many tabs were copied. */
   exportSheet: () => call<{ tabs: number }>("/api/export", { method: "POST" }),
   /** Ordering from Simmer (docs/CHECKOUT.md): its settings, and whether the server allows it at all. */
-  checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean; faceId: number }>("/api/checkout", { signal }),
+  checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean; faceId: number; adding: { code: string } | null }>("/api/checkout", { signal }),
   /** Face ID for ordering (src/lib/passkeys.ts): start setting it up or a check, then send the phone's answer. */
-  faceIdOptions: <T extends "register-options" | "check-options">(op: T) =>
-    call<{ options: T extends "register-options" ? PublicKeyCredentialCreationOptionsJSON : PublicKeyCredentialRequestOptionsJSON }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op }) }),
-  faceIdRegister: (response: unknown) => call<{ ok: true; count: number }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op: "register", response }) }),
-  faceIdCheck: (response: unknown) => call<{ ok: boolean; credentialId?: string; why?: string }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op: "check", response }) }),
+  // With a phone already set up, setting up needs the token of a request another phone approved (Nov 12).
+  faceIdSetUpOptions: (token?: string) => passkey<{ options: PublicKeyCredentialCreationOptionsJSON }>({ op: "register-options", token }),
+  faceIdCheckOptions: () => passkey<{ options: PublicKeyCredentialRequestOptionsJSON }>({ op: "check-options" }),
+  /** A new phone asks to be added: its token (kept on it only) and the code both phones show. */
+  faceIdAsk: () => passkey<{ token: string; code: string }>({ op: "add" }),
+  /** A phone with Face ID: the check that approves the new phone waiting now, and that phone's code. */
+  faceIdApproveOptions: () => passkey<{ options: PublicKeyCredentialRequestOptionsJSON; code: string }>({ op: "approve-options" }),
+  faceIdApprove: (response: unknown) => passkey<{ ok: true }>({ op: "approve", response }),
+  faceIdRegister: (response: unknown) => passkey<{ ok: true; count: number }>({ op: "register", response }),
+  faceIdCheck: (response: unknown) => passkey<{ ok: boolean; credentialId?: string; why?: string }>({ op: "check", response }),
   saveCheckout: (s: CheckoutSettings) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify(s) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
@@ -162,7 +170,7 @@ export const api = {
 
 /**
  * Face ID on this phone (Nov 12). Safari only shows Face ID straight from a tap, so the options are fetched before the
- * tap (`faceIdOptions`) and these are called at the tap with them; the server's answer comes after. Cancelling Face ID,
+ * tap (`faceIdSetUpOptions` and the like) and these are called at the tap with them; the server's answer comes after. Cancelling Face ID,
  * or anything else going wrong, comes back as an Error in plain words.
  */
 export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSON, onAnswer?: () => void): Promise<number> {
@@ -172,6 +180,12 @@ export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSO
 }
 export async function checkFaceId(options: PublicKeyCredentialRequestOptionsJSON): Promise<{ ok: boolean; credentialId?: string; why?: string }> {
   return api.faceIdCheck(await faceId(() => startAuthentication({ optionsJSON: options })));
+}
+/** A phone with Face ID approves the new phone waiting (the options are bound to that one request). */
+export async function approveWithFaceId(options: PublicKeyCredentialRequestOptionsJSON, onAnswer?: () => void): Promise<void> {
+  const response = await faceId(() => startAuthentication({ optionsJSON: options }));
+  onAnswer?.();
+  await api.faceIdApprove(response);
 }
 async function faceId<T>(run: () => Promise<T>): Promise<T> {
   try {
