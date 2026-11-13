@@ -33,6 +33,8 @@ const PATHS = {
   pencil: "M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4",
   refresh: "M4 12a8 8 0 1 0 2.4-5.7 M4 4v5h5",
   card: "M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h3",
+  // Face ID (Settings → Ordering, Nov 12): the corners of the frame and a face.
+  face: "M8 3H5a2 2 0 0 0-2 2v3 M16 3h3a2 2 0 0 1 2 2v3 M8 21H5a2 2 0 0 1-2-2v-3 M16 21h3a2 2 0 0 0 2-2v-3 M9 9v1.5 M15 9v1.5 M12.5 9v4h-1 M9 16c1.7 1.3 4.3 1.3 6 0",
 } as const;
 
 export type IconName = keyof typeof PATHS;

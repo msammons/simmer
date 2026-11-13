@@ -18,6 +18,8 @@
  * safewayPage("look") → { url, title, text, links: [{ text, href }], buttons: [label] } — reads only, presses nothing
  * safewayPage("pressCheckout", { path, words }) → { pressed, found, label } — on that page only: presses its one
  *   Checkout or Continue button made only of `words`, and nothing else
+ * safewayPage("readWindows") → { windows: [{ id, checked, off, words }], days: [{ label, active }] } — reads only
+ * safewayPage("chooseWindow", { path, id }) → { pressed, words } — on the checkout page only: the one free window chosen
  * safewayPage("pressDay", { path }) → { pressed, found, label } — on the checkout page only: presses the first pickup
  *   day not chosen yet (never a time), and nothing else
  *
@@ -306,6 +308,30 @@ export async function safewayPage(action, arg, P) {
     const said = label(found[0]).slice(0, 80);
     found[0].click();
     return { pressed: true, found: found.length, label: said };
+  }
+
+  const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
+  // The pickup windows on the checkout page, read only (Nov 12): each window's radio id and words, and the day tiles.
+  if (action === "readWindows") {
+    const windows = deepAll(document, "input[type=radio][name=slot]").map((r) => ({
+      id: r.id, checked: r.checked, off: r.disabled,
+      words: wordsOf(r.closest("label, li, div")?.parentElement).slice(0, 160),
+    }));
+    const days = deepAll(document, ".date-tile[role=button]").filter(visible).map((t) => ({ label: label(t).slice(0, 80), active: t.classList.contains("date-is-active") }));
+    return { windows, days };
+  }
+
+  // Choosing a pickup window, for dry runs (docs/CHECKOUT.md: every step for real, one press short of Place Order): only
+  // on the checkout page, only the radio with exactly the id Simmer chose, only when its own words say "price Free".
+  // Anything else: nothing is pressed.
+  if (action === "chooseWindow") {
+    if (!arg?.path || location.pathname !== arg.path || !arg?.id) return { pressed: false, why: "not that page" };
+    const found = deepAll(document, "input[type=radio][name=slot]").filter((r) => r.id === arg.id && !r.disabled);
+    if (found.length !== 1) return { pressed: false, why: "not there" };
+    const words = wordsOf(found[0].closest("label, li, div")?.parentElement);
+    if (!/\bprice Free\b/i.test(words) || /flash/i.test(words)) return { pressed: false, why: "not free" };
+    found[0].click();
+    return { pressed: true, words: words.slice(0, 160), checked: found[0].checked };
   }
 
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.

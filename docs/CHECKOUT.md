@@ -103,7 +103,11 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    plain code with tests (`src/lib/checkout.ts`: reading the final page, everything that stops an order, the
    weighed-items allowance, the highlights), tested against copies of Safeway's page with stand-in details; a figure
    that appears twice on the page counts as unreadable; the pinned store must begin Safeway's address; and Settings →
-   Ordering (off, $0, store, card; turning it on asks first; every change recorded). Still to build: Face ID (a
-   passkey), choosing a free pickup window (the windows haven't been seen yet), the helper's prepare and dry-run jobs,
-   the Check out sheet, the approval, and dry runs on the account. No code presses Place Order.
+   Ordering (off, $0, store, card; turning it on asks first; every change recorded). Then: the window picker (the
+   earliest free REGULAR window; never FLASH, a priced one, or one whose price can't be read) and the helper's window
+   reading and choosing (only the radio with the exact id Simmer chose, only when its words say "price Free", only on
+   the checkout page), tested against copies; and Face ID on the household's phones (Settings → Ordering), checked by
+   the server, single use, expiring in 2 minutes. **Open:** anyone with the household passcode can add a phone's Face ID
+   (outside review, Nov 12); before real orders, adding one needs a decision on how it's guarded. Still to build: the helper's prepare and dry-run jobs, the Check out
+   sheet, the approval, and dry runs on the account. No code presses Place Order.
 3. Turning on real orders, after dry runs match.
