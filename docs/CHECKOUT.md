@@ -33,6 +33,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 - The approval is fixed at the tap: every product and count, the store, the window, the card's last 4, the total. The
   helper checks Safeway's final page against all of it; any difference (a cent, an item) stops it, and Simmer shows the
   new figures to approve again.
+- Weighed items (Sam, Nov 12): the charge after picking may come in up to 10% over the approved total, and never more
+  than $5 over. Simmer reads the charge from Safeway's order history and flags anything beyond that.
 - The cart freezes at the tap: any cart change after it cancels the approval.
 - The approval expires after 2 minutes.
 - Single use, never retried. If the helper loses track after the click, it reads Safeway's order history to find out;
@@ -87,8 +89,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    window chosen, so nothing more was pressed.
 
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
-   with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). **Open question
-   for phase 2:** the total on the final page is an estimate when the cart has weighed items, so the approval check
-   compares against that estimate, and the charge after picking can differ; how much it may differ needs deciding.
+   with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). The final page's
+   total is an estimate when the cart has weighed items; the approval is checked against it to the cent, and the
+   allowance below covers the charge after picking.
 2. The sheet, the protections and dry runs, built to match what the look found.
 3. Turning on real orders, after dry runs match.
