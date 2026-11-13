@@ -420,6 +420,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         ok("shop: Face ID offers Set up, the limit is $0, and Turn on waits", await co.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible()
           && await co.getByRole("button", { name: /^Limit per order.*\$0$/ }).isVisible() && await co.getByRole("button", { name: "Turn on ordering" }).isDisabled());
         ok("shop: nothing there places an order", (await co.getByRole("button", { name: /place|order now/i }).count()) === 0);
+        // Test runs (Nov 13) come only once ordering is set up and on.
+        ok("shop: no test run before ordering is set up", (await co.getByRole("button", { name: /^(Test run|Get ready)/ }).count()) === 0);
+        ok("shop: no button anywhere on the page says Place order", (await page.getByRole("button", { name: /place order/i }).count()) === 0);
         await co.getByRole("button", { name: /^Limit per order/ }).tap();
         const needFace = page.getByRole("dialog", { name: "Set up Face ID first" });
         ok("shop: changing the limit with no Face ID says to set it up first", await seen(needFace, 2000));

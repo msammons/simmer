@@ -20,8 +20,8 @@
  *   Checkout or Continue button made only of `words`, and nothing else
  * safewayPage("readWindows") → { windows: [{ id, checked, off, words }], days: [{ label, active }] } — reads only
  * safewayPage("chooseWindow", { path, id }) → { pressed, words } — on the checkout page only: the one free window chosen
- * safewayPage("pressDay", { path }) → { pressed, found, label } — on the checkout page only: presses the first pickup
- *   day not chosen yet (never a time), and nothing else
+ * safewayPage("pressDay", { path, label? }) → { pressed, found, label } — on the checkout page only: presses the first
+ *   pickup day not chosen yet, or the one with exactly that label (never a time), and nothing else
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -303,7 +303,9 @@ export async function safewayPage(action, arg, P) {
     if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
     const day = /^select slots for (MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY) [A-Z][a-z]{2}, \d{1,2} (Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} \d{1,2}$/;
     const found = deepAll(document, "button, [role=button]").filter(visible)
-      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && day.test(label(b)));
+      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && day.test(label(b)))
+      // Getting ready and test runs name the day tile exactly (as readWindows gave it).
+      .filter((b) => !arg.label || label(b) === arg.label);
     if (!found.length) return { pressed: false, found: 0, label: "" };
     const said = label(found[0]).slice(0, 80);
     found[0].click();

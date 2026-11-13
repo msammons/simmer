@@ -31,6 +31,8 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
     };
   }
   if (kind === "cart" || kind === "checkoutLook") return {};
+  // Getting ready and test runs are asked for by Simmer's own checkout steps (src/lib/checkout.ts), never from here.
+  if (kind === "checkoutPrepare" || kind === "checkoutDry") return null;
   if (kind === "snapshot") return query && /^\d+$/.test(text(b.productId, 20)) ? { query, productId: text(b.productId, 20) } : null;
   // A sample of a search page, or of the cart page (`on: "cart"`, helper 1.2 on), to learn how Safeway builds it.
   return { query: query || "milk", ...(b.on === "cart" && { on: "cart" }) };
