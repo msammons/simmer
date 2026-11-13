@@ -37,7 +37,7 @@ const NO_FACE_ID: Problem = { title: "Set up Face ID first", message: "Face ID o
  * when the question opens and is ready by the time its button is tapped. A challenge is good for 2 minutes; an older
  * one is fetched again at the tap (which may lose Safari's tap, and then the alert says Face ID was cancelled).
  */
-function usePrepared<T>() {
+export function usePrepared<T>() {
   const ref = useRef<{ at: number; fetch: () => Promise<T>; ready: T | null; wait: Promise<unknown> } | null>(null);
   return useMemo(() => {
     const start = (fetch: () => Promise<T>) => {

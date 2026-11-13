@@ -2,6 +2,11 @@ import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
 import { loadSettings, serverOn } from "@/lib/checkout";
 import { addWaiting, answerOf, changeSettings, passkeyCount } from "@/lib/passkeys";
+import { approve, followTestRun, prepare, testRun } from "@/lib/checkout-run";
+import { AppError } from "@/lib/errors";
+
+// Getting ready and test runs wait on the helper up to 20 s per request (the sheet asks again while it's going).
+export const maxDuration = 60;
 
 const noStore = { headers: { "cache-control": "no-store" } };
 const text = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -29,6 +34,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
+  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run") return run(req, b);
   try {
     const r = await changeSettings(req, {
       on: b?.on === true,
@@ -41,5 +47,24 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("couldn't save ordering's settings", e);
     return Response.json({ error: friendly(e) }, { status: 502 });
+  }
+}
+
+const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(s) ? s : "");
+
+/**
+ * Test runs (docs/CHECKOUT.md phase 2, Nov 13). prepare { jobId? }: get ready (or follow it) → the figures and what
+ * stops them, or { waiting: jobId }. approve { faceId }: Face ID approves those figures → { ok, approvalId } or
+ * { ok: false, reasons }. test-run { approvalId } or { jobId } (following): → { ok, would } or { ok: false, reasons }, or
+ * { waiting: jobId }. Nothing here places an order.
+ */
+async function run(req: Request, b: Record<string, unknown>) {
+  try {
+    const out = b.op === "prepare" ? await prepare(id(b.jobId) || undefined)
+      : b.op === "approve" ? await approve(req, answerOf(b.faceId))
+      : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
+    return Response.json(out, noStore);
+  } catch (e) {
+    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502, ...noStore });
   }
 }
