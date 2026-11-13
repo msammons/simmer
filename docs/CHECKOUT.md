@@ -59,7 +59,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 ## Phases
 
-1. **Look** (done Nov 12; the Settings row is gone, the helper job stays for dry runs): a helper job that loads Safeway's cart page and saves what it shows. Safeway's Checkout is a button,
+1. **Look** (done Nov 12; the Settings row is gone, the helper job stays for dry runs; the last look was done in the
+   household's own Chrome, with the same limits): a helper job that loads Safeway's cart page and saves what it shows. Safeway's Checkout is a button,
    so the look presses that one button (Sam, Nov 12: "Checkout only"): only on the cart page, only a button whose every
    word is "checkout" or "safeway", only when there's exactly one, once. It then reads the review page and stops: no
    further press, and no link followed (one could choose a pickup time). Started from a temporary Settings row ("Look
@@ -85,9 +86,13 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    After Order info's Continue (Nov 12): **Schedule pickup time** shows two weeks of days, today chosen, and a slot
    already filled in: "Ready by 9:05 PM", **slot type FLASH, price $3.95**. So Safeway's default is a paid Flash slot;
    ordering must choose a free window itself and check the slot price on the final page is $0 (or what was approved).
-   The day's windows show only after pressing a day; so a second look (Sam, Nov 12: "a day only") presses the first day
-   tab not already chosen ("select slots for FRIDAY Nov, 13 …"), once, and reads the windows. Never a time window. The
-   temporary Settings row is back for this look and goes again after it. The pickup step's own Continue was turned off with no
+   The day's windows (seen Nov 12 in the household's Chrome, pressing one day tile, "a day only"): day tiles are
+   `.date-tile[role=button]` labelled "select slots for FRIDAY Nov, 13"; the chosen one has `date-is-active`. Windows
+   are radio buttons (`input[type=radio][name=slot]`), shown as "6 AM - 7 AM price Free", their ids carrying store,
+   day, date, REGULAR or FLASH, DUG (pickup) and the times. Five show at first, with a "More times" expander (not
+   opened). Late in the evening today offered only a paid FLASH slot ($3.95). The pickup Continue and Place Order stay
+   off until a window is chosen. The card now shows its new last 4 and asks for no security code. So the picker: the
+   earliest window priced "Free" (REGULAR), today or later; never FLASH or a priced slot unless approved. The pickup step's own Continue was turned off with no
    window chosen, so nothing more was pressed.
 
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute

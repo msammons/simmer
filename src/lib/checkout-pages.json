@@ -1,6 +1,6 @@
 {
  "pickup": {
-  "text": "Cart Checkout Page Order info Edit SAM SAMPLE (555) 010-0000 Pick up your order here 100 Main St, Springfield, CA 90000 Schedule pickup time Thu Nov 12 Fri Nov 13 Sat Nov 14 Sun Nov 15 Mon Nov 16 Tue Nov 17 Wed Nov 18 Thu Nov 19 Fri Nov 20 Sat Nov 21 Sun Nov 22 Mon Nov 23 Tue Nov 24 Wed Nov 25 Order will be ready at the start of your selected time. Ready by 9:05 PM Slot type FLASH price $3.95 Flash™ pickup time may vary and is not a guarantee due to factors beyond our control. Continue Payment $6.94 Visa •••• 4242 Confirm CVV Add or select another payment method or update the card ending in 4242. Make this order a gift Edit Bring your own bags? You’ve opted to bring your own bags. Thank you for helping us reduce waste. 🌿 Place Order By clicking ‘Place Order’, you acknowledge that you have read and agree to the Albertsons Companies' Terms of Use and Privacy Policy and that they apply to this order. Order summary Safeway Items (1) $2.99 Estimated taxes & fees Est. taxes and fees $3.95 Sales Tax $0.00 Minimum Order Fee (under $30) $3.95 Donate to Nourishing Neighbors Round up Round order to $7.00 +$0.06 Or choose a fixed amount $1.00 $3.00 $5.00 Custom Promo code Promo code Estimated total $6.94 The estimated total may be different from final amount charged to accommodate actual price of substitutions, taxes, regulatory, delivery, other fees and discounts.",
+  "text": "Cart Checkout Page Order info Edit SAM SAMPLE (555) 010-0000 Pick up your order here 100 Main St, Springfield, CA 90000 Schedule pickup time Thu Nov 12 Fri Nov 13 Sat Nov 14 Sun Nov 15 Mon Nov 16 Tue Nov 17 Wed Nov 18 Thu Nov 19 Fri Nov 20 Sat Nov 21 Sun Nov 22 Mon Nov 23 Tue Nov 24 Wed Nov 25 Order will be ready at the start of your selected time. Ready by 9:05 PM Slot type FLASH price $3.95 Flash\u2122 pickup time may vary and is not a guarantee due to factors beyond our control. Continue Payment $6.94 Visa \u2022\u2022\u2022\u2022 4242 Confirm CVV Add or select another payment method or update the card ending in 4242. Make this order a gift Edit Bring your own bags? You\u2019ve opted to bring your own bags. Thank you for helping us reduce waste. \ud83c\udf3f Place Order By clicking \u2018Place Order\u2019, you acknowledge that you have read and agree to the Albertsons Companies' Terms of Use and Privacy Policy and that they apply to this order. Order summary Safeway Items (1) $2.99 Estimated taxes & fees Est. taxes and fees $3.95 Sales Tax $0.00 Minimum Order Fee (under $30) $3.95 Donate to Nourishing Neighbors Round up Round order to $7.00 +$0.06 Or choose a fixed amount $1.00 $3.00 $5.00 Custom Promo code Promo code Estimated total $6.94 The estimated total may be different from final amount charged to accommodate actual price of substitutions, taxes, regulatory, delivery, other fees and discounts.",
   "buttons": [
    "Order info Edit",
    "Schedule pickup time",
@@ -13,7 +13,7 @@
   ]
  },
  "before": {
-  "text": "Cart Checkout Page Order info First name Last name Pick up your order here 100 Main St, Springfield, CA 90000 Email Address* Contact Number* Texts may be sent after hours. Message and data rates may apply Text me order status updates Texts may be sent after hours. Message and data rates may apply. Continue Pickup date & time Payment $21.17 Visa •••• 4242 Confirm CVV Add or select another payment method or update the card ending in 4242. Make this order a gift Bring your own bags? You’ve opted to bring your own bags. Thank you for helping us reduce waste. 🌿 Place Order By clicking ‘Place Order’, you acknowledge that you have read and agree to the Albertsons Companies' Terms of Use and Privacy Policy and that they apply to this order. Order summary Safeway Items (3) $17.22 Estimated taxes & fees Est. taxes and fees $3.95 Sales Tax $0.00 Minimum Order Fee (under $30) $3.95 Donate to Nourishing Neighbors Round up Round order to $22.00 +$0.83 Or choose a fixed amount $1.00 $3.00 $5.00 Custom Promo code Promo code Estimated total $21.17 The estimated total may be different from final amount charged to accommodate actual price of substitutions, taxes, regulatory, delivery, other fees and discounts.",
+  "text": "Cart Checkout Page Order info First name Last name Pick up your order here 100 Main St, Springfield, CA 90000 Email Address* Contact Number* Texts may be sent after hours. Message and data rates may apply Text me order status updates Texts may be sent after hours. Message and data rates may apply. Continue Pickup date & time Payment $21.17 Visa \u2022\u2022\u2022\u2022 4242 Confirm CVV Add or select another payment method or update the card ending in 4242. Make this order a gift Bring your own bags? You\u2019ve opted to bring your own bags. Thank you for helping us reduce waste. \ud83c\udf3f Place Order By clicking \u2018Place Order\u2019, you acknowledge that you have read and agree to the Albertsons Companies' Terms of Use and Privacy Policy and that they apply to this order. Order summary Safeway Items (3) $17.22 Estimated taxes & fees Est. taxes and fees $3.95 Sales Tax $0.00 Minimum Order Fee (under $30) $3.95 Donate to Nourishing Neighbors Round up Round order to $22.00 +$0.83 Or choose a fixed amount $1.00 $3.00 $5.00 Custom Promo code Promo code Estimated total $21.17 The estimated total may be different from final amount charged to accommodate actual price of substitutions, taxes, regulatory, delivery, other fees and discounts.",
   "buttons": [
    "Order info",
    "Continue",
@@ -25,6 +25,41 @@
    "Learn more about Nourishing Neighbors Nourishing Neighbors",
    "Promo code Promo code",
    "Open Preferences"
+  ]
+ },
+ "windows": {
+  "note": "Friday's pickup windows after pressing its day tile (Nov 12); store number and ids as Safeway builds them, store swapped",
+  "days": [
+   "select slots for FRIDAY Nov, 13 Fri Nov 13",
+   "select slots for SATURDAY Nov, 14 Sat Nov 14"
+  ],
+  "slots": [
+   {
+    "id": "9999FRI20261113REGULARDUG600700-2026-11-13",
+    "text": "6 AM - 7 AM price Free"
+   },
+   {
+    "id": "9999FRI20261113REGULARDUG700800-2026-11-13",
+    "text": "7 AM - 8 AM price Free"
+   },
+   {
+    "id": "9999FRI20261113REGULARDUG800900-2026-11-13",
+    "text": "8 AM - 9 AM price Free"
+   },
+   {
+    "id": "9999FRI20261113REGULARDUG9001000-2026-11-13",
+    "text": "9 AM - 10 AM price Free"
+   },
+   {
+    "id": "9999FRI20261113REGULARDUG10001100-2026-11-13",
+    "text": "10 AM - 11 AM price Free"
+   }
+  ],
+  "today": [
+   {
+    "id": "9999DUGTHUFLASH06:0506:00-2026-11-12-865302",
+    "text": "Ready by 10:05 PM Slot type FLASH price $3.95"
+   }
   ]
  }
 }
