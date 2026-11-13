@@ -56,7 +56,7 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 ## Phases
 
-1. **Look** (now): a helper job that loads Safeway's cart page and saves what it shows. Safeway's Checkout is a button,
+1. **Look** (done Nov 12; the Settings row is gone, the helper job stays for dry runs): a helper job that loads Safeway's cart page and saves what it shows. Safeway's Checkout is a button,
    so the look presses that one button (Sam, Nov 12: "Checkout only"): only on the cart page, only a button whose every
    word is "checkout" or "safeway", only when there's exactly one, once. It then reads the review page and stops: no
    further press, and no link followed (one could choose a pickup time). Started from a temporary Settings row ("Look
@@ -77,6 +77,12 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    never be touched; a promo code box; and "Estimated total", which Safeway says may differ from the final charge.
    **Open question for phase 2:** the card's security code is asked for at checkout. Simmer and the helper never hold
    card details, so either Safeway stops asking for it on a saved card, or that step stays a person's, on the Mac.
+
+   After Order info's Continue (Nov 12): **Schedule pickup time** shows two weeks of days, today chosen, and a slot
+   already filled in: "Ready by 9:05 PM", **slot type FLASH, price $3.95**. So Safeway's default is a paid Flash slot;
+   ordering must choose a free window itself and check the slot price on the final page is $0 (or what was approved).
+   The day's windows show only after pressing a day; not yet seen. The pickup step's own Continue was turned off with no
+   window chosen, so nothing more was pressed.
 
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
    with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). **Open question
