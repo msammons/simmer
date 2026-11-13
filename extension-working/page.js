@@ -286,8 +286,9 @@ export async function safewayPage(action, arg, P) {
     const found = deepAll(document, "button, [role=button], input[type=submit]").filter(visible)
       .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && fits(label(b) || b.value || ""));
     if (found.length !== 1) return { pressed: false, found: found.length, label: "" };
+    const said = label(found[0]).slice(0, 80); // before the press: Safeway's button turns into "Processing"
     found[0].click();
-    return { pressed: true, found: 1, label: label(found[0]).slice(0, 80) };
+    return { pressed: true, found: 1, label: said };
   }
 
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
