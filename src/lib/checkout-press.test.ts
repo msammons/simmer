@@ -73,6 +73,20 @@ describe("the checkout look's one press", () => {
     expect(pressedLabels).toEqual([]);
   });
 
+  it("presses one pickup day, the first not chosen, never a time or anything else", async () => {
+    const days = ["SelectedTHURSDAY Nov, 12 Thu Nov 12", "select slots for FRIDAY Nov, 13 Fri Nov 13", "select slots for SATURDAY Nov, 14 Sat Nov 14"];
+    const day = async () => (await safewayPage("pressDay", { path: "/erums/checkout" }, PAGE)) as unknown as Press;
+    cart(["Place Order", "9:00 AM - 10:00 AM $0.00", "Continue", ...days], "/erums/checkout");
+    expect(await day()).toMatchObject({ pressed: true, label: "select slots for FRIDAY Nov, 13 Fri Nov 13" });
+    expect(pressedLabels).toEqual(["select slots for FRIDAY Nov, 13 Fri Nov 13"]);
+    pressedLabels.length = 0;
+    cart(["Place Order", "select slots for 9:00 AM", "Select FRIDAY 9 AM slot"], "/erums/checkout");
+    expect((await day()).pressed).toBe(false);
+    cart(days, "/erums/cart");
+    expect((await day()).pressed).toBe(false);
+    expect(pressedLabels).toEqual([]);
+  });
+
   it("presses nothing that's turned off", async () => {
     cart(["Checkout"]);
     document.querySelector("button")!.setAttribute("aria-disabled", "true");

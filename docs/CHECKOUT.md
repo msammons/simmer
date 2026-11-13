@@ -85,7 +85,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    After Order info's Continue (Nov 12): **Schedule pickup time** shows two weeks of days, today chosen, and a slot
    already filled in: "Ready by 9:05 PM", **slot type FLASH, price $3.95**. So Safeway's default is a paid Flash slot;
    ordering must choose a free window itself and check the slot price on the final page is $0 (or what was approved).
-   The day's windows show only after pressing a day; not yet seen. The pickup step's own Continue was turned off with no
+   The day's windows show only after pressing a day; so a second look (Sam, Nov 12: "a day only") presses the first day
+   tab not already chosen ("select slots for FRIDAY Nov, 13 …"), once, and reads the windows. Never a time window. The
+   temporary Settings row is back for this look and goes again after it. The pickup step's own Continue was turned off with no
    window chosen, so nothing more was pressed.
 
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
