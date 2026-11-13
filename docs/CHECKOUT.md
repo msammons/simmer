@@ -92,5 +92,11 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). The final page's
    total is an estimate when the cart has weighed items; the approval is checked against it to the cent, and the
    allowance below covers the charge after picking.
-2. The sheet, the protections and dry runs, built to match what the look found.
+2. The sheet, the protections and dry runs, built to match what the look found. Done so far (Nov 12): the rules as
+   plain code with tests (`src/lib/checkout.ts`: reading the final page, everything that stops an order, the
+   weighed-items allowance, the highlights), tested against copies of Safeway's page with stand-in details; a figure
+   that appears twice on the page counts as unreadable; the pinned store must begin Safeway's address; and Settings →
+   Ordering (off, $0, store, card; turning it on asks first; every change recorded). Still to build: Face ID (a
+   passkey), choosing a free pickup window (the windows haven't been seen yet), the helper's prepare and dry-run jobs,
+   the Check out sheet, the approval, and dry runs on the account. No code presses Place Order.
 3. Turning on real orders, after dry runs match.

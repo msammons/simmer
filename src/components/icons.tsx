@@ -32,6 +32,7 @@ const PATHS = {
   link: "M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1 M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1",
   pencil: "M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4",
   refresh: "M4 12a8 8 0 1 0 2.4-5.7 M4 4v5h5",
+  card: "M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h3",
 } as const;
 
 export type IconName = keyof typeof PATHS;

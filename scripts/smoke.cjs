@@ -318,6 +318,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("settings: Copy says Copied within 150 ms", await within150(() => page.getByRole("button", { name: /^Copy to Google Sheet.*Copied/ }).isVisible()));
       const copyAlert = page.getByRole("dialog", { name: "That didn't go through" });
       ok("settings: a copy that doesn't go through says why, and the row goes back", await seen(copyAlert, 10000) && await copyAlert.getByRole("button", { name: "OK" }).tap().then(async () => { await page.waitForTimeout(300); return !(await page.getByRole("button", { name: /Copied/ }).count()); }));
+      // Ordering (docs/CHECKOUT.md, Nov 12): off with a $0 limit until changed; turning it on asks first, and Cancel leaves it off.
+      ok("settings: ordering starts off with a $0 limit", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible()
+        && await settings.getByRole("button", { name: /^Limit per order.*\$0$/ }).isVisible());
+      await settings.getByRole("button", { name: /^Order from Simmer/ }).tap();
+      const turnOn = page.getByRole("dialog", { name: "Turn on ordering?" });
+      ok("settings: turning ordering on asks first", await seen(turnOn, 2000));
+      await turnOn.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
+      ok("settings: Cancel leaves ordering off", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible());
       await page.getByRole("radio", { name: /^Apricot/ }).tap();
       ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
       await page.getByRole("radio", { name: /^Simmer$/ }).tap();
