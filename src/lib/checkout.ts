@@ -155,3 +155,30 @@ export async function record(what: string, detail: Record<string, unknown>): Pro
 }
 export const resetCheckout = () => { memory = NO_ORDERING; memoryLog.length = 0; };
 export const recordedForTests = () => memoryLog;
+
+/**
+ * A pickup window as Safeway's checkout lists it (Nov 12): a radio button whose id carries the store, day, date, REGULAR
+ * or FLASH, DUG (pickup) and the times ("…FRI20261113REGULARDUG600700-2026-11-13"), and whose words say the time and
+ * price ("6 AM - 7 AM price Free", or "Ready by 10:05 PM Slot type FLASH price $3.95").
+ */
+export type PickupWindow = { id: string; words: string; date: string; regular: boolean; priceCents: number | null; order: number };
+
+export function windowOf(id: string, words: string, order: number): PickupWindow {
+  const w = squash(words);
+  const price = w.match(/\bprice (Free|\$[\d,]+\.\d\d)\b/i)?.[1];
+  return {
+    id, words: w, order,
+    date: id.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? "",
+    regular: /REGULAR/.test(id) && !/FLASH/i.test(`${id} ${w}`),
+    priceCents: price === undefined ? null : /^free$/i.test(price) ? 0 : cents(price),
+  };
+}
+
+/**
+ * The window ordering takes (Sam, Nov 12): the earliest free REGULAR window, by date and then as Safeway lists it. Never
+ * FLASH, never one with a price, never one whose price can't be read. None: null, and the order stops.
+ */
+export function pickWindow(windows: PickupWindow[]): PickupWindow | null {
+  return windows.filter((w) => w.regular && w.priceCents === 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)[0] ?? null;
+}
