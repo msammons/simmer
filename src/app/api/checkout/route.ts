@@ -1,15 +1,20 @@
 import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
 import { loadSettings, saveSettings, serverOn } from "@/lib/checkout";
+import { passkeyCount } from "@/lib/passkeys";
 
 const noStore = { headers: { "cache-control": "no-store" } };
 const text = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
-/** GET: ordering's settings (docs/CHECKOUT.md), and whether the server allows ordering at all. */
+/**
+ * GET: ordering's settings (docs/CHECKOUT.md), whether the server allows ordering at all, and how many phones have Face
+ * ID set up for it (Nov 12), so Settings → Ordering loads in one go.
+ */
 export async function GET(req: Request) {
   if (!authorized(req)) return unauthorized();
   try {
-    return Response.json({ settings: await loadSettings(), server: serverOn() }, noStore);
+    const [settings, faceId] = await Promise.all([loadSettings(), passkeyCount()]);
+    return Response.json({ settings, server: serverOn(), faceId }, noStore);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: 502 });
   }

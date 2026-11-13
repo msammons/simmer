@@ -1,5 +1,7 @@
 "use client";
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, dates.
+import { startAuthentication, startRegistration, WebAuthnError } from "@simplewebauthn/browser";
+import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { addDays, todayIn, TZ } from "./time";
 
 const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan" };
@@ -128,7 +130,12 @@ export const api = {
   /** Settings → Copy to Google Sheet: answers how many tabs were copied. */
   exportSheet: () => call<{ tabs: number }>("/api/export", { method: "POST" }),
   /** Ordering from Simmer (docs/CHECKOUT.md): its settings, and whether the server allows it at all. */
-  checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { signal }),
+  checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean; faceId: number }>("/api/checkout", { signal }),
+  /** Face ID for ordering (src/lib/passkeys.ts): start setting it up or a check, then send the phone's answer. */
+  faceIdOptions: <T extends "register-options" | "check-options">(op: T) =>
+    call<{ options: T extends "register-options" ? PublicKeyCredentialCreationOptionsJSON : PublicKeyCredentialRequestOptionsJSON }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op }) }),
+  faceIdRegister: (response: unknown) => call<{ ok: true; count: number }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op: "register", response }) }),
+  faceIdCheck: (response: unknown) => call<{ ok: boolean; credentialId?: string; why?: string }>("/api/checkout/passkey", { method: "POST", body: JSON.stringify({ op: "check", response }) }),
   saveCheckout: (s: CheckoutSettings) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify(s) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
@@ -152,6 +159,29 @@ export const api = {
   job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}&wait=1`, { signal }),
   cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };
+
+/**
+ * Face ID on this phone (Nov 12). Safari only shows Face ID straight from a tap, so the options are fetched before the
+ * tap (`faceIdOptions`) and these are called at the tap with them; the server's answer comes after. Cancelling Face ID,
+ * or anything else going wrong, comes back as an Error in plain words.
+ */
+export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSON, onAnswer?: () => void): Promise<number> {
+  const response = await faceId(() => startRegistration({ optionsJSON: options }));
+  onAnswer?.();
+  return (await api.faceIdRegister(response)).count;
+}
+export async function checkFaceId(options: PublicKeyCredentialRequestOptionsJSON): Promise<{ ok: boolean; credentialId?: string; why?: string }> {
+  return api.faceIdCheck(await faceId(() => startAuthentication({ optionsJSON: options })));
+}
+async function faceId<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof WebAuthnError && e.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") throw new Error("Face ID is already set up here.");
+    if (e instanceof Error && (e.name === "NotAllowedError" || e.name === "AbortError")) throw new Error("Face ID was cancelled, or didn't finish in time.");
+    throw new Error("Face ID isn't available here.");
+  }
+}
 
 /**
  * Framed in the helper's panel: ask the panel for the passcode and wait for it (a moment at most). Only a message from

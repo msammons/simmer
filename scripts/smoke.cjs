@@ -326,6 +326,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("settings: turning ordering on asks first", await seen(turnOn, 2000));
       await turnOn.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
       ok("settings: Cancel leaves ordering off", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible());
+      // Face ID (Nov 12): none set up on a fresh server, so the row offers Set up (Face ID itself can't be driven here).
+      ok("settings: Face ID starts at Set up", await settings.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible());
       await page.getByRole("radio", { name: /^Apricot/ }).tap();
       ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
       await page.getByRole("radio", { name: /^Simmer$/ }).tap();

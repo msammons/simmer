@@ -2,7 +2,7 @@
 // store and card swapped for stand-ins): reading the page, and everything that must stop an order.
 import { afterEach, describe, expect, it } from "vitest";
 import pages from "./checkout-pages.json";
-import { allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
+import { pickWindow, windowOf, allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
 
 const pickup = readFinal(pages.pickup.text, pages.pickup.buttons);
 // Safeway's page as it will be with the card fixed (Nov 12: it no longer asks for the security code).
@@ -131,5 +131,27 @@ describe("ordering's settings", () => {
     await saveSettings({ on: true, limitCents: 15000, store: "  100 Main St ", card: "4242" });
     expect(await loadSettings()).toEqual({ on: true, limitCents: 15000, store: "100 Main St", card: "4242" });
     expect(recordedForTests().at(-1)?.[1]).toBe("settings");
+  });
+});
+
+describe("choosing a pickup window", () => {
+  const friday = pages.windows.slots.map((x, i) => windowOf(x.id, x.text, i));
+  const tonight = pages.windows.today.map((x, i) => windowOf(x.id, x.text, i));
+
+  it("reads Safeway's windows: date, free or priced, regular or Flash", () => {
+    expect(friday[0]).toMatchObject({ date: "2026-11-13", regular: true, priceCents: 0, words: "6 AM - 7 AM price Free" });
+    expect(tonight[0]).toMatchObject({ date: "2026-11-12", regular: false, priceCents: 395 });
+  });
+
+  it("takes the earliest free regular window, never Flash or a priced one", () => {
+    expect(pickWindow([...tonight, ...friday])?.words).toBe("6 AM - 7 AM price Free");
+    expect(pickWindow(tonight)).toBeNull();
+    expect(pickWindow([windowOf("9999SAT20261114REGULARDUG600700-2026-11-14", "6 AM - 7 AM price $2.95", 0)])).toBeNull();
+    expect(pickWindow([windowOf("9999SAT20261114REGULARDUG600700-2026-11-14", "6 AM - 7 AM", 0)])).toBeNull();
+  });
+
+  it("goes by date first, then by Safeway's order", () => {
+    const sat = windowOf("9999SAT20261114REGULARDUG600700-2026-11-14", "6 AM - 7 AM price Free", 0);
+    expect(pickWindow([sat, friday[3], friday[1]])?.id).toBe(friday[1].id);
   });
 });
