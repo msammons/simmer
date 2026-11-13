@@ -1,7 +1,7 @@
 import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
-import { loadSettings, saveSettings, serverOn } from "@/lib/checkout";
-import { addWaiting, passkeyCount } from "@/lib/passkeys";
+import { loadSettings, serverOn } from "@/lib/checkout";
+import { addWaiting, answerOf, changeSettings, passkeyCount } from "@/lib/passkeys";
 
 const noStore = { headers: { "cache-control": "no-store" } };
 const text = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -20,18 +20,24 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST { on, limitCents, store, card }: ordering's settings. Anything unreadable is saved as off / $0. */
+
+/**
+ * POST { on, limitCents, store, card, faceId? }: ordering's settings. Anything unreadable is saved as off / $0. Turning
+ * on, raising the limit, or changing the store or card needs `faceId`, a Face ID check's answer (Sam, Nov 13); without
+ * a good one the change is refused and nothing is saved.
+ */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
   try {
-    const settings = await saveSettings({
+    const r = await changeSettings(req, {
       on: b?.on === true,
       limitCents: Number.isInteger(b?.limitCents) ? b.limitCents : 0,
       store: text(b?.store, 120),
       card: /^\d{4}$/.test(b?.card ?? "") ? b.card : "",
-    });
-    return Response.json({ settings, server: serverOn() }, noStore);
+    }, answerOf(b?.faceId));
+    if (!r.ok) return Response.json({ error: r.why }, { status: 400, ...noStore });
+    return Response.json({ settings: r.settings, server: serverOn() }, noStore);
   } catch (e) {
     console.error("couldn't save ordering's settings", e);
     return Response.json({ error: friendly(e) }, { status: 502 });

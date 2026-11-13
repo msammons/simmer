@@ -2,9 +2,11 @@
 // here may be loosened without Sam's yes. Phase 2 (Nov 12): settings, reading Safeway's final page, and checking it
 // against an approval. Nothing in Simmer or the helper presses Place Order yet; dry runs stop one press short.
 import { readTabIfAny, replaceTab, appendRows, sheetsConfigured } from "./google/sheets";
+import type { CheckoutSettings } from "./checkout-rules";
+export { needsFaceId } from "./checkout-rules";
 
 /** Ordering's settings. Off and $0 until the household changes them; anything missing or unreadable reads as off / $0. */
-export type CheckoutSettings = { on: boolean; limitCents: number; store: string; card: string };
+export type { CheckoutSettings };
 export const NO_ORDERING: CheckoutSettings = { on: false, limitCents: 0, store: "", card: "" };
 
 /** The server's own switch (`CHECKOUT_ENABLED=on` in Vercel), which stops ordering with no release. Off unless set. */
@@ -137,11 +139,15 @@ export async function loadSettings(): Promise<CheckoutSettings> {
   try { return settingsOf((await readTabIfAny(TAB))[1]); } catch { return NO_ORDERING; }
 }
 
-export async function saveSettings(s: CheckoutSettings): Promise<CheckoutSettings> {
-  const clean = settingsOf([s.on ? "on" : "off", String(s.limitCents), s.store, s.card]);
+/** Settings as they'd be saved: anything unreadable as off / $0. */
+export const cleanSettings = (s: CheckoutSettings) => settingsOf([s.on ? "on" : "off", String(s.limitCents), s.store, s.card]);
+
+/** `noted` goes in the record with the change (which Face ID check allowed it, Nov 13). */
+export async function saveSettings(s: CheckoutSettings, noted: Record<string, unknown> = {}): Promise<CheckoutSettings> {
+  const clean = cleanSettings(s);
   if (!sheetsConfigured()) memory = clean;
   else await replaceTab(TAB, [["on", "limit", "store", "card"], [clean.on ? "on" : "off", String(clean.limitCents), clean.store, clean.card]]);
-  await record("settings", { on: clean.on, limitCents: clean.limitCents, store: clean.store, card: clean.card });
+  await record("settings", { on: clean.on, limitCents: clean.limitCents, store: clean.store, card: clean.card, ...noted });
   return clean;
 }
 
