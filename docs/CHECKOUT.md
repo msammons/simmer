@@ -62,6 +62,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    further press, and no link followed (one could choose a pickup time). Started from a temporary Settings row ("Look
    at Safeway's checkout"), removed afterwards.
 
+   Checkout led to a suggestions page ("Got everything you need?", the cart address plus `/dnf`), so the look may also
+   press that page's Continue (Sam, Nov 12: "Continue only"): only on that page, only a button whose every word is
+   "continue", "to", "checkout" or "safeway" and that says continue or checkout, only one, once; never an Add or a coupon.
+
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
    with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). **Open question
    for phase 2:** the total on the final page is an estimate when the cart has weighed items, so the approval check
