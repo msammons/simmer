@@ -66,6 +66,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    press that page's Continue (Sam, Nov 12: "Continue only"): only on that page, only a button whose every word is
    "continue", "to", "checkout" or "safeway" and that says continue or checkout, only one, once; never an Add or a coupon.
 
+   Then, to see the pickup windows, the checkout page's Order info **Continue** (Sam, Nov 12): only on that page, only a
+   button that says exactly "Continue", only one, once. It may save the household's contact details on Safeway.
+
    What Safeway's checkout page showed (Nov 12, after Checkout and Continue): one page, `/erums/checkout?cartId=…`, in
    steps. **Order info** (name, email, phone, pickup store) with its own Continue; **Pickup date & time** (closed until
    order info is done, so the windows weren't seen yet); **Payment** with the saved card's last 4 and a **"Confirm CVV"**
