@@ -56,8 +56,15 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 ## Phases
 
-1. **Read-only look** (now): a helper job that loads Safeway's checkout pages by address and saves what each shows.
-   It presses nothing. If going further would need a press, it stops and says so. Started from a temporary Settings
-   row ("Look at Safeway's checkout"), removed afterwards.
+1. **Look** (now): a helper job that loads Safeway's cart page and saves what it shows. Safeway's Checkout is a button,
+   so the look presses that one button (Sam, Nov 12: "Checkout only"): only on the cart page, only a button whose every
+   word is "checkout" or "safeway", only when there's exactly one, once. It then reads the review page and stops: no
+   further press, and no link followed (one could choose a pickup time). Started from a temporary Settings row ("Look
+   at Safeway's checkout"), removed afterwards.
+
+   What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
+   with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). **Open question
+   for phase 2:** the total on the final page is an estimate when the cart has weighed items, so the approval check
+   compares against that estimate, and the charge after picking can differ; how much it may differ needs deciding.
 2. The sheet, the protections and dry runs, built to match what the look found.
 3. Turning on real orders, after dry runs match.
