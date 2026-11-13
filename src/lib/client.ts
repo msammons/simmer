@@ -144,7 +144,8 @@ export const api = {
   faceIdApprove: (response: unknown) => passkey<{ ok: true }>({ op: "approve", response }),
   faceIdRegister: (response: unknown) => passkey<{ ok: true; count: number }>({ op: "register", response }),
   faceIdCheck: (response: unknown) => passkey<{ ok: boolean; credentialId?: string; why?: string }>({ op: "check", response }),
-  saveCheckout: (s: CheckoutSettings) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify(s) }),
+  /** Turning on, raising the limit, or changing the store or card needs `faceId`, a Face ID answer (Nov 13). */
+  saveCheckout: (s: CheckoutSettings, faceId?: unknown) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify({ ...s, faceId }) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
   /** The exact Safeway product picked for each item before (by the Safeway helper). */
@@ -181,6 +182,9 @@ export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSO
 export async function checkFaceId(options: PublicKeyCredentialRequestOptionsJSON): Promise<{ ok: boolean; credentialId?: string; why?: string }> {
   return api.faceIdCheck(await faceId(() => startAuthentication({ optionsJSON: options })));
 }
+/** A Face ID answer to send with something that needs it (a settings change, Nov 13). */
+export const faceIdAnswer = (options: PublicKeyCredentialRequestOptionsJSON) => faceId(() => startAuthentication({ optionsJSON: options }));
+
 /** A phone with Face ID approves the new phone waiting (the options are bound to that one request). */
 export async function approveWithFaceId(options: PublicKeyCredentialRequestOptionsJSON, onAnswer?: () => void): Promise<void> {
   const response = await faceId(() => startAuthentication({ optionsJSON: options }));

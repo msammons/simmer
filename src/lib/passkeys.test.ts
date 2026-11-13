@@ -8,10 +8,10 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyAuthenticationResponse: vi.fn(),
 }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
-import { recordedForTests, resetCheckout } from "./checkout";
+import { loadSettings, recordedForTests, resetCheckout, saveSettings, type CheckoutSettings } from "./checkout";
 import { useTabStore, type TabStore } from "./google/redis-tabs";
 import {
-  ADD_MS, addWaiting, approveOptions, askToAdd, CHALLENGE_MS, checkOptions, loadPasskeys, registrationOptions, resetPasskeys, site, verifyApprove,
+  ADD_MS, addWaiting, changeSettings, approveOptions, askToAdd, CHALLENGE_MS, checkOptions, loadPasskeys, registrationOptions, resetPasskeys, site, verifyApprove,
   verifyCheck, verifyRegistration,
 } from "./passkeys";
 
@@ -374,6 +374,64 @@ describe("Face ID for ordering", () => {
         expect(both.filter((r) => r.ok).length).toBe(1);
         expect((await loadPasskeys()).length).toBe(2);
       } finally { useTabStore(null); }
+    });
+  });
+
+  describe("ordering's settings, guarded by Face ID", () => {
+    const set: CheckoutSettings = { on: false, limitCents: 5000, store: "100 Main St", card: "4242" };
+    /** A Face ID check answered by the phone already set up, its count going up each time. */
+    let n = 0;
+    async function faceId(id = "cred-1") {
+      const c = await checkOptions(req());
+      verifyAuth.mockResolvedValueOnce(checked(id, ++n));
+      return answer(c.challenge, id);
+    }
+    beforeEach(async () => { n = 0; await saveSettings(set); });
+
+    it("with no phone set up, anything that needs Face ID is refused, and nothing changes", async () => {
+      for (const next of [{ ...set, on: true }, { ...set, limitCents: 6000 }, { ...set, store: "200 Main St" }, { ...set, card: "1111" }]) {
+        expect(await changeSettings(req(), next, null)).toEqual({ ok: false, why: "Set up Face ID first." });
+      }
+      expect(await loadSettings()).toEqual(set);
+      expect(recordedForTests().filter((r) => r[1] === "settings refused").length).toBe(4);
+    });
+
+    it("turning on, raising the limit, or changing the store or card needs a Face ID check", async () => {
+      await setUp("cred-1");
+      for (const next of [{ ...set, on: true }, { ...set, limitCents: 6000 }, { ...set, store: "200 Main St" }, { ...set, card: "1111" }]) {
+        expect(await changeSettings(req(), next, null)).toMatchObject({ ok: false, why: expect.stringMatching(/needs Face ID/) });
+        expect(await loadSettings()).toEqual(set);
+        expect(await changeSettings(req(), next, await faceId())).toEqual({ ok: true, settings: next });
+        // The check that allowed it goes in the record with the change.
+        expect(JSON.parse(recordedForTests().filter((r) => r[1] === "settings").at(-1)![2])).toMatchObject({ ...next, faceId: "cred-1" });
+        await saveSettings(set);
+      }
+    });
+
+    it("turning off and lowering the limit need nothing, with or without a phone set up", async () => {
+      await saveSettings({ ...set, on: true });
+      expect(await changeSettings(req(), { ...set, on: false }, null)).toEqual({ ok: true, settings: set });
+      expect(await changeSettings(req(), { ...set, limitCents: 1000 }, null)).toEqual({ ok: true, settings: { ...set, limitCents: 1000 } });
+      await setUp("cred-1");
+      expect(await changeSettings(req(), { ...set, limitCents: 0 }, null)).toMatchObject({ ok: true });
+      expect(verifyAuth).not.toHaveBeenCalled();
+    });
+
+    it("a used, failed, or someone else's check is refused", async () => {
+      await setUp("cred-1");
+      const used = await faceId();
+      expect((await changeSettings(req(), { ...set, on: true }, used)).ok).toBe(true);
+      await saveSettings(set);
+      expect(await changeSettings(req(), { ...set, on: true }, used)).toMatchObject({ ok: false, why: expect.stringMatching(/already used/) });
+      const c = await checkOptions(req());
+      verifyAuth.mockRejectedValueOnce(new Error("Signature did not match"));
+      expect(await changeSettings(req(), { ...set, on: true }, answer(c.challenge))).toEqual({ ok: false, why: "Face ID didn't match." });
+      expect(await changeSettings(req(), { ...set, on: true }, await faceId("stranger"))).toMatchObject({ ok: false });
+      // A check made for approving a new phone doesn't pass for a change either.
+      await askToAdd();
+      const { options } = await approveOptions(req());
+      expect(await changeSettings(req(), { ...set, on: true }, answer(options.challenge))).toMatchObject({ ok: false });
+      expect(await loadSettings()).toEqual(set);
     });
   });
 });

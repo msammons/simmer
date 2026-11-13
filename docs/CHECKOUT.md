@@ -22,14 +22,17 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 ## Protections (all required)
 
 **Turning it on**
-- Off by default: a Settings switch, plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
-- A spending limit per order, set in Settings. Over it: refused before the helper touches Safeway. It starts at $0
+- Off by default: a switch (Settings → Ordering, and in the Check out sheet), plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
+- A spending limit per order, set in the Check out sheet (Shop → Safeway → Check out). Over it: refused before the helper touches Safeway. It starts at $0
   (Sam, Nov 12), so no order can go through until someone in the household raises it; a missing or unreadable limit
   counts as $0.
-- The pickup store and the card's last 4 digits are set once in Settings. Safeway showing a different store or card: stop.
+- The pickup store and the card's last 4 digits are set once in the Check out sheet. Safeway showing a different store or card: stop.
 
 **Each order**
 - Face ID (a passkey) on the phone to place it.
+- Turning ordering on, raising the limit, or changing the store or card needs Face ID too (Sam, Nov 13: ordering lives
+  in Check out, a few settings stay in Settings); turning off and lowering the limit don't. With no phone set up, those
+  changes are refused.
 - The approval is fixed at the tap: every product and count, the store, the window, the card's last 4, the total. The
   helper checks Safeway's final page against all of it; any difference (a cent, an item) stops it, and Simmer shows the
   new figures to approve again.

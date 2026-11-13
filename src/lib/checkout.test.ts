@@ -2,7 +2,7 @@
 // store and card swapped for stand-ins): reading the page, and everything that must stop an order.
 import { afterEach, describe, expect, it } from "vitest";
 import pages from "./checkout-pages.json";
-import { pickWindow, windowOf, allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
+import { needsFaceId, pickWindow, windowOf, allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
 
 const pickup = readFinal(pages.pickup.text, pages.pickup.buttons);
 // Safeway's page as it will be with the card fixed (Nov 12: it no longer asks for the security code).
@@ -131,6 +131,19 @@ describe("ordering's settings", () => {
     await saveSettings({ on: true, limitCents: 15000, store: "  100 Main St ", card: "4242" });
     expect(await loadSettings()).toEqual({ on: true, limitCents: 15000, store: "100 Main St", card: "4242" });
     expect(recordedForTests().at(-1)?.[1]).toBe("settings");
+  });
+
+  it("need Face ID to turn on, raise the limit, or change the store or card; not to turn off or lower the limit", () => {
+    expect(needsFaceId(on, on)).toBe(false);
+    expect(needsFaceId({ ...on, on: false }, on)).toBe(true);
+    expect(needsFaceId(on, { ...on, limitCents: 2001 })).toBe(true);
+    expect(needsFaceId(on, { ...on, store: "200 Main St" })).toBe(true);
+    expect(needsFaceId(on, { ...on, card: "1111" })).toBe(true);
+    expect(needsFaceId(on, { ...on, card: "" })).toBe(true);
+    expect(needsFaceId(on, { ...on, on: false })).toBe(false);
+    expect(needsFaceId(on, { ...on, limitCents: 1000 })).toBe(false);
+    expect(needsFaceId(on, { ...on, on: false, limitCents: 0 })).toBe(false);
+    expect(needsFaceId(NO_ORDERING, { ...NO_ORDERING, limitCents: 1 })).toBe(true);
   });
 });
 

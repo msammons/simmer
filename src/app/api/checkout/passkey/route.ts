@@ -1,15 +1,10 @@
 import { AppError } from "@/lib/errors";
 import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
-import { approveOptions, askToAdd, checkOptions, passkeyCount, registrationOptions, verifyApprove, verifyCheck, verifyRegistration } from "@/lib/passkeys";
+import { answerOf, approveOptions, askToAdd, checkOptions, passkeyCount, registrationOptions, verifyApprove, verifyCheck, verifyRegistration } from "@/lib/passkeys";
 
 const noStore = { headers: { "cache-control": "no-store" } };
 
-/** What a phone's Face ID answer must look like before it's looked at at all; anything else counts as no answer. */
-const answer = (r: unknown) => {
-  const a = r as { id?: unknown; response?: { clientDataJSON?: unknown } } | null;
-  return a && typeof a.id === "string" && a.id.length <= 1024 && typeof a.response?.clientDataJSON === "string" ? a : null;
-};
 const token = (t: unknown) => (typeof t === "string" && /^[A-Za-z0-9_-]{43}$/.test(t) ? t : undefined);
 
 /**
@@ -31,7 +26,7 @@ export async function POST(req: Request) {
       case "check-options":
         return Response.json({ options: await checkOptions(req) }, noStore);
       case "register": {
-        const r = await verifyRegistration(req, answer(b.response));
+        const r = await verifyRegistration(req, answerOf(b.response));
         if (!r.ok) return Response.json({ error: r.why ?? "Face ID couldn't be set up." }, { status: 400, ...noStore });
         return Response.json({ ok: true, count: await passkeyCount() }, noStore);
       }
@@ -40,12 +35,12 @@ export async function POST(req: Request) {
       case "approve-options":
         return Response.json(await approveOptions(req), noStore);
       case "approve": {
-        const r = await verifyApprove(req, answer(b.response));
+        const r = await verifyApprove(req, answerOf(b.response));
         if (!r.ok) return Response.json({ error: r.why ?? "The new phone wasn't approved." }, { status: 400, ...noStore });
         return Response.json({ ok: true }, noStore);
       }
       case "check": {
-        const r = await verifyCheck(req, answer(b.response));
+        const r = await verifyCheck(req, answerOf(b.response));
         return Response.json({ ok: r.ok, ...(r.ok ? { credentialId: r.credentialId } : { why: r.why }) }, noStore);
       }
       default:

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { framed, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { buyAmount, cartFor, cartTotal, findItems, money, needBeside, type FindItem } from "@/lib/shop";
+import { CheckoutSheet } from "./Checkout";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
 import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet } from "./ui";
 
@@ -106,6 +107,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   const [finishing, setFinishing] = useState<Item[] | null>(null); // Done shopping, waiting on its confirm
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
+  const [checkingOut, setCheckingOut] = useState(false); // the Check out sheet (Nov 13)
   const [where, setWhere] = useState<Where>("all");
   const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on the list yet
   // What Find goes through: the Safeway things not got yet.
@@ -198,9 +200,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && (count > 0 || usual.length > 1) && (
-              <span className="flex min-w-0 items-baseline gap-3 t-foot">
+              <span className="flex min-w-0 items-center gap-3 t-foot">
                 {count > 0 && <span className="truncate text-muted">{count} in the cart · {estimate ? "about " : ""}{money(total)}</span>}
                 {usual.length > 1 && <button onClick={autoFill} className="shrink-0 font-semibold text-accent">Auto-fill {usual.length}</button>}
+                {/* Check out (Nov 13): only with something in the cart; ordering's set-up and settings live in its sheet. */}
+                {count > 0 && <button onClick={() => setCheckingOut(true)} className={`${pill} glass text-accent`}>Check out</button>}
               </span>
             )}>
               {items.filter((i) => i.store === s).map(itemRow)}
@@ -225,6 +229,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) act.check(x, true); }} />
         </Sheet>
       )}
+      {checkingOut && <CheckoutSheet count={count} total={total} estimate={estimate} onClose={() => setCheckingOut(false)} />}
       <ConfirmSheet open={Boolean(finishing)} title={where === "all" ? "Done shopping?" : `Done at ${STORE_NAMES[where]}?`} confirm="Done shopping"
         message={finishing ? `${finishing.length} thing${finishing.length === 1 ? " comes" : "s come"} off the list.` : ""}
         onConfirm={() => { const off = finishing ?? []; setFinishing(null); void act.doneTicked(off); }} onCancel={() => setFinishing(null)} />
