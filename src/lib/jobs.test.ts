@@ -30,6 +30,14 @@ describe("jobs for the Safeway helper", () => {
     expect(await takeJob("1.0.0", true)).toBeNull();
   });
 
+  it("gives a job the old helper was in the middle of to the new one when it checks in as a new version", async () => {
+    const j = await queueJob("checkoutLook", {});
+    expect((await takeJob("1.0.0", false))?.id).toBe(j.id);
+    expect(await takeJob("1.0.0", false)).toBeNull(); // same version: still the old one's
+    expect((await takeJob("2.0.0", false))?.id).toBe(j.id);
+    expect((await jobStatus(j.id)).job?.status).toBe("working");
+  });
+
   it("takes back a job the helper hands back as it reloads, for the reloaded helper to take", async () => {
     const j = await queueJob("checkoutLook", {});
     expect((await takeJob("1.0.0", false))?.id).toBe(j.id);

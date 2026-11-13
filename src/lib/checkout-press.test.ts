@@ -80,6 +80,11 @@ describe("the checkout look's one press", () => {
     expect(await day()).toMatchObject({ pressed: true, label: "select slots for FRIDAY Nov, 13 Fri Nov 13" });
     expect(pressedLabels).toEqual(["select slots for FRIDAY Nov, 13 Fri Nov 13"]);
     pressedLabels.length = 0;
+    const named = async (label: string) => (await safewayPage("pressDay", { path: "/erums/checkout", label }, PAGE)) as unknown as Press;
+    cart(days, "/erums/checkout");
+    expect(await named("select slots for SATURDAY Nov, 14 Sat Nov 14")).toMatchObject({ pressed: true, label: "select slots for SATURDAY Nov, 14 Sat Nov 14" });
+    expect(await named("select slots for SUNDAY Nov, 15 Sun Nov 15")).toMatchObject({ pressed: false });
+    pressedLabels.length = 0;
     cart(["Place Order", "select slots for 9:00 AM", "Select FRIDAY 9 AM slot"], "/erums/checkout");
     expect((await day()).pressed).toBe(false);
     cart(days, "/erums/cart");

@@ -14,7 +14,7 @@ import { recordTrip } from "./plan";
 import { todayIn } from "./time";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
-export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook"] as const;
+export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook", "checkoutPrepare", "checkoutDry"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
@@ -246,7 +246,12 @@ export const helperPush = async () => (await read()).helper?.push ?? null;
 export async function takeJob(version: string, panel: boolean): Promise<Job | null> {
   const tab = await read();
   const h = checkInDue(tab.helper, version, panel);
-  const j = tab.jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
+  // A helper checking in as a new version has just reloaded, so a job the old one was in the middle of was dropped: it
+  // goes back to waiting for this one (Nov 13: the hand-back the old helper sends as it reloads didn't always arrive).
+  const dropped = tab.helper?.version && version && tab.helper.version !== version ? tab.jobs.filter((x) => x.status === "working" && !overdue(x)) : [];
+  for (const d of dropped) await write({ ...d, status: "waiting", created: now(), updated: now() }, d.row);
+  const jobs = tab.jobs.map((x) => (dropped.some((d) => d.id === x.id) ? { ...x, status: "waiting" as const, created: now() } : x));
+  const j = jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
   if (h && j && tab.helperRow && sheetsConfigured()) {
     const job: Row = { ...j, status: "working", updated: now() };
     await updateRanges([{ range: `${TAB}!A${tab.helperRow}:G${tab.helperRow}`, values: [helperRowCells(h)] }, { range: `${TAB}!A${j.row}:G${j.row}`, values: [cells(job)] }]);
@@ -317,6 +322,17 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     }));
     const presses = (Array.isArray(raw.pressed) ? raw.pressed : raw.pressed ? [raw.pressed] : []).slice(0, 3) as Record<string, unknown>[];
     result = { pages, stopped: str(raw.stopped, 40), pressed: presses.map((p) => ({ pressed: p?.pressed === true, found: Number(p?.found) || 0, label: str(p?.label, 80) })) };
+  }
+  // Getting ready on Safeway and test runs (docs/CHECKOUT.md, Nov 13): where it stopped, the window it chose, and the
+  // final page's words and buttons, which Simmer reads itself (src/lib/checkout.ts readFinal); nothing else is kept.
+  if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
+    const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;
+    const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;
+    result = {
+      stopped: str(raw.stopped, 60),
+      chosen: c && str(c.id, 120) ? { id: str(c.id, 120), words: str(c.words, 160) } : null,
+      final: f ? { url: str(f.url, 300), text: typeof f.text === "string" ? f.text.slice(0, 12000) : "", buttons: (Array.isArray(f.buttons) ? f.buttons : []).slice(0, 80).map((b: unknown) => str(b, 80)) } : null,
+    };
   }
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }

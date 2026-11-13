@@ -188,3 +188,56 @@ export function pickWindow(windows: PickupWindow[]): PickupWindow | null {
   return windows.filter((w) => w.regular && w.priceCents === 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
     .sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)[0] ?? null;
 }
+
+// ---- test runs (phase 2, Nov 13): what Safeway's page says once the helper has chosen a free window
+
+/** The time range in a window's words: "6 AM - 7 AM price Free" → ["6 AM", "7 AM"]. */
+const rangeOf = (words: string) => words.match(/\b(\d{1,2}(?::\d\d)? ?[AP]M) ?[-–] ?(\d{1,2}(?::\d\d)? ?[AP]M)\b/i);
+const loose = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*");
+
+/**
+ * The pickup time on Safeway's final page, from the window the helper chose (Nov 13). A REGULAR window's final page
+ * hasn't been seen yet; the FLASH one said "Ready by 9:05 PM Slot type FLASH price $3.95". Until it has, the slot comes
+ * from the chosen window (its words, price Free → $0, REGULAR from its id), and the page must say the same time range
+ * ("6 AM - 7 AM"), or the time counts as unreadable and stops. Only a free REGULAR window passes; a page that shows a
+ * paid slot stops too.
+ */
+export function pickupOf(f: Final, text: string, chosen: { id: string; words: string } | null): { final: Final; why: string[] } {
+  const none = { ...f, slot: { ready: "", type: "", priceCents: null } };
+  if (!chosen) return { final: none, why: ["No free pickup time was chosen."] };
+  const w = windowOf(chosen.id, chosen.words, 0);
+  if (!w.regular || w.priceCents !== 0) return { final: none, why: ["Safeway's pickup time isn't a free one."] };
+  if (f.slot.type && (f.slot.type !== "REGULAR" || f.slot.priceCents !== 0)) return { final: none, why: ["Safeway's page shows a paid pickup time."] };
+  const r = rangeOf(w.words);
+  const range = r ? `${squash(r[1])} - ${squash(r[2])}` : "";
+  if (!r || !new RegExp(`\\b${loose(squash(r[1]))}\\s*[-–]\\s*${loose(squash(r[2]))}\\b`, "i").test(squash(text))) {
+    return { final: none, why: ["Safeway's pickup time couldn't be read."] };
+  }
+  return { final: { ...f, slot: { ready: range, type: "REGULAR", priceCents: 0 } }, why: [] };
+}
+
+/** "Fri 6–7 AM": the day from the window's date, and its time range. */
+export function windowWords(chosen: { id: string; words: string }): string {
+  const w = windowOf(chosen.id, chosen.words, 0);
+  const r = rangeOf(w.words);
+  const day = w.date ? new Date(`${w.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }) : "";
+  if (!r) return day;
+  const [a, b] = [squash(r[1]).toUpperCase(), squash(r[2]).toUpperCase()];
+  const same = a.slice(-2) === b.slice(-2);
+  return `${day} ${same ? `${a.slice(0, -3)}–${b}` : `${a}–${b}`}`.trim();
+}
+
+/** Where the helper stopped short of Safeway's final page, in words for the sheet. */
+const STOPPED: Record<string, string> = {
+  "signed out": "Safeway is signed out on the computer.",
+  "page didn't load": "Safeway's page didn't load. Try again.",
+  "no button to press": "Safeway's checkout didn't show the button it usually does.",
+  "not the checkout page": "Safeway didn't show its checkout page.",
+  "no pickup times": "Safeway didn't show any pickup times.",
+  "pickup day gone": "That pickup day isn't offered any more. Get ready again.",
+  "pickup time gone": "That pickup time isn't offered any more. Get ready again.",
+  "no free pickup time": "No free pickup time in the next week.",
+  "couldn't choose the pickup time": "The pickup time couldn't be chosen.",
+  "no window": "No pickup time could be chosen.",
+};
+export const stoppedWords = (stopped: string) => STOPPED[stopped] ?? "Safeway's checkout didn't go as expected.";
