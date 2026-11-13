@@ -87,6 +87,30 @@ describe("the checkout look's one press", () => {
     expect(pressedLabels).toEqual([]);
   });
 
+  it("chooses only the free window Simmer picked, never Flash, a priced one, or off the checkout page", async () => {
+    const page = (slots: { id: string; text: string }[], path = "/erums/checkout") => {
+      window.history.replaceState(null, "", path);
+      document.body.innerHTML = slots.map((x) => `<div class="row"><div class="col"><input type="radio" name="slot" id="${x.id}"><label for="${x.id}">${x.text.replace(/ price .*/, "")}</label></div> <div class="col">${x.text.replace(/.* price /, "price ")}</div></div>`).join("") + "<button>Place Order</button>";
+      document.querySelectorAll("input,button").forEach((b) => b.addEventListener("click", () => pressedLabels.push((b as HTMLElement).id || b.textContent || "")));
+    };
+    const choose = async (id: string) => (await safewayPage("chooseWindow", { path: "/erums/checkout", id }, PAGE)) as unknown as { pressed: boolean; why?: string };
+    const free = { id: "9999FRI20261113REGULARDUG600700-2026-11-13", text: "6 AM - 7 AM price Free" };
+    const flash = { id: "9999DUGTHUFLASH06:0506:00-2026-11-12-865302", text: "Ready by 10:05 PM Slot type FLASH price $3.95" };
+    const paid = { id: "9999SAT20261114REGULARDUG600700-2026-11-14", text: "6 AM - 7 AM price $2.95" };
+    page([flash, free, paid]);
+    const read = (await safewayPage("readWindows", null, PAGE)) as unknown as { windows: { id: string; words: string }[] };
+    expect(read.windows.map((w) => w.words)).toEqual([flash, free, paid].map((x) => x.text));
+    expect(await choose(free.id)).toMatchObject({ pressed: true });
+    expect(pressedLabels).toEqual([free.id]);
+    pressedLabels.length = 0;
+    expect(await choose(flash.id)).toMatchObject({ pressed: false, why: "not free" });
+    expect(await choose(paid.id)).toMatchObject({ pressed: false, why: "not free" });
+    expect(await choose("nope")).toMatchObject({ pressed: false });
+    page([free], "/erums/cart");
+    expect((await choose(free.id)).pressed).toBe(false);
+    expect(pressedLabels).toEqual([]);
+  });
+
   it("presses nothing that's turned off", async () => {
     cart(["Checkout"]);
     document.querySelector("button")!.setAttribute("aria-disabled", "true");
