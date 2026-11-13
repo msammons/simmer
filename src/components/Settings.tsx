@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { api, errorText, THEMES, type Theme } from "@/lib/client";
 import { Alert, Group, Row, Sheet } from "./ui";
+import { OrderingSettings } from "./Ordering";
 
 export function SettingsSheet({ theme, onTheme, onClose }: {
   theme: Theme; onTheme: (t: Theme) => void; onClose: () => void;
@@ -34,6 +35,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
             />
           ))}
         </Group>
+        <OrderingSettings />
         <Group header="Data">
           <Row icon="external" title="Copy to Google Sheet" value={copied ? "Copied" : undefined} onClick={copyToSheet} />
         </Group>
