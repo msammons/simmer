@@ -2,7 +2,7 @@
 // store and card swapped for stand-ins): reading the page, and everything that must stop an order.
 import { afterEach, describe, expect, it } from "vitest";
 import pages from "./checkout-pages.json";
-import { needsFaceId, pickWindow, windowOf, allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
+import { needsFaceId, pickupOf, stoppedWords, windowWords, pickWindow, windowOf, allowedOverCents, APPROVAL_MS, cartKey, cents, chargeOk, loadSettings, NO_ORDERING, readFinal, recordedForTests, resetCheckout, saveSettings, settingsOf, stops, unusual, type Approval, type CheckoutSettings, type Final } from "./checkout";
 
 const pickup = readFinal(pages.pickup.text, pages.pickup.buttons);
 // Safeway's page as it will be with the card fixed (Nov 12: it no longer asks for the security code).
@@ -166,5 +166,38 @@ describe("choosing a pickup window", () => {
   it("goes by date first, then by Safeway's order", () => {
     const sat = windowOf("9999SAT20261114REGULARDUG600700-2026-11-14", "6 AM - 7 AM price Free", 0);
     expect(pickWindow([sat, friday[3], friday[1]])?.id).toBe(friday[1].id);
+  });
+});
+
+describe("the pickup time on the final page, from the window chosen (Nov 13)", () => {
+  const chosen = { id: pages.windows.slots[0].id, words: pages.windows.slots[0].text }; // Fri, "6 AM - 7 AM price Free"
+  // The REGULAR final page hasn't been seen yet: the saved page with the FLASH slot line swapped for the chosen window.
+  const regularText = pages.pickup.text.replace(/Confirm CVV /, "").replace(/Ready by 9:05 PM Slot type FLASH price \$3\.95/, "6 AM - 7 AM price Free");
+  const regular = readFinal(regularText, pages.pickup.buttons);
+
+  it("takes a free REGULAR window's time when the page says the same time", () => {
+    expect(regular.slot).toEqual({ ready: "", type: "", priceCents: null });
+    const { final, why } = pickupOf(regular, regularText, chosen);
+    expect(why).toEqual([]);
+    expect(final.slot).toEqual({ ready: "6 AM - 7 AM", type: "REGULAR", priceCents: 0 });
+    expect(stops(on, { ...final, store: "100 Main St, Springfield", totalCents: 1500 }, null, now, cart, true)).toEqual([]);
+    expect(windowWords(chosen)).toBe("Fri 6–7 AM");
+    expect(windowWords({ id: "x-2026-11-13", words: "11 AM - 12 PM price Free" })).toBe("Fri 11 AM–12 PM");
+  });
+
+  it("stops when the page doesn't say that time, shows a paid slot, or the window isn't free", () => {
+    expect(pickupOf(regular, regularText.replace("6 AM - 7 AM", "7 AM - 8 AM"), chosen).why).toEqual(["Safeway's pickup time couldn't be read."]);
+    expect(pickupOf(regular, regularText, null).why).toEqual(["No free pickup time was chosen."]);
+    expect(pickupOf(fixed, pages.pickup.text, chosen).why).toEqual(["Safeway's page shows a paid pickup time."]);
+    expect(pickupOf(regular, regularText, { id: chosen.id.replace("REGULAR", "FLASH"), words: chosen.words }).why).toEqual(["Safeway's pickup time isn't a free one."]);
+    expect(pickupOf(regular, regularText, { id: chosen.id, words: "6 AM - 7 AM price $2.95" }).why).toEqual(["Safeway's pickup time isn't a free one."]);
+    const unread = pickupOf(regular, "nothing here", chosen).final;
+    expect(stops(on, unread, null, now, cart, true)).toContain("No pickup time is chosen.");
+  });
+
+  it("puts where the helper stopped into plain words", () => {
+    expect(stoppedWords("signed out")).toBe("Safeway is signed out on the computer.");
+    expect(stoppedWords("no free pickup time")).toBe("No free pickup time in the next week.");
+    expect(stoppedWords("something new")).toBe("Safeway's checkout didn't go as expected.");
   });
 });
