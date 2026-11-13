@@ -37,6 +37,7 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 - The approval expires after 2 minutes.
 - Single use, never retried. If the helper loses track after the click, it reads Safeway's order history to find out;
   it never clicks again. Worst case: "Simmer isn't sure; check Safeway". Never a double order.
+- Safeway asking for a security code or any card detail on the final page: stop. Simmer and the helper never type one.
 - The helper presses only Safeway's Place order button, found by its exact words on the final page; nothing else. Not
   where expected: stop.
 - Unusual things are highlighted on the confirm sheet: a count of 5 or more, one item over $30, a total more than 15%
@@ -75,8 +76,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    box; bring-your-own-bags (already chosen); a **Place Order** button (those exact words); an order summary (items,
    "Est. taxes and fees", the under-$30 fee, sales tax); a donation round-up and fixed amounts ($1/$3/$5/custom) that must
    never be touched; a promo code box; and "Estimated total", which Safeway says may differ from the final charge.
-   **Open question for phase 2:** the card's security code is asked for at checkout. Simmer and the helper never hold
-   card details, so either Safeway stops asking for it on a saved card, or that step stays a person's, on the Mac.
+   The card's security code was asked for because the saved card needed fixing; Sam fixed it on Safeway (Nov 12) and it
+   is no longer asked. Simmer and the helper never hold card details: if the final page ever asks for a security code
+   (or any card detail), the helper stops and Simmer says to finish on Safeway.
 
    After Order info's Continue (Nov 12): **Schedule pickup time** shows two weeks of days, today chosen, and a slot
    already filled in: "Ready by 9:05 PM", **slot type FLASH, price $3.95**. So Safeway's default is a paid Flash slot;
