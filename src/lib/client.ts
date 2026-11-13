@@ -109,6 +109,9 @@ type Change = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: 
   | { op: "clear"; ids: string[] } | { op: "putBack"; items: Item[] } | { op: "keepAdd"; text: string; section?: Section } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
 
 /** Every request takes an optional AbortSignal, so it can be stopped. */
+/** Ordering's settings, as /api/checkout keeps them (src/lib/checkout.ts). */
+export type CheckoutSettings = { on: boolean; limitCents: number; store: string; card: string };
+
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
   change: (c: Change) => call<ListState & { cleared?: Item[] }>("/api/list", { method: "POST", body: JSON.stringify(c) }),
@@ -124,6 +127,9 @@ export const api = {
   kitchen: (signal?: AbortSignal) => call<Kitchen>("/api/freezer", { signal }),
   /** Settings → Copy to Google Sheet: answers how many tabs were copied. */
   exportSheet: () => call<{ tabs: number }>("/api/export", { method: "POST" }),
+  /** Ordering from Simmer (docs/CHECKOUT.md): its settings, and whether the server allows it at all. */
+  checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { signal }),
+  saveCheckout: (s: CheckoutSettings) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify(s) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
   /** The exact Safeway product picked for each item before (by the Safeway helper). */
