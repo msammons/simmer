@@ -19,6 +19,13 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
     setCopied(true);
     api.exportSheet().catch((e) => { setCopied(false); setProblem(errorText(e)); }).finally(() => { copying.current = false; });
   }
+  // Temporary (Nov 12, docs/CHECKOUT.md): asks the helper to look at Safeway's checkout again, now pressing a pickup day
+  // to see its windows. It orders nothing. Removed after the look. Each tap asks again.
+  const [looking, setLooking] = useState(false);
+  function lookAtCheckout() {
+    setLooking(true);
+    api.queueJob("checkoutLook", {}).catch((e) => { setLooking(false); setProblem(errorText(e)); });
+  }
   return (
     <Sheet label="Settings" title="Settings" onClose={onClose}>
       <div className="space-y-5 pb-2">
@@ -37,6 +44,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
         </Group>
         <OrderingSettings />
         <Group header="Data">
+          <Row icon="search" title="Look at Safeway's checkout" subtitle="Presses Checkout, Continue and a pickup day; orders nothing" value={looking ? "Asked" : undefined} onClick={lookAtCheckout} />
           <Row icon="external" title="Copy to Google Sheet" value={copied ? "Copied" : undefined} onClick={copyToSheet} />
         </Group>
         {/* The release, as YY.M.D (Nov 11: the last line of Settings in every Morales app). */}

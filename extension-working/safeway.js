@@ -210,7 +210,8 @@ export async function runJob(job, windowId) {
  * A look at Safeway's checkout (Nov 12, docs/CHECKOUT.md phase 1): the cart page, then where its Checkout leads. When
  * Checkout is a link, the pages its checkout links lead to, each loaded by its address. When it's a button, that one
  * button is pressed (Sam: "Checkout only"), and the suggestions page's Continue when Safeway shows it ("Continue only"),
- * then the checkout page's Order info Continue, and what that shows read; nothing further is pressed or followed. It never
+ * then the checkout page's Order info Continue and one pickup day, and what that shows read; nothing further (never a
+ * time, never Place Order) is pressed or followed. It never
  * types or picks anything, and a link that sounds like ordering or paying is never followed.
  */
 async function checkoutLook(tabId, page) {
@@ -234,13 +235,15 @@ async function checkoutLook(tabId, page) {
       { path: `${page.cartPath}/dnf`, words: ["continue", "to", "checkout", "safeway"] },
       // Then the checkout page's Order info Continue (Sam, Nov 12), which opens Pickup date & time on the same page. Only a
       // button that says exactly "Continue"; Place Order is never among the words.
-      { path: page.cartPath.replace(/cart$/, "checkout"), words: ["continue"], samePage: true },
+      { path: page.cartPath.replace(/cart$/, "checkout"), words: ["continue"], samePage: true, optional: true },
     ];
+    const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
     pressed = [];
     for (const step of steps) {
       if (new URL(here.url).pathname !== step.path) break;
       const p = await onPage(tabId, "pressCheckout", step, page);
       pressed.push(p);
+      if (!p?.pressed && step.optional) break; // Order info already done: its Continue isn't there to press
       if (!p?.pressed) return { pages, pressed, stopped: "no button to press" };
       const from = here.url;
       if (step.samePage) await sleep(1500);
@@ -248,6 +251,12 @@ async function checkoutLook(tabId, page) {
       await sleep(2000);
       here = await read();
       if (!here) break;
+    }
+    // Then one pickup day (Sam, Nov 12: "a day only"), to see its windows; never a time.
+    if (here && new URL(here.url).pathname === checkoutPath) {
+      const d = await onPage(tabId, "pressDay", { path: checkoutPath }, page);
+      pressed.push(d);
+      if (d?.pressed) { await sleep(1500); await read(); }
     }
     return { pages, pressed, stopped: "looked" };
   }
