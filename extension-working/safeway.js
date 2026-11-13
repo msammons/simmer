@@ -209,7 +209,8 @@ export async function runJob(job, windowId) {
 /**
  * A look at Safeway's checkout (Nov 12, docs/CHECKOUT.md phase 1): the cart page, then where its Checkout leads. When
  * Checkout is a link, the pages its checkout links lead to, each loaded by its address. When it's a button, that one
- * button is pressed (Sam: "Checkout only") and the review page read; nothing further is pressed or followed. It never
+ * button is pressed (Sam: "Checkout only"), and the suggestions page's Continue when Safeway shows it ("Continue only"),
+ * and the page it lands on read; nothing further is pressed or followed. It never
  * types or picks anything, and a link that sounds like ordering or paying is never followed.
  */
 async function checkoutLook(tabId, page) {
@@ -223,17 +224,28 @@ async function checkoutLook(tabId, page) {
   };
   await go(tabId, `${page.site}${page.cartPath}`);
   let here = await read();
-  // The one press allowed (Nov 12, Sam: "Checkout only"): the cart page's Checkout button, which leads to the review page.
-  // Then only reading that page: no more presses, and no links followed (one could choose a pickup time).
+  // The presses allowed (Nov 12, Sam: "Checkout only", then "Continue only"): the cart page's Checkout, then, when Safeway
+  // puts its suggestions page ("Got everything you need?") in the way, that page's Continue. Then only reading the page
+  // it lands on: no more presses, and no links followed (one could choose a pickup time).
   let pressed = null;
   if (here && !here.links.some((l) => /check\s*out/i.test(`${l.text} ${l.href}`) && !NEVER.test(`${l.text} ${l.href}`))) {
-    pressed = await onPage(tabId, "pressCheckout", { cartPath: page.cartPath }, page);
-    if (!pressed?.pressed) return { pages, pressed, stopped: "no checkout button" };
-    const from = here.url;
-    for (let i = 0; i < 40 && (await chrome.tabs.get(tabId)).url === from; i++) await sleep(500);
-    await sleep(2000);
-    await read();
-    return { pages, pressed, stopped: "looked" }; // past Checkout: read the review page, follow and press nothing more
+    const steps = [
+      { path: page.cartPath, words: ["checkout", "safeway"] },
+      { path: `${page.cartPath}/dnf`, words: ["continue", "to", "checkout", "safeway"] },
+    ];
+    pressed = [];
+    for (const step of steps) {
+      if (new URL(here.url).pathname !== step.path) break;
+      const p = await onPage(tabId, "pressCheckout", step, page);
+      pressed.push(p);
+      if (!p?.pressed) return { pages, pressed, stopped: "no button to press" };
+      const from = here.url;
+      for (let i = 0; i < 40 && (await chrome.tabs.get(tabId)).url === from; i++) await sleep(500);
+      await sleep(2000);
+      here = await read();
+      if (!here) break;
+    }
+    return { pages, pressed, stopped: "looked" };
   }
   for (let step = 0; step < 3 && here; step++) {
     const next = here.links.find((l) => /check\s*out|continue|review|pick\s*up/i.test(`${l.text} ${l.href}`) && !NEVER.test(`${l.text} ${l.href}`)

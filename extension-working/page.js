@@ -1,7 +1,7 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
-// time. It never signs in. Checkout: it presses the cart page's Checkout button and nothing further; past it, it only
-// reads ("look") (docs/CHECKOUT.md).
+// time. It never signs in. Checkout: it presses the cart page's Checkout and the suggestions page's Continue, nothing
+// further; past them, it only reads ("look") (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
 // comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
@@ -15,8 +15,8 @@
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
  * safewayPage("orders", { pressed }) → Safeway's Purchases page, Online tab: { signedIn, online, pressed, none, entries, text }
  * safewayPage("look") → { url, title, text, links: [{ text, href }], buttons: [label] } — reads only, presses nothing
- * safewayPage("pressCheckout", { cartPath }) → { pressed, found, label } — on the cart page only: presses Safeway's one
- *   Checkout button, and nothing else
+ * safewayPage("pressCheckout", { path, words }) → { pressed, found, label } — on that page only: presses its one
+ *   Checkout or Continue button made only of `words`, and nothing else
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -268,18 +268,23 @@ export async function safewayPage(action, arg, P) {
   if (action === "look") {
     const words = (el) => (el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
     const links = deepAll(document, "a[href]").filter(visible).map((a) => ({ text: label(a).slice(0, 80), href: a.href })).filter((l) => l.text).slice(0, 80);
-    const buttons = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).map((b) => (label(b) || b.value || "").slice(0, 80)).filter(Boolean).slice(0, 80);
+    // Checkout-sounding buttons first, so a page full of products can't push them past the 80 kept (Nov 12).
+    const key = /check\s*out|continue|place|order|pay|submit|review|pick\s*up|time|window/i;
+    const buttons = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).map((b) => (label(b) || b.value || "").slice(0, 80)).filter(Boolean)
+      .sort((a, b) => Number(key.test(b)) - Number(key.test(a))).slice(0, 80);
     return { url: location.href, title: document.title, text: words(document.body).slice(0, 12000), links, buttons };
   }
 
-  // The cart page's Checkout button (Nov 12, Sam: "Checkout only"), which leads to Safeway's review page and orders
-  // nothing. Only on the cart page; only a visible, enabled button whose every word is "checkout" or "safeway" (Safeway's
-  // reads "Safeway Checkout Checkout"); only when there's exactly one; pressed once. Anything else: nothing is pressed.
+  // The checkout look's presses (Nov 12, Sam: "Checkout only", then "Continue only"): on the one page named (`path`, exact),
+  // a visible, enabled button whose every word is one of `words` and that says "checkout" or "continue", only when
+  // there's exactly one, pressed once. Simmer's helper asks for the cart page's Checkout ("Safeway Checkout Checkout")
+  // and then the suggestions page's Continue. Anything else: nothing is pressed.
   if (action === "pressCheckout") {
-    if (location.pathname !== arg?.cartPath) return { pressed: false, found: 0, label: "", why: "not the cart page" };
-    const onlyCheckout = (t) => { const w = t.toLowerCase().split(" ").filter(Boolean); return w.includes("checkout") && w.every((x) => x === "checkout" || x === "safeway"); };
+    const allowed = new Set((arg?.words ?? []).map((w) => String(w).toLowerCase()));
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
+    const fits = (t) => { const w = t.toLowerCase().split(" ").filter(Boolean); return w.some((x) => x === "checkout" || x === "continue") && w.every((x) => allowed.has(x)); };
     const found = deepAll(document, "button, [role=button], input[type=submit]").filter(visible)
-      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && onlyCheckout(label(b) || b.value || ""));
+      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && fits(label(b) || b.value || ""));
     if (found.length !== 1) return { pressed: false, found: found.length, label: "" };
     found[0].click();
     return { pressed: true, found: 1, label: label(found[0]).slice(0, 80) };
