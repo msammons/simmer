@@ -207,10 +207,10 @@ export async function runJob(job, windowId) {
 }
 
 /**
- * A read-only look at Safeway's checkout (Nov 12, docs/CHECKOUT.md phase 1): the cart page, then the pages its checkout
- * links lead to, each loaded by its address (going to an address places nothing). It never presses, types or picks
- * anything. A link that sounds like ordering or paying is never followed. When checkout is a button and not a link, it
- * stops there and says so ("needs a press").
+ * A look at Safeway's checkout (Nov 12, docs/CHECKOUT.md phase 1): the cart page, then where its Checkout leads. When
+ * Checkout is a link, the pages its checkout links lead to, each loaded by its address. When it's a button, that one
+ * button is pressed (Sam: "Checkout only") and the review page read; nothing further is pressed or followed. It never
+ * types or picks anything, and a link that sounds like ordering or paying is never followed.
  */
 async function checkoutLook(tabId, page) {
   const NEVER = /place|submit|confirm|pay|purchase|order now|complete/i;
@@ -223,12 +223,24 @@ async function checkoutLook(tabId, page) {
   };
   await go(tabId, `${page.site}${page.cartPath}`);
   let here = await read();
+  // The one press allowed (Nov 12, Sam: "Checkout only"): the cart page's Checkout button, which leads to the review page.
+  // Then only reading that page: no more presses, and no links followed (one could choose a pickup time).
+  let pressed = null;
+  if (here && !here.links.some((l) => /check\s*out/i.test(`${l.text} ${l.href}`) && !NEVER.test(`${l.text} ${l.href}`))) {
+    pressed = await onPage(tabId, "pressCheckout", { cartPath: page.cartPath }, page);
+    if (!pressed?.pressed) return { pages, pressed, stopped: "no checkout button" };
+    const from = here.url;
+    for (let i = 0; i < 40 && (await chrome.tabs.get(tabId)).url === from; i++) await sleep(500);
+    await sleep(2000);
+    await read();
+    return { pages, pressed, stopped: "looked" }; // past Checkout: read the review page, follow and press nothing more
+  }
   for (let step = 0; step < 3 && here; step++) {
     const next = here.links.find((l) => /check\s*out|continue|review|pick\s*up/i.test(`${l.text} ${l.href}`) && !NEVER.test(`${l.text} ${l.href}`)
       && l.href.startsWith(page.site) && !pages.some((p) => p.url === l.href));
-    if (!next) return { pages, stopped: here.buttons.some((b) => /check\s*out|continue/i.test(b)) ? "needs a press" : "no checkout link" };
+    if (!next) return { pages, pressed, stopped: here.buttons.some((b) => /check\s*out|continue|place|order/i.test(b)) ? "needs a press" : "no checkout link" };
     await go(tabId, next.href);
     here = await read();
   }
-  return { pages, stopped: "looked" };
+  return { pages, pressed, stopped: "looked" };
 }

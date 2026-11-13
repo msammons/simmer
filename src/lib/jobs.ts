@@ -315,7 +315,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       links: (Array.isArray(p?.links) ? p.links : []).slice(0, 80).map((l: Record<string, unknown>) => ({ text: str(l?.text, 80), href: str(l?.href, 300) })),
       buttons: (Array.isArray(p?.buttons) ? p.buttons : []).slice(0, 80).map((b: unknown) => str(b, 80)),
     }));
-    result = { pages, stopped: str(raw.stopped, 40) };
+    const pressed = raw.pressed && typeof raw.pressed === "object" ? raw.pressed as Record<string, unknown> : null;
+    result = { pages, stopped: str(raw.stopped, 40), pressed: pressed && { pressed: pressed.pressed === true, found: Number(pressed.found) || 0, label: str(pressed.label, 80) } };
   }
   return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
 }
