@@ -318,14 +318,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("settings: Copy says Copied within 150 ms", await within150(() => page.getByRole("button", { name: /^Copy to Google Sheet.*Copied/ }).isVisible()));
       const copyAlert = page.getByRole("dialog", { name: "That didn't go through" });
       ok("settings: a copy that doesn't go through says why, and the row goes back", await seen(copyAlert, 10000) && await copyAlert.getByRole("button", { name: "OK" }).tap().then(async () => { await page.waitForTimeout(300); return !(await page.getByRole("button", { name: /Copied/ }).count()); }));
-      // Ordering (docs/CHECKOUT.md, Nov 12): off with a $0 limit until changed; turning it on asks first, and Cancel leaves it off.
-      ok("settings: ordering starts off with a $0 limit", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible()
-        && await settings.getByRole("button", { name: /^Limit per order.*\$0$/ }).isVisible());
+      // Ordering (docs/CHECKOUT.md): off until changed. Settings keeps the switch and Face ID (Nov 13); the limit, store
+      // and card are in Shop → Check out. Turning on needs Face ID, so with none set up it says so at once.
+      ok("settings: ordering starts off, with the limit, store and card under Check out", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible()
+        && (await settings.getByRole("button", { name: /^(Limit per order|Pickup store|Card)/ }).count()) === 0);
       await settings.getByRole("button", { name: /^Order from Simmer/ }).tap();
-      const turnOn = page.getByRole("dialog", { name: "Turn on ordering?" });
-      ok("settings: turning ordering on asks first", await seen(turnOn, 2000));
-      await turnOn.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
-      ok("settings: Cancel leaves ordering off", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible());
+      const firstFaceId = page.getByRole("dialog", { name: "Set up Face ID first" });
+      ok("settings: turning ordering on with no Face ID says to set it up first, within 150 ms", await within150(() => firstFaceId.isVisible()));
+      await firstFaceId.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
+      ok("settings: and ordering stays off", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible());
       // Face ID (Nov 12): none set up on a fresh server, so the row offers Set up (Face ID itself can't be driven here).
       ok("settings: Face ID starts at Set up", await settings.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible());
       // Adding a phone (Nov 12) only comes up once one has Face ID: nothing to approve or wait for yet.
@@ -407,7 +408,24 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
       const swGroup = page.locator("main section").filter({ has: page.getByRole("heading", { name: "Safeway", exact: true }) });
-      ok("shop: the Safeway header has the cart and Auto-fill", /^1 in the cart · \$5\.99\s*Auto-fill 2$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()), await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      ok("shop: the Safeway header has the cart, Auto-fill and Check out", /^1 in the cart · \$5\.99\s*Auto-fill 2\s*Check out$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()), await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      // Check out (Nov 13): the first time, the set-up is right there, Face ID first; Turn on waits until it's all set.
+      {
+        await swGroup.getByRole("button", { name: "Check out" }).tap();
+        const co = page.getByRole("dialog", { name: "Check out" });
+        ok("shop: Check out opens its sheet within 150 ms", await within150(() => co.isVisible()));
+        await page.waitForTimeout(800);
+        const setupRows = (await co.getByRole("button", { name: /^(Face ID|Limit per order|Pickup store|Card)/ }).allInnerTexts()).map((t) => t.split("\n")[0].trim());
+        ok("shop: the first time, it sets up Face ID, the limit, the store and the card, in that order", setupRows.join() === "Face ID,Limit per order,Pickup store,Card", setupRows.join());
+        ok("shop: Face ID offers Set up, the limit is $0, and Turn on waits", await co.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible()
+          && await co.getByRole("button", { name: /^Limit per order.*\$0$/ }).isVisible() && await co.getByRole("button", { name: "Turn on ordering" }).isDisabled());
+        ok("shop: nothing there places an order", (await co.getByRole("button", { name: /place|order now/i }).count()) === 0);
+        await co.getByRole("button", { name: /^Limit per order/ }).tap();
+        const needFace = page.getByRole("dialog", { name: "Set up Face ID first" });
+        ok("shop: changing the limit with no Face ID says to set it up first", await seen(needFace, 2000));
+        await needFace.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
+        await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+      }
       ok("shop: a Safeway row says its product and what's needed", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
       ok("shop: Done shopping is always there, greyed until something's ticked", (await page.getByRole("button", { name: "Done shopping" }).count()) === 1 && (await page.getByRole("button", { name: "Done shopping" }).isDisabled()));
@@ -467,6 +485,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: Done shopping takes what was ticked off in every store within 150 ms", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0));
       await page.waitForTimeout(2500); await page.unroute("**/api/list");
       ok("shop: bought things don't come back by themselves, and the rest stay", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0 && (await tick("Milk").count()) === 1 && (await tick("Salad dressing").count()) === 1);
+      // An empty cart: no Check out.
+      {
+        const kept = fake.cart.splice(0);
+        await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+        await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
+        ok("shop: Check out shows only with something in the cart", (await page.getByRole("button", { name: "Check out" }).count()) === 0);
+        fake.cart.push(...kept);
+      }
       // Safeway out of reach: no Safeway controls, nothing extra in its header; its rows are a plain checklist.
       await fake.stop();
       const awayFake = await fakeSafeway({ away: true });

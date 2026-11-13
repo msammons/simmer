@@ -9,7 +9,7 @@ import {
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { randomBytes, randomInt } from "node:crypto";
-import { record } from "./checkout";
+import { cleanSettings, loadSettings, needsFaceId, record, saveSettings, type CheckoutSettings } from "./checkout";
 import { AppError } from "./errors";
 import { appendRows, readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
 import { redis } from "./google/redis-tabs";
@@ -320,6 +320,35 @@ async function checking(req: Request, response: unknown, purpose: "check" | "app
   }
   if (info.newCounter !== key.counter) await saveCounter(key.id, info.newCounter);
   return { ok: true, credentialId: key.id, token: good.token };
+}
+
+/** What a phone's Face ID answer must look like before it's looked at at all (in a request); anything else is no answer. */
+export function answerOf(r: unknown) {
+  const a = r as { id?: unknown; response?: { clientDataJSON?: unknown } } | null;
+  return a && typeof a.id === "string" && a.id.length <= 1024 && typeof a.response?.clientDataJSON === "string" ? a : null;
+}
+
+// ---- ordering's settings, guarded by Face ID (Sam, Nov 13)
+
+/**
+ * Saves ordering's settings. Turning on, raising the limit, or changing the store or card needs a Face ID check from a
+ * phone already set up, sent with the change (check-options, then the answer: single use, as any check); with no phone
+ * set up those are refused. Turning off and lowering the limit need nothing. The check that allowed a change is recorded
+ * with it, and a refused change is recorded too.
+ */
+export async function changeSettings(req: Request, next: CheckoutSettings, response: unknown): Promise<{ ok: true; settings: CheckoutSettings } | { ok: false; why: string }> {
+  const clean = cleanSettings(next);
+  const before = await loadSettings();
+  if (!needsFaceId(before, clean)) return { ok: true, settings: await saveSettings(clean, { faceId: "not needed" }) };
+  const refuse = async (why: string) => {
+    await record("settings refused", { on: clean.on, limitCents: clean.limitCents, store: clean.store, card: clean.card, why });
+    return { ok: false as const, why };
+  };
+  if (!(await passkeyCount())) return refuse("Set up Face ID first.");
+  if (!response) return refuse("That change needs Face ID.");
+  const c = await verifyCheck(req, response);
+  if (!c.ok) return refuse(c.why ?? "Face ID didn't match.");
+  return { ok: true, settings: await saveSettings(clean, { faceId: c.credentialId }) };
 }
 
 /** The passkey's id from an answer, for the record and the lookup; empty when it isn't one. */
