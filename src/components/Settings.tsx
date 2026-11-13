@@ -21,8 +21,8 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
   // Temporary (Nov 12, docs/CHECKOUT.md phase 1): asks the helper for a read-only look at Safeway's checkout pages. It
   // places nothing and presses nothing; what it reads is kept for working out the checkout. Removed after the look.
   const [looking, setLooking] = useState(false);
+  // Each tap asks again (Settings stays mounted when closed, so a one-time guard blocked later looks).
   function lookAtCheckout() {
-    if (looking) return;
     setLooking(true);
     api.queueJob("checkoutLook", {}).catch((e) => { setLooking(false); setProblem(errorText(e)); });
   }
@@ -44,7 +44,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
         </Group>
         <Group header="Data">
           <Row icon="external" title="Copy to Google Sheet" value={copied ? "Copied" : undefined} onClick={copyToSheet} />
-          <Row icon="search" title="Look at Safeway's checkout" subtitle="Reads the pages; orders nothing" value={looking ? "Asked" : undefined} onClick={lookAtCheckout} />
+          <Row icon="search" title="Look at Safeway's checkout" subtitle="Presses Checkout, then only reads; orders nothing" value={looking ? "Asked" : undefined} onClick={lookAtCheckout} />
         </Group>
         {/* The release, as YY.M.D (Nov 11: the last line of Settings in every Morales app). */}
         <p className="px-4 text-center t-foot text-muted">{process.env.NEXT_PUBLIC_VERSION}</p>
