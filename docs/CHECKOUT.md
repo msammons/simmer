@@ -66,6 +66,15 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    press that page's Continue (Sam, Nov 12: "Continue only"): only on that page, only a button whose every word is
    "continue", "to", "checkout" or "safeway" and that says continue or checkout, only one, once; never an Add or a coupon.
 
+   What Safeway's checkout page showed (Nov 12, after Checkout and Continue): one page, `/erums/checkout?cartId=…`, in
+   steps. **Order info** (name, email, phone, pickup store) with its own Continue; **Pickup date & time** (closed until
+   order info is done, so the windows weren't seen yet); **Payment** with the saved card's last 4 and a **"Confirm CVV"**
+   box; bring-your-own-bags (already chosen); a **Place Order** button (those exact words); an order summary (items,
+   "Est. taxes and fees", the under-$30 fee, sales tax); a donation round-up and fixed amounts ($1/$3/$5/custom) that must
+   never be touched; a promo code box; and "Estimated total", which Safeway says may differ from the final charge.
+   **Open question for phase 2:** the card's security code is asked for at checkout. Simmer and the helper never hold
+   card details, so either Safeway stops asking for it on a saved card, or that step stays a person's, on the Mac.
+
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
    with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). **Open question
    for phase 2:** the total on the final page is an estimate when the cart has weighed items, so the approval check
