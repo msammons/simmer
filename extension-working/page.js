@@ -1,7 +1,7 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
-// time. It never signs in. Checkout: it presses the cart page's Checkout and the suggestions page's Continue, nothing
-// further; past them, it only reads ("look") (docs/CHECKOUT.md).
+// time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue and the checkout
+// page's Order info Continue, nothing further (never Place Order); past them, it only reads ("look") (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
 // comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
@@ -278,7 +278,7 @@ export async function safewayPage(action, arg, P) {
   // The checkout look's presses (Nov 12, Sam: "Checkout only", then "Continue only"): on the one page named (`path`, exact),
   // a visible, enabled button whose every word is one of `words` and that says "checkout" or "continue", only when
   // there's exactly one, pressed once. Simmer's helper asks for the cart page's Checkout ("Safeway Checkout Checkout")
-  // and then the suggestions page's Continue. Anything else: nothing is pressed.
+  // then the suggestions page's Continue, then the checkout page's Order info Continue. Anything else: nothing is pressed.
   if (action === "pressCheckout") {
     const allowed = new Set((arg?.words ?? []).map((w) => String(w).toLowerCase()));
     if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
