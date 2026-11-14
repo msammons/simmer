@@ -143,3 +143,46 @@ describe("the checkout look's one press", () => {
     expect(pressedLabels).toEqual([]);
   });
 });
+
+describe("waiting for Safeway's page (Nov 14: no guessed pauses)", () => {
+  const wait = async (until: string, extra: Record<string, unknown> = {}, ms = 500) => (await safewayPage("waitFor", { until, ms, ...extra }, PAGE)) as unknown as { ok: boolean };
+  const tile = (label: string, active = false) => { const t = document.createElement("div"); t.className = `date-tile${active ? " date-is-active" : ""}`; t.setAttribute("role", "button"); t.textContent = label; Object.defineProperty(t, "offsetWidth", { value: 80 }); return t; };
+  const radio = (id: string) => { const r = document.createElement("input"); r.type = "radio"; r.name = "slot"; r.id = id; return r; };
+
+  it("answers at once when the page already shows it", async () => {
+    window.history.replaceState(null, "", "/erums/checkout");
+    document.body.innerHTML = "";
+    document.body.append(tile("select slots for SATURDAY Nov, 14 Sat Nov 14", true));
+    expect(await wait("times")).toEqual({ ok: true });
+  });
+
+  it("answers as soon as the times appear, well before the limit", async () => {
+    document.body.innerHTML = "<p>Pickup date & time</p>";
+    const started = Date.now();
+    setTimeout(() => document.body.append(tile("select slots for SUNDAY Nov, 15 Sun Nov 15")), 30);
+    expect(await wait("times", {}, 3000)).toEqual({ ok: true });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("gives up at its limit when the page never shows it", async () => {
+    document.body.innerHTML = "<p>Pickup date & time</p>";
+    expect(await wait("timesOpen", {}, 100)).toEqual({ ok: false });
+  });
+
+  it("waits for a pressed day's own times, not the last day's still showing", async () => {
+    const sat = tile("select slots for SATURDAY Nov, 14 Sat Nov 14", true), sun = tile("select slots for SUNDAY Nov, 15 Sun Nov 15");
+    document.body.innerHTML = "";
+    document.body.append(sat, sun, radio("9999SAT20261114REGULARDUG18001900-2026-11-14"));
+    setTimeout(() => { sat.classList.remove("date-is-active"); sun.classList.add("date-is-active"); }, 20);
+    expect(await wait("day", { label: "select slots for SUNDAY Nov, 15 Sun Nov 15", dd: "15" }, 150)).toEqual({ ok: false });
+    setTimeout(() => document.body.append(radio("9999SUN20261115REGULARDUG600700-2026-11-15")), 20);
+    expect(await wait("day", { label: "select slots for SUNDAY Nov, 15 Sun Nov 15", dd: "15" }, 2000)).toEqual({ ok: true });
+  });
+
+  it("waits for the pickup step's one Continue to turn on", async () => {
+    document.body.innerHTML = `<button disabled>Continue</button>`;
+    const b = document.querySelector("button")!; Object.defineProperty(b, "offsetWidth", { value: 80 });
+    setTimeout(() => { b.disabled = false; }, 20);
+    expect(await wait("continueOn", {}, 2000)).toEqual({ ok: true });
+  });
+});
