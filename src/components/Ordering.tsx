@@ -14,9 +14,9 @@
 // taps when it's approved).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
-import { api, approveWithFaceId, errorText, faceIdAnswer, setUpFaceId, type CheckoutSettings } from "@/lib/client";
+import { api, approveWithFaceId, errorText, faceIdAnswer, setUpFaceId, type CheckoutSettings, type Choices } from "@/lib/client";
 import { needsFaceId } from "@/lib/checkout-rules";
-import { Alert, Button, ConfirmSheet, Group, Row, Sheet } from "./ui";
+import { Alert, Button, ConfirmSheet, Group, Held, Row } from "./ui";
 
 const OFF: CheckoutSettings = { on: false, limitCents: 0, store: "", card: "" };
 export const dollars = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
@@ -125,7 +125,7 @@ export function useOrdering() {
   function edit(f: Field) {
     // With no phone set up, only lowering a limit already set could go through; anything else says so at once.
     if (!faceIds && (f !== "limit" || !s.limitCents)) { setProblem(NO_FACE_ID); return; }
-    prepareCheck();
+    if (f === "limit") prepareCheck(); // the store and card: once Safeway's choices show (reading can take a minute)
     setEditing(f);
   }
 
@@ -218,7 +218,7 @@ export function useOrdering() {
     </>
   );
   const limitRow = <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => edit("limit")} />;
-  // Typed for now; later the helper will fill the store and card from what Safeway's checkout page shows.
+  // Picked from what Safeway's checkout shows (Nov 14); the limit is typed. Each opens a page inside Check out.
   const storeRow = <Row icon="home" title="Pickup store" value={s.store || "Not set"} onClick={() => edit("store")} />;
   const cardRow = <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "Not set"} onClick={() => edit("card")} />;
 
@@ -256,12 +256,17 @@ export function useOrdering() {
         onConfirm={approve}
         onCancel={() => { setSheet(null); approveOptions.clear(); }}
       />
-      {editing && <FieldEditor field={editing} value={s} onSave={(v) => { setEditing(null); void save(v); }} onClose={() => { setEditing(null); checkOptions.clear(); }} />}
       <Alert open={Boolean(problem)} title={problem?.title ?? ""} message={problem?.message ?? ""} onClose={() => setProblem(null)} />
     </>
   );
 
-  return { loaded, s, server, faceIds, onOffRow, faceIdRows, limitRow, storeRow, cardRow, sheets, turnOn: tapOnOff };
+  // One field at a time, shown in place of Check out's rows (Nov 14: a second sheet over Check out, pushed up by the
+  // keyboard, looked broken).
+  const editor = editing && (
+    <FieldPage field={editing} value={s} onFound={prepareCheck} onSave={(v) => { setEditing(null); void save(v); }} onBack={() => { setEditing(null); checkOptions.clear(); }} />
+  );
+
+  return { loaded, s, server, faceIds, onOffRow, faceIdRows, limitRow, storeRow, cardRow, sheets, editor, turnOn: tapOnOff };
 }
 
 /** Settings → Ordering (Nov 13): the on/off switch and Face ID; the limit, store and card are set in Shop → Check out. */
@@ -281,21 +286,70 @@ export function OrderingSettings() {
 type Field = "limit" | "store" | "card";
 const FIELDS: Record<Field, string> = { limit: "Limit per order", store: "Pickup store", card: "Card" };
 
-/** One setting at a time, in a sheet. */
-function FieldEditor({ field, value, onSave, onClose }: { field: Field; value: CheckoutSettings; onSave: (v: CheckoutSettings) => void; onClose: () => void }) {
-  const [text, setText] = useState(field === "limit" ? (value.limitCents / 100).toFixed(2).replace(/\.00$/, "") : field === "store" ? value.store : value.card);
+/**
+ * What Safeway's checkout shows, read once a visit (the store and card come from the same look, so the second one
+ * opened shows at once). The look only reads: it presses Checkout and the Continues on the way, never a pickup time or
+ * Place Order (docs/CHECKOUT.md phase 1).
+ */
+let looked: Promise<Choices> | null = null;
+function lookAtSafeway(): Promise<Choices> {
+  looked ??= (async () => {
+    let r = await api.checkoutLook();
+    while ("waiting" in r) r = await api.checkoutLook(r.waiting);
+    return r;
+  })().catch((e) => { looked = null; throw e; });
+  return looked;
+}
+
+/** One setting, in place of Check out's rows: the limit typed, the store and card picked from what Safeway shows. */
+function FieldPage({ field, value, onFound, onSave, onBack }: { field: Field; value: CheckoutSettings; onFound: () => void; onSave: (v: CheckoutSettings) => void; onBack: () => void }) {
+  return (
+    <div className="space-y-5">
+      {field === "limit" ? <LimitField value={value} onSave={onSave} /> : <PickField field={field} value={value} onFound={onFound} onSave={onSave} />}
+      <Button variant="secondary" className="w-full" onClick={onBack}>Back</Button>
+    </div>
+  );
+}
+
+function LimitField({ value, onSave }: { value: CheckoutSettings; onSave: (v: CheckoutSettings) => void }) {
+  const [text, setText] = useState((value.limitCents / 100).toFixed(2).replace(/\.00$/, ""));
   const t = text.trim();
   const cents = /^\d{1,4}(\.\d{1,2})?$/.test(t) ? Math.round(Number(t) * 100) : null;
-  const next = field === "limit" ? { ...value, limitCents: cents ?? 0 } : field === "store" ? { ...value, store: t } : { ...value, card: t };
-  const ok = field === "limit" ? cents !== null && cents <= 100_000 : field === "card" ? /^\d{4}$/.test(t) || t === "" : true;
+  const ok = cents !== null && cents <= 100_000;
   return (
-    <Sheet label={FIELDS[field]} title={FIELDS[field]} onClose={onClose}>
-      <div className="space-y-4 pb-2">
-        {field === "limit" && <input className={FIELD} inputMode="decimal" value={text} autoFocus onChange={(e) => setText(e.target.value.replace(/[^\d.]/g, ""))} aria-label="Limit per order in dollars" />}
-        {field === "store" && <input className={FIELD} value={text} autoFocus onChange={(e) => setText(e.target.value)} placeholder="Its street address, as Safeway shows it" aria-label="Pickup store" />}
-        {field === "card" && <input className={FIELD} inputMode="numeric" maxLength={4} value={text} autoFocus onChange={(e) => setText(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="Last 4 digits" aria-label="Card's last 4 digits" />}
-        <Button className="w-full" disabled={!ok} onClick={() => onSave(next)}>Save</Button>
+    <Group header={FIELDS.limit} footer="Nothing over this goes through.">
+      <div className="space-y-3 p-3">
+        <input className={FIELD} inputMode="decimal" autoComplete="off" value={text} autoFocus onChange={(e) => setText(e.target.value.replace(/[^\d.]/g, ""))} aria-label="Limit per order in dollars" />
+        <Button className="w-full" disabled={!ok} onClick={() => onSave({ ...value, limitCents: cents ?? 0 })}>Save</Button>
       </div>
-    </Sheet>
+    </Group>
+  );
+}
+
+function PickField({ field, value, onFound, onSave }: { field: "store" | "card"; value: CheckoutSettings; onFound: () => void; onSave: (v: CheckoutSettings) => void }) {
+  const [found, setFound] = useState<Choices | null>(null);
+  const [problem, setProblem] = useState("");
+  const found0 = useRef(onFound);
+  useEffect(() => {
+    let live = true;
+    lookAtSafeway().then((c) => { if (live) { setFound(c); found0.current(); } }, (e) => live && setProblem(errorText(e)));
+    return () => { live = false; };
+  }, []);
+  const current = field === "store" ? value.store : value.card;
+  const shown = (v: string) => (field === "card" ? `•••• ${v}` : v);
+  const fromSafeway = found ? (field === "store" ? found.store : found.card) : "";
+  const choices = [...new Set([fromSafeway, current].filter(Boolean))];
+  const footer = field === "store"
+    ? "Orders go to the store Safeway is set to. To pick up somewhere else, change the store on Safeway, then come back."
+    : "Orders use the card Safeway has. To use another, change it on Safeway, then come back.";
+  if (problem) return <Group header={FIELDS[field]} footer={footer}><Row title="Safeway couldn't be read" subtitle={problem} /></Group>;
+  if (!found) return <Held groups={[2]} label="Reading Safeway's checkout" />;
+  return (
+    <Group header={FIELDS[field]} footer={footer}>
+      {choices.length ? choices.map((c) => (
+        <Row key={c} title={shown(c)} subtitle={c === fromSafeway ? "What Safeway shows" : "Saved before"} role="radio" checked={c === current} accessory={c === current ? "check" : undefined}
+          onClick={() => { if (c !== current) onSave(field === "store" ? { ...value, store: c } : { ...value, card: c }); }} />
+      )) : <Row title={field === "store" ? "Safeway didn't show a pickup store" : "Safeway didn't show a card"} subtitle="Check Safeway is signed in on the computer, with something in the cart." />}
+    </Group>
   );
 }

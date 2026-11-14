@@ -100,8 +100,8 @@ export type { Order, OrderAnswer };
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
 import type { Activity, Job, JobKind } from "./jobs";
-import type { ReadyView, RunResult } from "./checkout-run";
-export type { ReadyView, RunResult };
+import type { Choices, ReadyView, RunResult } from "./checkout-run";
+export type { Choices, ReadyView, RunResult };
 export type { Activity, Job, JobKind };
 import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
 export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
@@ -150,6 +150,7 @@ export const api = {
    * Test runs (Nov 13): get ready (the helper reads Safeway's checkout; follow it with the job while it's going), approve
    * with a Face ID answer, then the test run (followed the same way). Nothing orders.
    */
+  checkoutLook: (jobId?: string, signal?: AbortSignal) => call<Choices | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "look", jobId }), signal }),
   checkoutPrepare: (jobId?: string, signal?: AbortSignal) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId }), signal }),
   checkoutApprove: (faceId: unknown) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId }) }),
   checkoutTestRun: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<RunResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),

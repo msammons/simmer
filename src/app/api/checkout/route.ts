@@ -2,7 +2,7 @@ import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
 import { loadSettings, serverOn } from "@/lib/checkout";
 import { addWaiting, answerOf, changeSettings, passkeyCount } from "@/lib/passkeys";
-import { approve, followTestRun, prepare, testRun } from "@/lib/checkout-run";
+import { approve, followTestRun, lookUp, prepare, testRun } from "@/lib/checkout-run";
 import { AppError } from "@/lib/errors";
 
 // Getting ready and test runs wait on the helper up to 20 s per request (the sheet asks again while it's going).
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
-  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run") return run(req, b);
+  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run" || b?.op === "look") return run(req, b);
   try {
     const r = await changeSettings(req, {
       on: b?.on === true,
@@ -56,11 +56,13 @@ const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.tes
  * Test runs (docs/CHECKOUT.md phase 2, Nov 13). prepare { jobId? }: get ready (or follow it) → the figures and what
  * stops them, or { waiting: jobId }. approve { faceId }: Face ID approves those figures → { ok, approvalId } or
  * { ok: false, reasons }. test-run { approvalId } or { jobId } (following): → { ok, would } or { ok: false, reasons }, or
+ * { waiting: jobId }. look { jobId? }: the store and card Safeway's checkout shows, to pick (Nov 14) → { store, card } or
  * { waiting: jobId }. Nothing here places an order.
  */
 async function run(req: Request, b: Record<string, unknown>) {
   try {
-    const out = b.op === "prepare" ? await prepare(id(b.jobId) || undefined)
+    const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
+      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId))
       : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
     return Response.json(out, noStore);
