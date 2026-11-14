@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, buyAmount, needBeside, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, shownAmount, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -67,21 +67,13 @@ describe("the cart", () => {
   });
 });
 
-describe("amounts on Safeway rows (Nov 3)", () => {
-  it("keeps weights and counts, drops spoons, cups and recipe names", () => {
-    expect(buyAmount("1 1/2 lb")).toBe("1½ lb");
-    expect(buyAmount("1/2 lb (Tacos)")).toBe("½ lb");
-    expect(buyAmount("8")).toBe("8");
-    expect(buyAmount("2 lb, for Chili")).toBe("2 lb");
-    expect(buyAmount("2 cans")).toBe("2 cans");
-    expect(buyAmount("a dozen")).toBe("a dozen");
-    for (const q of ["15 ounce", "16 ounces", "1 (15 oz) can", "500 g", "14.5 oz"]) expect(buyAmount(q)).toBe(q.includes("can") ? "1 can" : "");
-    expect(needBeside("2", "Lucerne Large Eggs 18 Count", 1)).toBe("");
-    expect(needBeside("24", "Lucerne Large Eggs 18 Count", 1)).toBe("24");
-    expect(needBeside("3", "Bananas", 1)).toBe("3");
-    expect(needBeside("1", "Keebler Ready Crust 10-Inch Pie Crust - 9 Oz", 1)).toBe("");
-    expect(needBeside("3", "Bananas", 3)).toBe("");
-    expect(needBeside("1½ lb", "Ground Beef 1 lb", 1)).toBe("1½ lb");
-    for (const q of ["2 tbsp", "1 cup", "1/2 teaspoon", "1 Tablespoon", "a pinch", "3 cloves", "to taste", "", "some"]) expect(buyAmount(q)).toBe("");
+describe("amounts on rows (Nov 14: always shown)", () => {
+  it("shows the recipe's amount whatever it is, tidied", () => {
+    expect(shownAmount("1 1/2 lb")).toBe("1½ lb");
+    expect(shownAmount("1/2 lb (Tacos)")).toBe("½ lb");
+    expect(shownAmount("2 tbsp")).toBe("2 tbsp");
+    expect(shownAmount("15 ounce")).toBe("15 ounce");
+    expect(shownAmount("2")).toBe("2");
+    expect(shownAmount("")).toBe("");
   });
 });
