@@ -24,6 +24,8 @@
  *   pickup day not chosen yet, or the one with exactly that label (never a time), and nothing else
  * safewayPage("pressPickupEdit", { path }) → { pressed, found, label } — on the checkout page only: presses its one
  *   "Pickup date & time Edit" button, which reopens the pickup times, and nothing else
+ * safewayPage("waitFor", { until, label?, dd?, ms }) → { ok } — reads only: answers as soon as the page shows what's
+ *   named (watching the page change), or after `ms` at most with whether it does then
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -328,6 +330,35 @@ export async function safewayPage(action, arg, P) {
     const said = label(found[0]).slice(0, 80);
     found[0].click();
     return { pressed: true, found: 1, label: said };
+  }
+
+  // Waiting for Safeway's page (Sam, Nov 14: guessed pauses are fragile): answers the moment the page shows what's
+  // named, watching it change, with one limit for giving up. It reads only.
+  if (action === "waitFor") {
+    const all = () => deepAll(document, "button, [role=button]").filter(visible);
+    const on = (b) => !b.disabled && b.getAttribute("aria-disabled") !== "true";
+    const said = (re) => all().filter((b) => re.test(label(b)));
+    const tiles = () => deepAll(document, ".date-tile[role=button]").filter(visible);
+    const radios = () => deepAll(document, "input[type=radio][name=slot]");
+    const pickupEdit = () => said(/^pickup date & time edit$/i).length > 0;
+    const text = () => document.body?.innerText ?? document.body?.textContent ?? "";
+    const checks = {
+      cart: () => said(/check\s*out/i).length > 0 || /sign back in|sign in to continue|cart is empty/i.test(text()),
+      suggestions: () => said(/continue/i).length > 0,
+      checkout: () => /pickup date & time/i.test(text()) || said(/^place order$/i).length > 0,
+      times: () => tiles().length > 0 || radios().length > 0 || pickupEdit(),
+      timesOpen: () => tiles().length > 0 || radios().length > 0,
+      day: () => tiles().some((t) => label(t) === arg.label && t.classList.contains("date-is-active")) && radios().some((r) => r.id.endsWith(`-${arg.dd}`)),
+      continueOn: () => all().filter((b) => on(b) && label(b).toLowerCase() === "continue").length === 1,
+      picked: () => pickupEdit(),
+    };
+    const ok = checks[arg?.until] ?? (() => false);
+    return new Promise((resolve) => {
+      if (ok()) return resolve({ ok: true });
+      const watch = new MutationObserver(() => { if (ok()) { watch.disconnect(); clearTimeout(limit); resolve({ ok: true }); } });
+      watch.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+      const limit = setTimeout(() => { watch.disconnect(); resolve({ ok: ok() }); }, Math.min(Number(arg?.ms) || 15000, 30000));
+    });
   }
 
   const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
