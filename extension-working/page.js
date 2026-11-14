@@ -1,7 +1,7 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
 // time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue and the checkout
-// page's Order info Continue and one pickup day, nothing further (never a time, never Place Order); past them, it only
+// page's Order info Continue, its pickup step's Edit and one pickup day, nothing further (never Place Order); past them, it only
 // reads ("look") (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
@@ -22,6 +22,8 @@
  * safewayPage("chooseWindow", { path, id }) → { pressed, words } — on the checkout page only: the one free window chosen
  * safewayPage("pressDay", { path, label? }) → { pressed, found, label } — on the checkout page only: presses the first
  *   pickup day not chosen yet, or the one with exactly that label (never a time), and nothing else
+ * safewayPage("pressPickupEdit", { path }) → { pressed, found, label } — on the checkout page only: presses its one
+ *   "Pickup date & time Edit" button, which reopens the pickup times, and nothing else
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
@@ -310,6 +312,22 @@ export async function safewayPage(action, arg, P) {
     const said = label(found[0]).slice(0, 80);
     found[0].click();
     return { pressed: true, found: found.length, label: said };
+  }
+
+  // Reopening the pickup times (Sam, Nov 14): once a time is chosen Safeway folds that step into one line with an Edit
+  // button, and the times aren't on the page. Only on the checkout page, only a button that reads exactly "Pickup date &
+  // time Edit", only when there's exactly one, pressed once. It commits to nothing. Anything else: nothing is pressed.
+  if (action === "pressPickupEdit") {
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
+    const exact = (t) => t.replace(/\s+/g, " ").trim().toLowerCase() === "pickup date & time edit";
+    const found = deepAll(document, "button, [role=button]").filter(visible)
+      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && exact(label(b)));
+    if (found.length !== 1) return { pressed: false, found: found.length, label: "" };
+    // Never a button that would send a form (outside review, Nov 14): an Edit only opens; one that submits isn't pressed.
+    if (found[0].form && (found[0].type ?? "submit") === "submit" && found[0].tagName === "BUTTON") return { pressed: false, found: 1, label: "", why: "submits a form" };
+    const said = label(found[0]).slice(0, 80);
+    found[0].click();
+    return { pressed: true, found: 1, label: said };
   }
 
   const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
