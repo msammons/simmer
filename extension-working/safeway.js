@@ -252,13 +252,22 @@ async function checkoutReady(tabId, page, windowId) {
   }
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
   const free = (w) => /REGULAR/.test(w.id) && !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
-  let seen = await onPage(tabId, "readWindows", null, page);
+  // The pickup times, read once Safeway has drawn them (it builds the page in parts; Nov 14 a read came too soon).
+  const readTimes = async (tries) => {
+    let r = null;
+    for (let i = 0; i < tries; i++) {
+      r = await onPage(tabId, "readWindows", null, page);
+      if (r && (r.days.length || r.windows.length)) return r;
+      await sleep(1500);
+    }
+    return r;
+  };
+  let seen = await readTimes(4);
   // A time chosen earlier (the last Get ready) folds the pickup step into one line: reopen it once (Sam, Nov 14), then read.
   if (seen && !seen.days.length && !seen.windows.length) {
     const opened = await onPage(tabId, "pressPickupEdit", { path: checkoutPath }, page);
-    if (!opened?.pressed) return stop("pickup times closed");
-    await sleep(2000);
-    seen = await onPage(tabId, "readWindows", null, page);
+    if (!opened?.pressed) return { ...stop("pickup times closed"), detail: { found: opened?.found ?? null, why: opened?.why ?? "" } };
+    seen = await readTimes(5);
   }
   if (!seen) return stop("no pickup times");
   let target = null;
