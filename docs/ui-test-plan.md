@@ -36,7 +36,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 3.7 | Switch Quick ↔ Regular on a recipe | Saved; the list header moves it to the other group | L |
 | 3.8a | A recipe not on the plan | "Add to the plan" (main button), then a quieter "Just add to the list"; Add to the plan puts it on Meals under its own kind with its groceries, and says "Added Turkey chili. N things went on the list." | L |
 | 3.8b | A recipe already planned | "On the plan…" and a quieter "Add to the list again"; no Add to the plan | L |
-| 3.8 | Add to the list from a recipe | Fresh things go on Lists; things already in Stock are only highlighted there | L |
+| 3.8 | A recipe page | Offers Add to the plan only; no Add to the list (Nov 14: groceries come only through the plan) | L |
 | 3.9 | Edit (pencil) a recipe, change the name, save | New name everywhere (Recipes, Meals) | L |
 | 3.10 | Stop suggesting this | Recipe stays in the collection but planning never picks it | L |
 | 3.11 | A recipe with no ingredients (typed idea) | Says so plainly and offers to add them; doesn't look broken | L |
