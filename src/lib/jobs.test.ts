@@ -269,3 +269,13 @@ describe("a failure's reason (Nov 14)", () => {
     expect(done?.result).toMatchObject({ error: "failed", why: "TypeError: x is undefined" });
   });
 });
+
+describe("the wake-up subscription (Nov 14)", () => {
+  it("survives check-ins: only subscribing changes it", async () => {
+    const fresh = { key: "k", sub: { endpoint: "https://fcm.googleapis.com/fcm/send/new", keys: { p256dh: "p", auth: "a" } } };
+    await savePush(fresh);
+    await takeJob("26.11.14.3", false);
+    await takeJob("26.11.14.4", true);
+    expect(await helperPush()).toEqual(fresh);
+  });
+});
