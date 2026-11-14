@@ -13,12 +13,12 @@ describe("the grocery list", () => {
     expect(parseEntry("1 1/2 lb ground beef")).toEqual({ quantity: "1 1/2 lb", item: "ground beef" });
     expect(norm("Lemons")).toBe(norm("lemon"));
   });
-  it("counts every row it changed, waiting on Stock or on a list (the screens read the list again)", async () => {
+  it("counts only what went on a list, not the pantry highlighted in Stock", async () => {
     const n = await addItems([
       { item: "count-test ricotta", quantity: "1", for: "Friday's lasagna" },
       { item: "count-test oregano", quantity: "1 tsp", for: "Friday's lasagna", check: true },
     ], "Robin");
-    expect(n).toBe(2);
+    expect(n).toBe(1);
     await removeItems((await loadList()).items.filter((x) => x.item.startsWith("count-test")).map((x) => x.id));
   });
   it("files common things without asking", async () => {

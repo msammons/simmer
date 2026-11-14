@@ -15,7 +15,7 @@ export type Store = (typeof STORES)[number];
 export const SECTIONS = ["fresh", "pantry", "freezer", "household"] as const;
 export type Section = (typeof SECTIONS)[number];
 
-/** check: a dinner's thing (fresh or pantry), waiting on Stock until she says she needs it. */
+/** check: a pantry item from the plan, waiting in "Check you have these" until she says she needs it. */
 /**
  * check: a dinner's thing waiting in Stock's "For this plan" (not on a list). have: she checked and has it (Nov 11: Have |
  * Need), so it stays off the list and shows as Have; still a check, so every list leaves it out.
@@ -336,8 +336,8 @@ export async function emptyLists(held: Set<string> = new Set()): Promise<number>
  */
 export async function addItems(entries: { item: string; quantity: string; for: string; check?: boolean }[], by: string): Promise<number> {
   const [{ items, rows }, staples] = await Promise.all([readList(), sheetsConfigured() ? rowsOf(STAPLES).then(toStaples) : mem().then((m) => m.staples)]);
-  // What the house keeps (Stock) is only highlighted there, to check; so is everything a dinner needs, fresh too (Matt,
-  // Nov 14: Shop had every fresh thing she'd never said Need to); the rest goes on a list.
+  // What the house keeps (Stock) is only highlighted there, to check; so is the plan's pantry (below); everything else
+  // goes on a list (Matt, Nov 2).
   const kept = new Set(staples.map((s) => norm(s.item)));
   const fresh: Item[] = [];
   const merged = new Map<string, { quantity: string; for: string }>();
@@ -357,12 +357,11 @@ export async function addItems(entries: { item: string; quantity: string; for: s
   // Filed together, so the few new things that need a guess are asked about at the same time.
   const filings = await fileAll(fresh.map((x) => x.item));
   fresh.forEach((x, i) => Object.assign(x, filings[i]));
-  for (const x of fresh) x.check = kept.has(norm(x.item)) || Boolean(x.check);
+  for (const x of fresh) x.check = kept.has(norm(x.item)) || (x.check && x.section === "pantry");
   await setManyCells([...merged].map(([id, m]) => [id, { quantity: m.quantity, for: m.for, check: checkCell(items.find((x) => x.id === id)!) }]), false, rows);
   await appendItems(fresh, rows);
-  // How many rows changed, waiting on Stock or on a list (Nov 14: a dinner's things all wait on Stock, and the screens
-  // read the list again whenever this isn't 0).
-  return fresh.length + merged.size;
+  // What went on a list; the pantry highlighted in Stock isn't counted ("Added 45 things" with 26 on the lists, Nov 3).
+  return fresh.filter((x) => !x.check).length + [...merged.keys()].filter((id) => !items.find((x) => x.id === id)!.check).length;
 }
 
 /** "Check you have these": she needs this one (it joins the list), or has the rest (they come off). */

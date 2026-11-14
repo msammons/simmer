@@ -26,7 +26,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
   return (
     <Sheet label="Check out" title="Check out" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        {firstTime === null ? <Held /> : firstTime ? (
+        {firstTime === null ? <Held /> : o.editor ? o.editor : firstTime ? (
           <>
             <Group header="Set up ordering" footer="Face ID comes first: each of the others needs it.">
               {o.faceIdRows}

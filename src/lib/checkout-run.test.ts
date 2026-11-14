@@ -241,3 +241,13 @@ describe("the test run", () => {
     expect(recorded("test run started")[0]).toMatchObject({ approvalId: id, windowId: FRI6.id, faceId: "cred-1" });
   });
 });
+
+describe("picking the store and card (Nov 14)", () => {
+  it("reads both from the look's pages, the last page that shows each", async () => {
+    const { choicesOf } = await import("./checkout-run");
+    const pages = (await import("./checkout-pages.json")).default as { pickup: { text: string; buttons: string[] }; before: unknown };
+    expect(choicesOf([{ text: "Your cart 3 items Checkout" }, pages.pickup])).toEqual({ store: "100 Main St, Springfield, CA 90000", card: "4242" });
+    expect(choicesOf([{ text: "Your cart" }])).toEqual({ store: "", card: "" });
+    expect(choicesOf([{ text: 7 }, {}])).toEqual({ store: "", card: "" });
+  });
+});
