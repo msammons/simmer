@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { PAGE } from "@/lib/safeway-helper.mjs";
-import { addedFor, buyAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group } from "./ui";
 import manifest from "../../extension-working/manifest.json";
@@ -314,7 +314,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             : !last && s?.state !== "failed" && <button onClick={() => move(index + 1)} className={`${top} glass text-accent`}>Skip</button>}
         </div>
         <h2 className="text-[26px] font-bold leading-tight tracking-tight">{cap(it.item)}</h2>
-        <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : buyAmount(it.quantity) && `${buyAmount(it.quantity)} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
+        <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : shownAmount(it.quantity) && `${shownAmount(it.quantity)} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
       </div>
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const q = query.trim(); if (q) search(q, true); }}>
         <input value={query} onChange={(e) => setTyped((t) => ({ ...t, [it.id]: e.target.value }))} aria-label={`Search ${store}`} placeholder={`Search ${store}`} enterKeyHint="search"

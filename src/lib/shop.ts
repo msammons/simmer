@@ -98,29 +98,14 @@ export function nextAfter(items: FindItem[], cart: CartLine[], from: number): nu
   return before;
 }
 
-// Amounts that don't change what's bought at Safeway: a recipe's spoons, cups and pinches, and parts of a thing (a
-// clove of garlic still means one head). Weights and counts do ("1½ lb", "8"). Nov 3.
-/** Can, tub and bag sizes from a recipe ("15 ounce", "16 oz", "500 g"): what the package holds, not how many to buy (Nov 3). */
-const PACKAGE_SIZE = /\b(?:ounces?|oz|fl|ml|millilit(?:er|re)s?|grams?|g|kg|kilograms?|lit(?:er|re)s?|l)\b/i;
-const NOT_BUYING = /\b(?:cups?|tablespoons?|tbsps?|tbs|tbsp|teaspoons?|tsps?|tsp|pinch(?:es)?|dash(?:es)?|splash(?:es)?|sprinkles?|drizzles?|handfuls?|cloves?|sprigs?|leaves|leaf|to taste|as needed)\b/i;
 const FRACTIONS: Record<string, string> = { "1/2": "½", "1/4": "¼", "3/4": "¾", "1/3": "⅓", "2/3": "⅔", "1/8": "⅛" };
 
 /**
- * A list item's amount as a Safeway row shows it (Nov 3): only when it changes what's bought (a weight or a count),
- * never a recipe's name, and "" for spoons, cups and the like. "1 1/2 lb (Tacos)" → "1½ lb", "2 tbsp" → "", "8" → "8".
+ * A list item's amount as a row shows it: always, as the recipe says it (Matt, Nov 14: "always show"; it used to hide
+ * spoons, package sizes and counts the cart seemed to cover). Only tidied: the recipe's name in brackets off, and
+ * fractions as ½. "1 1/2 lb (Tacos)" → "1½ lb", "2 tbsp" → "2 tbsp".
  */
-export function buyAmount(quantity: string): string {
-  const q = String(quantity ?? "").replace(/\([^)]*\)/g, " ").split(/,|;|\s+for\s+/i)[0].replace(/\s+/g, " ").trim();
-  if (!q || NOT_BUYING.test(q) || PACKAGE_SIZE.test(q) || !/\d|[½¼¾⅓⅔⅛]|\b(?:dozen|couple|few)\b/i.test(q)) return "";
+export function shownAmount(quantity: string): string {
+  const q = String(quantity ?? "").replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
   return q.replace(/\b(\d+)\s+(\d\/\d)\b/g, (m, n, f) => (FRACTIONS[f] ? `${n}${FRACTIONS[f]}` : m)).replace(/\b\d\/\d\b/g, (m) => FRACTIONS[m] ?? m);
-}
-
-/** How many one of a product holds: 12 for a dozen, 18 for "18 ct", else 1. */
-const holds = (product: string) => (/\bdozen\b/i.test(product) ? 12 : Number(product.match(/\b(\d+)\s*-?\s*(?:count|ct|pack|pk|pc|pieces?)\b/i)?.[1] ?? 0) || 1);
-
-/** "Need …" beside a cart line, or nothing when what's in the cart already covers a plain count (2 eggs, 18 in a carton;
- * 1 pie crust, 1 in the cart). */
-export function needBeside(quantity: string, product: string, qty: number): string {
-  const a = buyAmount(quantity);
-  return /^\d+$/.test(a) && holds(product) * Math.max(qty, 1) >= Number(a) ? "" : a;
 }
