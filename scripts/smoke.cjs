@@ -453,7 +453,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       }
       ok("shop: a Safeway row says its product and what's needed", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
-      ok("shop: no Done shopping, and no Show got until something's ticked (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && (await page.getByRole("button", { name: "Show got" }).count()) === 0);
+      ok("shop: no Done shopping; Show got is there, on (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && (await page.getByRole("button", { name: "Show got" }).getAttribute("aria-pressed")) === "true");
       // Add puts the usual in the cart: − n + at once, the helper's answer behind it.
       await page.getByRole("button", { name: "Add Milk to the cart" }).tap();
       ok("shop: Add shows − 1 + within 150 ms", await within150(async () => (await page.getByLabel("1 in the cart").count()) >= 2 && (await page.getByRole("button", { name: "One more Milk" }).isVisible())));
@@ -465,7 +465,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await slow("**/api/list");
       await tick("Milk").tap();
       ok("shop: a tick shows within 150 ms, struck through", await within150(async () => (await tick("Milk").getAttribute("aria-checked")) === "true" && (await tick("Milk").locator(".line-through").count()) === 1));
-      ok("shop: ticking brings Show got, and the ticked row stays while Shop is open", await page.getByRole("button", { name: "Show got" }).isVisible() && (await tick("Milk").count()) === 1);
+      ok("shop: with Show got on, a ticked row stays", (await tick("Milk").count()) === 1);
       // Added by hand: on the list at once, as a stand-in row until the server's list comes back.
       await page.getByLabel("Add something").fill("smoke basil"); await page.keyboard.press("Enter");
       ok("shop: something added shows within 150 ms", await within150(() => page.getByRole("checkbox", { name: /smoke basil/i }).first().isVisible()));
@@ -495,18 +495,18 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (await page.getByText(/Can't reach Safeway right now|isn't connected/).count()) old.push("a guess whether the helper's there");
         ok("shop: none of the old things are back", !old.length, old.join(", "));
       }
-      // Show got (Nov 14, in place of Done shopping): what was ticked before Shop was opened hides; Show got brings it back.
+      // Show got (Nov 14, in place of Done shopping): only the toggle decides. Off hides what's ticked; on brings it back.
       await tick("Milk").tap(); await page.waitForTimeout(600); // untick Milk
       await tick("Eggs").tap(); await page.waitForTimeout(400);
       await tick("Coffee").tap(); await page.waitForTimeout(1500);
-      ok("shop: rows ticked just now stay, struck through", (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1);
+      ok("shop: ticked rows stay, struck through, with Show got on", (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1);
+      await page.getByRole("button", { name: "Show got" }).tap();
+      ok("shop: Show got off hides them within 150 ms, still counted", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0) && (await tick("Milk").count()) === 1 && /2 of \d+ got/.test(await page.getByText(/ of \d+ got$/).first().innerText()));
       await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(500);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
-      ok("shop: back on Shop, what's got is hidden and still counted", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0 && (await tick("Milk").count()) === 1 && /2 of \d+ got/.test(await page.getByText(/ of \d+ got$/).first().innerText()));
+      ok("shop: and it stays off on coming back", (await page.getByRole("button", { name: "Show got" }).getAttribute("aria-pressed")) === "false" && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
       await page.getByRole("button", { name: "Show got" }).tap();
-      ok("shop: Show got brings them back within 150 ms, ticked", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
-      await page.getByRole("button", { name: "Show got" }).tap(); await page.waitForTimeout(300);
-      ok("shop: and hides them again", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
+      ok("shop: Show got on brings them back within 150 ms", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
       // An empty cart: no Check out.
       {
         const kept = fake.cart.splice(0);

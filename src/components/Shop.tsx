@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { framed, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
+import { framed, store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { buyAmount, cartFor, cartTotal, findItems, money, needBeside, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
@@ -65,8 +65,8 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * "2 of 5 got" and Show got (Matt, Nov 14, in place of Done shopping): what's ticked hides from the list, and Show got
- * brings it back to untick. Ticked things stay on the list until a new plan empties it (written down as bought then).
+ * "2 of 5 got" and Show got (Matt, Nov 14, in place of Done shopping): on, what's ticked stays, struck through; off, it's
+ * hidden. Ticked things stay on the list until a new plan empties it (written down as bought then).
  */
 function TopLine({ text, showGot, onShowGot }: { text: string; showGot: boolean; onShowGot: (() => void) | null }) {
   return (
@@ -108,10 +108,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const sw = useSafeway();
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
-  const [showGot, setShowGot] = useState(false); // ticked things hidden until Show got (Nov 14)
-  // Ticked while Shop is open: stays, struck through, until Shop is left, so a mis-tap can be seen and undone.
-  const [justGot, setJustGot] = useState<Set<string>>(() => new Set());
-  const tickIt = (it: Item, on: boolean) => { if (on) setJustGot((g) => new Set(g).add(it.id)); act.check(it, on); };
+  // Show got (Nov 14): on, ticked things stay, struck through; off, they're hidden. Only the toggle decides; remembered
+  // on this phone.
+  const [showGot, setShowGotState] = useState(() => store.showGot());
+  const setShowGot = (on: boolean) => { setShowGotState(on); store.setShowGot(on); };
+  const tickIt = (it: Item, on: boolean) => act.check(it, on);
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   const [checkingOut, setCheckingOut] = useState(false); // the Check out sheet (Nov 13)
   const [where, setWhere] = useState<Where>("all");
@@ -162,7 +163,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const here = where === "all" ? items : items.filter((i) => i.store === where);
   const ticked = here.filter((i) => i.checked);
   /** The rows shown: what's ticked only with Show got on. */
-  const visible = showGot ? items : items.filter((i) => !i.checked || justGot.has(i.id));
+  const visible = showGot ? items : items.filter((i) => !i.checked);
 
   /** A list item's row. */
   const itemRow = (it: Item) => {
@@ -202,7 +203,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} showGot={showGot} onShowGot={ticked.length || showGot ? () => setShowGot((v) => !v) : null} />
+          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} showGot={showGot} onShowGot={() => setShowGot(!showGot)} />
           {!shown.length && <EmptyState icon="list" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">

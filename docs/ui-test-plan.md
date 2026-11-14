@@ -69,7 +69,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
 | 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
 | 5.6 | No Clear on Lists | There's no Clear on any list (Nov 11); New plan on Meals empties the lists | L |
-| 5.6b | Show got (Nov 14) | A tick stays struck through until Shop is left, then hides; Show got brings ticked rows back; New plan empties the lists | L |
+| 5.6b | Show got (Nov 14) | Show got starts on: a tick stays struck through; off hides ticked rows (remembered on the phone); New plan empties the lists | L |
 | 5.7 | Water, salt, spices from a recipe | Never on a list (salt/spices are highlighted in Stock) | L |
 
 ## 6. Lists → Safeway (the cart)

@@ -55,8 +55,8 @@ row is the same height with a tick (got it, in the store or delivered), the hous
 line: for a Safeway thing with a chosen product, Safeway's product name and "Need …"; otherwise the amount. While Safeway
 can be reached, a Safeway row also has Add (its usual into the cart), Find (Safeway's choices with pictures, in a sheet)
 or − n + once it's in the cart; the Safeway header shows what's in the cart and Auto-fill, and things put in the cart on
-Safeway's own site end the Safeway group. What's ticked hides from the list (rows ticked while Shop is open stay, struck
-through, until Shop is left), and Show got brings it back (Nov 14, in place of Done shopping); a new plan empties the
+Safeway's own site end the Safeway group. Show got (Nov 14, in place of Done shopping), on unless this phone turned it off,
+decides alone: on, ticked rows stay struck through; off, they're hidden; a new plan empties the
 lists and writes what was got down as bought. "Ordered?
 Take the cart off the list" ends the Safeway group while the cart has things in it. Old `?open=lists` addresses land on
 Shop, as the helper panel's `?open=shop` does.
