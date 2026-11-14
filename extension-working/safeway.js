@@ -200,7 +200,8 @@ export async function runJob(job, windowId) {
   // Getting ready (Nov 14): first the free times to pick from (`list`), then the one picked (`windowId`).
   if (job.kind === "checkoutPrepare") {
     const id = typeof args.windowId === "string" ? args.windowId : "";
-    return { ok: true, result: id ? await checkoutReady(tabId, page, id) : await checkoutReady(tabId, page, null, true) };
+    const day = typeof args.day === "string" ? args.day : "";
+    return { ok: true, result: id ? await checkoutReady(tabId, page, id) : await checkoutReady(tabId, page, null, { day }) };
   }
   if (job.kind === "checkoutDry") {
     const id = typeof job.args?.windowId === "string" ? job.args.windowId : "";
@@ -230,7 +231,7 @@ export async function runJob(job, windowId) {
  * picked, and test runs) it takes exactly that window or stops. Each step waits for what it needs to see, never a pause. It presses nothing else: there is no code here that presses
  * Place Order, and the final page is only read. Simmer checks what it read (src/lib/checkout.ts).
  */
-async function checkoutReady(tabId, page, windowId, list = false) {
+async function checkoutReady(tabId, page, windowId, list = null) {
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
   const stop = (stopped) => ({ stopped, chosen: null, final: null });
   // Each step waits for what it needs to see on Safeway's page (Sam, Nov 14: no guessed pauses), with one limit each.
@@ -280,13 +281,16 @@ async function checkoutReady(tabId, page, windowId, list = false) {
     seen = await read();
   }
   if (!seen) return stop("no pickup times");
-  // The free times this week, to pick from (Sam, Nov 14): each day's tile pressed in turn and read; nothing is chosen.
+  // To pick from, as on Safeway's site (Sam, Nov 14): the days, and one day's free times (the day Safeway shows, or the
+  // one asked for, its tile pressed). Nothing is chosen.
   if (list) {
-    const times = [];
-    const add = (r) => { for (const w of r?.windows ?? []) if (free(w) && !times.some((t) => t.id === w.id)) times.push({ id: w.id, words: w.words }); };
-    add(seen);
-    for (const day of seen.days.slice(0, 8)) if (!day.active) add(await openDay(day.label, ddOf(day.label)));
-    return { stopped: times.length ? "times" : "no free pickup time", times, chosen: null, final: null };
+    const days = seen.days.slice(0, 14).map((d) => ({ label: d.label }));
+    const tile = list.day ? seen.days.find((d) => d.label === list.day) : seen.days.find((d) => d.active);
+    if (list.day && !tile) return stop("pickup day gone");
+    const r = tile && !tile.active ? await openDay(tile.label, ddOf(tile.label)) : seen;
+    const dd = tile ? ddOf(tile.label) : "";
+    const times = (r?.windows ?? []).filter((w) => free(w) && (!dd || w.id.endsWith(`-${dd}`))).map((w) => ({ id: w.id, words: w.words }));
+    return { stopped: "times", days, day: tile?.label ?? "", times, chosen: null, final: null };
   }
   // The time picked: only exactly that one.
   if (!windowId) return stop("no window");

@@ -34,8 +34,11 @@ export type ReadyView = {
   remember: boolean;
 };
 export type Waiting = { waiting: string };
-/** The free pickup times Safeway offers, to pick from (Sam, Nov 14: "let me pick"), soonest first. */
-export type TimesView = { times: { id: string; day: string; time: string }[] };
+/**
+ * To pick the pickup time, as on Safeway's site (Sam, Nov 14: "let me pick", then "picking a day first"): the days
+ * Safeway offers, the one showing, and that day's free times.
+ */
+export type TimesView = { days: { key: string; label: string }[]; day: string; times: { id: string; time: string }[] };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
 const PREPARED_KEY = "simmer:checkout-prepared";
@@ -117,28 +120,36 @@ async function highlights(totalCents: number | null): Promise<string[]> {
 
 // ---- the pickup times, to pick from
 
-/** "Sat, Nov 14" for a window's date. */
-const dayOf = (date: string) => (date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : "");
+/** A day tile's words ("select slots for SUNDAY Nov, 15 Sun Nov 15") as "Sun, Nov 15". */
+const dayLabel = (tile: string) => { const m = tile.match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun) ([A-Z][a-z]{2}) (\d{1,2})$/); return m ? `${m[1]}, ${m[2]} ${m[3]}` : tile; };
+/** Safeway's day tile, as the helper reads and presses it. */
+export const isDayTile = (s: string) => /^select slots for [A-Z]+ [A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/.test(s);
 
 /**
- * The free pickup times Safeway offers this week (or follows the reading started): the helper goes to Safeway's checkout
- * and reads each day's times, choosing none. Only free regular times are offered (never Flash or a priced one), and
- * they're remembered for 10 minutes: getting ready takes only one of them.
+ * The days Safeway offers and one day's free times (or follows the reading started): the helper goes to Safeway's
+ * checkout and reads the day showing, or presses the day asked for and reads it; it chooses no time. Only free regular
+ * times are offered (never Flash or a priced one), and each one offered is remembered for 10 minutes: getting ready
+ * takes only one of them.
  */
-export async function pickupTimes(jobId?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
+export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
   await ready();
-  const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true })).id;
+  const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true, ...(day && isDayTile(day) && { day }) })).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
-  const r = (job.result ?? {}) as { stopped?: string; times?: { id: string; words: string }[] };
+  const r = (job.result ?? {}) as { stopped?: string; days?: { label: string }[]; day?: string; times?: { id: string; words: string }[] };
+  if (r.stopped && r.stopped !== "times") throw new AppError(stoppedWords(r.stopped));
   const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.regular && w.priceCents === 0 && w.date);
-  free.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
-  await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids: free.map((w) => w.id) }), { ex: secs(TIMES_MS) });
-  await record("test times", { jobId: job.id, stopped: r.stopped ?? "", times: free.map((w) => w.id) });
-  if (!free.length) throw new AppError(r.stopped && r.stopped !== "times" ? stoppedWords(r.stopped) : "No free pickup time in the next week.");
-  return { times: free.map((w) => ({ id: w.id, day: dayOf(w.date), time: windowWords({ id: w.id, words: w.words }).replace(/^\S+\s/, "") })) };
+  const before = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
+  const ids = [...new Set([...(before && Date.now() - before.at < TIMES_MS ? before.ids : []), ...free.map((w) => w.id)])];
+  await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids }), { ex: secs(TIMES_MS) });
+  await record("test times", { jobId: job.id, day: r.day ?? "", times: free.map((w) => w.id) });
+  return {
+    days: (r.days ?? []).filter((d) => isDayTile(d.label)).map((d) => ({ key: d.label, label: dayLabel(d.label) })),
+    day: r.day ?? "",
+    times: free.map((w) => ({ id: w.id, time: windowWords({ id: w.id, words: w.words }).replace(/^\S+\s/, "") })),
+  };
 }
 
 // ---- getting ready
