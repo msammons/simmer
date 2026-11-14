@@ -12,6 +12,7 @@ import { imageFor, orderSince } from "./safeway-helper.mjs";
 import { doneShopping } from "./groceries";
 import { recordTrip } from "./plan";
 import { todayIn } from "./time";
+import { json as kvJson, kv } from "./kv";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
 export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook", "checkoutPrepare", "checkoutDry"] as const;
@@ -229,11 +230,17 @@ async function writeHelper(h: Helper) {
  * Waking the helper (Nov 3): its push subscription, kept on its row with the public key it was made with (a new key
  * needs a new subscription). Null takes it off, when the push service says it's gone.
  */
+/**
+ * The helper's wake-up subscription, kept under its own key (Nov 14): kept in the helper's row, a check-in written from
+ * a copy read a moment before put the old subscription back over a new one, the push service said the old one was
+ * gone, and nothing could wake the helper. Its own key is written only when the helper subscribes.
+ */
+const PUSH_KEY = "simmer:helper-push";
 export async function savePush(push: { key: string; sub: PushSub } | null): Promise<void> {
-  const { helper } = await read();
-  await writeHelper({ seen: helper?.seen ?? now(), version: helper?.version ?? "", panel: helper?.panel ?? false, push });
+  if (push) await kv().set(PUSH_KEY, JSON.stringify(push), { ex: 400 * 24 * 3600 });
+  else await kv().del(PUSH_KEY);
 }
-export const helperPush = async () => (await read()).helper?.push ?? null;
+export const helperPush = async (): Promise<{ key: string; sub: PushSub } | null> => kvJson<{ key: string; sub: PushSub }>(await kv().get(PUSH_KEY));
 
 /**
  * The helper: check in, and take the oldest waiting job (null when there's none). The helper asks every few seconds, so
