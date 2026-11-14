@@ -428,6 +428,27 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         ok("shop: changing the limit with no Face ID says to set it up first", await seen(needFace, 2000));
         await needFace.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
         await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+        // The store and card (Nov 14): picked from what Safeway's checkout shows, in place of Check out's rows (no second
+        // sheet). With Face ID pretended on, Pickup store reads Safeway and offers its store; Back returns to the rows.
+        await page.route("**/api/checkout", async (r) => {
+          if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: false, limitCents: 0, store: "", card: "" }, server: false, faceId: 1, adding: null } });
+          const b = r.request().postDataJSON() ?? {};
+          if (b.op === "look") { await new Promise((w) => setTimeout(w, 400)); return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", card: "4242" } }); }
+          if (b.op === "check-options") return r.fallback();
+          return r.fallback();
+        });
+        await swGroup.getByRole("button", { name: "Check out" }).tap(); await page.waitForTimeout(800);
+        await co.getByRole("button", { name: /^Pickup store/ }).tap();
+        ok("shop: Pickup store shows in place, reading Safeway, with no second sheet", await seen(co.getByRole("status", { name: "Reading Safeway's checkout" }), 1000) && (await page.getByRole("dialog").count()) === 1);
+        const pick = co.getByRole("radio", { name: /100 Main St, Springfield, CA 90000/ });
+        ok("shop: then offers the store Safeway shows, to pick", await seen(pick, 3000) && (await pick.innerText()).includes("What Safeway shows"));
+        await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/pick-store.png` : "/tmp/pick-store.png" });
+        await co.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
+        await co.getByRole("button", { name: /^Card/ }).tap();
+        ok("shop: Card offers Safeway's card from the same reading, at once", await seen(co.getByRole("radio", { name: /•••• 4242/ }), 300));
+        await co.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
+        await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+        await page.unroute("**/api/checkout");
       }
       ok("shop: a Safeway row says its product and what's needed", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));

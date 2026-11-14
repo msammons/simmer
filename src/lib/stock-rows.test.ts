@@ -30,9 +30,8 @@ describe("Stock rows", () => {
     expect(r).toMatchObject({ name: "Tortillas", section: "fresh", answer: "need", meal: true });
   });
 
-  it("shows a dinner's fresh things too, leaves out what's been bought, and counts what's left to check", () => {
-    expect(rowsOf(list([item({ section: "fresh", item: "cilantro" })]), null)).toMatchObject([{ name: "cilantro", section: "fresh", answer: "check", meal: true }]);
-    expect(rowsOf(list([item({ section: "fresh", check: false, item: "cilantro" })]), null)).toMatchObject([{ answer: "need", meal: true }]); // Need stays on Stock
+  it("leaves out a dinner's fresh groceries and what's been bought, and counts what's left to check", () => {
+    expect(rowsOf(list([item({ section: "fresh", check: false, item: "cilantro" })]), null)).toHaveLength(0);
     expect(rowsOf(list([item({ check: false, checked: true })]), null)).toHaveLength(0);
     expect(toCheck(rowsOf(list([item({ id: "a" }), item({ id: "b", item: "rice", have: true }), item({ id: "c", item: "beans", check: false })]), null))).toBe(1);
   });

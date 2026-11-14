@@ -196,3 +196,36 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
   await record("test run", { ...result, approvalId: a.id, jobId, faceId: a.faceId, stopped: reading?.stopped ?? "", chosen: reading?.chosen ?? null, url: reading?.final?.url ?? "" });
   return result;
 }
+
+// ---- picking the store and card (Nov 14)
+
+/** The pickup store and card Safeway's checkout shows, to pick from (Sam, Nov 14: "setting pickup store should let me pick"). */
+export type Choices = { store: string; card: string };
+
+/** The store and card in the look's pages: the last page that shows each (the checkout page, after Order info). */
+export function choicesOf(pages: { text?: unknown; buttons?: unknown }[]): Choices {
+  let store = "", card = "";
+  for (const p of pages) {
+    const f = readFinal(typeof p.text === "string" ? p.text : "", Array.isArray(p.buttons) ? p.buttons.map(String) : []);
+    if (f.store) store = f.store;
+    if (f.card) card = f.card;
+  }
+  return { store, card };
+}
+
+/**
+ * Looks at Safeway's checkout for the store and card to pick (or follows the look started): the read-only look from
+ * phase 1 (docs/CHECKOUT.md: Checkout, the suggestions page's Continue, Order info's Continue, one day; never a pickup
+ * time, never Place Order). Only reads, so it needs no Face ID; picking one saves it as any other change, with Face ID.
+ */
+export async function lookUp(jobId?: string, ms = WAIT_MS): Promise<Choices | Waiting> {
+  const id = jobId ?? (await queueJob("checkoutLook", {})).id;
+  const { job } = await waitForJob(id, ms);
+  if (!job || job.kind !== "checkoutLook") throw new AppError("That didn't go through. Try again.");
+  if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
+  if (job.status !== "done") throw new AppError(failedWords(job));
+  const pages = Array.isArray(job.result?.pages) ? (job.result.pages as { text?: unknown; buttons?: unknown }[]) : [];
+  const found = choicesOf(pages);
+  await record("store and card read", { jobId: job.id, ...found, stopped: String(job.result?.stopped ?? "") });
+  return found;
+}
