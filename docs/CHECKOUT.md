@@ -134,4 +134,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    folded pickup times with their Edit), found the same figures, and stopped short: "Would place $30.96 · Sat 6–7 PM".
    Before it: the store and card are now taken from Safeway, checkout's jobs wake the helper, a failed job keeps its
    reason, and Shop reads Safeway's cart on open (Simmer's copy had said 6 things to Safeway's 4).
+
+   Then (Nov 14, helper 26.11.14.4, Matt: "race conditions imply timers and not events, which are super fragile"): the
+   helper's checkout steps no longer pause a guessed number of seconds for Safeway's page. Each waits for what it needs to
+   see (the cart's Checkout, the checkout page, the times, the pressed day's own times, the pickup Continue turning on,
+   the pickup step folding once done), watching the page change, with one limit to give up; moving between pages waits
+   on Chrome's own events. The wake-up subscription has its own record, so a check-in can't put an old one back.
 3. Turning on real orders, after dry runs match.
