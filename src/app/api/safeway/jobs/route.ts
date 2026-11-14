@@ -94,7 +94,8 @@ export async function POST(req: Request) {
         return Response.json({ ok: true }, noStore);
       }
       case "done": case "failed": {
-        const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40) };
+        // A failure keeps the helper's reason (Nov 14: a Get ready came back only "failed"), for reading back.
+        const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40), ...(text(b.why, 300) && { why: text(b.why, 300) }) };
         return Response.json({ job: await finishJob(text(b.id, 40), b.op === "done", result) }, noStore);
       }
       // Something the helper wants seen in Simmer's logs (Nov 12: why it can't be woken).
