@@ -2,7 +2,6 @@
 // Browser-side helpers: storage (always try/catch; private mode can throw), API calls, themes, dates.
 import { startAuthentication, startRegistration, WebAuthnError } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
-import { addDays, todayIn, TZ } from "./time";
 
 const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan", showGot: "sm.showGot" };
 
@@ -192,9 +191,6 @@ export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSO
   onAnswer?.();
   return (await api.faceIdRegister(response)).count;
 }
-export async function checkFaceId(options: PublicKeyCredentialRequestOptionsJSON): Promise<{ ok: boolean; credentialId?: string; why?: string }> {
-  return api.faceIdCheck(await faceId(() => startAuthentication({ optionsJSON: options })));
-}
 /** A Face ID answer to send with something that needs it (a settings change, Nov 13). */
 export const faceIdAnswer = (options: PublicKeyCredentialRequestOptionsJSON) => faceId(() => startAuthentication({ optionsJSON: options }));
 
@@ -258,7 +254,3 @@ export async function fileToSend(f: File): Promise<{ name: string; type: string;
   return { name: f.name, type: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : /\.txt$/i.test(f.name) ? "text/plain" : ""), data: await b64(f) };
 }
 
-/** The date offsetDays from today, by the calendar. */
-export const dateIn = (offsetDays: number) => addDays(todayIn(), offsetDays);
-/** 0-23; hourCycle h23 because some browsers write midnight as 24. */
-export const hourNow = () => Number(new Date().toLocaleString("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }));

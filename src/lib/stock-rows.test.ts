@@ -2,7 +2,7 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { fromDinner, rowsOf, toCheck } from "./stock-rows";
+import { fromDinner, rowsOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -33,7 +33,6 @@ describe("Stock rows", () => {
   it("leaves out a dinner's fresh groceries and what's been bought, and counts what's left to check", () => {
     expect(rowsOf(list([item({ section: "fresh", check: false, item: "cilantro" })]), null)).toHaveLength(0);
     expect(rowsOf(list([item({ check: false, checked: true })]), null)).toHaveLength(0);
-    expect(toCheck(rowsOf(list([item({ id: "a" }), item({ id: "b", item: "rice", have: true }), item({ id: "c", item: "beans", check: false })]), null))).toBe(1);
   });
 
   it("tells a dinner's thing from one added by hand", () => {

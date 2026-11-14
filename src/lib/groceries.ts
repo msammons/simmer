@@ -315,8 +315,6 @@ export async function takeOffFor(needs: { item: string; quantity: string; for: s
   return drop.size;
 }
 
-/** A list item that's there only for a dinner (not added by hand, ticked on Stock, or an old Every week refill). */
-export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week" && !forOf(x.for).includes(BY_HAND);
 
 /**
  * New plan (Nov 11, Matt: "I would expect the whole app to reset"): every list is emptied in one write, except what's in

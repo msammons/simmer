@@ -8,6 +8,6 @@ standing preferences (no technical words on screen, no background jobs, no maint
 and on Sam's Mac, no model names in commits or PRs).
 
 The screens: `components/Week.tsx` (Meals: this week's dinners by kind, each added from her recipes; Simmer doesn't pick meals), `Stock.tsx`, `Shop.tsx` (the Shop tab: one page of the shared list by store, each Safeway row with Add, Find or − n +, the cart in the Safeway header) and `Safeway.tsx` (Find at Safeway and the cart's workings), `Recipes.tsx` (Search and the
-collection). The planning rules are plain code in `lib/week.ts`, with tests; keep them there (the picking rules there are no longer used on screen, Nov 10).
+collection). The planning rules are plain code in `lib/week.ts`, with tests; keep them there (the old meal-picking rules were removed Nov 14).
 
 The Safeway helper is a Chrome extension edited in `extension-working/` (its own README); it isn't part of the web app or its build. `extension/` is the released copy Chrome loads on the Safeway computer: git-ignored, filled only by `node scripts/release-helper.mjs`. Never edit it.
