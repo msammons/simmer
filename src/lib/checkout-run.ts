@@ -15,6 +15,7 @@ import { AppError } from "./errors";
 import { queueJob, waitForJob, type Job } from "./jobs";
 import { json, kv, secs } from "./kv";
 import { passkeyCount, verifyCheck } from "./passkeys";
+import { wakeHelper } from "./push";
 import { loadCart } from "./safeway";
 import { cartTotal, priceOf } from "./shop";
 
@@ -53,6 +54,16 @@ async function ready(): Promise<CheckoutSettings> {
   return s;
 }
 
+/**
+ * A job for the helper, and a push to wake it (Nov 14: these were queued without one, so a sleeping helper never took
+ * them and the phone said "The computer with Safeway isn't answering" while it was right there).
+ */
+async function queueAndWake(...a: Parameters<typeof queueJob>): Promise<Job> {
+  const job = await queueJob(...a);
+  await wakeHelper().catch((e) => console.error("couldn't wake the helper", e));
+  return job;
+}
+
 const cartNow = async () => cartKey(await loadCart());
 const readingOf = (j: Job): Reading => {
   const r = (j.result ?? {}) as Partial<Reading>;
@@ -88,7 +99,7 @@ async function highlights(totalCents: number | null): Promise<string[]> {
 /** Starts getting ready (or follows the one started): the helper's reading, checked, or still going. */
 export async function prepare(jobId?: string, ms = WAIT_MS): Promise<ReadyView | Waiting> {
   const s = await ready();
-  const id = jobId ?? (await queueJob("checkoutPrepare", {})).id;
+  const id = jobId ?? (await queueAndWake("checkoutPrepare", {})).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
@@ -162,7 +173,7 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
   const s = await loadSettings();
   if (!s.on) return refuse(["Ordering is off in Settings."]);
   if ((await cartNow()) !== a.cartKey) return refuse(["The cart changed after the approval."]);
-  const job = await queueJob("checkoutDry", { approvalId: a.id, windowId: a.windowId });
+  const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId });
   await kv().set(RUN_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(15 * 60_000) });
   await record("test run started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId });
   return followTestRun(job.id, ms);
@@ -219,7 +230,7 @@ export function choicesOf(pages: { text?: unknown; buttons?: unknown }[]): Choic
  * time, never Place Order). Only reads, so it needs no Face ID; picking one saves it as any other change, with Face ID.
  */
 export async function lookUp(jobId?: string, ms = WAIT_MS): Promise<Choices | Waiting> {
-  const id = jobId ?? (await queueJob("checkoutLook", {})).id;
+  const id = jobId ?? (await queueAndWake("checkoutLook", {})).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutLook") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
