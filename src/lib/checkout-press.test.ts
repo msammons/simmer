@@ -144,6 +144,23 @@ describe("the checkout look's one press", () => {
   });
 });
 
+describe("More times (Nov 14)", () => {
+  const more = async (path = "/erums/checkout") => (await safewayPage("pressMoreTimes", { path }, PAGE)) as unknown as Press;
+  it("presses only the one More times on the checkout page, never Place Order or another button", async () => {
+    cart(["More times collapsed", "Learn more about Nourishing Neighbors Nourishing Neighbors", "Place Order", "Continue"], "/erums/checkout");
+    expect(await more()).toMatchObject({ pressed: true, found: 1 });
+    expect(pressedLabels).toEqual(["More times collapsed"]);
+    pressedLabels.length = 0;
+    cart(["More times collapsed"], "/erums/cart");
+    expect((await more()).pressed).toBe(false);
+    cart(["More times", "More times"], "/erums/checkout");
+    expect((await more()).pressed).toBe(false);
+    cart(["Show more", "Place Order"], "/erums/checkout");
+    expect((await more()).pressed).toBe(false);
+    expect(pressedLabels).toEqual([]);
+  });
+});
+
 describe("waiting for Safeway's page (Nov 14: no guessed pauses)", () => {
   const wait = async (until: string, extra: Record<string, unknown> = {}, ms = 500) => (await safewayPage("waitFor", { until, ms, ...extra }, PAGE)) as unknown as { ok: boolean };
   const tile = (label: string, active = false) => { const t = document.createElement("div"); t.className = `date-tile${active ? " date-is-active" : ""}`; t.setAttribute("role", "button"); t.textContent = label; Object.defineProperty(t, "offsetWidth", { value: 80 }); return t; };

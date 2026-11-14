@@ -152,8 +152,8 @@ describe("choosing a pickup window", () => {
   const tonight = pages.windows.today.map((x, i) => windowOf(x.id, x.text, i));
 
   it("reads Safeway's windows: date, free or priced, regular or Flash", () => {
-    expect(friday[0]).toMatchObject({ date: "2026-11-13", regular: true, priceCents: 0, words: "6 AM - 7 AM price Free" });
-    expect(tonight[0]).toMatchObject({ date: "2026-11-12", regular: false, priceCents: 395 });
+    expect(friday[0]).toMatchObject({ date: "2026-11-13", notFlash: true, kind: "REGULAR", priceCents: 0, words: "6 AM - 7 AM price Free" });
+    expect(tonight[0]).toMatchObject({ date: "2026-11-12", notFlash: false, priceCents: 395 });
   });
 
   it("takes the earliest free regular window, never Flash or a priced one", () => {
@@ -183,6 +183,18 @@ describe("the pickup time on the final page, from the window chosen (Nov 13)", (
     expect(stops(on, { ...final, store: "100 Main St, Springfield", totalCents: 1500 }, null, now, cart, true)).toEqual([]);
     expect(windowWords(chosen)).toBe("Fri 6–7 AM");
     expect(windowWords({ id: "x-2026-11-13", words: "11 AM - 12 PM price Free" })).toBe("Fri 11 AM–12 PM");
+  });
+
+  it("takes a free EXPRESS window too, keeping its kind (Nov 14), but never Flash", () => {
+    const express = { id: chosen.id.replace("REGULAR", "EXPRESS"), words: chosen.words };
+    const { final, why } = pickupOf(regular, regularText, express);
+    expect(why).toEqual([]);
+    expect(final.slot).toEqual({ ready: "6 AM - 7 AM", type: "EXPRESS", priceCents: 0 });
+    expect(windowOf(express.id, express.words, 0)).toMatchObject({ kind: "EXPRESS", notFlash: true, priceCents: 0 });
+    expect(windowOf(express.id, "6 AM - 7 AM price $1.95", 0).priceCents).toBe(195);
+    // The page naming another kind than the one picked stops it.
+    const saysRegular = { ...regular, slot: { ready: "6 AM - 7 AM", type: "REGULAR", priceCents: 0 } };
+    expect(pickupOf(saysRegular, regularText, express).why).toEqual(["Safeway's page shows a different pickup time."]);
   });
 
   it("stops when the page doesn't say that time, shows a paid slot, or the window isn't free", () => {

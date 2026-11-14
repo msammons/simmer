@@ -130,8 +130,8 @@ export const isDayTile = (s: string) => /^(?:select slots for |Selected)[A-Z]+DA
 
 /**
  * The days Safeway offers and one day's free times (or follows the reading started): the helper goes to Safeway's
- * checkout and reads the day showing, or presses the day asked for and reads it; it chooses no time. Only free regular
- * times are offered (never Flash or a priced one), and each one offered is remembered for 10 minutes: getting ready
+ * checkout and reads the day showing, or presses the day asked for and reads it; it chooses no time. Only free times
+ * are offered, Regular or Express (never Flash or a priced one), and each one offered is remembered for 10 minutes: getting ready
  * takes only one of them.
  */
 export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
@@ -143,7 +143,7 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
   if (job.status !== "done") throw new AppError(failedWords(job));
   const r = (job.result ?? {}) as { stopped?: string; days?: { label: string }[]; day?: string; times?: { id: string; words: string }[] };
   if (r.stopped && r.stopped !== "times") throw new AppError(stoppedWords(r.stopped));
-  const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.regular && w.priceCents === 0 && w.date);
+  const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.notFlash && w.priceCents === 0 && w.date);
   const before = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
   const ids = [...new Set([...(before && Date.now() - before.at < TIMES_MS ? before.ids : []), ...free.map((w) => w.id)])];
   await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids }), { ex: secs(TIMES_MS) });
@@ -210,7 +210,7 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     const cart = await cartNow();
     if (cart !== p.cartKey) reasons.push("The cart changed since. Get ready again.");
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
-    if (!w.regular || w.priceCents !== 0) reasons.push("Safeway's pickup time isn't a free one.");
+    if (!w.notFlash || w.priceCents !== 0) reasons.push("Safeway's pickup time isn't a free one.");
     reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {

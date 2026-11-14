@@ -262,13 +262,22 @@ async function checkoutReady(tabId, page, windowId, list = null) {
     if (!here) return stop("page didn't load");
   }
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
-  const free = (w) => /REGULAR/.test(w.id) && !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
+  // Free times, Regular or Express (Sam, Nov 14: "why would i not use express times?"), never Flash or a priced one.
+  const free = (w) => !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
   const read = () => onPage(tabId, "readWindows", null, page);
-  /** A day's tile pressed, then its own times waited for (their ids end in its date). */
+  /** All of the day showing's times: Safeway shows five, and "More times" shows the rest (Nov 14), pressed once. */
+  const allTimes = async (r) => {
+    if (!r) return r;
+    const more = await onPage(tabId, "pressMoreTimes", { path: checkoutPath }, page);
+    if (!more?.pressed) return r;
+    await until("more", { count: r.windows.length }, 8000);
+    return (await read()) ?? r;
+  };
+  /** A day's tile pressed, then its own times waited for (their ids end in its date), all of them. */
   const openDay = async (label, dd) => {
     await onPage(tabId, "pressDay", { path: checkoutPath, label }, page);
     await until("day", { label, dd }, 8000);
-    return read();
+    return allTimes(await read());
   };
   const ddOf = (label) => String(Number(label.match(/[A-Z][a-z]{2}, (\d{1,2}) /)?.[1] ?? 0)).padStart(2, "0");
   await until("times");
@@ -287,7 +296,7 @@ async function checkoutReady(tabId, page, windowId, list = null) {
     const days = seen.days.slice(0, 14).map((d) => ({ label: d.label }));
     const tile = list.day ? seen.days.find((d) => d.label === list.day) : seen.days.find((d) => d.active);
     if (list.day && !tile) return stop("pickup day gone");
-    const r = tile && !tile.active ? await openDay(tile.label, ddOf(tile.label)) : seen;
+    const r = tile && !tile.active ? await openDay(tile.label, ddOf(tile.label)) : await allTimes(seen);
     const dd = tile ? ddOf(tile.label) : "";
     const times = (r?.windows ?? []).filter((w) => free(w) && (!dd || w.id.endsWith(`-${dd}`))).map((w) => ({ id: w.id, words: w.words }));
     return { stopped: "times", days, day: tile?.label ?? "", times, chosen: null, final: null };
@@ -295,6 +304,8 @@ async function checkoutReady(tabId, page, windowId, list = null) {
   // The time picked: only exactly that one.
   if (!windowId) return stop("no window");
   let target = seen.windows.find((w) => w.id === windowId) ?? null;
+  // Past the first five that day: "More times" first.
+  if (!target && seen.windows.some((w) => w.id.endsWith(windowId.slice(-10)))) { seen = await allTimes(seen); target = seen?.windows.find((w) => w.id === windowId) ?? null; }
   if (!target) {
     const date = windowId.match(/(\d{4})-(\d{2})-(\d{2})/);
     const mon = date && ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(date[2]) - 1];
