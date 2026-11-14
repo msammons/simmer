@@ -197,7 +197,11 @@ export async function runJob(job, windowId) {
     return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image } };
   }
   if (job.kind === "checkoutLook") return { ok: true, result: await checkoutLook(tabId, page) };
-  if (job.kind === "checkoutPrepare") return { ok: true, result: await checkoutReady(tabId, page, null) };
+  // Getting ready (Nov 14): first the free times to pick from (`list`), then the one picked (`windowId`).
+  if (job.kind === "checkoutPrepare") {
+    const id = typeof args.windowId === "string" ? args.windowId : "";
+    return { ok: true, result: id ? await checkoutReady(tabId, page, id) : await checkoutReady(tabId, page, null, true) };
+  }
   if (job.kind === "checkoutDry") {
     const id = typeof job.args?.windowId === "string" ? job.args.windowId : "";
     return { ok: true, result: id ? await checkoutReady(tabId, page, id) : { stopped: "no window", chosen: null, final: null } };
@@ -226,7 +230,7 @@ export async function runJob(job, windowId) {
  * named (a test run) it takes exactly that window or stops. It presses nothing else: there is no code here that presses
  * Place Order, and the final page is only read. Simmer checks what it read (src/lib/checkout.ts).
  */
-async function checkoutReady(tabId, page, windowId) {
+async function checkoutReady(tabId, page, windowId, list = false) {
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
   const look = async () => { await sleep(2500); return onPage(tabId, "look", null, page); };
   const stop = (stopped) => ({ stopped, chosen: null, final: null });
@@ -270,6 +274,19 @@ async function checkoutReady(tabId, page, windowId) {
     seen = await readTimes(5);
   }
   if (!seen) return stop("no pickup times");
+  // The free times this week, to pick from (Sam, Nov 14): each day's tile pressed in turn and read; nothing is chosen.
+  if (list) {
+    const times = [];
+    const add = (r) => { for (const w of r?.windows ?? []) if (free(w) && !times.some((t) => t.id === w.id)) times.push({ id: w.id, words: w.words }); };
+    add(seen);
+    for (const day of seen.days.slice(0, 8)) {
+      if (day.active) continue;
+      await onPage(tabId, "pressDay", { path: checkoutPath, label: day.label }, page);
+      await sleep(2000);
+      add(await onPage(tabId, "readWindows", null, page));
+    }
+    return { stopped: times.length ? "times" : "no free pickup time", times, chosen: null, final: null };
+  }
   let target = null;
   if (windowId) {
     target = seen.windows.find((w) => w.id === windowId);

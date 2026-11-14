@@ -13,7 +13,7 @@ vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
-import { approve, followTestRun, prepare, testRun, type ReadyView } from "./checkout-run";
+import { approve, followTestRun, pickupTimes, prepare, testRun, type ReadyView } from "./checkout-run";
 import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
@@ -38,11 +38,13 @@ const page = (change: (t: string) => string = (t) => t) => ({
   text: change(pages.pickup.text.replace(/Confirm CVV /, "").replace(/Ready by 9:05 PM Slot type FLASH price \$3\.95/, "6 AM - 7 AM price Free")),
   buttons: pages.pickup.buttons,
 });
-type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: ReturnType<typeof page> | null };
+type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: ReturnType<typeof page> | null; times?: { id: string; words: string }[] };
 const READY: Reading = { stopped: "ready", chosen: FRI6, final: page() };
+/** The helper's listing of free times (Nov 14), and its getting ready with the one picked. */
+const helper = (kind: JobKind, args: Record<string, unknown>): Reading => (args.list ? { stopped: "times", chosen: null, final: null, times: [FRI6] } : READY);
 
 /** The helper, stood in for: each job is answered with what `does` says, at once (or left going with `going`). */
-let does: (kind: JobKind, args: Record<string, unknown>) => Reading = () => READY;
+let does: (kind: JobKind, args: Record<string, unknown>) => Reading = helper;
 let going = false;
 const jobs = new Map<string, Job>();
 let n = 0;
@@ -56,7 +58,7 @@ async function faceId() {
 
 beforeEach(async () => {
   resetCheckout(); resetPasskeys(); resetKv(); resetSafeway(); jobs.clear(); verifyAuth.mockReset(); verifyReg.mockReset();
-  does = () => READY; going = false; counter = 0; n = 0;
+  does = helper; going = false; counter = 0; n = 0;
   vi.mocked(queueJob).mockReset(); vi.mocked(waitForJob).mockReset();
   vi.mocked(queueJob).mockImplementation(async (kind, args) => {
     const j: Job = { id: `j${++n}`, kind, status: "waiting", args, result: null, created: new Date().toISOString(), updated: new Date().toISOString() };
@@ -78,7 +80,14 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
-const ready = async () => (await prepare()) as ReadyView;
+/** Get ready: the free times offered, then FRI6 picked. */
+const ready = async () => {
+  const listing = does;
+  does = (k, a) => (a.list ? helper(k, a) : listing(k, a));
+  await pickupTimes();
+  does = listing;
+  return (await prepare(undefined, FRI6.id)) as ReadyView;
+};
 const approved = async () => {
   await ready();
   const a = await approve(req(), await faceId());
@@ -87,30 +96,60 @@ const approved = async () => {
 };
 const recorded = (what: string) => recordedForTests().filter((r) => r[1] === what).map((r) => JSON.parse(r[2]));
 
+describe("picking the pickup time (Nov 14)", () => {
+  const SAT = { id: "9999SAT20261114REGULARDUG900100-2026-11-14", words: "9 AM - 10 AM price Free" };
+  const FLASH = { id: "9999FRI20261113FLASHDUG2100-2026-11-13", words: "Ready by 9 PM price $3.95" };
+  const PRICED = { id: "9999SAT20261114REGULARDUG10001100-2026-11-14", words: "10 AM - 11 AM price $2.00" };
+  it("offers only free regular times, soonest first, and chooses none", async () => {
+    does = () => ({ stopped: "times", chosen: null, final: null, times: [SAT, FLASH, PRICED, FRI6] });
+    const t = await pickupTimes();
+    expect("times" in t && t.times.map((x) => x.id)).toEqual([FRI6.id, SAT.id]);
+    expect("times" in t && t.times[0]).toMatchObject({ day: "Fri, Nov 13", time: "6–7 AM" });
+  });
+  it("gets ready only with a time it just offered", async () => {
+    await expect(prepare(undefined, FRI6.id)).rejects.toThrow(/Pick a pickup time/);
+    await pickupTimes();
+    await expect(prepare(undefined, "9999SAT20261114REGULARDUG900100-2026-11-14")).rejects.toThrow(/Pick a pickup time/);
+    expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toEqual([]);
+  });
+  it("stops when Safeway's chosen time isn't the one picked", async () => {
+    await pickupTimes();
+    does = () => ({ ...READY, chosen: { id: "9999FRI20261113REGULARDUG700800-2026-11-13", words: "7 AM - 8 AM price Free" } });
+    expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toContain("Safeway's pickup time isn't the one picked.");
+  });
+  it("says so when there's no free time", async () => {
+    does = () => ({ stopped: "no free pickup time", chosen: null, final: null, times: [] });
+    await expect(pickupTimes()).rejects.toThrow(/No free pickup time/);
+  });
+});
+
 describe("getting ready", () => {
   it("needs ordering set up and on (but not the server's switch, which is for real orders)", async () => {
     expect(process.env.CHECKOUT_ENABLED).not.toBe("on");
     await saveSettings({ on: false, limitCents: 2000, store: "100 Main St", card: "4242" });
-    await expect(prepare()).rejects.toThrow(/Turn on ordering/);
+    await expect(pickupTimes()).rejects.toThrow(/Turn on ordering/);
+    await expect(prepare(undefined, FRI6.id)).rejects.toThrow(/Turn on ordering/);
     await saveSettings({ on: true, limitCents: 0, store: "100 Main St", card: "4242" });
-    await expect(prepare()).rejects.toThrow(/limit/);
+    await expect(pickupTimes()).rejects.toThrow(/limit/);
     expect(queueJob).not.toHaveBeenCalled();
   });
 
   it("shows Safeway's figures, the free pickup time, and nothing stopping it", async () => {
     const v = await ready();
     expect(v).toMatchObject({ store: expect.stringMatching(/^100 Main St/), window: "Fri 6–7 AM", card: "4242", items: 1, totalCents: 694, stops: [] });
-    expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", {});
+    expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", { list: true });
+    expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", { windowId: FRI6.id });
     expect(recorded("test ready")[0]).toMatchObject({ stopped: "ready", totalCents: 694 });
   });
 
   it("is followed while the helper is still at it, without the app keeping time", async () => {
+    await pickupTimes();
     going = true;
-    const w = await prepare();
-    expect(w).toEqual({ waiting: "j1" });
+    const w = await prepare(undefined, FRI6.id);
+    expect(w).toEqual({ waiting: "j2" });
     going = false;
-    expect(await prepare("j1")).toMatchObject({ totalCents: 694 });
-    expect(queueJob).toHaveBeenCalledTimes(1);
+    expect(await prepare("j2")).toMatchObject({ totalCents: 694 });
+    expect(queueJob).toHaveBeenCalledTimes(2);
   });
 
   it("says where the helper stopped, in plain words", async () => {

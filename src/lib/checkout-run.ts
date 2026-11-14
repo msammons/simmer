@@ -34,9 +34,13 @@ export type ReadyView = {
   remember: boolean;
 };
 export type Waiting = { waiting: string };
+/** The free pickup times Safeway offers, to pick from (Sam, Nov 14: "let me pick"), soonest first. */
+export type TimesView = { times: { id: string; day: string; time: string }[] };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
 const PREPARED_KEY = "simmer:checkout-prepared";
+const TIMES_KEY = "simmer:checkout-times";
+const TIMES_MS = 10 * 60_000;
 const APPROVAL_KEY = "simmer:checkout-approval:";
 const RUN_KEY = "simmer:checkout-run:";
 /** How long the server waits on the helper per request; the sheet asks again while it's still going (no timers). */
@@ -105,18 +109,54 @@ async function highlights(totalCents: number | null): Promise<string[]> {
   return unusual(lines.map((l) => ({ name: l.name, qty: l.qty, priceCents: priceOf(l.price) === null ? null : Math.round(priceOf(l.price)! * 100) })), total ? Math.round(total * 100) : null, totalCents);
 }
 
+// ---- the pickup times, to pick from
+
+/** "Sat, Nov 14" for a window's date. */
+const dayOf = (date: string) => (date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : "");
+
+/**
+ * The free pickup times Safeway offers this week (or follows the reading started): the helper goes to Safeway's checkout
+ * and reads each day's times, choosing none. Only free regular times are offered (never Flash or a priced one), and
+ * they're remembered for 10 minutes: getting ready takes only one of them.
+ */
+export async function pickupTimes(jobId?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
+  await ready();
+  const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true })).id;
+  const { job } = await waitForJob(id, ms);
+  if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
+  if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
+  if (job.status !== "done") throw new AppError(failedWords(job));
+  const r = (job.result ?? {}) as { stopped?: string; times?: { id: string; words: string }[] };
+  const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.regular && w.priceCents === 0 && w.date);
+  free.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+  await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids: free.map((w) => w.id) }), { ex: secs(TIMES_MS) });
+  await record("test times", { jobId: job.id, stopped: r.stopped ?? "", times: free.map((w) => w.id) });
+  if (!free.length) throw new AppError(r.stopped && r.stopped !== "times" ? stoppedWords(r.stopped) : "No free pickup time in the next week.");
+  return { times: free.map((w) => ({ id: w.id, day: dayOf(w.date), time: windowWords({ id: w.id, words: w.words }).replace(/^\S+\s/, "") })) };
+}
+
 // ---- getting ready
 
-/** Starts getting ready (or follows the one started): the helper's reading, checked, or still going. */
-export async function prepare(jobId?: string, ms = WAIT_MS): Promise<ReadyView | Waiting> {
+/**
+ * Gets ready with the pickup time picked (or follows it): only one of the times just offered. The helper chooses it on
+ * Safeway's checkout and reads the final page: the helper's reading, checked, or still going.
+ */
+export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): Promise<ReadyView | Waiting> {
   const s = await ready();
-  const id = jobId ?? (await queueAndWake("checkoutPrepare", {})).id;
+  let id = jobId;
+  if (!id) {
+    const offered = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
+    if (!windowId || !offered || !offered.ids.includes(windowId)) throw new AppError("Pick a pickup time again.");
+    id = (await queueAndWake("checkoutPrepare", { windowId })).id;
+  }
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
   if (job.status !== "done") throw new AppError(failedWords(job));
   const r = readingOf(job);
   const { final, why } = finalOf(r);
+  const picked = typeof job.args?.windowId === "string" ? job.args.windowId : "";
+  if (r.stopped === "ready" && (!picked || r.chosen?.id !== picked)) why.push("Safeway's pickup time isn't the one picked.");
   const cart = await cartNow();
   const reasons = allStops(why, r.stopped === "ready" ? stops(expected(s, final), final, null, Date.now(), cart, true) : []);
   if (r.chosen && r.stopped === "ready") {

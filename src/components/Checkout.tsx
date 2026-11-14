@@ -3,17 +3,18 @@
 // order: Face ID and the limit per order, then Turn on ordering (asking first); the pickup store and card come from
 // Safeway and are remembered at the first approval (Sam, Nov 14).
 // Once set up: the cart and Simmer's estimate (as Shop's Safeway heading shows them), ordering's switch, limit, store
-// and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): Get ready reads Safeway's checkout (the helper chooses
-// the earliest free pickup time), then "Test run · $X" approves those figures with Face ID and goes through Safeway's
+// and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): Get ready lists Safeway's free pickup times this week, one
+// is picked (Sam, Nov 14) and Safeway's checkout read with it, then "Test run · $X" approves those figures with Face ID and goes through Safeway's
 // checkout again, stopping one press short, and says what it would have placed. Nothing here orders.
 import { useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
-import { api, errorText, faceIdAnswer, type ReadyView, type RunResult } from "@/lib/client";
+import { api, errorText, faceIdAnswer, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
 import { usePrepared, useOrdering } from "./Ordering";
 import { Alert, Button, Group, Held, Row, Sheet } from "./ui";
 
-type Run = { stage: "idle" } | { stage: "reading" } | { stage: "ready"; view: ReadyView } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult };
+type Times = TimesView["times"];
+type Run = { stage: "idle" } | { stage: "reading" } | { stage: "times"; times: Times } | { stage: "ready"; view: ReadyView } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult };
 const cents = (c: number | null) => (c === null ? "Couldn't be read" : `$${(c / 100).toFixed(2)}`);
 
 export function CheckoutSheet({ count, total, estimate, onClose }: { count: number; total: number; estimate: boolean; onClose: () => void }) {
@@ -67,6 +68,7 @@ function TestRun() {
   const check = usePrepared<PublicKeyCredentialRequestOptionsJSON>();
   const stop = useRef<AbortController | null>(null);
   const busy = useRef(false);
+  const offered = useRef<Times>([]); // the times last read, to go back to
   useEffect(() => () => stop.current?.abort(), []);
 
   /** Ready to approve: Face ID's check is fetched now, so it shows straight from the tap (Safari). */
@@ -75,18 +77,39 @@ function TestRun() {
     if (!view.stops.length && view.totalCents !== null) check.prepare(() => api.faceIdCheckOptions().then((r) => r.options));
   }
 
-  async function getReady() {
+  /** Get ready (Sam, Nov 14: "let me pick"): the free pickup times this week, to pick from. */
+  async function getTimes() {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "reading" });
     const ac = (stop.current = new AbortController());
     try {
-      let r = await api.checkoutPrepare(undefined, ac.signal);
-      while ("waiting" in r) r = await api.checkoutPrepare(r.waiting, ac.signal);
-      showReady(r);
+      let r = await api.checkoutTimes(undefined, ac.signal);
+      while ("waiting" in r) r = await api.checkoutTimes(r.waiting, ac.signal);
+      offered.current = r.times;
+      setRun({ stage: "times", times: r.times });
     } catch (e) {
       if (ac.signal.aborted) return;
       setRun({ stage: "idle" });
+      setProblem(errorText(e));
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  /** A time picked: Safeway's checkout read with it, to approve. */
+  async function pick(windowId: string) {
+    if (busy.current) return;
+    busy.current = true;
+    setRun({ stage: "reading" });
+    const ac = (stop.current = new AbortController());
+    try {
+      let r = await api.checkoutPrepare(undefined, windowId, ac.signal);
+      while ("waiting" in r) r = await api.checkoutPrepare(r.waiting, undefined, ac.signal);
+      showReady(r);
+    } catch (e) {
+      if (ac.signal.aborted) return;
+      setRun({ stage: "times", times: offered.current });
       setProblem(errorText(e));
     } finally {
       busy.current = false;
@@ -121,7 +144,7 @@ function TestRun() {
   const view = run.stage === "ready" || run.stage === "running" || run.stage === "done" ? run.view : null;
   return (
     <>
-      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : (
+      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : run.stage === "times" ? <TimesList times={run.times} onPick={pick} /> : (
       <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
         {view ? (
           <>
@@ -131,7 +154,7 @@ function TestRun() {
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
             <Row icon="cart" title="Total" value={cents(view.totalCents)} />
           </>
-        ) : <Row icon="refresh" title="Get ready" subtitle="Reads Safeway's checkout and picks the earliest free pickup time." onClick={getReady} />}
+        ) : <Row icon="refresh" title="Get ready" subtitle="Reads Safeway's free pickup times this week." onClick={getTimes} />}
       </Group>
       )}
       {view && (view.stops.length > 0 || view.highlights.length > 0) && (
@@ -149,8 +172,22 @@ function TestRun() {
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
         </div>
       )}
-      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={getReady}>Get ready again</Button>}
+      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={() => (offered.current.length && run.stage === "ready" ? setRun({ stage: "times", times: offered.current }) : getTimes())}>{run.stage === "ready" ? "Pick another time" : "Get ready again"}</Button>}
       <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
     </>
+  );
+}
+
+/** The free pickup times, by day (only free ones; Safeway's paid Flash times never show): tap one to get ready with it. */
+function TimesList({ times, onPick }: { times: Times; onPick: (id: string) => void }) {
+  const days = [...new Set(times.map((t) => t.day))];
+  return (
+    <div className="space-y-5">
+      {days.map((d) => (
+        <Group key={d} header={d}>
+          {times.filter((t) => t.day === d).map((t) => <Row key={t.id} icon="clock" title={t.time} accessory="chevron" onClick={() => onPick(t.id)} />)}
+        </Group>
+      ))}
+    </div>
   );
 }
