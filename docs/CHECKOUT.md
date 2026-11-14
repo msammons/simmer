@@ -126,4 +126,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    when it is, removing needs Face ID too, and the last phone can't be removed by passcode alone (outside review: else
    removing all and starting over skips the approval). Still to build: the helper's prepare and dry-run jobs, the Check out
    sheet, the approval, and dry runs on the account. No code presses Place Order.
+
+   First test run that matched (Nov 14, helper 26.11.14.2): Get ready chose Sat 6–7 PM (free, REGULAR), read the store,
+   card, 4 items and $30.96; Face ID approved those; the test run went through Safeway's checkout again (reopening the
+   folded pickup times with their Edit), found the same figures, and stopped short: "Would place $30.96 · Sat 6–7 PM".
+   Before it: the store and card are now taken from Safeway, checkout's jobs wake the helper, a failed job keeps its
+   reason, and Shop reads Safeway's cart on open (Simmer's copy had said 6 things to Safeway's 4).
 3. Turning on real orders, after dry runs match.
