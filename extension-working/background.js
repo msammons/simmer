@@ -45,7 +45,7 @@ async function check() {
       if (!job) break; // nothing left: stop until the next push, Chrome starting, or the panel opening
       pace = { ...pace, ...job.settings };
       const out = await runJob(job, await panelWindow()).catch((e) => ({ ok: false, error: "failed", why: String(e) }));
-      await simmer("POST", out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error }, "/api/safeway/jobs").catch(() => {});
+      await simmer("POST", out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error, ...(out.why && { why: String(out.why).slice(0, 300) }) }, "/api/safeway/jobs").catch(() => {});
       chrome.runtime.sendMessage({ type: "simmer:done" }).catch(() => {}); // an open panel shows it at once
       await sleep(pace.pause);
     }
