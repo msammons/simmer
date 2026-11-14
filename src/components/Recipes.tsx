@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
+import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
-import { isSpice, norm } from "@/lib/words";
+import { norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
 import { Alert, BrandBar, Button, EmptyState, Group, Held, IconButton, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
@@ -21,7 +21,7 @@ const NO_INGREDIENTS = "No ingredients yet · Add them";
 
 type Opens = { onOpen: (r: Recipe) => void };
 
-/** A recipe in the collection: tap to open it (Add to the list is on the recipe; the row's own button went, Nov 9). */
+/** A recipe in the collection: tap to open it. */
 function RecipeRow({ r, onOpen }: { r: Recipe } & Opens) {
   // Only what needs doing (Matt, Nov 10: no minutes or labels under rows); the rest is on the recipe's page.
   return <Row title={r.name} subtitle={r.ingredients.length ? undefined : NO_INGREDIENTS} accessory="chevron" onClick={() => onOpen(r)} />;
@@ -69,8 +69,8 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, onAddToList, planned, onAddToWeek }: {
-  r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void; onAddToList: () => void;
+export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, planned, onAddToWeek }: {
+  r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
   /**
@@ -97,13 +97,8 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, onAddToLi
       <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel={backLabel}
         trailing={<IconButton icon="pencil" label="Edit" onClick={onEdit} />} />
       {planned && <p className="t-sub px-1 text-muted">On the plan.</p>}
-      {/* Not planned: putting it on this week is the main thing (Nov 9); just its groceries is the quieter choice. */}
-      <div className="space-y-3 empty:hidden">
-        {!planned && onAddToWeek && <Button onClick={onAddToWeek} icon="calendarPlus" className="w-full">Add to the plan</Button>}
-        {r.ingredients.length > 0 && (planned || onAddToWeek
-          ? <Button onClick={onAddToList} icon="list" variant="secondary" className="w-full">{planned ? "Add to the list again" : "Just add to the list"}</Button>
-          : <Button onClick={onAddToList} icon="list" className="w-full">Add to the list</Button>)}
-      </div>
+      {/* Groceries go on through the plan only (Matt, Nov 14: Add to the list was a second way in, with its own rules). */}
+      {!planned && onAddToWeek && <Button onClick={onAddToWeek} icon="calendarPlus" className="w-full">Add to the plan</Button>}
       {r.ingredients.length ? (
         <>
           {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
@@ -126,32 +121,6 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, onAddToLi
       )}
       <Button variant="plain" onClick={() => onActive(!r.active)} className="w-full">{r.active ? "Stop suggesting this" : "Suggest this again"}</Button>
     </div>
-  );
-}
-
-/**
- * Adding a recipe to the list (Nov 3): the fresh things to buy are listed, each can be unticked; the pantry things and
- * spices aren't a checklist, they're highlighted in Stock for her to check, as planning does.
- */
-export function AddToListSheet({ r, ticks, onAdd, onClose }: {
-  r: Recipe;
-  /** The ticks as they were, when adding failed and the sheet opens again. */
-  ticks?: number[];
-  /** Closes the sheet and adds behind it (Nov 11: no "Adding…"); `ticks` come back if it fails. */
-  onAdd: (buy: Ingredient[], pantry: Ingredient[], ticks: number[]) => void; onClose: () => void;
-}) {
-  const fresh = r.ingredients.map((i, n) => [i, n] as const).filter(([i]) => i.section === "fresh" && !isSpice(i.item));
-  const pantry = r.ingredients.filter((i) => i.section !== "fresh" || isSpice(i.item));
-  const [on, setOn] = useState(() => new Set(ticks ?? fresh.map(([, n]) => n)));
-  const flip = (n: number) => setOn((s) => { const t = new Set(s); if (t.has(n)) t.delete(n); else t.add(n); return t; });
-  const add = () => onAdd(fresh.filter(([, n]) => on.has(n)).map(([i]) => i), pantry, [...on]);
-  return (
-    <Sheet label="Add to the list" title={r.name} onClose={onClose}
-      footer={<Button className="w-full" disabled={!on.size && !pantry.length} onClick={add}>{on.size ? `Add ${on.size} to the list` : "Highlight in Stock"}</Button>}>
-      <div className="space-y-5">
-        {fresh.length > 0 && <Group header="To buy">{fresh.map(([i, n]) => <Row key={n} lead={<Check on={on.has(n)} />} title={i.line} role="checkbox" checked={on.has(n)} onClick={() => flip(n)} />)}</Group>}
-      </div>
-    </Sheet>
   );
 }
 
