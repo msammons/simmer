@@ -12,7 +12,7 @@ vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn() }));
 vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
-import { recordedForTests, resetCheckout, saveSettings } from "./checkout";
+import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
 import { approve, followTestRun, prepare, testRun, type ReadyView } from "./checkout-run";
 import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
@@ -94,8 +94,6 @@ describe("getting ready", () => {
     await expect(prepare()).rejects.toThrow(/Turn on ordering/);
     await saveSettings({ on: true, limitCents: 0, store: "100 Main St", card: "4242" });
     await expect(prepare()).rejects.toThrow(/limit/);
-    await saveSettings({ on: true, limitCents: 2000, store: "", card: "4242" });
-    await expect(prepare()).rejects.toThrow(/store and card/);
     expect(queueJob).not.toHaveBeenCalled();
   });
 
@@ -137,6 +135,34 @@ describe("the approval", () => {
     const a = await approve(req(), await faceId());
     expect(a).toMatchObject({ ok: true, totalCents: 694, window: "Fri 6–7 AM" });
     expect(recorded("test approval")[0]).toMatchObject({ ok: true, faceId: "cred-1", totalCents: 694, windowId: FRI6.id, slot: { ready: "6 AM - 7 AM", type: "REGULAR", priceCents: 0 } });
+  });
+
+  it("the first time, takes the store and card Safeway shows, and remembers them once approved (Nov 14)", async () => {
+    await saveSettings({ on: true, limitCents: 2000, store: "", card: "" });
+    const v = await ready();
+    expect(v).toMatchObject({ store: expect.stringMatching(/^100 Main St/), card: "4242", stops: [], remember: true });
+    expect(await loadSettings()).toMatchObject({ store: "", card: "" }); // getting ready only reads
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: true });
+    expect(await loadSettings()).toMatchObject({ store: expect.stringMatching(/^100 Main St/), card: "4242" });
+    // After that, another card stops it.
+    does = () => ({ ...READY, final: page((t) => t.replace("Visa •••• 4242", "Visa •••• 9999")) });
+    expect((await ready()).stops).toContain("Safeway shows a different card.");
+  });
+
+  it("the first time, an unreadable store or card still stops it, and nothing is remembered", async () => {
+    await saveSettings({ on: true, limitCents: 2000, store: "", card: "" });
+    does = () => ({ ...READY, final: page((t) => t.replace("Visa •••• 4242", "Visa")) });
+    expect((await ready()).stops).toContain("Safeway shows a different card.");
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false });
+    expect(await loadSettings()).toMatchObject({ store: "", card: "" });
+  });
+
+  it("a failed Face ID remembers nothing", async () => {
+    await saveSettings({ on: true, limitCents: 2000, store: "", card: "" });
+    await ready();
+    verifyAuth.mockRejectedValueOnce(new Error("no"));
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false });
+    expect(await loadSettings()).toMatchObject({ store: "", card: "" });
   });
 
   it("is refused when anything stops it", async () => {
