@@ -24,7 +24,9 @@
  *   pickup day not chosen yet, or the one with exactly that label (never a time), and nothing else
  * safewayPage("pressPickupEdit", { path }) → { pressed, found, label } — on the checkout page only: presses its one
  *   "Pickup date & time Edit" button, which reopens the pickup times, and nothing else
- * safewayPage("waitFor", { until, label?, dd?, ms }) → { ok } — reads only: answers as soon as the page shows what's
+ * safewayPage("pressMoreTimes", { path }) → { pressed, found, label } — on the checkout page only: presses its one
+ *   "More times" button (the day's times past the first five), and nothing else
+ * safewayPage("waitFor", { until, label?, dd?, count?, ms }) → { ok } — reads only: answers as soon as the page shows what's
  *   named (watching the page change), or after `ms` at most with whether it does then
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
@@ -332,6 +334,19 @@ export async function safewayPage(action, arg, P) {
     return { pressed: true, found: 1, label: said };
   }
 
+  // The day's times past the first five (Matt, Nov 14: "the times offered are not the same as on the site"): only on
+  // the checkout page, only a button that reads exactly "More times" (Safeway adds "collapsed" while it's closed), only
+  // when there's exactly one, pressed once. It shows more times and chooses none. Anything else: nothing is pressed.
+  if (action === "pressMoreTimes") {
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };
+    const found = deepAll(document, "button, [role=button]").filter(visible)
+      .filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true" && /^more times( collapsed)?$/i.test(label(b)));
+    if (found.length !== 1) return { pressed: false, found: found.length, label: "" };
+    const said = label(found[0]).slice(0, 80);
+    found[0].click();
+    return { pressed: true, found: 1, label: said };
+  }
+
   // Waiting for Safeway's page (Matt, Nov 14: guessed pauses are fragile): answers the moment the page shows what's
   // named, watching it change, with one limit for giving up. It reads only.
   if (action === "waitFor") {
@@ -351,6 +366,7 @@ export async function safewayPage(action, arg, P) {
       day: () => tiles().some((t) => label(t) === arg.label && t.classList.contains("date-is-active")) && radios().some((r) => r.id.endsWith(`-${arg.dd}`)),
       continueOn: () => all().filter((b) => on(b) && label(b).toLowerCase() === "continue").length === 1,
       picked: () => pickupEdit(),
+      more: () => radios().length > (Number(arg?.count) || 0),
     };
     const ok = checks[arg?.until] ?? (() => false);
     return new Promise((resolve) => {
