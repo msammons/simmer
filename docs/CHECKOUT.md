@@ -144,4 +144,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    see (the cart's Checkout, the checkout page, the times, the pressed day's own times, the pickup Continue turning on,
    the pickup step folding once done), watching the page change, with one limit to give up; moving between pages waits
    on Chrome's own events. The wake-up subscription has its own record, so a check-in can't put an old one back.
+
+   Test runs that matched on the account (Nov 14): Sat 6–7 PM, Sun 6–7 AM, and Sun 6–7 AM again with helper 26.11.14.6
+   (days first, Express and More times); Get ready also matched with a free Express time (Sat 5–6 PM). Each read 4
+   items and $30.96 on both passes and stopped one press short.
 3. Turning on real orders, after dry runs match.
