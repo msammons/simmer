@@ -453,7 +453,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       }
       ok("shop: a Safeway row says its product and what's needed", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
-      ok("shop: Done shopping is always there, greyed until something's ticked", (await page.getByRole("button", { name: "Done shopping" }).count()) === 1 && (await page.getByRole("button", { name: "Done shopping" }).isDisabled()));
+      ok("shop: no Done shopping, and no Show got until something's ticked (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && (await page.getByRole("button", { name: "Show got" }).count()) === 0);
       // Add puts the usual in the cart: − n + at once, the helper's answer behind it.
       await page.getByRole("button", { name: "Add Milk to the cart" }).tap();
       ok("shop: Add shows − 1 + within 150 ms", await within150(async () => (await page.getByLabel("1 in the cart").count()) >= 2 && (await page.getByRole("button", { name: "One more Milk" }).isVisible())));
@@ -465,7 +465,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await slow("**/api/list");
       await tick("Milk").tap();
       ok("shop: a tick shows within 150 ms, struck through", await within150(async () => (await tick("Milk").getAttribute("aria-checked")) === "true" && (await tick("Milk").locator(".line-through").count()) === 1));
-      ok("shop: ticking turns Done shopping on", await page.getByRole("button", { name: "Done shopping" }).isEnabled());
+      ok("shop: ticking brings Show got, and the ticked row stays while Shop is open", await page.getByRole("button", { name: "Show got" }).isVisible() && (await tick("Milk").count()) === 1);
       // Added by hand: on the list at once, as a stand-in row until the server's list comes back.
       await page.getByLabel("Add something").fill("smoke basil"); await page.keyboard.press("Enter");
       ok("shop: something added shows within 150 ms", await within150(() => page.getByRole("checkbox", { name: /smoke basil/i }).first().isVisible()));
@@ -495,21 +495,18 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (await page.getByText(/Can't reach Safeway right now|isn't connected/).count()) old.push("a guess whether the helper's there");
         ok("shop: none of the old things are back", !old.length, old.join(", "));
       }
-      // Done shopping, across stores: asks first; Cancel leaves it; what's ticked goes at once once confirmed and stays off.
-      await tick("Milk").tap(); await page.waitForTimeout(600); // Milk was ticked: untick, so Eggs and Coffee are done
+      // Show got (Nov 14, in place of Done shopping): what was ticked before Shop was opened hides; Show got brings it back.
+      await tick("Milk").tap(); await page.waitForTimeout(600); // untick Milk
       await tick("Eggs").tap(); await page.waitForTimeout(400);
-      await tick("Coffee").tap(); await page.waitForTimeout(600);
-      await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(400);
-      const doneAsk = page.getByRole("dialog", { name: "Done shopping?" });
-      ok("shop: Done shopping asks first, saying how many come off", await seen(doneAsk.getByText("2 things come off the list.")));
-      await doneAsk.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(400);
-      ok("shop: Cancel leaves the ticks", (await tick("Eggs").getAttribute("aria-checked")) === "true");
-      await page.getByRole("button", { name: "Done shopping" }).tap(); await page.waitForTimeout(300);
-      await slow("**/api/list");
-      await doneAsk.getByRole("button", { name: "Done shopping" }).tap();
-      ok("shop: Done shopping takes what was ticked off in every store within 150 ms", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0));
-      await page.waitForTimeout(2500); await page.unroute("**/api/list");
-      ok("shop: bought things don't come back by themselves, and the rest stay", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0 && (await tick("Milk").count()) === 1 && (await tick("Salad dressing").count()) === 1);
+      await tick("Coffee").tap(); await page.waitForTimeout(1500);
+      ok("shop: rows ticked just now stay, struck through", (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1);
+      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(500);
+      await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
+      ok("shop: back on Shop, what's got is hidden and still counted", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0 && (await tick("Milk").count()) === 1 && /2 of \d+ got/.test(await page.getByText(/ of \d+ got$/).first().innerText()));
+      await page.getByRole("button", { name: "Show got" }).tap();
+      ok("shop: Show got brings them back within 150 ms, ticked", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
+      await page.getByRole("button", { name: "Show got" }).tap(); await page.waitForTimeout(300);
+      ok("shop: and hides them again", (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
       // An empty cart: no Check out.
       {
         const kept = fake.cart.splice(0);
@@ -674,8 +671,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // A long name is cut short, never pushing the control or ⋯ off the row.
       ok(`${tag}: long names truncate and every row's controls stay on it`, await rows.evaluateAll((rs) => rs.every((r) => { const b = r.getBoundingClientRect(); return r.scrollWidth <= r.clientWidth && [...r.children].every((c) => c.getBoundingClientRect().right <= b.right + 0.5); })));
       ok(`${tag}: a long-named Safeway row keeps its control`, await page.getByRole("button", { name: /^(Add|Find) Extra large organic/ }).isVisible());
-      const done = await page.getByRole("button", { name: "Done shopping" }).boundingBox();
-      ok(`${tag}: Done shopping on one line`, Boolean(done) && done.height < 44, JSON.stringify(done));
+      const top = await page.getByText(/ of \d+ got$/).first().boundingBox();
+      ok(`${tag}: the got line on one line`, Boolean(top) && top.height < 44, JSON.stringify(top));
     }
     await page.screenshot({ path: `${dir}/5a-shop-${tag}.png`, fullPage: true });
     await page.evaluate(() => { const el = document.getElementById("scroller"); if (el) el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300);

@@ -324,7 +324,10 @@ export const forADinner = (x: Pick<Item, "for" | "checked">) => !x.checked && Bo
  */
 export async function emptyLists(held: Set<string> = new Set()): Promise<number> {
   const { items } = await loadList();
-  const ids = items.filter((x) => !held.has(x.id)).map((x) => x.id);
+  const off = items.filter((x) => !held.has(x.id));
+  // What was ticked as got is written down as bought first (Nov 14: Done shopping is gone, so this is where it's noted).
+  await recordBought(off.filter((x) => x.checked));
+  const ids = off.map((x) => x.id);
   if (ids.length) await removeItems(ids);
   return ids.length;
 }

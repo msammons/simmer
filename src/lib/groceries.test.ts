@@ -216,3 +216,18 @@ describe("taking away from a combined amount (Nov 10)", () => {
   });
 });
 
+
+describe("a new plan's emptying (Nov 14)", () => {
+  it("writes down what was ticked as got as bought, then empties the lists", async () => {
+    const { emptyLists } = await import("./groceries");
+    const got = await addItem("bought-test pears", "Robin");
+    await addItem("bought-test figs", "Robin");
+    await checkItem(got.id, true);
+    const before = (await loadBought()).length;
+    await emptyLists();
+    const bought = await loadBought();
+    const mine = bought.slice(before).map((r) => r[0]).filter((n) => n.startsWith("bought-test"));
+    expect(mine).toEqual(["bought-test pears"]); // the figs weren't got
+    expect((await loadList()).items.filter((x) => x.item.startsWith("bought-test"))).toEqual([]);
+  });
+});
