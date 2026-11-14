@@ -226,16 +226,20 @@ export async function runJob(job, windowId) {
 /**
  * Getting ready on Safeway, and test runs (Nov 13, docs/CHECKOUT.md): the cart page's Checkout, the suggestions page's
  * Continue, Order info's Continue when it's there, then a pickup window, and the final page read. With no window named
- * (getting ready) it takes the earliest free regular window, pressing day tiles in order until one has one; with one
- * named (a test run) it takes exactly that window or stops. It presses nothing else: there is no code here that presses
+ * (the listing, `list`) it reads each day's free times and chooses none; with one named (getting ready with the time
+ * picked, and test runs) it takes exactly that window or stops. Each step waits for what it needs to see, never a pause. It presses nothing else: there is no code here that presses
  * Place Order, and the final page is only read. Simmer checks what it read (src/lib/checkout.ts).
  */
 async function checkoutReady(tabId, page, windowId, list = false) {
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
-  const look = async () => { await sleep(2500); return onPage(tabId, "look", null, page); };
   const stop = (stopped) => ({ stopped, chosen: null, final: null });
+  // Each step waits for what it needs to see on Safeway's page (Matt, Nov 14: no guessed pauses), with one limit each.
+  const until = (what, extra = {}, ms = 15000) => onPage(tabId, "waitFor", { until: what, ms, ...extra }, page);
+  const look = () => onPage(tabId, "look", null, page);
+  const shows = { [page.cartPath]: "cart", [`${page.cartPath}/dnf`]: "suggestions", [checkoutPath]: "checkout" };
+  const settle = async (url) => { const w = shows[new URL(url).pathname]; if (w) await until(w); return look(); };
   await go(tabId, `${page.site}${page.cartPath}`);
-  let here = await look();
+  let here = await settle(`${page.site}${page.cartPath}`);
   if (!here) return stop("page didn't load");
   if (/sign back in|sign in to continue/i.test(here.text)) return stop("signed out");
   const steps = [
@@ -248,30 +252,32 @@ async function checkoutReady(tabId, page, windowId, list = false) {
     const p = await onPage(tabId, "pressCheckout", step, page);
     if (!p?.pressed && step.optional) break;
     if (!p?.pressed) return stop("no button to press");
-    const from = here.url;
-    if (step.samePage) await sleep(1500);
-    else for (let i = 0; i < 40 && (await chrome.tabs.get(tabId)).url === from; i++) await sleep(500);
-    here = await look();
+    if (step.samePage) { await until("times"); here = await look(); }
+    else {
+      const to = await urlChange(tabId, here.url);
+      if (!to) return stop("page didn't load");
+      here = await settle(to);
+    }
     if (!here) return stop("page didn't load");
   }
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
   const free = (w) => /REGULAR/.test(w.id) && !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
-  // The pickup times, read once Safeway has drawn them (it builds the page in parts; Nov 14 a read came too soon).
-  const readTimes = async (tries) => {
-    let r = null;
-    for (let i = 0; i < tries; i++) {
-      r = await onPage(tabId, "readWindows", null, page);
-      if (r && (r.days.length || r.windows.length)) return r;
-      await sleep(1500);
-    }
-    return r;
+  const read = () => onPage(tabId, "readWindows", null, page);
+  /** A day's tile pressed, then its own times waited for (their ids end in its date). */
+  const openDay = async (label, dd) => {
+    await onPage(tabId, "pressDay", { path: checkoutPath, label }, page);
+    await until("day", { label, dd }, 8000);
+    return read();
   };
-  let seen = await readTimes(4);
+  const ddOf = (label) => String(Number(label.match(/[A-Z][a-z]{2}, (\d{1,2}) /)?.[1] ?? 0)).padStart(2, "0");
+  await until("times");
+  let seen = await read();
   // A time chosen earlier (the last Get ready) folds the pickup step into one line: reopen it once (Sam, Nov 14), then read.
   if (seen && !seen.days.length && !seen.windows.length) {
     const opened = await onPage(tabId, "pressPickupEdit", { path: checkoutPath }, page);
     if (!opened?.pressed) return { ...stop("pickup times closed"), detail: { found: opened?.found ?? null, why: opened?.why ?? "" } };
-    seen = await readTimes(5);
+    await until("timesOpen");
+    seen = await read();
   }
   if (!seen) return stop("no pickup times");
   // The free times this week, to pick from (Sam, Nov 14): each day's tile pressed in turn and read; nothing is chosen.
@@ -279,51 +285,46 @@ async function checkoutReady(tabId, page, windowId, list = false) {
     const times = [];
     const add = (r) => { for (const w of r?.windows ?? []) if (free(w) && !times.some((t) => t.id === w.id)) times.push({ id: w.id, words: w.words }); };
     add(seen);
-    for (const day of seen.days.slice(0, 8)) {
-      if (day.active) continue;
-      await onPage(tabId, "pressDay", { path: checkoutPath, label: day.label }, page);
-      await sleep(2000);
-      add(await onPage(tabId, "readWindows", null, page));
-    }
+    for (const day of seen.days.slice(0, 8)) if (!day.active) add(await openDay(day.label, ddOf(day.label)));
     return { stopped: times.length ? "times" : "no free pickup time", times, chosen: null, final: null };
   }
-  let target = null;
-  if (windowId) {
-    target = seen.windows.find((w) => w.id === windowId);
-    if (!target) {
-      const date = windowId.match(/(\d{4})-(\d{2})-(\d{2})/);
-      const mon = date && ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(date[2]) - 1];
-      const tile = date && seen.days.find((d) => d.label.includes(` ${mon}, ${Number(date[3])} `));
-      if (!tile) return stop("pickup day gone");
-      if (!tile.active) {
-        await onPage(tabId, "pressDay", { path: checkoutPath, label: tile.label }, page);
-        await sleep(2000);
-        seen = await onPage(tabId, "readWindows", null, page);
-      }
-      target = seen?.windows.find((w) => w.id === windowId) ?? null;
-    }
-    if (!target || !free(target)) return stop("pickup time gone");
-  } else {
-    target = seen.windows.find(free) ?? null;
-    for (const day of seen.days.slice(0, 8)) {
-      if (target) break;
-      if (day.active) continue;
-      await onPage(tabId, "pressDay", { path: checkoutPath, label: day.label }, page);
-      await sleep(2000);
-      const next = await onPage(tabId, "readWindows", null, page);
-      target = next?.windows.find(free) ?? null;
-    }
-    if (!target) return stop("no free pickup time");
+  // The time picked: only exactly that one.
+  if (!windowId) return stop("no window");
+  let target = seen.windows.find((w) => w.id === windowId) ?? null;
+  if (!target) {
+    const date = windowId.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const mon = date && ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(date[2]) - 1];
+    const tile = date && seen.days.find((d) => d.label.includes(` ${mon}, ${Number(date[3])} `));
+    if (!tile) return stop("pickup day gone");
+    seen = tile.active ? seen : await openDay(tile.label, date[3]);
+    target = seen?.windows.find((w) => w.id === windowId) ?? null;
   }
+  if (!target || !free(target)) return stop("pickup time gone");
   const chose = await onPage(tabId, "chooseWindow", { path: checkoutPath, id: target.id }, page);
   if (!chose?.pressed) return stop("couldn't choose the pickup time");
-  await sleep(2000);
   // The pickup step's own Continue (exactly "Continue", the only one), which Safeway turns on once a time is chosen.
+  await until("continueOn", {}, 8000);
   const on = await onPage(tabId, "pressCheckout", { path: checkoutPath, words: ["continue"] }, page);
-  if (on?.pressed) await sleep(2500);
-  const final = await onPage(tabId, "look", null, page);
+  if (on?.pressed) await until("picked");
+  const final = await look();
   if (!final) return stop("page didn't load");
   return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons } };
+}
+
+/**
+ * Waits for the tab to move off `from` and finish loading (events from Chrome, with a limit): the new address, or null.
+ * Safeway moves between its cart and checkout both by loading a page and by changing the address in place.
+ */
+function urlChange(tabId, from, ms = 20_000) {
+  return new Promise((resolve) => {
+    let t = null;
+    const done = (url) => { chrome.tabs.onUpdated.removeListener(on); clearTimeout(t); resolve(url); };
+    const moved = (tab) => tab?.url && tab.url !== from && tab.status === "complete";
+    const on = (id, info, tab) => { if (id === tabId && moved(tab)) done(tab.url); };
+    chrome.tabs.onUpdated.addListener(on);
+    t = setTimeout(() => done(null), ms);
+    chrome.tabs.get(tabId).then((tab) => { if (moved(tab)) done(tab.url); }).catch(() => {});
+  });
 }
 
 async function checkoutLook(tabId, page) {
