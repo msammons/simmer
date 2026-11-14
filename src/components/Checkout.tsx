@@ -13,7 +13,7 @@ import { money } from "@/lib/shop";
 import { usePrepared, useOrdering } from "./Ordering";
 import { Alert, Button, Group, Held, Row, Sheet } from "./ui";
 
-type Run = { stage: "idle" } | { stage: "reading" } | { stage: "times"; times: TimesView; loading?: string } | { stage: "ready"; view: ReadyView } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult };
+type Run = { stage: "idle" } | { stage: "reading" } | { stage: "times"; times: TimesView; loading?: string; picked?: boolean } | { stage: "ready"; view: ReadyView } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult };
 const cents = (c: number | null) => (c === null ? "Couldn't be read" : `$${(c / 100).toFixed(2)}`);
 
 export function CheckoutSheet({ count, total, estimate, onClose }: { count: number; total: number; estimate: boolean; onClose: () => void }) {
@@ -90,7 +90,7 @@ function TestRun() {
       let r = await api.checkoutTimes(undefined, day, ac.signal);
       while ("waiting" in r) r = await api.checkoutTimes(r.waiting, undefined, ac.signal);
       offered.current = r;
-      setRun({ stage: "times", times: r });
+      setRun({ stage: "times", times: r, picked: Boolean(day) });
     } catch (e) {
       if (ac.signal.aborted) return;
       setRun(back ? { stage: "times", times: back } : { stage: "idle" });
@@ -147,7 +147,8 @@ function TestRun() {
   const view = run.stage === "ready" || run.stage === "running" || run.stage === "done" ? run.view : null;
   return (
     <>
-      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : run.stage === "times" ? <TimesList view={run.times} loading={run.loading} onDay={(d) => getTimes(d)} onPick={pick} /> : (
+      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading}
+        onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
       <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
         {view ? (
           <>
@@ -175,27 +176,30 @@ function TestRun() {
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
         </div>
       )}
-      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={() => (offered.current && run.stage === "ready" ? setRun({ stage: "times", times: offered.current }) : getTimes())}>{run.stage === "ready" ? "Pick another time" : "Get ready again"}</Button>}
+      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={() => (offered.current && run.stage === "ready" ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes())}>{run.stage === "ready" ? "Pick another time" : "Get ready again"}</Button>}
       <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
     </>
   );
 }
 
 /**
- * Safeway's pickup days as a row to tap (as on its site), then the day's free times (only free ones; paid Flash times
- * never show): tap a time to get ready with it.
+ * Pick a day, then a time, as on Safeway's site (Sam, Nov 14): first only the days; a day tapped shows its free times
+ * (only free ones; paid Flash times never show), and a time tapped gets ready with it.
  */
-function TimesList({ view, loading, onDay, onPick }: { view: TimesView; loading?: string; onDay: (key: string) => void; onPick: (id: string) => void }) {
+function TimesList({ view, picked, loading, onDay, onPick }: { view: TimesView; picked: boolean; loading?: string; onDay: (key: string) => void; onPick: (id: string) => void }) {
+  const chosen = picked || loading ? (loading ?? view.day) : "";
   return (
     <div className="space-y-4">
-      <div role="radiogroup" aria-label="Pickup day" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {view.days.map((d) => (
-          <button key={d.key} role="radio" aria-checked={d.key === view.day} onClick={() => d.key !== view.day && onDay(d.key)}
-            className={`shrink-0 rounded-full px-3.5 py-2 t-sub font-semibold whitespace-nowrap ${d.key === view.day ? "bg-accent text-on-accent" : "glass text-accent"}`}>{d.label}</button>
-        ))}
-      </div>
-      {loading ? <Held groups={[4]} label="Reading that day's times" /> : (
-        <Group header="Free pickup times">
+      <Group header="Pickup day">
+        <div role="radiogroup" aria-label="Pickup day" className="flex gap-2 overflow-x-auto p-3">
+          {view.days.map((d) => (
+            <button key={d.key} role="radio" aria-checked={d.key === chosen} onClick={() => onDay(d.key)}
+              className={`shrink-0 rounded-full px-3.5 py-2 t-sub font-semibold whitespace-nowrap ${d.key === chosen ? "bg-accent text-on-accent" : "glass text-accent"}`}>{d.label}</button>
+          ))}
+        </div>
+      </Group>
+      {loading ? <Held groups={[4]} label="Reading that day's times" /> : chosen && (
+        <Group header="Pickup time">
           {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} accessory="chevron" onClick={() => onPick(t.id)} />)
             : <Row title="No free times this day" subtitle="Pick another day." />}
         </Group>
