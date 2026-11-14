@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { framed, store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
-import { buyAmount, cartFor, cartTotal, findItems, money, needBeside, type FindItem } from "@/lib/shop";
+import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
 import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet } from "./ui";
@@ -171,8 +171,8 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     const f = infos.get(it.id);
     const l = lineOf.get(it.id);
     const waiting = f?.picked ? sw.pending[f.picked.id] ?? 0 : 0; // just added, on its way to Safeway
-    const amount = buyAmount(it.quantity);
-    const need = l ? needBeside(it.quantity, l.name, l.qty) : amount;
+    const amount = shownAmount(it.quantity);
+    const need = amount;
     const name = l?.name ?? f?.picked?.name;
     const sub = it.store === "safeway" && name ? [name, need && `Need ${need}`].filter(Boolean).join(" · ") : amount || undefined;
     let control: React.ReactNode = null;
