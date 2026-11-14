@@ -219,8 +219,8 @@ export function useOrdering() {
   );
   const limitRow = <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => edit("limit")} />;
   // Picked from what Safeway's checkout shows (Nov 14); the limit is typed. Each opens a page inside Check out.
-  const storeRow = <Row icon="home" title="Pickup store" value={s.store ? s.store.split(",")[0] : "Not set"} onClick={() => edit("store")} />;
-  const cardRow = <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "Not set"} onClick={() => edit("card")} />;
+  const storeRow = <Row icon="home" title="Pickup store" value={s.store ? s.store.split(",")[0] : "From Safeway"} onClick={() => edit("store")} />;
+  const cardRow = <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "From Safeway"} onClick={() => edit("card")} />;
 
   const sheets = (
     <>

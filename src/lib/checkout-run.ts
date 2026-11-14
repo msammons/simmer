@@ -8,7 +8,7 @@
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
 import { randomBytes } from "node:crypto";
 import {
-  APPROVAL_MS, cartKey, loadSettings, pickupOf, readFinal, record, stoppedWords, stops, unusual, windowOf, windowWords,
+  APPROVAL_MS, cartKey, loadSettings, saveSettings, pickupOf, readFinal, record, stoppedWords, stops, unusual, windowOf, windowWords,
   type Approval, type CheckoutSettings, type Final,
 } from "./checkout";
 import { AppError } from "./errors";
@@ -30,6 +30,8 @@ type Approved = Approval & { windowId: string; windowWords: string; faceId: stri
 export type ReadyView = {
   store: string; window: string; card: string; items: number | null; totalCents: number | null;
   stops: string[]; highlights: string[];
+  /** The store and card aren't remembered yet: approving this remembers the ones shown (Sam, Nov 14). */
+  remember: boolean;
 };
 export type Waiting = { waiting: string };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
@@ -41,7 +43,9 @@ const RUN_KEY = "simmer:checkout-run:";
 export const WAIT_MS = 20_000;
 
 /**
- * A test run needs ordering set up and on: a limit above $0, the store and card set, and a phone with Face ID. It
+ * A test run needs ordering set up and on: a limit above $0 and a phone with Face ID. The store and card come from
+ * Safeway the first time (Sam, Nov 14), remembered once that approval is made with Face ID; after that any other store
+ * or card stops it. It
  * ignores only the server's switch (CHECKOUT_ENABLED), which governs real orders, so test runs can happen before real
  * orders are allowed; stops() is always asked with the server switch counted as on here.
  */
@@ -49,7 +53,6 @@ async function ready(): Promise<CheckoutSettings> {
   const s = await loadSettings();
   if (!s.on) throw new AppError("Turn on ordering first.");
   if (!s.limitCents) throw new AppError("Set a limit per order first.");
-  if (!s.store || !s.card) throw new AppError("Set the pickup store and card first.");
   if (!(await passkeyCount())) throw new AppError("Set up Face ID first.");
   return s;
 }
@@ -62,6 +65,14 @@ async function queueAndWake(...a: Parameters<typeof queueJob>): Promise<Job> {
   const job = await queueJob(...a);
   await wakeHelper().catch((e) => console.error("couldn't wake the helper", e));
   return job;
+}
+
+/**
+ * What Safeway's figures are checked against: the store and card remembered, or, before any are (the first approval,
+ * Sam, Nov 14), the ones Safeway shows, when they can be read. An unreadable store or card is still a stop.
+ */
+export function expected(s: CheckoutSettings, f: Pick<Final, "store" | "card">): CheckoutSettings {
+  return { ...s, store: s.store || f.store, card: s.card || (/^\d{4}$/.test(f.card) ? f.card : "") };
 }
 
 const cartNow = async () => cartKey(await loadCart());
@@ -107,13 +118,13 @@ export async function prepare(jobId?: string, ms = WAIT_MS): Promise<ReadyView |
   const r = readingOf(job);
   const { final, why } = finalOf(r);
   const cart = await cartNow();
-  const reasons = allStops(why, r.stopped === "ready" ? stops(s, final, null, Date.now(), cart, true) : []);
+  const reasons = allStops(why, r.stopped === "ready" ? stops(expected(s, final), final, null, Date.now(), cart, true) : []);
   if (r.chosen && r.stopped === "ready") {
     await kv().set(PREPARED_KEY, JSON.stringify({ at: Date.now(), final, chosen: r.chosen, cartKey: cart, why: reasons } satisfies Prepared), { ex: secs(APPROVAL_MS) });
   } else await kv().del(PREPARED_KEY);
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
-    stops: reasons, highlights: await highlights(final.totalCents),
+    stops: reasons, highlights: await highlights(final.totalCents), remember: !s.store || !s.card,
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });
   return view;
@@ -140,7 +151,7 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     if (cart !== p.cartKey) reasons.push("The cart changed since. Get ready again.");
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
     if (!w.regular || w.priceCents !== 0) reasons.push("Safeway's pickup time isn't a free one.");
-    reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(s, p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
+    reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {
     const out = reasons.length ? reasons : ["Safeway's figures couldn't be read."];
@@ -155,6 +166,12 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
   };
   await kv().set(APPROVAL_KEY + a.id, JSON.stringify(a), { ex: secs(APPROVAL_MS) });
   await record("test approval", { ok: true, ...a });
+  // The first approval remembers the store and card it was made with (Face ID just approved them, shown on the sheet).
+  // Read again first, so a change made meanwhile (the limit, off) isn't written over, and only what's still blank is filled.
+  if (!s.store || !s.card) {
+    const now2 = await loadSettings();
+    if (!now2.store || !now2.card) await saveSettings(expected(now2, a), { by: "first approval", approvalId: a.id });
+  }
   return { ok: true, approvalId: a.id, totalCents: a.totalCents, window: a.windowWords };
 }
 
