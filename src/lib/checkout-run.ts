@@ -122,8 +122,11 @@ async function highlights(totalCents: number | null): Promise<string[]> {
 
 /** A day tile's words ("select slots for SUNDAY Nov, 15 Sun Nov 15") as "Sun, Nov 15". */
 const dayLabel = (tile: string) => { const m = tile.match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun) ([A-Z][a-z]{2}) (\d{1,2})$/); return m ? `${m[1]}, ${m[2]} ${m[3]}` : tile; };
-/** Safeway's day tile, as the helper reads and presses it. */
-export const isDayTile = (s: string) => /^select slots for [A-Z]+ [A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/.test(s);
+/**
+ * Safeway's day tile, as the helper reads it: "select slots for SUNDAY Nov, 15 Sun Nov 15", or for the day showing
+ * "SelectedSATURDAY Nov, 14 Sat Nov 14" (Nov 14: that one was left out, so today couldn't be picked).
+ */
+export const isDayTile = (s: string) => /^(?:select slots for |Selected)[A-Z]+DAY [A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/.test(s);
 
 /**
  * The days Safeway offers and one day's free times (or follows the reading started): the helper goes to Safeway's
