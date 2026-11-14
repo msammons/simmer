@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { framed, store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
+import { store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
@@ -124,11 +124,10 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const infos = new Map(findItems(items.filter((i) => i.store === "safeway").map((i) => ({ ...i, checked: false })), list?.staples ?? [], sw.picks).map((f) => [f.id, f]));
   const live = sw.loaded && !sw.away; // Safeway can be reached: its rows get their controls
 
-  // In the helper's panel, the Safeway tab beside it shows Safeway's own cart while this is open, and Simmer's copy
-  // takes the quantities shown there.
+  // Opening Shop reads Safeway's own cart, and Simmer's copy takes what's there (Nov 14: only the helper's panel did,
+  // so on the phone the copy went stale: 6 in the cart here, 4 on Safeway).
   const { run, refresh } = sw;
   useEffect(() => {
-    if (!framed()) return;
     const c = new AbortController();
     run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
     return () => c.abort();

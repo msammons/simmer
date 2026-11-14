@@ -102,6 +102,12 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    earliest window priced "Free" (REGULAR), today or later; never FLASH or a priced slot unless approved. The pickup step's own Continue was turned off with no
    window chosen, so nothing more was pressed.
 
+   Once a time is chosen (seen Nov 14, the first test run), Safeway folds the pickup step into one line with a **"Pickup
+   date & time Edit"** button, and the day tiles and times leave the page; a second pass (the test run, or Get ready
+   again) then found nothing to choose. So the helper may press that Edit (Sam, Nov 14): only on the checkout page, only a
+   button that reads exactly "Pickup date & time Edit", only when there's exactly one, only when no times are showing,
+   once per run. It reopens the times and commits to nothing; never another Edit (order info, payment, gift).
+
    What the cart page showed (Nov 12): pickup at the usual store, an earliest "Flash pickup" time, per-item "Substitute
    with best match", a $3.95 fee under $30, and weighed items priced "approx" (chicken by the pound). The final page's
    total is an estimate when the cart has weighed items; the approval is checked against it to the cent, and the
