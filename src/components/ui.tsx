@@ -198,7 +198,8 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
         {subtitle && <span className="mt-0.5 block t-foot text-muted">{subtitle}</span>}
       </span>
       {/* A value on a row you can tap reads as the action ("Directions", "Try again"); otherwise it's information. */}
-      {value && <span className={`shrink-0 t-sub ${href || onClick ? "text-accent" : "text-muted"}`}>{value}</span>}
+      {/* At most a little over half the row, cut short with "…" (Nov 14: a long store address ran over "Pickup store"). */}
+      {value && <span className={`min-w-0 max-w-[55%] shrink-0 truncate text-right t-sub ${href || onClick ? "text-accent" : "text-muted"}`}>{value}</span>}
       {accessory === "chevron" ? <Icon name="right" className="size-4 text-muted/70" strokeWidth={2.2} />
         : accessory === "external" ? <Icon name="external" className="size-4 text-muted/70" strokeWidth={2.2} />
         : accessory === "check" ? <Icon name="check" className={`size-5 text-accent ${checked ? "" : "invisible"}`} strokeWidth={2.4} />
