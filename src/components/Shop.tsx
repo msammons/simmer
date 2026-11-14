@@ -39,7 +39,6 @@ export type ShopActions = {
   /** The order went through: `cart` (the list ids in the Safeway cart) comes off the Safeway list as bought. */
   done: (store: Store, cart?: string[]) => Promise<unknown>;
   /** Done shopping: these ticked things come off, whatever their store. */
-  doneTicked: (items: Item[]) => Promise<unknown>;
 };
 
 /** ⋯ as the phone's own menu: what can be done with one row. Its space stays when there's nothing, so rows line up. */
@@ -70,9 +69,10 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  */
 function TopLine({ text, showGot, onShowGot }: { text: string; showGot: boolean; onShowGot: (() => void) | null }) {
   return (
-    <div className="flex min-h-10 items-center gap-1 px-4">
-      <span className="min-w-0 flex-1 t-sub font-semibold">{text}</span>
-      {onShowGot && <button onClick={onShowGot} aria-pressed={showGot} className={`h-9 shrink-0 rounded-full px-4 t-sub font-semibold active:scale-95 ${showGot ? "bg-accent text-on-accent" : "glass text-accent"}`}>Show got</button>}
+    // Matt, Nov 14: small, right beside the count: "3 of 5 got · Hide" (or Show when they're hidden).
+    <div className="flex min-h-10 items-center gap-2 px-4">
+      <span className="t-sub font-semibold">{text}</span>
+      {onShowGot && <button onClick={onShowGot} className="-my-2 py-2 t-sub font-semibold text-accent active:opacity-60">{showGot ? "Hide" : "Show"}</button>}
     </div>
   );
 }
@@ -212,7 +212,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
                 {count > 0 && <span className="truncate text-muted">{count} in the cart · {estimate ? "about " : ""}{money(total)}</span>}
                 {usual.length > 1 && <button onClick={autoFill} className="shrink-0 font-semibold text-accent">Auto-fill {usual.length}</button>}
                 {/* Check out (Nov 13): only with something in the cart; ordering's set-up and settings live in its sheet. */}
-                {count > 0 && <button onClick={() => setCheckingOut(true)} className={`${pill} glass text-accent`}>Check out</button>}
+                {count > 0 && <button onClick={() => setCheckingOut(true)} className="shrink-0 font-semibold text-accent">Check out</button>}
               </span>
             )}>
               {visible.filter((i) => i.store === s).map(itemRow)}
