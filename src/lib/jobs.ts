@@ -279,7 +279,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   const gone = !reported && j.kind === "setQty" && Number(j.args.qty) === 0 && reportedRaw.error === "not-found";
   const ok = reported || gone;
   const raw: Record<string, unknown> = gone ? { ok: true, qty: 0 } : reportedRaw;
-  let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed" };
+  let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
     // Safeway's search results don't reliably show what's in the cart (a product in it came back "not in the cart",
