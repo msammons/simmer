@@ -327,6 +327,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       stopped: str(raw.stopped, 60),
       chosen: c && str(c.id, 120) ? { id: str(c.id, 120), words: str(c.words, 160) } : null,
       final: f ? { url: str(f.url, 300), text: typeof f.text === "string" ? f.text.slice(0, 12000) : "", buttons: (Array.isArray(f.buttons) ? f.buttons : []).slice(0, 80).map((b: unknown) => str(b, 80)) } : null,
+      // The free times read for picking (Nov 14), each a window's id and words; only from the listing.
+      ...(Array.isArray(raw.times) ? { times: (raw.times as Record<string, unknown>[]).slice(0, 120).map((t) => ({ id: str(t?.id, 120), words: str(t?.words, 160) })).filter((t) => t.id) } : {}),
       // What a stop saw (Nov 14: why the pickup times couldn't be reopened), kept with the job to read back.
       ...(raw.detail && typeof raw.detail === "object" ? { detail: { found: Number((raw.detail as Record<string, unknown>).found) || 0, why: str((raw.detail as Record<string, unknown>).why, 60) } } : {}),
     };

@@ -2,7 +2,7 @@ import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
 import { loadSettings, serverOn } from "@/lib/checkout";
 import { addWaiting, answerOf, changeSettings, passkeyCount } from "@/lib/passkeys";
-import { approve, followTestRun, lookUp, prepare, testRun } from "@/lib/checkout-run";
+import { approve, followTestRun, lookUp, pickupTimes, prepare, testRun } from "@/lib/checkout-run";
 import { AppError } from "@/lib/errors";
 
 // Getting ready and test runs wait on the helper up to 20 s per request (the sheet asks again while it's going).
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
-  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run" || b?.op === "look") return run(req, b);
+  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run" || b?.op === "look" || b?.op === "times") return run(req, b);
   try {
     const r = await changeSettings(req, {
       on: b?.on === true,
@@ -50,6 +50,8 @@ export async function POST(req: Request) {
   }
 }
 
+/** A pickup window's id as Safeway builds it ("3011SAT20261114REGULARDUG18001900-2026-11-14"). */
+const windowId = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9-]{10,120}$/.test(s) ? s : "");
 const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(s) ? s : "");
 
 /**
@@ -62,7 +64,8 @@ const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.tes
 async function run(req: Request, b: Record<string, unknown>) {
   try {
     const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
-      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined)
+      : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined)
+      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId))
       : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
     return Response.json(out, noStore);
