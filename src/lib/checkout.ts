@@ -167,7 +167,8 @@ export const recordedForTests = () => memoryLog;
  * or FLASH, DUG (pickup) and the times ("…FRI20261113REGULARDUG600700-2026-11-13"), and whose words say the time and
  * price ("6 AM - 7 AM price Free", or "Ready by 10:05 PM Slot type FLASH price $3.95").
  */
-export type PickupWindow = { id: string; words: string; date: string; regular: boolean; priceCents: number | null; order: number };
+/** `kind`: REGULAR, EXPRESS or FLASH as the id says; `notFlash`: anything but Safeway's paid Flash times (Nov 14: free Express times count). */
+export type PickupWindow = { id: string; words: string; date: string; kind: string; notFlash: boolean; priceCents: number | null; order: number };
 
 export function windowOf(id: string, words: string, order: number): PickupWindow {
   const w = squash(words);
@@ -175,7 +176,8 @@ export function windowOf(id: string, words: string, order: number): PickupWindow
   return {
     id, words: w, order,
     date: id.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? "",
-    regular: /REGULAR/.test(id) && !/FLASH/i.test(`${id} ${w}`),
+    kind: id.match(/\d{8}([A-Z]+?)DUG/)?.[1] ?? "",
+    notFlash: /\d{8}[A-Z]+DUG/.test(id) && !/FLASH/i.test(`${id} ${w}`),
     priceCents: price === undefined ? null : /^free$/i.test(price) ? 0 : cents(price),
   };
 }
@@ -185,7 +187,7 @@ export function windowOf(id: string, words: string, order: number): PickupWindow
  * FLASH, never one with a price, never one whose price can't be read. None: null, and the order stops.
  */
 export function pickWindow(windows: PickupWindow[]): PickupWindow | null {
-  return windows.filter((w) => w.regular && w.priceCents === 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
+  return windows.filter((w) => w.notFlash && w.priceCents === 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
     .sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)[0] ?? null;
 }
 
@@ -198,22 +200,24 @@ const loose = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ 
 /**
  * The pickup time on Safeway's final page, from the window the helper chose (Nov 13). A REGULAR window's final page
  * hasn't been seen yet; the FLASH one said "Ready by 9:05 PM Slot type FLASH price $3.95". Until it has, the slot comes
- * from the chosen window (its words, price Free → $0, REGULAR from its id), and the page must say the same time range
- * ("6 AM - 7 AM"), or the time counts as unreadable and stops. Only a free REGULAR window passes; a page that shows a
- * paid slot stops too.
+ * from the chosen window (its words, price Free → $0, its kind from its id), and the page must say the same time range
+ * ("6 AM - 7 AM"), or the time counts as unreadable and stops. Only a free window that isn't Flash passes (Regular or,
+ * since Nov 14, Express); a page that shows a paid slot stops too.
  */
 export function pickupOf(f: Final, text: string, chosen: { id: string; words: string } | null): { final: Final; why: string[] } {
   const none = { ...f, slot: { ready: "", type: "", priceCents: null } };
   if (!chosen) return { final: none, why: ["No free pickup time was chosen."] };
   const w = windowOf(chosen.id, chosen.words, 0);
-  if (!w.regular || w.priceCents !== 0) return { final: none, why: ["Safeway's pickup time isn't a free one."] };
-  if (f.slot.type && (f.slot.type !== "REGULAR" || f.slot.priceCents !== 0)) return { final: none, why: ["Safeway's page shows a paid pickup time."] };
+  if (!w.notFlash || w.priceCents !== 0) return { final: none, why: ["Safeway's pickup time isn't a free one."] };
+  if (f.slot.type && (/FLASH/i.test(f.slot.type) || f.slot.priceCents !== 0)) return { final: none, why: ["Safeway's page shows a paid pickup time."] };
+  // The kind on the page, when it says one, is the kind picked (outside review, Nov 14).
+  if (f.slot.type && f.slot.type.toUpperCase() !== w.kind) return { final: none, why: ["Safeway's page shows a different pickup time."] };
   const r = rangeOf(w.words);
   const range = r ? `${squash(r[1])} - ${squash(r[2])}` : "";
   if (!r || !new RegExp(`\\b${loose(squash(r[1]))}\\s*[-–]\\s*${loose(squash(r[2]))}\\b`, "i").test(squash(text))) {
     return { final: none, why: ["Safeway's pickup time couldn't be read."] };
   }
-  return { final: { ...f, slot: { ready: range, type: "REGULAR", priceCents: 0 } }, why: [] };
+  return { final: { ...f, slot: { ready: range, type: w.kind, priceCents: 0 } }, why: [] };
 }
 
 /** "Fri 6–7 AM": the day from the window's date, and its time range. */

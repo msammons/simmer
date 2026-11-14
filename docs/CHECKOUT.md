@@ -14,7 +14,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a
    day first": reading every day was slow); tapping another day has the helper press that one tile and read it. Only
-   free regular times, never Flash or a priced one; the helper chooses none. With one picked, what
+   free times, never Flash or a priced one; the helper chooses none. Free Express times count as well as Regular (Matt,
+   Nov 14: "why would i not use express times?"; today's first three were Express, and the Regular-only rule hid them).
+   Each day shows five times and a "More times" button; the helper may press it (Nov 14, to match the site): only on the
+   checkout page, only a button reading exactly "More times", only one, once per day read. It shows more times only. With one picked, what
    the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Getting ready takes
    only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
 3. **Place order · $128.40** → Face ID → the confirm sheet (store, window, card, total; unusual items highlighted) →
