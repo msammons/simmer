@@ -100,7 +100,7 @@ describe("picking the pickup time (Nov 14)", () => {
   const SAT = { id: "9999SAT20261114REGULARDUG900100-2026-11-14", words: "9 AM - 10 AM price Free" };
   const FLASH = { id: "9999FRI20261113FLASHDUG2100-2026-11-13", words: "Ready by 9 PM price $3.95" };
   const PRICED = { id: "9999SAT20261114REGULARDUG10001100-2026-11-14", words: "10 AM - 11 AM price $2.00" };
-  const FRI_TILE = "select slots for FRIDAY Nov, 13 Fri Nov 13", SAT_TILE = "select slots for SATURDAY Nov, 14 Sat Nov 14";
+  const FRI_TILE = "SelectedFRIDAY Nov, 13 Fri Nov 13", SAT_TILE = "select slots for SATURDAY Nov, 14 Sat Nov 14";
   it("offers the days and the day's free regular times only, choosing none", async () => {
     does = () => ({ stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: FRI_TILE, times: [FRI6, FLASH] } as never);
     const t = await pickupTimes();
