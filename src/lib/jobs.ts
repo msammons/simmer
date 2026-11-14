@@ -125,8 +125,6 @@ async function prune({ jobs, junk }: Tab) {
 /** Jobs left too long: waiting with nobody taking them, or taken and never reported. */
 const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > JOB_TIMES.pickup) || (j.status === "working" && age(j.updated) > JOB_TIMES.stuck);
 
-export const helperAnswering = (h: Helper | null) => Boolean(h && age(h.seen) < JOB_TIMES.alive);
-
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
 export const HELPER_VERSION: string = manifest.version;
 const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
@@ -138,9 +136,6 @@ export const olderVersion = (have: string, want: string) => {
 };
 /** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
 export const helperOutdated = (h: Helper | null) => Boolean(h?.version) && olderVersion(h!.version, HELPER_VERSION);
-
-/** Not checked in for a couple of minutes (or never): Safeway can't be reached from Simmer just now. */
-export const helperAway = (h: Helper | null) => !h || age(h.seen) >= JOB_TIMES.away;
 
 export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
   const { helper } = await read();
