@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, shownAmount, cartTotal, findItems, firstToFind, inCartLine, nextAfter, nextToFind, priceOf, rankResults } from "./shop";
+import { addedFor, shownAmount, cartTotal, findItems, nextAfter, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -25,14 +25,6 @@ describe("Find", () => {
     expect(addedFor(eggs, pop, "pop tarts")?.id).toBe("b"); // its own search: whatever it found
     expect(addedFor(eggs, pop, "eggs")).toBeNull(); // something else typed in its search box
     expect(addedFor({ ...eggs, id: "77" }, pop, "eggs")?.id).toBe("b"); // its remembered product
-  });
-
-  it("starts on the first item with nothing in the cart, and moves on to the next", () => {
-    const f = findItems(items, staples, []);
-    expect(firstToFind(f, [line("1", "a", 2)])).toBe(1);
-    expect(nextToFind(f, [line("1", "a", 2), line("2", "b", 1)], 0)).toBe(2);
-    expect(nextToFind(f, [line("2", "f", 1)], 1)).toBe(-1);
-    expect(firstToFind(f, f.map((x, i) => line(String(i), x.id, 1)))).toBe(0);
   });
 
   it("goes Next to the next item still to find, then back to one skipped, then the cart", () => {
@@ -61,10 +53,6 @@ describe("the cart", () => {
     expect(cartTotal([line("1", "a", 1, "$4.99 /lb")]).estimate).toBe(true);
   });
 
-  it("shows on the list what's in the cart for an item", () => {
-    expect(inCartLine([line("1", "a", 2)], { id: "a" })).toBe("In the cart · 2");
-    expect(inCartLine([line("1", "a", 2)], { id: "b" })).toBe("");
-  });
 });
 
 describe("amounts on rows (Nov 14: always shown)", () => {

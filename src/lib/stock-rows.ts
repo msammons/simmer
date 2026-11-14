@@ -52,5 +52,3 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
   return rows;
 }
 
-/** How many highlighted (meal) things haven't been answered yet. */
-export const toCheck = (rows: StockRow[]) => rows.filter((r) => r.meal && r.answer === "check").length;

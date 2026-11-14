@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCsv, parseProfile } from "./parse";
-import { addDays, zoned } from "./time";
+import { addDays } from "./time";
 
 describe("parsing", () => {
   it("reads quoted CSV with commas and blank lines", () => {
@@ -28,9 +28,5 @@ describe("dates", () => {
     expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
     expect(addDays("2026-11-01", 1)).toBe("2026-11-02");
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
-  });
-  it("turns a wall-clock time into the right moment in summer and winter", () => {
-    expect(zoned("2026-07-01", "18:00").toISOString()).toBe("2026-07-02T01:00:00.000Z");
-    expect(zoned("2026-12-01", "18:00").toISOString()).toBe("2026-12-02T02:00:00.000Z");
   });
 });
