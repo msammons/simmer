@@ -11,9 +11,11 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 1. Shop → Safeway heading → **Check out** (only with something in the cart and the helper reachable, and only when
    ordering is turned on in Settings).
-2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then what
-   the helper reads from Safeway's checkout: the pickup store, the windows (earliest free one chosen), substitutions,
-   the card, the total. Shimmer while it reads.
+2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then
+   Safeway's free pickup times this week, by day, to pick from (Sam, Nov 14: "let me pick"; only free regular times,
+   never Flash or a priced one; the helper presses each day's tile to read them and chooses none). With one picked, what
+   the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Getting ready takes
+   only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
 3. **Place order · $128.40** → Face ID → the confirm sheet (store, window, card, total; unusual items highlighted) →
    the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's change/cancel cutoff and a link.
    The cart comes off the list as bought.
