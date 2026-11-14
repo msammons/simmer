@@ -64,12 +64,15 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
   ];
 }
 
-/** "2 of 5 got" and Done shopping: always there, greyed until something's ticked (Nov 11). */
-function TopLine({ text, onDone }: { text: string; onDone: (() => void) | null }) {
+/**
+ * "2 of 5 got" and Show got (Matt, Nov 14, in place of Done shopping): what's ticked hides from the list, and Show got
+ * brings it back to untick. Ticked things stay on the list until a new plan empties it (written down as bought then).
+ */
+function TopLine({ text, showGot, onShowGot }: { text: string; showGot: boolean; onShowGot: (() => void) | null }) {
   return (
     <div className="flex min-h-10 items-center gap-1 px-4">
       <span className="min-w-0 flex-1 t-sub font-semibold">{text}</span>
-      <button onClick={onDone ?? undefined} disabled={!onDone} className="h-9 shrink-0 rounded-full bg-accent px-4 t-sub font-semibold text-on-accent active:scale-95 disabled:opacity-40 disabled:active:scale-100">Done shopping</button>
+      {onShowGot && <button onClick={onShowGot} aria-pressed={showGot} className={`h-9 shrink-0 rounded-full px-4 t-sub font-semibold active:scale-95 ${showGot ? "bg-accent text-on-accent" : "glass text-accent"}`}>Show got</button>}
     </div>
   );
 }
@@ -105,7 +108,10 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const sw = useSafeway();
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
-  const [finishing, setFinishing] = useState<Item[] | null>(null); // Done shopping, waiting on its confirm
+  const [showGot, setShowGot] = useState(false); // ticked things hidden until Show got (Nov 14)
+  // Ticked while Shop is open: stays, struck through, until Shop is left, so a mis-tap can be seen and undone.
+  const [justGot, setJustGot] = useState<Set<string>>(() => new Set());
+  const tickIt = (it: Item, on: boolean) => { if (on) setJustGot((g) => new Set(g).add(it.id)); act.check(it, on); };
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   const [checkingOut, setCheckingOut] = useState(false); // the Check out sheet (Nov 13)
   const [where, setWhere] = useState<Where>("all");
@@ -152,11 +158,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     void act.add(t);
   };
 
-  // What the filter shows; "got" and Done shopping go by it (at Trader Joe's, only Trader Joe's ticks come off).
+  // What the filter shows; "got" goes by it.
   const here = where === "all" ? items : items.filter((i) => i.store === where);
   const ticked = here.filter((i) => i.checked);
-  // Done shopping asks first (Nov 3: it replaced the Undo after it), since it can be tapped by mistake.
-  const done = () => { if (ticked.length) setFinishing([...ticked]); };
+  /** The rows shown: what's ticked only with Show got on. */
+  const visible = showGot ? items : items.filter((i) => !i.checked || justGot.has(i.id));
 
   /** A list item's row. */
   const itemRow = (it: Item) => {
@@ -177,12 +183,12 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     }
     const canPick = it.store === "safeway" && live && Boolean(findOf(it.id)) && Boolean(f?.picked || l);
     return (
-      <ShopRow key={it.id} title={cap(it.item)} sub={sub} checked={it.checked} onTick={() => act.check(it, !it.checked)} control={control}
+      <ShopRow key={it.id} title={cap(it.item)} sub={sub} checked={it.checked} onTick={() => tickIt(it, !it.checked)} control={control}
         more={<More name={cap(it.item)} options={moreFor(it, n, canPick)} onPick={(v) => (v === "pick" ? setFinding(it.id) : act.move(it, v as Store))} />} />
     );
   };
 
-  const shown = (where === "all" ? STORES : [where]).filter((s) => items.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));
+  const shown = (where === "all" ? STORES : [where]).filter((s) => visible.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));
 
   return (
     <div className="space-y-5">
@@ -194,9 +200,10 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
 
-      {!list ? <Held /> : !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
+      {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} onDone={ticked.length ? done : null} />
+          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} showGot={showGot} onShowGot={ticked.length || showGot ? () => setShowGot((v) => !v) : null} />
+          {!shown.length && <EmptyState icon="list" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && (count > 0 || usual.length > 1) && (
@@ -207,7 +214,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
                 {count > 0 && <button onClick={() => setCheckingOut(true)} className={`${pill} glass text-accent`}>Check out</button>}
               </span>
             )}>
-              {items.filter((i) => i.store === s).map(itemRow)}
+              {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}
               {s === "safeway" && loose.map((l) => (
                 <ShopRow key={l.productId} title={l.name} sub={l.price || undefined} more={<More name={l.name} options={[]} onPick={() => {}} />}
@@ -226,13 +233,10 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
 
       {finding && findOf(finding) && (
         <Sheet label="Safeway's choices" wide onClose={() => setFinding(null)}>
-          <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) act.check(x, true); }} />
+          <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) tickIt(x, true); }} />
         </Sheet>
       )}
       {checkingOut && <CheckoutSheet count={count} total={total} estimate={estimate} onClose={() => setCheckingOut(false)} />}
-      <ConfirmSheet open={Boolean(finishing)} title={where === "all" ? "Done shopping?" : `Done at ${STORE_NAMES[where]}?`} confirm="Done shopping"
-        message={finishing ? `${finishing.length} thing${finishing.length === 1 ? " comes" : "s come"} off the list.` : ""}
-        onConfirm={() => { const off = finishing ?? []; setFinishing(null); void act.doneTicked(off); }} onCancel={() => setFinishing(null)} />
       <ConfirmSheet open={ordering} title="Take the cart off the list?" message="Everything in the cart comes off the Safeway list, as bought." confirm="Take it off"
         onConfirm={() => {
           setOrdering(false);

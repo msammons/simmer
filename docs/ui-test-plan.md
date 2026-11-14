@@ -69,7 +69,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 5.4 | ⋯ on a row → Get it at another store | Row moves; next time the same item goes there | L |
 | 5.5 | Tick a Trader Joe's / Costco row | Checked; "n of N got" moves | L |
 | 5.6 | No Clear on Lists | There's no Clear on any list (Nov 11); New plan on Meals empties the lists | L |
-| 5.6b | Done shopping | Asks first ("Done at Trader Joe's? 6 things come off the list."); Cancel leaves everything; no Undo after | L |
+| 5.6b | Show got (Nov 14) | A tick stays struck through until Shop is left, then hides; Show got brings ticked rows back; New plan empties the lists | L |
 | 5.7 | Water, salt, spices from a recipe | Never on a list (salt/spices are highlighted in Stock) | L |
 
 ## 6. Lists → Safeway (the cart)
@@ -86,7 +86,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | 6.8 | Safeway cart emptied without ordering | Simmer's cart empties; the list rows stay (to add again); the Safeway tab visits Purchases → Online, then the cart again | R |
 | 6.8b | Order placed on Safeway, then Lists → Safeway in the panel | The cart's rows come off the Safeway list by themselves; the cart starts empty (never seen yet: the first real order shows whether Purchases reads right) | R |
 | 6.9 | "Ordered? Take the cart off the list" | The cart's rows come off the Safeway list; the cart starts empty | R |
-| 6.10 | Helper not running (two minutes or more) | "Can't reach Safeway right now…"; the cart greyed with − / + off; Add, Find, Auto-fill off; rows tick like Trader Joe's, then Done shopping; all back once it checks in | L |
+| 6.10 | Helper not running (two minutes or more) | "Can't reach Safeway right now…"; the cart greyed with − / + off; Add, Find, Auto-fill off; rows tick like Trader Joe's; all back once it checks in | L |
 | 6.11 | Find from the phone with Chrome idle | The search starts within a couple of seconds (a push wakes the helper), not up to half a minute | R |
 
 ## 7. Stock
@@ -94,7 +94,7 @@ no Sheet, no Safeway). **R** = needs the real Sheet, the helper and Safeway; nev
 | # | Do | Expect | Where |
 |---|----|--------|-------|
 | 7.1 | Open Stock | Sections Fresh · Pantry · Freezer · Household; each row a filled circle (have) | L |
-| 7.1a | Stock ⋯ menu; a shop finished | No "Every week" anywhere; after Done shopping, bought things stay off the list and show as stocked (Nov 10: nothing comes back by itself) | L |
+| 7.1a | Stock ⋯ menu; a shop finished | No "Every week" anywhere; after a new plan, bought things stay off the list and show as stocked (Nov 10: nothing comes back by itself) | L |
 | 7.2 | With a planned week | The week's pantry items highlighted with the amount the meals need | L |
 | 7.3 | Tap a row | Out: goes on its store's list ("On the list · Safeway"); tap again: have | L |
 | 7.4 | Add something | New row, checked, in a guessed section | L |
