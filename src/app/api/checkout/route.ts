@@ -64,7 +64,7 @@ const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.tes
 async function run(req: Request, b: Record<string, unknown>) {
   try {
     const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
-      : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined)
+      : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined)
       : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId))
       : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));

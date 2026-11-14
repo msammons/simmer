@@ -100,11 +100,23 @@ describe("picking the pickup time (Nov 14)", () => {
   const SAT = { id: "9999SAT20261114REGULARDUG900100-2026-11-14", words: "9 AM - 10 AM price Free" };
   const FLASH = { id: "9999FRI20261113FLASHDUG2100-2026-11-13", words: "Ready by 9 PM price $3.95" };
   const PRICED = { id: "9999SAT20261114REGULARDUG10001100-2026-11-14", words: "10 AM - 11 AM price $2.00" };
-  it("offers only free regular times, soonest first, and chooses none", async () => {
-    does = () => ({ stopped: "times", chosen: null, final: null, times: [SAT, FLASH, PRICED, FRI6] });
+  const FRI_TILE = "select slots for FRIDAY Nov, 13 Fri Nov 13", SAT_TILE = "select slots for SATURDAY Nov, 14 Sat Nov 14";
+  it("offers the days and the day's free regular times only, choosing none", async () => {
+    does = () => ({ stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: FRI_TILE, times: [FRI6, FLASH] } as never);
     const t = await pickupTimes();
-    expect("times" in t && t.times.map((x) => x.id)).toEqual([FRI6.id, SAT.id]);
-    expect("times" in t && t.times[0]).toMatchObject({ day: "Fri, Nov 13", time: "6–7 AM" });
+    expect(t).toMatchObject({ days: [{ key: FRI_TILE, label: "Fri, Nov 13" }, { key: SAT_TILE, label: "Sat, Nov 14" }], day: FRI_TILE, times: [{ id: FRI6.id, time: "6–7 AM" }] });
+  });
+  it("reads another day when asked, and remembers every time offered", async () => {
+    does = (_k, a) => (a.windowId ? READY : a.day === SAT_TILE ? { stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: SAT_TILE, times: [SAT, PRICED] } : { stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }], day: FRI_TILE, times: [FRI6] }) as never;
+    await pickupTimes();
+    const sat = await pickupTimes(undefined, SAT_TILE);
+    expect(queueJob).toHaveBeenLastCalledWith("checkoutPrepare", { list: true, day: SAT_TILE });
+    expect("times" in sat && sat.times.map((x) => x.id)).toEqual([SAT.id]);
+    expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toEqual([]); // Friday's, offered first, still taken
+  });
+  it("never passes on a day that isn't Safeway's tile", async () => {
+    await pickupTimes(undefined, "Place Order");
+    expect(queueJob).toHaveBeenLastCalledWith("checkoutPrepare", { list: true });
   });
   it("gets ready only with a time it just offered", async () => {
     await expect(prepare(undefined, FRI6.id)).rejects.toThrow(/Pick a pickup time/);
@@ -117,9 +129,9 @@ describe("picking the pickup time (Nov 14)", () => {
     does = () => ({ ...READY, chosen: { id: "9999FRI20261113REGULARDUG700800-2026-11-13", words: "7 AM - 8 AM price Free" } });
     expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toContain("Safeway's pickup time isn't the one picked.");
   });
-  it("says so when there's no free time", async () => {
-    does = () => ({ stopped: "no free pickup time", chosen: null, final: null, times: [] });
-    await expect(pickupTimes()).rejects.toThrow(/No free pickup time/);
+  it("says where Safeway stopped, in plain words", async () => {
+    does = () => ({ stopped: "signed out", chosen: null, final: null });
+    await expect(pickupTimes()).rejects.toThrow(/signed out/);
   });
 });
 
