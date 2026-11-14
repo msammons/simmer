@@ -262,7 +262,7 @@ export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewa
 
 /** What a recipe needs from the store: everything but tap water and what's in the freezer (used from there instead). */
 const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
-  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: i.section !== "fresh" }));
+  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: true }));
 
 /**
  * These dinners are off the plan: what only they needed comes off the list (see takeOffFor). `still`: recipes still
@@ -283,7 +283,7 @@ export type NewLunch = Omit<Lunch, "id">;
  * said so (nothing is ticked off; what was bought got cooked), so each is marked made on the day it was planned and
  * logged, which keeps "not made in a while" true; planned lunches go too (lunch foods are Stock things now).
  * Without `counts` (Add one more) the new ones join this week and nothing else is touched. Last time's numbers become these, and everything the new ones need goes on the list at once, merged with what's there:
- * fresh things to buy, pantry things to check (Nov 3: no more waiting for a night to come close).
+ * every dinner thing waits on Stock to be checked, fresh too (Matt, Nov 14); nothing goes on Shop until it's Need.
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
  * a pantry check from a dinner made or removed since doesn't linger. Answers how many things went on a list.
  */
