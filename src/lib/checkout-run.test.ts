@@ -328,3 +328,15 @@ describe("waking the helper (Nov 14)", () => {
     expect(vi.mocked(wakeHelper)).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a late wake-up (Nov 14)", () => {
+  it("wakes the helper again each time the phone follows a job nobody has taken", async () => {
+    await pickupTimes();
+    going = true;
+    vi.mocked(wakeHelper).mockClear();
+    const w = await prepare(undefined, FRI6.id);
+    expect(w).toMatchObject({ waiting: expect.any(String) });
+    await prepare((w as { waiting: string }).waiting);
+    expect(vi.mocked(wakeHelper)).toHaveBeenCalledTimes(3); // queued, then each follow while it waits
+  });
+});
