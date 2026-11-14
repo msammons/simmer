@@ -79,6 +79,12 @@ export function expected(s: CheckoutSettings, f: Pick<Final, "store" | "card">):
   return { ...s, store: s.store || f.store, card: s.card || (/^\d{4}$/.test(f.card) ? f.card : "") };
 }
 
+/** Still going: a job nobody has taken yet gets another wake-up as the phone follows it (a push can arrive late). */
+async function stillGoing(job: Job): Promise<Waiting> {
+  if (job.status === "waiting") await wakeHelper().catch((e) => console.error("couldn't wake the helper", e));
+  return { waiting: job.id };
+}
+
 const cartNow = async () => cartKey(await loadCart());
 const readingOf = (j: Job): Reading => {
   const r = (j.result ?? {}) as Partial<Reading>;
@@ -124,7 +130,7 @@ export async function pickupTimes(jobId?: string, ms = WAIT_MS): Promise<TimesVi
   const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true })).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
-  if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
+  if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
   const r = (job.result ?? {}) as { stopped?: string; times?: { id: string; words: string }[] };
   const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.regular && w.priceCents === 0 && w.date);
@@ -151,7 +157,7 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): 
   }
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
-  if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
+  if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
   const r = readingOf(job);
   const { final, why } = finalOf(r);
@@ -241,7 +247,7 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
   const pending = json<Approved>(await kv().get(RUN_KEY + jobId));
   if (!pending) throw new AppError("That test run was already reported. Get ready again for another.");
   const { job } = await waitForJob(jobId, ms);
-  if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return { waiting: job.id };
+  if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(RUN_KEY + jobId));
   if (!a) throw new AppError("That test run was already reported. Get ready again for another.");
   let result: RunResult;
@@ -290,7 +296,7 @@ export async function lookUp(jobId?: string, ms = WAIT_MS): Promise<Choices | Wa
   const id = jobId ?? (await queueAndWake("checkoutLook", {})).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutLook") throw new AppError("That didn't go through. Try again.");
-  if (job.status === "waiting" || job.status === "working") return { waiting: job.id };
+  if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
   const pages = Array.isArray(job.result?.pages) ? (job.result.pages as { text?: unknown; buttons?: unknown }[]) : [];
   const found = choicesOf(pages);

@@ -123,7 +123,9 @@ async function prune({ jobs, junk }: Tab) {
 }
 
 /** Jobs left too long: waiting with nobody taking them, or taken and never reported. */
-const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > JOB_TIMES.pickup) || (j.status === "working" && age(j.updated) > JOB_TIMES.stuck);
+/** How long a job may wait to be taken: a minute for checkout's (Nov 14: a wake-up came late; the phone wakes it again as it follows). */
+const pickupFor = (j: Job) => (j.kind.startsWith("checkout") ? 60_000 : JOB_TIMES.pickup);
+const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > pickupFor(j)) || (j.status === "working" && age(j.updated) > JOB_TIMES.stuck);
 
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
 export const HELPER_VERSION: string = manifest.version;
