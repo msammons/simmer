@@ -9,12 +9,14 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyAuthenticationResponse: vi.fn(),
 }));
 vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn() }));
+vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { recordedForTests, resetCheckout, saveSettings } from "./checkout";
 import { approve, followTestRun, prepare, testRun, type ReadyView } from "./checkout-run";
 import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
+import { wakeHelper } from "./push";
 import { checkOptions, registrationOptions, resetPasskeys, verifyRegistration } from "./passkeys";
 import { resetSafeway, setCartLine } from "./safeway";
 
@@ -249,5 +251,15 @@ describe("picking the store and card (Nov 14)", () => {
     expect(choicesOf([{ text: "Your cart 3 items Checkout" }, pages.pickup])).toEqual({ store: "100 Main St, Springfield, CA 90000", card: "4242" });
     expect(choicesOf([{ text: "Your cart" }])).toEqual({ store: "", card: "" });
     expect(choicesOf([{ text: 7 }, {}])).toEqual({ store: "", card: "" });
+  });
+});
+
+describe("waking the helper (Nov 14)", () => {
+  it("pushes a wake-up with every job checkout asks for, so a sleeping helper takes it", async () => {
+    const { lookUp } = await import("./checkout-run");
+    vi.mocked(wakeHelper).mockClear();
+    await lookUp(undefined, 0).catch(() => {});
+    expect(vi.mocked(queueJob).mock.calls.at(-1)?.[0]).toBe("checkoutLook");
+    expect(vi.mocked(wakeHelper)).toHaveBeenCalledTimes(1);
   });
 });
