@@ -352,12 +352,6 @@ export default function App() {
     // `cart`: the ids in the Safeway cart, which come off as bought too.
     done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked) && !cart?.includes(x.id)) })),
     // Done shopping: every ticked thing off at once; each store's change goes after the one before, so they never cross.
-    doneTicked: async (off) => {
-      const ids = new Set(off.map((x) => x.id));
-      const gone = (l: ListState) => ({ ...l, items: l.items.filter((x) => !ids.has(x.id)) });
-      setList((l) => l && gone(l));
-      for (const s of [...new Set(off.map((x) => x.store))]) await change({ op: "done", store: s, cart: false }, gone);
-    },
   };
   const stock: StockActions = {
     // Have | Need on any row (Nov 11). Its List row, if it has one, changes in place; a thing with none gets one: on the

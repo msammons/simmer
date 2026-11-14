@@ -30,7 +30,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
       <div className="space-y-5 pb-2">
         {firstTime === null ? <Held /> : o.editor ? o.editor : firstTime ? (
           <>
-            <Group header="Set up ordering" footer="Face ID comes first: the limit needs it. The pickup store and card come from Safeway, and are remembered the first time you approve.">
+            <Group header="Set up ordering">
               {o.faceIdRows}
               {o.limitRow}
             </Group>
@@ -42,7 +42,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
               <Row icon="cart" title="In the cart" value={`${count} thing${count === 1 ? "" : "s"}`} />
               <Row icon="bag" title="Simmer's estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
             </Group>
-            <Group header="Ordering" footer="Placing orders from here comes after a few test runs on Safeway.">
+            <Group header="Ordering">
               {o.onOffRow}
               {o.limitRow}
               {o.storeRow}
