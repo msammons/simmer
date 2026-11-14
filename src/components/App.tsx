@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ShopScreen, type ShopActions } from "./Shop";
@@ -9,7 +9,7 @@ import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
-import { AddRecipesSheet, type AddStep, AddToListSheet, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
+import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
 
 type Tab = "recipes" | "week" | "stock" | "shop";
@@ -90,10 +90,9 @@ export default function App() {
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const me = ""; // "Who's using this?" is gone (Nov 3); added-by stays blank
   const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
-  const [sheet, setSheet] = useState<"add" | "edit" | "tolist" | null>(null);
-  const [listing, setListing] = useState<string | null>(null); // the recipe going on the list from the Recipes tab
-  // What was entered in a sheet whose save failed, so it opens again as it was: Edit's draft, or Add to the list's ticks.
-  const [retry, setRetry] = useState<{ edit?: Draft; ticks?: number[]; add?: AddStep } | null>(null);
+  const [sheet, setSheet] = useState<"add" | "edit" | null>(null);
+  // What was entered in a sheet whose save failed, so it opens again as it was: Edit's draft, or Add recipes' step.
+  const [retry, setRetry] = useState<{ edit?: Draft; add?: AddStep } | null>(null);
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
@@ -188,7 +187,6 @@ export default function App() {
   useEffect(() => { if (inRecipes) queueMicrotask(recipesNow); }, [inRecipes, visit, recipesNow]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
-  const toList = open ?? (listing ? recipeOf(listing) : null); // the add-to-list sheet's recipe: the page you're on, or a row on Recipes
   async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
     if (isStandIn(c.id)) return; // still being saved: it answers once the save is back
     setRecipes((rs) => rs && rs.map((r) => (r.id === c.id ? show(r) : r)));
@@ -211,31 +209,6 @@ export default function App() {
       didntSave(errorText(e));
       setRetry({ edit: d });
       setSheet("edit");
-    });
-  }
-  /**
-   * Add to the list: the sheet closes at once and the things go on behind it; fresh things go on the list, the pantry
-   * things with `check`, highlighted in Stock (Nov 3). One that fails opens the sheet again with the same ticks, under the alert.
-   */
-  function addToList(r: Recipe, buy: Ingredient[], pantry: Ingredient[], ticks: number[]) {
-    setSheet(null); setListing(null);
-    const line = (i: Ingredient, check: boolean) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), ...(check && { check }) });
-    const lines = [...buy.map((i) => line(i, false)), ...pantry.map((i) => line(i, true))];
-    // Shown at once: a stand-in row for each thing not already on the list (what the house keeps is highlighted in Stock).
-    const show = (l: ListState) => {
-      const items = [...l.items];
-      for (const x of lines) {
-        if (items.some((y) => !y.checked && norm(y.item) === norm(x.item))) continue;
-        const kept = l.staples.some((s) => norm(s.item) === norm(x.item));
-        items.push(standInItem(x.item, x.quantity, { for: r.name, check: Boolean(x.check) || kept }));
-      }
-      return { ...l, items };
-    };
-    change({ op: "many", items: lines, for: r.name, by: me }, show).then((problem) => {
-      if (!problem) return;
-      setRetry({ ticks });
-      setListing(r.id);
-      setSheet("tolist");
     });
   }
 
@@ -515,7 +488,7 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onActive={(a) => setActive(open, a)} onAddToList={() => setSheet("tolist")} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
+          onActive={(a) => setActive(open, a)} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
           onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => quickAdd({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
       )}
       </OpenSettings.Provider>
@@ -524,7 +497,6 @@ export default function App() {
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}
         onSave={(ds, duplicates, step) => { setRetry(null); saveNew(ds, duplicates, step); }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onClose={() => { setSheet(null); setRetry(null); }} />}
-      {sheet === "tolist" && toList && <AddToListSheet key={toList.id} r={toList} ticks={retry?.ticks} onAdd={(buy, pantry, ticks) => { setRetry(null); addToList(toList, buy, pantry, ticks); }} onClose={() => { setSheet(null); setListing(null); setRetry(null); }} />}
       {settings && (
         <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} />
       )}

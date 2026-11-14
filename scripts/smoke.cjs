@@ -194,7 +194,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         ok("meals: Take it off takes just that dinner off within 150 ms, with no Undo", await within150(async () => (await dinners.count()) === count - 1 || (await dinners.count()) === 0) && (await page.getByText("Undo").count()) === 0);
         await page.waitForTimeout(1800); await page.unroute("**/api/plan");
         await page.waitForTimeout(400);
-        if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.getByRole("button", { name: /^Add to the list/ }).isVisible(); }
+        if (await dinners.count()) { await dinners.first().tap(); await page.waitForTimeout(400); cooked = await page.locator("header").getByRole("button", { name: "Edit" }).isVisible(); }
       }
       await page.waitForTimeout(400);
       if (!cooked) ok("meals: a dinner's recipe opens (skipped: no dinner with a recipe)", true);
@@ -224,16 +224,16 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       };
       const chiliPlanned = () => page.locator("section").filter({ has: page.getByRole("heading", { name: "Regular", exact: true }) }).getByRole("button", { name: /^Turkey chili/ });
       await takeChiliOff();
-      // The recipe's page: not planned, so "Add to the plan" leads and "Just add to the list" is the quieter one.
+      // The recipe's page: not planned, so it offers "Add to the plan", and nothing else adds groceries (Nov 14).
       await tabs.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(600);
       await page.getByRole("button", { name: /^Turkey chili/ }).first().tap(); await page.waitForTimeout(500);
       const toWeek = page.getByRole("button", { name: "Add to the plan" });
-      ok("recipe: not planned, it offers Add to the plan and Just add to the list", (await toWeek.isVisible()) && (await page.getByRole("button", { name: "Just add to the list" }).isVisible()));
+      ok("recipe: not planned, it offers Add to the plan only", (await toWeek.isVisible()) && (await page.getByRole("button", { name: /add to the list/i }).count()) === 0);
       await page.screenshot({ path: `${dir}/8a-recipe-add-to-week.png` });
       await slow("**/api/plan");
       await toWeek.tap();
       // At once, saved behind it (Nov 11: no "Adding…", no note bar).
-      ok("recipe: Add to the plan shows it planned within 150 ms, with no Adding", await within150(async () => (await page.getByText("On the plan.").isVisible()) && (await page.getByRole("button", { name: "Add to the list again" }).isVisible()) && (await toWeek.count()) === 0) && (await page.getByText("Adding…").count()) === 0);
+      ok("recipe: Add to the plan shows it planned within 150 ms, with no Adding", await within150(async () => (await page.getByText("On the plan.").isVisible()) && (await page.getByRole("button", { name: /add to the list/i }).count()) === 0 && (await toWeek.count()) === 0) && (await page.getByText("Adding…").count()) === 0);
       await page.unroute("**/api/plan");
       await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
       await page.waitForTimeout(300);
@@ -541,26 +541,18 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (await page.getByRole("button", { name: /^Add .+ to the list$/ }).count()) old.push("add-to-list buttons on rows");
         ok("recipes: none of the old things are back", !old.length, old.join(", "));
       }
-      // Rows only open the recipe; Add to the list is on the recipe: the sheet lists the things to buy, and the pantry is
-      // only highlighted in Stock.
+      // Rows only open the recipe; a recipe has no Add to the list (Nov 14): groceries come only through the plan.
       const chiliRow = page.getByRole("button", { name: /^Turkey chili/ }).first();
       for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await chiliRow.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
       await chiliRow.tap(); await page.waitForTimeout(400);
-      await page.getByRole("button", { name: /add to the list/i }).first().tap(); await page.waitForTimeout(400);
-      const chiliSheet = page.getByRole("dialog", { name: "Add to the list" });
-      ok("recipe: it opens the add-to-list sheet for that recipe", (await chiliSheet.isVisible()) && (await chiliSheet.getByRole("heading", { name: "Turkey chili" }).isVisible()));
-      const turkey = chiliSheet.getByRole("checkbox", { name: "1 lb ground turkey" });
-      ok("recipe: the things to buy start ticked", (await turkey.getAttribute("aria-checked")) === "true" && await chiliSheet.getByText("To buy", { exact: true }).isVisible());
-      ok("recipe: spices and the pantry are only highlighted in Stock, not offered", (await chiliSheet.getByText(/cumin|chili powder/i).count()) === 0);
-      await page.screenshot({ path: `${dir}/6c-add-to-list.png` });
-      await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+      ok("recipe: no Add to the list on a recipe (Nov 14)", (await page.getByRole("button", { name: /add to the list/i }).count()) === 0);
       await page.locator("header").getByRole("button", { name: "Back to Recipes" }).tap(); await page.waitForTimeout(400);
       const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
       for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await tacos.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
       await tacos.tap(); await page.waitForTimeout(300);
       ok("recipe: the recipe screen; none of the old things are back (Quick/Regular outside Edit)", (await page.getByRole("heading", { name: "Tacos" }).isVisible()) && (await page.getByRole("radio", { name: "Quick" }).count()) === 0);
       await lookForBusy("a recipe");
-      // Editing a recipe, and adding it to the list, when the save fails: the sheet stays with what was typed or ticked.
+      // Editing a recipe when the save fails: the sheet stays with what was typed.
       await page.getByRole("button", { name: "Edit", exact: true }).tap(); await page.waitForTimeout(400);
       const edit = page.getByRole("dialog", { name: "Edit Tacos" });
       ok("edit: Quick/Regular is chosen here", await edit.getByRole("radio", { name: "Quick" }).isVisible());
@@ -590,28 +582,6 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("recipe: Stop suggesting flips within 150 ms", await within150(() => page.getByRole("button", { name: "Suggest this again" }).isVisible()));
       await page.waitForTimeout(1800); await page.unroute("**/api/recipes");
       await page.getByRole("button", { name: "Suggest this again" }).tap(); await page.waitForTimeout(1200);
-      await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
-      const toList = page.getByRole("dialog", { name: "Add to the list" });
-      await toList.getByRole("checkbox").first().tap(); // one unticked, so the ticks that come back are hers, not the defaults
-      const ticked = await toList.getByRole("checkbox", { checked: true }).count();
-      await page.route("**/api/list", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
-      await toList.getByRole("button", { name: /^Add \d+ to the list/ }).tap();
-      ok("add to list: closes at once, with no Adding", (await page.getByText("Adding…").count()) === 0);
-      const listAlert = page.getByRole("dialog", { name: "That didn't go through" });
-      ok("add to list: a failed add says why, over the page", await seen(listAlert.getByText("No connection"), 8000));
-      ok("add to list: and opens again with the same ticks", (await toList.isVisible()) && (await toList.getByRole("checkbox", { checked: true }).count()) === ticked);
-      await listAlert.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
-      await page.unroute("**/api/list");
-      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-      // One that goes through: the sheet closes, and the things are on Shop at once (stand-in rows until the answer).
-      await slow("**/api/list");
-      await page.getByRole("button", { name: "Add to the list" }).tap(); await page.waitForTimeout(400);
-      await page.getByRole("button", { name: /^Add \d+ to the list/ }).tap();
-      ok("add to list: closes at once", (await page.getByRole("dialog", { name: "Add to the list" }).count()) === 0);
-      await tabBar.getByRole("button", { name: "Shop" }).tap();
-      ok("add to list: the recipe's ingredients are on Shop within 150 ms", await within150(() => page.getByText(/ground beef/i).first().isVisible()));
-      await page.waitForTimeout(1800); await page.unroute("**/api/list");
-      ok("add to list: and still there once it's saved", await seen(page.getByText(/ground beef/i)));
 
       // Adding recipes: Save closes the sheet and the recipe shows at once (one: its page; several: the collection),
       // before the server answers; then it's the saved recipe.
@@ -686,8 +656,6 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const tacos = page.getByRole("button", { name: /^Tacos/ }).first();
       for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await tacos.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
       await tacos.tap(); await page.waitForTimeout(400);
-      const addBtn = await page.getByRole("button", { name: "Add to the list" }).boundingBox();
-      ok(`${tag}: Add to the list at the top of the recipe, without scrolling`, Boolean(addBtn) && addBtn.y + addBtn.height < height - 100);
       await settingsHere("a recipe");
       await page.screenshot({ path: `${dir}/6-recipe-${tag}.png`, fullPage: true });
     }
