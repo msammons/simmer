@@ -122,4 +122,24 @@ describe("the checkout look's one press", () => {
     expect((await press()).pressed).toBe(false);
     expect(pressedLabels).toEqual([]);
   });
+
+  it("reopens the pickup times with that one Edit, on the checkout page only, never another Edit or Place Order (Nov 14)", async () => {
+    const edit = async (path = "/erums/checkout") => (await safewayPage("pressPickupEdit", { path }, PAGE)) as unknown as Press;
+    cart(["Order info Edit", "Pickup date & time Edit", "Payment heading level 2 edit Payment", "Make this order a gift Edit", "Place Order", "Edit"], "/erums/checkout");
+    expect(await edit()).toMatchObject({ pressed: true, found: 1 });
+    expect(pressedLabels).toEqual(["Pickup date & time Edit"]);
+    pressedLabels.length = 0;
+    cart(["Pickup date & time Edit"], "/erums/cart");
+    expect((await edit("/erums/checkout")).pressed).toBe(false);
+    cart(["Pickup date & time Edit", "Pickup date & time Edit"], "/erums/checkout");
+    expect((await edit()).pressed).toBe(false);
+    cart(["Order info Edit", "Edit", "Place Order"], "/erums/checkout");
+    expect((await edit()).pressed).toBe(false);
+    // Inside a form, a plain <button> would send it: not pressed.
+    window.history.replaceState(null, "", "/erums/checkout");
+    document.body.innerHTML = `<form><button>Pickup date & time Edit</button></form>`;
+    const b = document.querySelector("button")!; Object.defineProperty(b, "offsetWidth", { value: 80 }); b.addEventListener("click", () => pressedLabels.push("form"));
+    expect(await edit()).toMatchObject({ pressed: false, why: "submits a form" });
+    expect(pressedLabels).toEqual([]);
+  });
 });
