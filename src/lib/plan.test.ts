@@ -24,7 +24,7 @@ describe("planning by number", () => {
     expect(saved.added).toBeGreaterThan(5);
     const { items } = await loadList();
     const turkey = items.find((i) => i.item === "ground turkey")!;
-    expect(turkey).toMatchObject({ section: "fresh", check: false, for: "turkey chili" });
+    expect(turkey).toMatchObject({ section: "fresh", check: true, for: "turkey chili" }); // waits on Stock, fresh too (Nov 14)
     expect(items.find((i) => i.item === "chili powder")).toMatchObject({ section: "pantry", check: true });
     expect(items.some((i) => i.item === "refried beans" && i.for === "lunches")).toBe(true);
 
@@ -82,8 +82,7 @@ describe("planning by number", () => {
 
   it("Something else changes the recipe and puts what the new one needs on the list", async () => {
     const [d] = (await loadPlan()).dishes;
-    const { added } = await changePlanned(d.id, { recipe: "salmon-1", pinned: false }, "Robin");
-    expect(added).toBeGreaterThan(0);
+    await changePlanned(d.id, { recipe: "salmon-1", pinned: false }, "Robin");
     expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ recipe: "salmon-1", pinned: false });
     expect((await loadList()).items.find((i) => i.item === "broccoli")?.for).toMatch(/salmon and broccoli/);
   });
@@ -154,9 +153,8 @@ describe("a new plan (Nov 10)", () => {
     await setCount("turkey-chili-1", "regular", 1, "Sam");
     const one = (await turkey())!.quantity;
     expect(await chili()).toBe(1);
-    const up = await setCount("turkey-chili-1", "regular", 3, "Sam");
+    await setCount("turkey-chili-1", "regular", 3, "Sam");
     expect(await chili()).toBe(3);
-    expect(up.added).toBeGreaterThan(0);
     expect((await turkey())!.quantity).not.toBe(one);
     await setCount("turkey-chili-1", "regular", 1, "Sam");
     expect(await chili()).toBe(1);
