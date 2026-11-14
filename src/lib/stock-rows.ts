@@ -37,10 +37,9 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
     known.add(norm(s.item));
     rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, find(s.item), s, null));
   }
-  // What the dinners need from the house that isn't kept: a dinner's pantry things (its fresh groceries go straight on the
-  // list), in their own sections, highlighted.
+  // What the dinners need that isn't kept: every dinner thing, fresh and pantry (Nov 14), in its own section, highlighted.
   for (const it of items) {
-    if (known.has(norm(it.item)) || !fromDinner(it) || (!it.check && it.section === "fresh")) continue;
+    if (known.has(norm(it.item)) || !fromDinner(it)) continue;
     known.add(norm(it.item));
     rows.push(row(`m|${it.id}`, it.item, it.section, it.store, it, null, null));
   }
