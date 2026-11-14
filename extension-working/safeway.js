@@ -253,6 +253,13 @@ async function checkoutReady(tabId, page, windowId) {
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
   const free = (w) => /REGULAR/.test(w.id) && !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
   let seen = await onPage(tabId, "readWindows", null, page);
+  // A time chosen earlier (the last Get ready) folds the pickup step into one line: reopen it once (Sam, Nov 14), then read.
+  if (seen && !seen.days.length && !seen.windows.length) {
+    const opened = await onPage(tabId, "pressPickupEdit", { path: checkoutPath }, page);
+    if (!opened?.pressed) return stop("pickup times closed");
+    await sleep(2000);
+    seen = await onPage(tabId, "readWindows", null, page);
+  }
   if (!seen) return stop("no pickup times");
   let target = null;
   if (windowId) {
