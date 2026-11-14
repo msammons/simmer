@@ -1,7 +1,6 @@
 // The Shop tab's logic, kept out of the screens so it can be tested: which list items Find goes through and in what
 // order, how search results are ordered (the usual first), what's in the cart for an item, and the cart's total.
 import { prepare, score } from "./safeway-helper.mjs";
-import { norm } from "./words";
 import type { Item, Staple } from "./groceries";
 import type { CartLine, Pick } from "./safeway";
 
@@ -29,14 +28,8 @@ export function addedFor<I extends { id: string; item: string; usual: string; qu
 export const cartFor = (cart: CartLine[], itemId: string) => cart.filter((l) => l.itemId === itemId);
 export const qtyFor = (cart: CartLine[], itemId: string) => cartFor(cart, itemId).reduce((n, l) => n + l.qty, 0);
 
-/** Where "Find them at Safeway" starts: the first item with nothing in the cart yet (else the first). */
-export function firstToFind(items: FindItem[], cart: CartLine[]): number {
-  const i = items.findIndex((it) => !qtyFor(cart, it.id));
-  return i < 0 ? 0 : i;
-}
-
 /** The next item after `from` with nothing in the cart yet, or -1 when every one after it has something. */
-export function nextToFind(items: FindItem[], cart: CartLine[], from: number): number {
+function nextToFind(items: FindItem[], cart: CartLine[], from: number): number {
   for (let i = from + 1; i < items.length; i++) if (!qtyFor(cart, items[i].id)) return i;
   return -1;
 }
@@ -77,15 +70,6 @@ export function cartTotal(cart: CartLine[]): { total: number; estimate: boolean 
 }
 
 export const money = (n: number) => `$${n.toFixed(2)}`;
-
-/** A list item's line: "In the cart · 2" once something's in the cart for it. */
-export function inCartLine(cart: CartLine[], it: { id: string }): string {
-  const n = qtyFor(cart, it.id);
-  return n ? `In the cart · ${n}` : "";
-}
-
-/** The pick for an item, however the item is written. */
-export const pickFor = (picks: Pick[], item: string) => picks.find((p) => norm(p.item) === norm(item));
 
 /**
  * Where Find's Next goes from item `from`: the next item with nothing in the cart yet, else the first such item before

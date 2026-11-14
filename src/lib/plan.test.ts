@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { addItem, addItems, addStaple, loadList, removeItem } from "./groceries";
 import { addFrozen, changePlanned, clearPlanned, setCount, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
 import { todayIn } from "./time";
-import { planLunches } from "./week";
+import type { LunchOption } from "./week";
+
+/** That many lunches for one boy, from his first option for each part (Simmer no longer plans lunches; Nov 14). */
+const lunchesFor = (kid: string, count: number, options: LunchOption[]) => Array.from({ length: count }, () => {
+  const part = (p: string) => options.find((o) => o.kid === kid && o.part === p)?.item ?? "";
+  return { kid, main: part("main"), fruit: part("fruit"), side: part("side"), treat: part("treat"), snack: part("snack") };
+});
 
 const counts = { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunches: { Theo: 2, Leo: 0 } };
 
@@ -19,7 +25,7 @@ describe("planning by number", () => {
     expect(first.dishes).toEqual([]);
     expect(first.counts).toMatchObject({ quick: 2, regular: 3, lunches: { Theo: 5, Leo: 5 } }); // a usual week, the first time
     expect(first.lunchOptions.length).toBeGreaterThan(5);
-    const lunches = planLunches([{ name: "Theo", count: 2 }], first.lunchOptions).map(({ kid, main, fruit, side, treat, snack }) => ({ kid, main, fruit, side, treat, snack }));
+    const lunches = lunchesFor("Theo", 2, first.lunchOptions);
     const saved = await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }, { kind: "quick", recipe: "Dinner with G&G", pinned: true }], lunches, counts, "Robin");
     expect(saved.added).toBeGreaterThan(5);
     const { items } = await loadList();
@@ -109,7 +115,7 @@ describe("planning by number", () => {
   });
 
   it("planning the next shop closes this week: its dinners count as made the day they were planned, lunches go", async () => {
-    await savePlan([], planLunches([{ name: "Leo", count: 1 }], (await loadPlan()).lunchOptions).map(({ kid, main, fruit, side, treat, snack }) => ({ kid, main, fruit, side, treat, snack })), null, "Sam");
+    await savePlan([], lunchesFor("Leo", 1, (await loadPlan()).lunchOptions), null, "Sam");
     const before = await loadPlan();
     expect(before.dishes.length).toBeGreaterThan(0);
     expect(before.lunches.length).toBeGreaterThan(0);

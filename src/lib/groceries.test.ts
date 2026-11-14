@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, forADinner, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -189,7 +189,6 @@ describe("a line added by hand that a dinner joins (Nov 10)", () => {
     let eggs = (await loadList()).items.find((x) => x.item === "hand-test eggs")!;
     expect(eggs.for).toBe("added by hand, hand-lasagna");
     expect(eggs.quantity).toBe("1 dozen + 1");
-    expect(forADinner(eggs)).toBe(false);
     await takeOffFor([{ item: "hand-test eggs", quantity: "1", for: "hand-lasagna" }]);
     eggs = (await loadList()).items.find((x) => x.item === "hand-test eggs")!;
     expect(eggs.for).toBe("added by hand");
@@ -199,7 +198,6 @@ describe("a line added by hand that a dinner joins (Nov 10)", () => {
     await addItem("hand-test lemons", "Robin");
     const lemons = (await loadList()).items.find((x) => x.item === "hand-test lemons")!;
     expect(lemons.for).toBe("added by hand, hand-fish");
-    expect(forADinner(lemons)).toBe(false);
   });
   it("matches dinners by their whole name, not part of one", async () => {
     await addItems([{ item: "hand-test crust", quantity: "1", for: "tuesday's pie" }], "Robin");
