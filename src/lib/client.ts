@@ -4,7 +4,7 @@ import { startAuthentication, startRegistration, WebAuthnError } from "@simplewe
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { addDays, todayIn, TZ } from "./time";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan" };
+const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan", showGot: "sm.showGot" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -23,6 +23,9 @@ let framedPasscode: string | null = null;
 export const framed = () => typeof window !== "undefined" && window.parent !== window;
 
 export const store = {
+  /** Shop's Show got (Nov 14): on unless this phone turned it off. */
+  showGot: () => get<boolean>(KEYS.showGot) !== false,
+  setShowGot: (on: boolean) => set(KEYS.showGot, on),
   passcode: () => framedPasscode ?? get<string>(KEYS.passcode),
   setPasscode: (p: string | null) => {
     if (framed()) { framedPasscode = p; return; }
