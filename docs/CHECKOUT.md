@@ -26,10 +26,11 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 - A spending limit per order, set in the Check out sheet (Shop → Safeway → Check out). Over it: refused before the helper touches Safeway. It starts at $0
   (Sam, Nov 12), so no order can go through until someone in the household raises it; a missing or unreadable limit
   counts as $0.
-- The pickup store and the card's last 4 digits are set once in the Check out sheet, picked from what Safeway's checkout
-  shows (Sam, Nov 14: "let me pick"; the phase 1 look reads them, pressing only what it was allowed to; picking one
-  needs Face ID like any change). To pick up elsewhere, the store is changed on Safeway first. Safeway showing a
-  different store or card at ordering: stop.
+- The pickup store and the card's last 4 digits come from Safeway's checkout the first time (Sam, Nov 14: picking them
+  in Simmer only confirmed what Safeway had): shown on the sheet, checked to be readable, and remembered once that
+  first approval is made with Face ID. After that, Safeway showing a different store or card: stop. They can also be
+  picked in the Check out sheet from what Safeway shows (Face ID). To pick up elsewhere, the store is changed on
+  Safeway first, then picked again in Simmer.
 
 **Each order**
 - Face ID (a passkey) on the phone to place it.

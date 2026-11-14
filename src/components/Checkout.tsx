@@ -1,6 +1,7 @@
 "use client";
 // Shop → Check out (Sam, Nov 13: "ordering lives where you check out"). The first time, a short set-up right here, in
-// order: Face ID, the limit per order, the pickup store, the card's last 4 digits, then Turn on ordering (asking first).
+// order: Face ID and the limit per order, then Turn on ordering (asking first); the pickup store and card come from
+// Safeway and are remembered at the first approval (Sam, Nov 14).
 // Once set up: the cart and Simmer's estimate (as Shop's Safeway heading shows them), ordering's switch, limit, store
 // and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): Get ready reads Safeway's checkout (the helper chooses
 // the earliest free pickup time), then "Test run · $X" approves those figures with Face ID and goes through Safeway's
@@ -17,7 +18,8 @@ const cents = (c: number | null) => (c === null ? "Couldn't be read" : `$${(c / 
 
 export function CheckoutSheet({ count, total, estimate, onClose }: { count: number; total: number; estimate: boolean; onClose: () => void }) {
   const o = useOrdering();
-  const ready = o.faceIds > 0 && o.s.limitCents > 0 && Boolean(o.s.store) && Boolean(o.s.card);
+  // The store and card come from Safeway at the first approval (Sam, Nov 14), so set-up is Face ID and the limit.
+  const ready = o.faceIds > 0 && o.s.limitCents > 0;
   // Which view is decided once, when the settings arrive, so the set-up stays put while its last step is done and
   // ends with Turn on ordering rather than jumping away.
   const [firstTime, setFirstTime] = useState<boolean | null>(null);
@@ -28,11 +30,9 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
       <div className="space-y-5 pb-2">
         {firstTime === null ? <Held /> : o.editor ? o.editor : firstTime ? (
           <>
-            <Group header="Set up ordering" footer="Face ID comes first: each of the others needs it.">
+            <Group header="Set up ordering" footer="Face ID comes first: the limit needs it. The pickup store and card come from Safeway, and are remembered the first time you approve.">
               {o.faceIdRows}
               {o.limitRow}
-              {o.storeRow}
-              {o.cardRow}
             </Group>
             <Button className="w-full" disabled={!ready || o.s.on} onClick={o.turnOn}>{o.s.on ? "Ordering is on" : "Turn on ordering"}</Button>
           </>
@@ -125,9 +125,9 @@ function TestRun() {
       <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
         {view ? (
           <>
-            <Row icon="home" title="Pickup store" value={view.store || "Couldn't be read"} />
+            <Row icon="home" title="Pickup store" subtitle={view.remember && view.store ? "Remembered once you approve" : undefined} value={view.store ? view.store.split(",")[0] : "Couldn't be read"} />
             <Row icon="clock" title="Pickup time" value={view.window || "None chosen"} />
-            <Row icon="card" title="Card" value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
+            <Row icon="card" title="Card" subtitle={view.remember && view.card ? "Remembered once you approve" : undefined} value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
             <Row icon="cart" title="Total" value={cents(view.totalCents)} />
           </>
