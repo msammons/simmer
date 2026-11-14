@@ -259,3 +259,13 @@ describe("recentJobs", () => {
     expect(log[1]).toMatchObject({ what: "bananas", status: "done", signedIn: false });
   });
 });
+
+describe("a failure's reason (Nov 14)", () => {
+  it("keeps the helper's why with the error", async () => {
+    const { queueJob, takeJob, finishJob } = await import("./jobs");
+    const j = await queueJob("checkoutPrepare", {});
+    await takeJob("26.11.14", false);
+    const done = await finishJob(j.id, false, { error: "failed", why: "TypeError: x is undefined" });
+    expect(done?.result).toMatchObject({ error: "failed", why: "TypeError: x is undefined" });
+  });
+});
