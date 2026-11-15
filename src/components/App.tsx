@@ -187,13 +187,20 @@ export default function App() {
   useEffect(() => { if (inRecipes) queueMicrotask(recipesNow); }, [inRecipes, visit, recipesNow]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
-  async function recipeChange(c: Parameters<typeof api.recipeChange>[0], show: (r: Recipe) => Recipe) {
-    if (isStandIn(c.id)) return; // still being saved: it answers once the save is back
-    setRecipes((rs) => rs && rs.map((r) => (r.id === c.id ? show(r) : r)));
-    try { gotRecipes((await api.recipeChange(c)).recipes); }
-    catch (e) { failed(e); refreshRecipes(); }
+
+  /**
+   * Delete, from Edit (asked there first): the sheet closes, the recipe page goes back and the recipe is gone at once;
+   * the plan and the list follow from the server. A delete that fails puts it back, with the alert.
+   */
+  function deleteRecipe(r: Recipe) {
+    setSheet(null);
+    if (isStandIn(r.id)) return;
+    back();
+    setRecipes((rs) => rs && rs.filter((x) => x.id !== r.id));
+    api.recipeChange({ op: "delete", id: r.id })
+      .then((a) => { gotRecipes(a.recipes); planNow(); refreshList(); })
+      .catch((e) => { failed(e); refreshRecipes(); });
   }
-  const setActive = (r: Recipe, active: boolean) => recipeChange({ op: "active", id: r.id, active }, (x) => ({ ...x, active }));
   const problemOf = (e: unknown) => (e instanceof AuthError ? null : errorText(e));
   /**
    * Edit's Save: the sheet closes at once and the recipe shows the change (Nov 11: no "Saving…"); the ingredients follow
@@ -482,7 +489,7 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          onActive={(a) => setActive(open, a)} planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
+          planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
           onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => quickAdd({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
       )}
       </OpenSettings.Provider>
@@ -490,7 +497,7 @@ export default function App() {
       {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}
         onSave={(ds, duplicates, step) => { setRetry(null); saveNew(ds, duplicates, step); }} />}
-      {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onClose={() => { setSheet(null); setRetry(null); }} />}
+      {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onDelete={() => deleteRecipe(open)} onClose={() => { setSheet(null); setRetry(null); }} />}
       {settings && (
         <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} />
       )}

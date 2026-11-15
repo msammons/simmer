@@ -418,6 +418,13 @@ export async function removePlanned(id: string): Promise<{ removed: number }> {
   return { removed: dish ? await takeOffDishes([dish.recipe], still) : 0 };
 }
 
+/** A recipe deleted (Nov 14): every time it's on the plan comes off, with what only it needed on the list. */
+export async function removeRecipeFromPlan(recipe: string): Promise<{ removed: number }> {
+  let removed = 0;
+  for (const d of toPlanned(await rows(PLANNED)).dishes.filter((x) => x.recipe === recipe)) removed += (await removePlanned(d.id)).removed;
+  return { removed };
+}
+
 /** The freezer and when the next trips are, for the Groceries tab. */
 export async function loadKitchen() {
   const [freezer, trips] = await Promise.all([loadFreezer(), rows(TRIPS)]);

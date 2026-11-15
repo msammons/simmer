@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkAgainst, guessIdeas, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, parseIngredient, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
+import { checkAgainst, deleteRecipe, guessIdeas, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, parseIngredient, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
 
 describe("the recipe collection", () => {
   it("reads ingredient lines", () => {
@@ -82,5 +82,15 @@ describe("typed meal ideas", () => {
     const bare = await guessIdeas(["Tacos", "Pizza night"], "Typed in");
     expect(bare.map((d) => [d.name, d.ingredients])).toEqual([["Tacos", []], ["Pizza night", []]]);
     err.mockRestore(); spy.mockRestore();
+  });
+});
+
+describe("deleting a recipe (Nov 14)", () => {
+  it("takes it out of the collection, once", async () => {
+    const r = await saveRecipe(fromDraft({ name: "delete-test soup", effort: "quick", minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" }));
+    expect((await loadRecipes()).some((x) => x.id === r.id)).toBe(true);
+    expect(await deleteRecipe(r.id)).toBe(true);
+    expect((await loadRecipes()).some((x) => x.id === r.id)).toBe(false);
+    expect(await deleteRecipe(r.id)).toBe(false);
   });
 });

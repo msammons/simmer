@@ -579,12 +579,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("edit: a save shows on the recipe within 150 ms, new ingredient too", await within150(async () => (await edit.count()) === 0 && (await page.getByText("Smoke note").isVisible()) && (await page.getByText(/2 smoke limes/).first().isVisible())));
       await page.waitForTimeout(1800); await page.unroute("**/api/recipes");
       ok("edit: and it's still there once it's saved", (await page.getByText("Smoke note").isVisible()) && (await page.getByText(/2 smoke limes/).first().isVisible()));
-      // Stop suggesting this: flips at once.
-      await slow("**/api/recipes");
-      await page.getByRole("button", { name: "Stop suggesting this" }).tap();
-      ok("recipe: Stop suggesting flips within 150 ms", await within150(() => page.getByRole("button", { name: "Suggest this again" }).isVisible()));
-      await page.waitForTimeout(1800); await page.unroute("**/api/recipes");
-      await page.getByRole("button", { name: "Suggest this again" }).tap(); await page.waitForTimeout(1200);
+      // Delete (Nov 14): on the Edit sheet, asking first; Cancel keeps the recipe. No Stop suggesting any more.
+      ok("recipe: no Stop suggesting", (await page.getByRole("button", { name: /Stop suggesting|Suggest this again/ }).count()) === 0);
+      await page.getByRole("button", { name: "Edit", exact: true }).tap(); await page.waitForTimeout(400);
+      await page.getByRole("dialog", { name: "Edit Tacos" }).getByRole("button", { name: "Delete recipe" }).tap();
+      const del = page.getByRole("dialog", { name: "Delete Tacos?" });
+      ok("recipe: Delete on the Edit sheet asks first", await seen(del, 1000));
+      await del.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
+      await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+      ok("recipe: Cancel keeps it", await page.getByRole("heading", { name: "Tacos" }).isVisible());
 
       // Adding recipes: Save closes the sheet and the recipe shows at once (one: its page; several: the collection),
       // before the server answers; then it's the saved recipe.
