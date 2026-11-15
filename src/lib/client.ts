@@ -102,8 +102,8 @@ export type { Order, OrderAnswer };
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
 import type { Activity, Job, JobKind } from "./jobs";
-import type { Choices, ReadyView, RunResult, TimesView } from "./checkout-run";
-export type { Choices, ReadyView, RunResult, TimesView };
+import type { Choices, OrderResult, ReadyView, RunResult, TimesView } from "./checkout-run";
+export type { Choices, OrderResult, ReadyView, RunResult, TimesView };
 export type { Activity, Job, JobKind };
 import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
 export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
@@ -156,6 +156,7 @@ export const api = {
   checkoutTimes: (jobId: string | undefined, day: string | undefined, signal?: AbortSignal) => call<TimesView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "times", jobId, day }), signal }),
   checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId }), signal }),
   checkoutApprove: (faceId: unknown) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId }) }),
+  checkoutPlace: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<OrderResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
   checkoutTestRun: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<RunResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),
   /** Turning on, raising the limit, or changing the store or card needs `faceId`, a Face ID answer (Nov 13). */
   saveCheckout: (s: CheckoutSettings, faceId?: unknown) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify({ ...s, faceId }) }),

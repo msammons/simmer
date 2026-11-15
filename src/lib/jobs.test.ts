@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { resetKv } from "./kv";
 import { addItem, loadList, removeItem } from "./groceries";
 import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
@@ -277,5 +278,36 @@ describe("the wake-up subscription (Nov 14)", () => {
     await takeJob("26.11.14.3", false);
     await takeJob("26.11.14.4", true);
     expect(await helperPush()).toEqual(fresh);
+  });
+});
+
+describe("a placing job is never handed out twice (phase 3, Nov 14)", () => {
+  beforeEach(() => resetJobs());
+  it("isn't put back when the helper reloads, or handed back: it's marked unsure", async () => {
+    const j = await queueJob("checkoutPlace", { windowId: "w" });
+    await takeJob("26.11.14.6", false);
+    await takeJob("26.11.14.7", false); // the helper reloaded as a new version
+    expect((await jobStatus(j.id)).job).toMatchObject({ status: "failed", result: { error: "unsure" } });
+    expect(await takeJob("26.11.14.7", false)).toBeNull();
+    const k = await queueJob("checkoutPlace", { windowId: "w" });
+    await takeJob("26.11.14.7", false);
+    await returnJob(k.id);
+    expect((await jobStatus(k.id)).job).toMatchObject({ status: "failed", result: { error: "unsure" } });
+    expect(await takeJob("26.11.14.7", false)).toBeNull();
+  });
+
+  it("is claimed by only one of two helpers asking at once", async () => {
+    resetKv();
+    const j = await queueJob("checkoutPlace", { windowId: "w" });
+    const [a, b] = await Promise.all([takeJob("26.11.14.7", false), takeJob("26.11.14.7", false)]);
+    expect([a, b].filter((x) => x?.id === j.id)).toHaveLength(1);
+  });
+
+  it("keeps what the helper reported, even after it was marked unsure", async () => {
+    const j = await queueJob("checkoutPlace", { windowId: "w" });
+    await takeJob("26.11.14.7", false);
+    await returnJob(j.id);
+    const done = await finishJob(j.id, true, { stopped: "placed", pressed: true, after: { url: "u", text: "Order number 12345678" } });
+    expect(done).toMatchObject({ status: "done", result: { stopped: "placed", pressed: true } });
   });
 });
