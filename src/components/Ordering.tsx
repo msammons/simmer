@@ -274,10 +274,17 @@ export function OrderingSettings() {
   const o = useOrdering();
   return (
     <>
-      <Group header="Ordering" footer={o.server ? "Pickup orders from Shop. The limit, pickup store and card are under Check out there." : "Ordering from Simmer isn't available yet."}>
-        {o.onOffRow}
-        {o.faceIdRows}
-      </Group>
+      {/* Sam, Nov 14: the set-once things live here (Face ID, limit, store, card, on/off); Check out is the order itself.
+          A field opens in place of the group. */}
+      {o.editor ?? (
+        <Group header="Ordering" footer={o.server ? "Pickup orders from Shop → Check out." : "Ordering from Simmer isn't available yet."}>
+          {o.faceIdRows}
+          {o.limitRow}
+          {o.storeRow}
+          {o.cardRow}
+          {o.onOffRow}
+        </Group>
+      )}
       {o.sheets}
     </>
   );
