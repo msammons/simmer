@@ -408,10 +408,13 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
       const swGroup = page.locator("main section").filter({ has: page.getByRole("heading", { name: "Safeway", exact: true }) });
-      ok("shop: the Safeway header has the cart, Auto-fill and Check out", /^1 in the cart · \$5\.99\s*Auto-fill 2\s*Check out$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()), await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Auto-fill stays by Safeway.
+      const checkOut = page.getByRole("button", { name: "Check out" });
+      ok("shop: one line with Show checked, the cart's price and Check out; Auto-fill by Safeway", await page.getByRole("switch", { name: "Show checked" }).isVisible() && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
+        && /^Auto-fill 2$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));
       // Check out (Nov 13): the first time, the set-up is right there, Face ID first; Turn on waits until it's all set.
       {
-        await swGroup.getByRole("button", { name: "Check out" }).tap();
+        await checkOut.tap();
         const co = page.getByRole("dialog", { name: "Check out" });
         ok("shop: Check out opens its sheet within 150 ms", await within150(() => co.isVisible()));
         await page.waitForTimeout(800);
@@ -437,7 +440,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
           if (b.op === "check-options") return r.fallback();
           return r.fallback();
         });
-        await swGroup.getByRole("button", { name: "Check out" }).tap(); await page.waitForTimeout(800);
+        await checkOut.tap(); await page.waitForTimeout(800);
         ok("shop: once set up, the store and card say they come from Safeway", await seen(co.getByRole("button", { name: /^Pickup store.*From Safeway$/ }), 2000) && await co.getByRole("button", { name: /^Card.*From Safeway$/ }).isVisible());
         await co.getByRole("button", { name: /^Pickup store/ }).tap();
         ok("shop: Pickup store shows in place, reading Safeway, with no second sheet", await seen(co.getByRole("status", { name: "Reading Safeway's checkout" }), 1000) && (await page.getByRole("dialog").count()) === 1);
@@ -453,14 +456,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       }
       ok("shop: a Safeway row says its product and what's needed", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
-      ok("shop: no Done shopping; Hide sits beside the got count (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && await page.getByRole("button", { name: "Hide", exact: true }).isVisible());
+      ok("shop: no Done shopping; Show checked starts on (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && (await page.getByRole("switch", { name: "Show checked" }).getAttribute("aria-checked")) === "true");
       // Add puts the usual in the cart: − n + at once, the helper's answer behind it.
       await page.getByRole("button", { name: "Add Milk to the cart" }).tap();
       ok("shop: Add shows − 1 + within 150 ms", await within150(async () => (await page.getByLabel("1 in the cart").count()) >= 2 && (await page.getByRole("button", { name: "One more Milk" }).isVisible())));
       await page.getByRole("button", { name: "One more Milk" }).tap();
       ok("shop: + shows within 150 ms", await within150(() => page.getByLabel("2 in the cart").first().isVisible()));
       await page.waitForTimeout(4500);
-      ok("shop: and Safeway has them: the header counts them, Auto-fill gone with one usual left", (await swGroup.locator("h2 + *").innerText().catch(() => "")).startsWith("3 in the cart") && (await page.getByRole("button", { name: /^Auto-fill/ }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
+      ok("shop: and Safeway has them: Auto-fill gone with one usual left", (await page.getByRole("button", { name: /^Auto-fill/ }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
       ok("shop: Find on a row with no usual", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
       await slow("**/api/list");
       await tick("Milk").tap();
@@ -500,12 +503,12 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tick("Eggs").tap(); await page.waitForTimeout(400);
       await tick("Coffee").tap(); await page.waitForTimeout(1500);
       ok("shop: ticked rows stay, struck through, with Show got on", (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1);
-      await page.getByRole("button", { name: "Hide", exact: true }).tap();
-      ok("shop: Hide hides them within 150 ms, still counted", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0) && (await tick("Milk").count()) === 1 && /2 of \d+ got/.test(await page.getByText(/ of \d+ got$/).first().innerText()));
+      await page.getByRole("switch", { name: "Show checked" }).tap();
+      ok("shop: Show checked off hides them within 150 ms", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0) && (await tick("Milk").count()) === 1);
       await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(500);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
-      ok("shop: and it stays off on coming back", await page.getByRole("button", { name: "Show", exact: true }).isVisible() && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
-      await page.getByRole("button", { name: "Show", exact: true }).tap();
+      ok("shop: and it stays off on coming back", (await page.getByRole("switch", { name: "Show checked" }).getAttribute("aria-checked")) === "false" && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
+      await page.getByRole("switch", { name: "Show checked" }).tap();
       ok("shop: Show brings them back within 150 ms", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
       // An empty cart: no Check out.
       {
@@ -641,8 +644,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // A long name is cut short, never pushing the control or ⋯ off the row.
       ok(`${tag}: long names truncate and every row's controls stay on it`, await rows.evaluateAll((rs) => rs.every((r) => { const b = r.getBoundingClientRect(); return r.scrollWidth <= r.clientWidth && [...r.children].every((c) => c.getBoundingClientRect().right <= b.right + 0.5); })));
       ok(`${tag}: a long-named Safeway row keeps its control`, await page.getByRole("button", { name: /^(Add|Find) Extra large organic/ }).isVisible());
-      const top = await page.getByText(/ of \d+ got$/).first().boundingBox();
-      ok(`${tag}: the got line on one line`, Boolean(top) && top.height < 44, JSON.stringify(top));
+      const top = await page.getByRole("switch", { name: "Show checked" }).boundingBox();
+      const co = await page.getByRole("button", { name: "Check out" }).boundingBox();
+      ok(`${tag}: Show checked and Check out on one line`, Boolean(top && co) && Math.abs(top.y + top.height / 2 - (co.y + co.height / 2)) < 6, JSON.stringify([top, co]));
     }
     await page.screenshot({ path: `${dir}/5a-shop-${tag}.png`, fullPage: true });
     await page.evaluate(() => { const el = document.getElementById("scroller"); if (el) el.scrollTop = el.scrollHeight; }); await page.waitForTimeout(300);
