@@ -5,7 +5,7 @@ import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
-import { Alert, BrandBar, Button, EmptyState, Group, Held, IconButton, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
+import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, IconButton, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 
 const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
@@ -44,7 +44,7 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
 } & Opens) {
   const opens = { onOpen };
   const all = useMemo(() => recipes ?? [], [recipes]);
-  const active = all.filter((r) => r.active);
+  const active = all; // every recipe shows (Nov 14: "Stop suggesting" went with suggestions; hidden ones are back)
   const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
   return (
     <div className="space-y-6">
@@ -61,7 +61,6 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
           <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
           <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
-          <Some header="Not suggested" items={all.filter((r) => !r.active).sort(byName)} {...opens} />
         </>
       )}
     </div>
@@ -69,8 +68,8 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, planned, onAddToWeek }: {
-  r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void; onActive: (a: boolean) => void;
+export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWeek }: {
+  r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
   /**
@@ -119,7 +118,6 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, onActive, planned, 
           {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
         </Group>
       )}
-      <Button variant="plain" onClick={() => onActive(!r.active)} className="w-full">{r.active ? "Stop suggesting this" : "Suggest this again"}</Button>
     </div>
   );
 }
@@ -159,12 +157,17 @@ function Editor({ d, onChange }: { d: Draft; onChange: (d: Draft) => void }) {
 const tidy = (d: Draft): Draft => ({ ...d, ingredients: d.ingredients.filter((l) => l.trim()), steps: d.steps.filter((s) => s.trim()), tags: d.tags.map((t) => t.trim()).filter(Boolean) });
 
 /** Editing a saved recipe. Save closes it at once (Nov 11: no "Saving…"); if the save fails it opens again with `initial`. */
-export function EditSheet({ r, initial, onSave, onClose }: { r: Recipe; initial?: Draft; onSave: (d: Draft) => void; onClose: () => void }) {
+export function EditSheet({ r, initial, onSave, onDelete, onClose }: { r: Recipe; initial?: Draft; onSave: (d: Draft) => void; onDelete: () => void; onClose: () => void }) {
   const [d, setD] = useState(() => initial ?? draftOf(r));
+  const [deleting, setDeleting] = useState(false); // Delete asks first (Nov 14)
   return (
     <Sheet label={`Edit ${r.name}`} title="Edit" onClose={onClose}
       footer={<Button className="w-full" disabled={!d.name.trim()} onClick={() => onSave(tidy(d))}>Save</Button>}>
       <Editor d={d} onChange={setD} />
+      <Button variant="plain" className="mt-4 w-full !text-alert" onClick={() => setDeleting(true)}>Delete recipe</Button>
+      <ConfirmSheet open={deleting} title={`Delete ${r.name}?`} confirm="Delete" danger
+        message="It comes off your recipes, and off the plan if it's there."
+        onConfirm={() => { setDeleting(false); onDelete(); }} onCancel={() => setDeleting(false)} />
     </Sheet>
   );
 }

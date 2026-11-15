@@ -99,7 +99,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                 })}
                 {/* Something left to pick: Add. All of the kind planned: nothing more (Sam, Nov 10). None of the kind: says so;
                     recipes are added on the Recipes tab. */}
-                {recipes.some((r) => r.active && kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
+                {recipes.some((r) => kindOf(r) === k && !mine.some((d) => d.recipe === r.id))
                   ? <Row icon="plus" title="Add" accessory="chevron" onClick={() => onAdd(k)} />
                   : !mine.length && <Nothing>No recipes</Nothing>}
               </Group>
@@ -148,7 +148,7 @@ export function AddMealSheet({ kind, plan, recipes, onAdd, onClose }: { kind: Ki
   const [q, setQ] = useState("");
   const planned = useMemo(() => new Set(plan.dishes.map((d) => d.recipe)), [plan.dishes]);
   const term = q.trim();
-  const mine = useMemo(() => recipes.filter((r) => r.active && kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name)), [recipes, kind]);
+  const mine = useMemo(() => recipes.filter((r) => kindOf(r) === kind).sort((a, b) => a.name.localeCompare(b.name)), [recipes, kind]);
   const found = useMemo(() => (term ? searchRecipes(recipes, term).filter(plannable) : []), [recipes, term]);
   // Closes at once (Sam, Nov 10: no "Saving…"): the dinner shows on Meals straight away and saves behind it.
   function add(dish: NewDish) {
