@@ -8,12 +8,12 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyRegistrationResponse: vi.fn(),
   verifyAuthenticationResponse: vi.fn(),
 }));
-vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn() }));
+vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ answering: true, seen: "", away: false, outdated: false })) }));
 vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
-import { approve, followTestRun, pickupTimes, prepare, testRun, type ReadyView } from "./checkout-run";
+import { approve, confirmed, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
 import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
@@ -350,5 +350,99 @@ describe("a late wake-up (Nov 14)", () => {
     expect(w).toMatchObject({ waiting: expect.any(String) });
     await prepare((w as { waiting: string }).waiting);
     expect(vi.mocked(wakeHelper)).toHaveBeenCalledTimes(3); // queued, then each follow while it waits
+  });
+});
+
+describe("placing the order (phase 3, Nov 14)", () => {
+  /** A test run that matched, so this helper version may place orders. */
+  const passTestRun = async () => { const id = await approved(); await testRun(id); };
+  afterEach(() => { delete process.env.CHECKOUT_ENABLED; });
+
+  it("is closed while the server's switch is off, or before this helper has passed a test run", async () => {
+    expect((await ready()).canOrder).toBe(false);
+    expect((await ready()).orderWhy).toMatch(/turned off/);
+    process.env.CHECKOUT_ENABLED = "on";
+    expect((await ready()).orderWhy).toMatch(/test run first/);
+    await passTestRun();
+    expect(await ready()).toMatchObject({ canOrder: true, orderWhy: "" });
+  });
+
+  it("refuses with the switch off, and asks nothing of the helper", async () => {
+    const id = await approved();
+    const asked = vi.mocked(queueJob).mock.calls.length;
+    expect(await placeOrder(id)).toMatchObject({ ok: false, reasons: [expect.stringMatching(/turned off/)] });
+    expect(vi.mocked(queueJob).mock.calls.length).toBe(asked);
+  });
+
+  it("asks the helper once with exactly what was approved, and the cart comes off the list when it's ordered", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "placed", pressed: true, after: { url: "https://x/confirmation", text: "Thank you! Order number: 123456789" } } as never) : helper(k, a));
+    const id = await approved();
+    const r = await placeOrder(id);
+    expect(r).toMatchObject({ ok: true, ordered: "Ordered · pickup Fri 6–7 AM · $6.94", number: "123456789" });
+    const placing = vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace");
+    expect(placing).toHaveLength(1);
+    expect(placing[0][1]).toMatchObject({ windowId: FRI6.id, expect: {
+      total: "$6.94", items: 1, itemsLine: expect.stringMatching(/^Safeway Items \(1\) \$/), card: "4242", storeLine: expect.stringMatching(/^Pick up your order here 100 Main St/),
+      whenLine: "Pickup date & time Edit Friday, Nov 13, 6 AM - 7 AM", cart: "184420001x1", deadline: expect.any(Number),
+    } });
+    // Single use: the same approval again asks nothing more.
+    expect(await placeOrder(id)).toMatchObject({ ok: false, reasons: [expect.stringMatching(/already used/)] });
+    expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(1);
+  });
+
+  it("says nothing was ordered when Safeway's page didn't match, and isn't sure when it pressed without an answer", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "not pressed", pressed: false, why: "total" } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/didn't match.*total/), "Nothing was ordered."] });
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: true, after: null } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, unsure: true });
+  });
+
+  it("refuses when the cart changed after the approval, before asking the helper", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    const id = await approved();
+    await setCartLine({ productId: "184420002", qty: 1, name: "Yogurt", price: "$1.00" });
+    expect(await placeOrder(id)).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed after the approval."]) });
+    expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(0);
+  });
+
+  it("says ordered only when Safeway's page confirms it, else isn't sure and leaves the list alone", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "placed", pressed: true, after: { url: "https://x/erums/cart", text: "Your cart" } } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, unsure: true });
+    expect(confirmed({ url: "https://x/order-confirmation", text: "" })).toBe(false); // the address alone isn't proof
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: true, after: { url: "https://x/erums/checkout", text: "Thank you for your order! Order number: 55512345" } } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false }); // still going-blocked by the unsure one above
+
+    expect(confirmed({ url: "https://x/erums/cart", text: "Thank you for your order" })).toBe(true);
+    expect(confirmed({ url: "https://x/erums/checkout", text: "Something went wrong" })).toBe(false);
+  });
+
+  it("counts a confirmation shown in place, without the page moving", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: true, after: { url: "https://x/erums/checkout", text: "Thank you for your order! Order number: 55512345" } } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: true, number: "55512345" });
+  });
+
+  it("starts no second order while one is going or unsure", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: true, after: null } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ unsure: true });
+    const asked = vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace").length;
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/already on its way|isn't sure/)] });
+    expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(asked);
+  });
+
+  it("reads Safeway's order number when the page shows one", () => {
+    expect(orderNumberIn("Thanks! Your order number is 2049384756.")).toBe("2049384756");
+    expect(orderNumberIn("Order # 18374628 confirmed")).toBe("18374628");
+    expect(orderNumberIn("Thanks for shopping")).toBe("");
   });
 });

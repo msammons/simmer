@@ -148,4 +148,28 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    Test runs that matched on the account (Nov 14): Sat 6–7 PM, Sun 6–7 AM, and Sun 6–7 AM again with helper 26.11.14.6
    (days first, Express and More times); Get ready also matched with a free Express time (Sat 5–6 PM). Each read 4
    items and $30.96 on both passes and stopped one press short.
-3. Turning on real orders, after dry runs match.
+3. Turning on real orders, after dry runs match. Built Nov 14 (Matt: "Build it"), helper 26.11.14.7, still behind the
+   server's switch (`CHECKOUT_ENABLED`, off until Matt turns it on):
+   - **Place order · $X** shows beside Test run only when the server allows it and this helper version has passed a
+     test run on the account (kept per version; an update needs a new one). Tapping it asks first (store, time, card,
+     total, highlights), then Face ID approves exactly those figures.
+   - The approval is taken out in one step (single use), must be within 2 minutes and the cart unchanged, and every stop
+     is checked again before the helper is asked.
+   - The helper reads Safeway's own cart page first: exactly the approved products and counts, else it stops. Then the
+     same way as a test run to the final page with exactly the approved time. Then the one press, made in the page only
+     when, read again right there, it shows the approved total once, the item count, the card's last 4 and no other
+     card, the store, the pickup day and time, no card detail asked for, and exactly one enabled "Place Order".
+   - Pressed at most once. A placing job is never handed out twice: one the helper had taken when it reloaded, or hands
+     back, is marked unsure instead. Pressed with no clear answer, or lost: "Simmer isn't sure the order went through.
+     Check Safeway before trying again." Never retried.
+   - Ordered: Safeway's order number when the page shows it, the cart comes off the Safeway list as bought, every step
+     recorded.
+   - Outside review (Codex, Nov 14), all six fixed: the helper checks the 2-minute deadline itself right before the
+     press; the final page must show the item count with its subtotal; the store, time and card are checked in the
+     lines where Safeway shows the chosen ones, each exactly once; "ordered" only when Safeway's page says so (an order
+     number or its confirmation words, whether or not the page moved); an order is marked going before the helper is
+     asked, and no other order starts until it's reported (or 30 minutes pass when unsure); a placing job is claimed in
+     one step only one helper can win. Known gap: a cart change made on Safeway during the ~30 s of checkout, to other
+     products with the same count, subtotal and total, would not be noticed.
+   - Not built yet: reading Safeway's order history after an unsure answer, and the weighed-items charge check (10%,
+     $5) against what's charged. Removing phones isn't built, so there's no way around the Face ID approval.

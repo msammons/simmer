@@ -203,6 +203,12 @@ export async function runJob(job, windowId) {
     const day = typeof args.day === "string" ? args.day : "";
     return { ok: true, result: id ? await checkoutReady(tabId, page, id) : await checkoutReady(tabId, page, null, { day }) };
   }
+  // Placing an approved order (phase 3, Nov 14): run once, never again (Simmer never hands this job out twice).
+  if (job.kind === "checkoutPlace") {
+    const id = typeof args.windowId === "string" ? args.windowId : "";
+    if (!id || !args.expect) return { ok: true, result: { stopped: "no window", pressed: false } };
+    return { ok: true, result: await placeOrder(tabId, page, settings, id, args.expect) };
+  }
   if (job.kind === "checkoutDry") {
     const id = typeof job.args?.windowId === "string" ? job.args.windowId : "";
     return { ok: true, result: id ? await checkoutReady(tabId, page, id) : { stopped: "no window", chosen: null, final: null } };
@@ -324,6 +330,30 @@ async function checkoutReady(tabId, page, windowId, list = null) {
   const final = await look();
   if (!final) return stop("page didn't load");
   return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons } };
+}
+
+/**
+ * Places the order Face ID approved (docs/CHECKOUT.md phase 3): Safeway's cart read first, on its own page, and it must
+ * be exactly the products and counts approved; then the same way as a test run to the final page, with exactly the
+ * approved pickup time; then the one Place Order press, which page.js makes only when the page says exactly what was
+ * approved. Pressed at most once: nothing here loops or tries again. Then the page it lands on is read for Simmer.
+ */
+async function placeOrder(tabId, page, settings, windowId, expect) {
+  const stop = (stopped, extra = {}) => ({ stopped, pressed: false, chosen: null, final: null, ...extra });
+  const cart = await openCart(tabId, page, settings);
+  if (!cart || cart.signedIn === false) return stop(cart ? "signed out" : "page didn't load");
+  const key = cart.products.filter((p) => p.inCart).map((p) => `${p.id}x${p.qty || 1}`).sort().join(",");
+  if (key !== expect.cart) return stop("cart changed");
+  const r = await checkoutReady(tabId, page, windowId);
+  if (r.stopped !== "ready") return { ...r, pressed: false };
+  const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
+  const from = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
+  const press = await onPage(tabId, "placeOrder", { path: checkoutPath, expect }, page);
+  if (!press?.pressed) return { ...r, stopped: "not pressed", pressed: false, why: String(press?.why ?? "no answer") };
+  // Pressed. Whatever happens next, it's never pressed again: read where Safeway lands, for the order number.
+  const to = await urlChange(tabId, from, 30_000);
+  const after = await onPage(tabId, "look", null, page);
+  return { stopped: to ? "placed" : "pressed", pressed: true, chosen: r.chosen, final: r.final, after: after ? { url: after.url, text: after.text.slice(0, 4000) } : null };
 }
 
 /**
