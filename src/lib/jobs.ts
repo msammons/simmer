@@ -15,7 +15,7 @@ import { todayIn } from "./time";
 import { json as kvJson, kv } from "./kv";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
-export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook", "checkoutPrepare", "checkoutDry"] as const;
+export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook", "checkoutPrepare", "checkoutDry", "checkoutPlace"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "waiting" | "working" | "done" | "failed";
 export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
@@ -204,7 +204,9 @@ export async function cancelJob(id: string): Promise<void> {
 export async function returnJob(id: string): Promise<void> {
   const { jobs } = await read();
   const j = jobs.find((x) => x.id === id);
-  if (j?.status === "working") await write({ ...j, status: "waiting", created: now(), updated: now() }, j.row);
+  // A placing job is never handed out again (it may have pressed): unsure instead.
+  if (j?.status === "working" && j.kind === "checkoutPlace") await write({ ...j, status: "failed", result: { error: "unsure" }, updated: now() }, j.row);
+  else if (j?.status === "working") await write({ ...j, status: "waiting", created: now(), updated: now() }, j.row);
 }
 
 /**
@@ -252,10 +254,17 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
   const h = checkInDue(tab.helper, version, panel);
   // A helper checking in as a new version has just reloaded, so a job the old one was in the middle of was dropped: it
   // goes back to waiting for this one (Nov 13: the hand-back the old helper sends as it reloads didn't always arrive).
-  const dropped = tab.helper?.version && version && tab.helper.version !== version ? tab.jobs.filter((x) => x.status === "working" && !overdue(x)) : [];
+  const dropping = tab.helper?.version && version && tab.helper.version !== version ? tab.jobs.filter((x) => x.status === "working" && !overdue(x)) : [];
+  // Never an order (phase 3): a placing job the old helper had taken may already have pressed, so it's never handed out
+  // again; it's marked unsure, and Simmer says to check Safeway.
+  for (const d of dropping.filter((x) => x.kind === "checkoutPlace")) await write({ ...d, status: "failed", result: { error: "unsure" }, updated: now() }, d.row);
+  const dropped = dropping.filter((x) => x.kind !== "checkoutPlace");
   for (const d of dropped) await write({ ...d, status: "waiting", created: now(), updated: now() }, d.row);
-  const jobs = tab.jobs.map((x) => (dropped.some((d) => d.id === x.id) ? { ...x, status: "waiting" as const, created: now() } : x));
-  const j = jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
+  const jobs = tab.jobs.map((x) => (dropped.some((d) => d.id === x.id) ? { ...x, status: "waiting" as const, created: now() } : dropping.some((d) => d.id === x.id) ? { ...x, status: "failed" as const } : x));
+  let j: (typeof jobs)[number] | undefined = jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
+  // A placing job is claimed in one step that only one asker can win (outside review, Nov 14: two helpers polling at the
+  // same moment could both have read it as waiting). The loser gets nothing this time.
+  if (j?.kind === "checkoutPlace" && (await kv().set(`simmer:claimed:${j.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") j = undefined;
   if (h && j && tab.helperRow && sheetsConfigured()) {
     const job: Row = { ...j, status: "working", updated: now() };
     await updateRanges([{ range: `${TAB}!A${tab.helperRow}:G${tab.helperRow}`, values: [helperRowCells(h)] }, { range: `${TAB}!A${j.row}:G${j.row}`, values: [cells(job)] }]);
@@ -282,7 +291,9 @@ const productsOf = (r: Record<string, unknown>) => (Array.isArray(r.products) ? 
 export async function finishJob(id: string, reported: boolean, reportedRaw: Record<string, unknown>): Promise<Job | null> {
   const { jobs } = await read();
   const j = jobs.find((x) => x.id === id);
-  if (!j || j.status === "done" || j.status === "failed") return j ?? null;
+  // A placing job's own report always counts, even after it was marked unsure (it's what happened on Safeway).
+  const late = j?.kind === "checkoutPlace" && j.status === "failed" && reported;
+  if (!j || j.status === "done" || (j.status === "failed" && !late)) return j ?? null;
   // Taking out a product Safeway no longer has is done: a second tap on the trash, or it was taken out on Safeway
   // already (Oct 31: the eggs went, a second removal a second later came back "not found").
   const gone = !reported && j.kind === "setQty" && Number(j.args.qty) === 0 && reportedRaw.error === "not-found";
@@ -329,6 +340,13 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   }
   // Getting ready on Safeway and test runs (docs/CHECKOUT.md, Nov 13): where it stopped, the window it chose, and the
   // final page's words and buttons, which Simmer reads itself (src/lib/checkout.ts readFinal); nothing else is kept.
+  // Placing (phase 3): whether Place Order was pressed, why not, and the page Safeway landed on (for the order number).
+  if (j.kind === "checkoutPlace") {
+    const a = raw.after && typeof raw.after === "object" ? raw.after as Record<string, unknown> : null;
+    result = ok
+      ? { stopped: str(raw.stopped, 60), pressed: raw.pressed === true, why: str(raw.why, 80), after: a ? { url: str(a.url, 300), text: typeof a.text === "string" ? a.text.slice(0, 4000) : "" } : null }
+      : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
+  }
   if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
     const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;
     const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;

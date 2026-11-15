@@ -203,3 +203,58 @@ describe("waiting for Safeway's page (Nov 14: no guessed pauses)", () => {
     expect(await wait("continueOn", {}, 2000)).toEqual({ ok: true });
   });
 });
+
+describe("the one press that orders (phase 3, Nov 14)", () => {
+  const EXPECT = {
+    total: "$30.96", items: 4, itemsLine: "Safeway Items (4) $32.96", card: "4242", storeLine: "Pick up your order here 100 Main St, Springfield, CA 90000",
+    whenLine: "Pickup date & time Edit Sunday, Nov 15, 6 AM - 7 AM", deadline: Date.now() + 60_000,
+  };
+  const PAGE_TEXT = "Pick up your order here 100 Main St, Springfield, CA 90000 Pickup date & time Edit Sunday, Nov 15, 6 AM - 7 AM Payment $30.96 Visa •••• 4242 Edit Place Order Order summary Safeway Items (4) $32.96 Estimated total $30.96";
+  const place = async (expect: Record<string, unknown> = EXPECT, path = "/erums/checkout") => (await safewayPage("placeOrder", { path, expect }, PAGE)) as unknown as { pressed: boolean; why: string };
+  function checkout(text: string, buttons = ["Place Order"], path = "/erums/checkout") {
+    window.history.replaceState(null, "", path);
+    document.body.innerHTML = `<p>${text}</p>` + buttons.map((b) => `<button>${b}</button>`).join("");
+    for (const b of document.querySelectorAll("button")) {
+      Object.defineProperty(b, "offsetWidth", { value: 80 });
+      b.addEventListener("click", () => pressedLabels.push(b.textContent ?? ""));
+    }
+  }
+
+  it("presses Place Order once when the page says exactly what was approved", async () => {
+    checkout(PAGE_TEXT);
+    expect(await place()).toMatchObject({ pressed: true });
+    expect(pressedLabels).toEqual(["Place Order"]);
+  });
+
+  it("presses nothing when any figure differs, a card detail is asked for, or the button isn't exactly one", async () => {
+    const cases: [string, string[], Record<string, unknown>, string][] = [
+      [PAGE_TEXT.replace("Estimated total $30.96", "Estimated total $31.96"), ["Place Order"], EXPECT, "total"],
+      [PAGE_TEXT.replace("Safeway Items (4)", "Safeway Items (5)"), ["Place Order"], EXPECT, "items"],
+      [PAGE_TEXT.replace("•••• 4242", "•••• 9999"), ["Place Order"], EXPECT, "card"],
+      [`${PAGE_TEXT} Mastercard •••• 5555`, ["Place Order"], EXPECT, "another card"],
+      [PAGE_TEXT.replace("100 Main St", "200 Elm St"), ["Place Order"], EXPECT, "store"],
+      [`${PAGE_TEXT.replace("Pick up your order here 100 Main St", "Pick up your order here 200 Elm St")} 100 Main St, Springfield, CA 90000`, ["Place Order"], EXPECT, "store"],
+      [PAGE_TEXT.replace("6 AM - 7 AM", "7 AM - 8 AM"), ["Place Order"], EXPECT, "pickup time"],
+      [`${PAGE_TEXT.replace("Edit Sunday, Nov 15, 6 AM - 7 AM", "Edit Sunday, Nov 15, 7 AM - 8 AM")} Sunday, Nov 15, 6 AM - 7 AM`, ["Place Order"], EXPECT, "pickup time"],
+      [PAGE_TEXT.replace("Safeway Items (4) $32.96", "Safeway Items (4) $33.96"), ["Place Order"], EXPECT, "items subtotal"],
+      [PAGE_TEXT.replace("Payment $30.96 Visa •••• 4242", "Payment $30.96 Visa •••• 9999 Saved Visa •••• 4242"), ["Place Order"], EXPECT, "card"],
+      [PAGE_TEXT, ["Place Order"], { ...EXPECT, deadline: Date.now() - 1 }, "approval ran out"],
+      [`${PAGE_TEXT} Confirm CVV`, ["Place Order"], EXPECT, "asks for card details"],
+      [PAGE_TEXT, ["Place Order", "Place Order"], EXPECT, "place order buttons: 2"],
+      [PAGE_TEXT, ["Place order now"], EXPECT, "place order buttons: 0"],
+      [`${PAGE_TEXT} Estimated total $30.96`, ["Place Order"], EXPECT, "total"],
+      [PAGE_TEXT, ["Place Order"], { ...EXPECT, total: "" }, "total"],
+    ];
+    for (const [text, buttons, expect_, why] of cases) {
+      checkout(text, buttons);
+      expect(await place(expect_)).toMatchObject({ pressed: false, why });
+    }
+    checkout(PAGE_TEXT, ["Place Order"], "/erums/cart");
+    expect((await place()).pressed).toBe(false);
+    checkout(PAGE_TEXT, [], "/erums/checkout");
+    document.body.innerHTML += `<button disabled>Place Order</button>`;
+    Object.defineProperty(document.querySelector("button")!, "offsetWidth", { value: 80 });
+    expect(await place()).toMatchObject({ pressed: false, why: "place order turned off" });
+    expect(pressedLabels).toEqual([]);
+  });
+});

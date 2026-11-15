@@ -53,7 +53,7 @@ export function readFinal(text: string, buttons: string[]): Final {
     taxCents: money(t, /Sales Tax (\$[\d,]+\.\d\d)/),
     totalCents: money(t, /Estimated total (\$[\d,]+\.\d\d)/),
     slot: { ready: once(t, /Ready by (\d{1,2}:\d\d ?[AP]M)/i)?.[1] ?? "", type: slot?.[1] ?? "", priceCents: cents(slot?.[2]) },
-    asksCard: /\bCVV\b|security code|card number|expiration date/i.test(t),
+    asksCard: /CVV|security code|card number|expiration date/i.test(t),
     placeButton: buttons.filter((b) => squash(b) === "Place Order").length === 1,
   };
 }
