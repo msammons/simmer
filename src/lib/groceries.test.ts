@@ -13,12 +13,12 @@ describe("the grocery list", () => {
     expect(parseEntry("1 1/2 lb ground beef")).toEqual({ quantity: "1 1/2 lb", item: "ground beef" });
     expect(norm("Lemons")).toBe(norm("lemon"));
   });
-  it("counts only what went on a list, not the pantry highlighted in Stock", async () => {
+  it("counts every row it changed, waiting on Stock or on a list (the screens read the list again)", async () => {
     const n = await addItems([
       { item: "count-test ricotta", quantity: "1", for: "Friday's lasagna" },
       { item: "count-test oregano", quantity: "1 tsp", for: "Friday's lasagna", check: true },
     ], "Robin");
-    expect(n).toBe(1);
+    expect(n).toBe(2);
     await removeItems((await loadList()).items.filter((x) => x.item.startsWith("count-test")).map((x) => x.id));
   });
   it("files common things without asking", async () => {
@@ -227,5 +227,20 @@ describe("a new plan's emptying (Nov 14)", () => {
     const mine = bought.slice(before).map((r) => r[0]).filter((n) => n.startsWith("bought-test"));
     expect(mine).toEqual(["bought-test pears"]); // the figs weren't got
     expect((await loadList()).items.filter((x) => x.item.startsWith("bought-test"))).toEqual([]);
+  });
+});
+
+describe("leftovers on Stock (Nov 14)", () => {
+  it("drops a dinner's waiting rows for a dinner no longer planned, never a kept thing's answer or a hand-added row", async () => {
+    await addItems([{ item: "stuck-test cheese", quantity: "1 cup", for: "chicken tacos", check: true }], "Robin");
+    const hand = await addItem("stuck-test bread", "Robin");
+    const { items } = await loadList();
+    const have = items.find((x) => x.item === "stuck-test cheese")!;
+    await dropHighlightsNotFor(["lasagna"]);
+    const after = (await loadList()).items.map((x) => x.item);
+    expect(after).not.toContain("stuck-test cheese");
+    expect(after).toContain("stuck-test bread");
+    expect(have.for).toBe("chicken tacos");
+    await removeItems([hand.id]);
   });
 });
