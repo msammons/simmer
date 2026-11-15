@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount } from "@/lib/plan";
+import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount, tidyStock } from "@/lib/plan";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 
 const text = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -55,6 +55,8 @@ export async function POST(req: Request) {
     else if (b?.op === "clear") ({ removed } = await clearPlanned());
     else if (b?.op === "count" && text(b.recipe) && (KINDS as readonly string[]).includes(b.kind) && Number.isFinite(Number(b.count))) ({ added, removed } = await setCount(text(b.recipe), b.kind, Number(b.count), text(b.by, 20)));
     else return Response.json({ error: "Unknown change." }, { status: 400 });
+    // A dinner's leftovers on Stock for dinners no longer planned come off (Nov 14).
+    if (b?.op !== "made") await tidyStock().catch((e) => console.error("couldn't tidy Stock", e));
     return Response.json({ ...(await loadPlan()), added, removed }, fresh);
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
