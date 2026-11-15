@@ -320,8 +320,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("settings: a copy that doesn't go through says why, and the row goes back", await seen(copyAlert, 10000) && await copyAlert.getByRole("button", { name: "OK" }).tap().then(async () => { await page.waitForTimeout(300); return !(await page.getByRole("button", { name: /Copied/ }).count()); }));
       // Ordering (docs/CHECKOUT.md): off until changed. Settings keeps the switch and Face ID (Nov 13); the limit, store
       // and card are in Shop → Check out. Turning on needs Face ID, so with none set up it says so at once.
-      ok("settings: ordering starts off, with the limit, store and card under Check out", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible()
-        && (await settings.getByRole("button", { name: /^(Limit per order|Pickup store|Card)/ }).count()) === 0);
+      // Ordering's set-once things live here (Nov 14): Face ID, the limit, the store and card, and the switch.
+      const orderRows = (await settings.getByRole("button", { name: /^(Face ID|Limit per order|Pickup store|Card|Order from Simmer)/ }).allInnerTexts()).map((t) => t.split("\n")[0].trim());
+      ok("settings: ordering starts off, with Face ID, the limit, the store and card here", await settings.getByRole("button", { name: /^Order from Simmer.*Off$/ }).isVisible()
+        && orderRows.join() === "Face ID,Limit per order,Pickup store,Card,Order from Simmer", orderRows.join());
+      await settings.getByRole("button", { name: /^Limit per order/ }).tap();
+      const needFace0 = page.getByRole("dialog", { name: "Set up Face ID first" });
+      ok("settings: changing the limit with no Face ID says to set it up first", await seen(needFace0, 2000));
+      await needFace0.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
       await settings.getByRole("button", { name: /^Order from Simmer/ }).tap();
       const firstFaceId = page.getByRole("dialog", { name: "Set up Face ID first" });
       ok("settings: turning ordering on with no Face ID says to set it up first, within 150 ms", await within150(() => firstFaceId.isVisible()));
@@ -412,45 +418,37 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const checkOut = page.getByRole("button", { name: "Check out" });
       ok("shop: one line with Show checked, the cart's price and Check out; Auto-fill by Safeway", await page.getByRole("checkbox", { name: "Show checked" }).isVisible() && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
         && /^Auto-fill 2$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));
-      // Check out (Nov 13): the first time, the set-up is right there, Face ID first; Turn on waits until it's all set.
+      // Check out (Nov 14): the order only; set-up is in Settings, and until it's done Check out says so in one line.
       {
         await checkOut.tap();
         const co = page.getByRole("dialog", { name: "Check out" });
         ok("shop: Check out opens its sheet within 150 ms", await within150(() => co.isVisible()));
         await page.waitForTimeout(800);
-        const setupRows = (await co.getByRole("button", { name: /^(Face ID|Limit per order|Pickup store|Card)/ }).allInnerTexts()).map((t) => t.split("\n")[0].trim());
-        ok("shop: the first time, it sets up Face ID and the limit (the store and card come from Safeway, Nov 14)", setupRows.join() === "Face ID,Limit per order", setupRows.join());
-        ok("shop: Face ID offers Set up, the limit is $0, and Turn on waits", await co.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible()
-          && await co.getByRole("button", { name: /^Limit per order.*\$0$/ }).isVisible() && await co.getByRole("button", { name: "Turn on ordering" }).isDisabled());
+        ok("shop: Check out shows the cart and points to Settings for set-up", await co.getByText(/Set up ordering in Settings/).isVisible()
+          && (await co.getByRole("button", { name: /^(Face ID|Limit per order|Pickup store|Card)/ }).count()) === 0);
         ok("shop: nothing there places an order", (await co.getByRole("button", { name: /place|order now/i }).count()) === 0);
-        // Test runs (Nov 13) come only once ordering is set up and on.
         ok("shop: no test run before ordering is set up", (await co.getByRole("button", { name: /^(Test run|Get ready)/ }).count()) === 0);
         ok("shop: no button anywhere on the page says Place order", (await page.getByRole("button", { name: /place order/i }).count()) === 0);
-        await co.getByRole("button", { name: /^Limit per order/ }).tap();
-        const needFace = page.getByRole("dialog", { name: "Set up Face ID first" });
-        ok("shop: changing the limit with no Face ID says to set it up first", await seen(needFace, 2000));
-        await needFace.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
         await page.keyboard.press("Escape"); await page.waitForTimeout(400);
-        // The store and card (Nov 14): picked from what Safeway's checkout shows, in place of Check out's rows (no second
-        // sheet). With Face ID pretended on, Pickup store reads Safeway and offers its store; Back returns to the rows.
+        // The store and card in Settings (Nov 14): picked from what Safeway's checkout shows, in place of the rows. With
+        // Face ID pretended on, Pickup store reads Safeway and offers its store; Back returns to the rows.
         await page.route("**/api/checkout", async (r) => {
           if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: false, limitCents: 2000, store: "", card: "" }, server: false, faceId: 1, adding: null } });
           const b = r.request().postDataJSON() ?? {};
           if (b.op === "look") { await new Promise((w) => setTimeout(w, 400)); return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", card: "4242" } }); }
-          if (b.op === "check-options") return r.fallback();
           return r.fallback();
         });
-        await checkOut.tap(); await page.waitForTimeout(800);
-        ok("shop: once set up, the store and card say they come from Safeway", await seen(co.getByRole("button", { name: /^Pickup store.*From Safeway$/ }), 2000) && await co.getByRole("button", { name: /^Card.*From Safeway$/ }).isVisible());
-        await co.getByRole("button", { name: /^Pickup store/ }).tap();
-        ok("shop: Pickup store shows in place, reading Safeway, with no second sheet", await seen(co.getByRole("status", { name: "Reading Safeway's checkout" }), 1000) && (await page.getByRole("dialog").count()) === 1);
-        const pick = co.getByRole("radio", { name: /100 Main St, Springfield, CA 90000/ });
-        ok("shop: then offers the store Safeway shows, to pick", await seen(pick, 3000) && (await pick.innerText()).includes("What Safeway shows"));
-        await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/pick-store.png` : "/tmp/pick-store.png" });
-        await co.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
-        await co.getByRole("button", { name: /^Card/ }).tap();
-        ok("shop: Card offers Safeway's card from the same reading, at once", await seen(co.getByRole("radio", { name: /•••• 4242/ }), 300));
-        await co.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
+        await page.getByRole("button", { name: "Settings" }).tap(); await page.waitForTimeout(800);
+        const st = page.getByRole("dialog", { name: "Settings" });
+        ok("settings: the store and card say they come from Safeway", await seen(st.getByRole("button", { name: /^Pickup store.*From Safeway$/ }), 2000) && await st.getByRole("button", { name: /^Card.*From Safeway$/ }).isVisible());
+        await st.getByRole("button", { name: /^Pickup store/ }).tap();
+        ok("settings: Pickup store shows in place, reading Safeway", await seen(st.getByRole("status", { name: "Reading Safeway's checkout" }), 1000));
+        const pick = st.getByRole("radio", { name: /100 Main St, Springfield, CA 90000/ });
+        ok("settings: then offers the store Safeway shows, to pick", await seen(pick, 3000) && (await pick.innerText()).includes("What Safeway shows"));
+        await st.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
+        await st.getByRole("button", { name: /^Card/ }).tap();
+        ok("settings: Card offers Safeway's card from the same reading, at once", await seen(st.getByRole("radio", { name: /•••• 4242/ }), 300));
+        await st.getByRole("button", { name: "Back" }).tap(); await page.waitForTimeout(300);
         await page.keyboard.press("Escape"); await page.waitForTimeout(400);
         await page.unroute("**/api/checkout");
       }

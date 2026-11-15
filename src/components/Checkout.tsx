@@ -19,37 +19,20 @@ const cents = (c: number | null) => (c === null ? "Couldn't be read" : `$${(c / 
 
 export function CheckoutSheet({ count, total, estimate, onClose }: { count: number; total: number; estimate: boolean; onClose: () => void }) {
   const o = useOrdering();
-  // The store and card come from Safeway at the first approval (Sam, Nov 14), so set-up is Face ID and the limit.
-  const ready = o.faceIds > 0 && o.s.limitCents > 0;
-  // Which view is decided once, when the settings arrive, so the set-up stays put while its last step is done and
-  // ends with Turn on ordering rather than jumping away.
-  const [firstTime, setFirstTime] = useState<boolean | null>(null);
-  if (o.loaded && firstTime === null) setFirstTime(!ready);
+  // Set up in Settings → Ordering (Sam, Nov 14): Face ID, a limit, and ordering turned on. The store and card come
+  // from Safeway at the first approval.
+  const ready = o.faceIds > 0 && o.s.limitCents > 0 && o.s.on;
 
   return (
     <Sheet label="Check out" title="Check out" onClose={onClose}>
       <div className="space-y-5 pb-2">
-        {firstTime === null ? <Held /> : o.editor ? o.editor : firstTime ? (
-          <>
-            <Group header="Set up ordering">
-              {o.faceIdRows}
-              {o.limitRow}
-            </Group>
-            <Button className="w-full" disabled={!ready || o.s.on} onClick={o.turnOn}>{o.s.on ? "Ordering is on" : "Turn on ordering"}</Button>
-          </>
-        ) : (
+        {!o.loaded ? <Held /> : (
           <>
             <Group header="Cart">
               <Row icon="cart" title="In the cart" value={`${count} thing${count === 1 ? "" : "s"}`} />
               <Row icon="bag" title="Simmer's estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
             </Group>
-            <Group header="Ordering">
-              {o.onOffRow}
-              {o.limitRow}
-              {o.storeRow}
-              {o.cardRow}
-            </Group>
-            {ready && o.s.on ? <TestRun /> : <p className="px-4 t-sub text-muted">Turn on ordering for a test run.</p>}
+            {ready ? <TestRun /> : <p className="px-4 t-sub text-muted">Set up ordering in Settings → Ordering: Face ID, a limit per order, then turn it on.</p>}
           </>
         )}
       </div>
