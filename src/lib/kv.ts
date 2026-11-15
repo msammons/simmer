@@ -9,7 +9,8 @@ import { redis } from "./google/redis-tabs";
  * out. GETDEL takes it out in one step, so only one can ever have it; the expiry makes Redis drop the ones never used.
  */
 type Kv = {
-  set(k: string, v: string, o: { ex: number }): Promise<unknown>;
+  /** `nx`: only if the key isn't there yet, in one step (answers "OK" when it was set, null when it was there). */
+  set(k: string, v: string, o: { ex: number; nx?: boolean }): Promise<unknown>;
   get(k: string): Promise<string | null>;
   getdel(k: string): Promise<string | null>;
   del(k: string): Promise<unknown>;
@@ -22,7 +23,7 @@ const memoryGet = (k: string) => {
   return e && e.until >= Date.now() ? e.v : null;
 };
 const inMemory: Kv = {
-  set: async (k, v, o) => { memoryKv.set(k, { v, until: Date.now() + o.ex * 1000 }); },
+  set: async (k, v, o) => { if (o.nx && memoryGet(k) !== null) return null; memoryKv.set(k, { v, until: Date.now() + o.ex * 1000 }); return "OK"; },
   get: async (k) => memoryGet(k),
   getdel: async (k) => { const v = memoryGet(k); memoryKv.delete(k); return v; },
   del: async (k) => { memoryKv.delete(k); },

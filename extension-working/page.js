@@ -26,6 +26,9 @@
  *   "Pickup date & time Edit" button, which reopens the pickup times, and nothing else
  * safewayPage("pressMoreTimes", { path }) → { pressed, found, label } — on the checkout page only: presses its one
  *   "More times" button (the day's times past the first five), and nothing else
+ * safewayPage("placeOrder", { path, expect }) → { pressed, why, label } — on the checkout page only, the one press that
+ *   orders (phase 3, Nov 14): the page read again first and checked against what was approved (`expect`); any
+ *   difference, a card detail asked for, or not exactly one "Place Order": nothing is pressed
  * safewayPage("waitFor", { until, label?, dd?, count?, ms }) → { ok } — reads only: answers as soon as the page shows what's
  *   named (watching the page change), or after `ms` at most with whether it does then
  *
@@ -332,6 +335,35 @@ export async function safewayPage(action, arg, P) {
     const said = label(found[0]).slice(0, 80);
     found[0].click();
     return { pressed: true, found: 1, label: said };
+  }
+
+  // Placing the order (docs/CHECKOUT.md phase 3, Sam, Nov 14: "Build it"). The only press anywhere that orders. Done
+  // only when Simmer asks with what Face ID approved (`expect`), and only when the page, read again right here before
+  // the press, says exactly that: the total once, the item count, the card's last 4, the store, the pickup day and time,
+  // no card detail asked for, and exactly one visible, enabled button that says "Place Order". Pressed once; never again.
+  if (action === "placeOrder") {
+    const e = arg?.expect ?? {};
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, why: "not the checkout page" };
+    const t = (document.body?.innerText ?? document.body?.textContent ?? "").replace(/\s+/g, " ");
+    const count = (s) => (s ? t.split(s).length - 1 : 0);
+    if (!e.total || count(`Estimated total ${e.total}`) !== 1) return { pressed: false, why: "total" };
+    if (!e.items || count(`Safeway Items (${e.items})`) !== 1) return { pressed: false, why: "items" };
+    if (!e.itemsLine || count(e.itemsLine) !== 1) return { pressed: false, why: "items subtotal" };
+    // The card in the Payment line, where Safeway shows the one it will charge.
+    if (!/^\d{4}$/.test(e.card ?? "") || !new RegExp(`Payment \\$[\\d,]+\\.\\d\\d (?:Visa|Mastercard|MasterCard|Amex|American Express|Discover)\\s*[•·*]+\\s*${e.card}\\b`).test(t)) return { pressed: false, why: "card" };
+    // Another card's last 4 anywhere on the page: not this card for sure, so nothing is pressed.
+    if (/[•·*]{2,}\s*\d{4}/.test(t.replace(new RegExp(`[•·*]+\\s*${e.card}\\b`, "g"), ""))) return { pressed: false, why: "another card" };
+    if (!e.storeLine || count(e.storeLine) !== 1) return { pressed: false, why: "store" };
+    if (!e.whenLine || count(e.whenLine) !== 1) return { pressed: false, why: "pickup time" };
+    // Anywhere on the page, even run into other words (a copy of the page wrote "Confirm CVVPlace Order"): never a press.
+    if (/CVV|security code|card number|expiration date/i.test(t)) return { pressed: false, why: "asks for card details" };
+    const place = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).filter((b) => (label(b) || b.value || "").trim() === "Place Order");
+    if (place.length !== 1) return { pressed: false, why: `place order buttons: ${place.length}` };
+    if (place[0].disabled || place[0].getAttribute("aria-disabled") === "true") return { pressed: false, why: "place order turned off" };
+    // The approval's 2 minutes, checked last, right before the press (outside review, Nov 14).
+    if (!(Number(e.deadline) > Date.now())) return { pressed: false, why: "approval ran out" };
+    place[0].click();
+    return { pressed: true, why: "", label: "Place Order" };
   }
 
   // The day's times past the first five (Sam, Nov 14: "the times offered are not the same as on the site"): only on

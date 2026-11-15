@@ -2,7 +2,7 @@ import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
 import { loadSettings, serverOn } from "@/lib/checkout";
 import { addWaiting, answerOf, changeSettings, passkeyCount } from "@/lib/passkeys";
-import { approve, followTestRun, lookUp, pickupTimes, prepare, testRun } from "@/lib/checkout-run";
+import { approve, followOrder, followTestRun, lookUp, pickupTimes, placeOrder, prepare, testRun } from "@/lib/checkout-run";
 import { AppError } from "@/lib/errors";
 
 // Getting ready and test runs wait on the helper up to 20 s per request (the sheet asks again while it's going).
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
-  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run" || b?.op === "look" || b?.op === "times") return run(req, b);
+  if (b?.op === "prepare" || b?.op === "approve" || b?.op === "test-run" || b?.op === "look" || b?.op === "times" || b?.op === "place") return run(req, b);
   try {
     const r = await changeSettings(req, {
       on: b?.on === true,
@@ -67,6 +67,8 @@ async function run(req: Request, b: Record<string, unknown>) {
       : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined)
       : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId))
+      // Placing for real (phase 3): only with an approval made with Face ID, or following the one started.
+      : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId)) : await placeOrder(id(b.approvalId)))
       : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
     return Response.json(out, noStore);
   } catch (e) {
