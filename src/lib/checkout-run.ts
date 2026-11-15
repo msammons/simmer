@@ -34,6 +34,8 @@ export type ReadyView = {
   stops: string[]; highlights: string[];
   /** The store and card aren't remembered yet: approving this remembers the ones shown (Sam, Nov 14). */
   remember: boolean;
+  /** Safeway's taxes and fees in the total ("Est. taxes and fees"), shown as their own row; null when unread. */
+  feesCents?: number | null;
   /** Placing for real is open (phase 3): the server allows it and this helper has passed a test run; else why not. */
   canOrder: boolean; orderWhy: string;
 };
@@ -123,11 +125,16 @@ function finalOf(r: Reading): { final: Final; why: string[] } {
 const allStops = (why: string[], more: string[]) => [...why, ...more.filter((m) => !(why.length && m === "No pickup time is chosen."))];
 
 /** The highlights for the confirm sheet, from Simmer's cart (docs/CHECKOUT.md: 5 or more, over $30, 15% above the estimate). */
-async function highlights(totalCents: number | null): Promise<string[]> {
+/**
+ * The highlights. The total is compared with Simmer's estimate without Safeway's taxes and fees (Sam, Nov 14: a $3.95
+ * small-order fee on a $10.99 cart was flagged as "more than Simmer expected"); the fees show as their own row.
+ */
+async function highlights(totalCents: number | null, feesCents: number | null): Promise<string[]> {
   if (totalCents === null) return [];
   const lines = await loadCart();
   const { total } = cartTotal(lines);
-  return unusual(lines.map((l) => ({ name: l.name, qty: l.qty, priceCents: priceOf(l.price) === null ? null : Math.round(priceOf(l.price)! * 100) })), total ? Math.round(total * 100) : null, totalCents);
+  const goods = feesCents !== null && feesCents <= totalCents ? totalCents - feesCents : totalCents;
+  return unusual(lines.map((l) => ({ name: l.name, qty: l.qty, priceCents: priceOf(l.price) === null ? null : Math.round(priceOf(l.price)! * 100) })), total ? Math.round(total * 100) : null, goods);
 }
 
 // ---- the pickup times, to pick from
@@ -196,7 +203,7 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): 
   } else await kv().del(PREPARED_KEY);
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
-    stops: reasons, highlights: await highlights(final.totalCents), remember: !s.store || !s.card,
+    stops: reasons, highlights: await highlights(final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents,
     ...(await orderOpen()),
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });

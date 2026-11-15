@@ -154,6 +154,15 @@ describe("getting ready", () => {
     expect(recorded("test ready")[0]).toMatchObject({ stopped: "ready", totalCents: 694 });
   });
 
+  it("leaves Safeway's taxes and fees out when comparing with Simmer's estimate, and shows them (Nov 14)", async () => {
+    // $2.99 of milk in Simmer's cart; Safeway's total $6.94 is the milk plus a $3.95 small-order fee.
+    const v = await ready();
+    expect(v.highlights).toEqual([]);
+    expect(v.feesCents).toBe(395);
+    does = () => ({ ...READY, final: page((t) => t.replace("Estimated total $6.94", "Estimated total $9.94")) });
+    expect((await ready()).highlights).toEqual([expect.stringMatching(/more than Simmer expected/)]);
+  });
+
   it("is followed while the helper is still at it, without the app keeping time", async () => {
     await pickupTimes();
     going = true;

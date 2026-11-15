@@ -189,6 +189,7 @@ function TestRun() {
             <Row icon="clock" title="Pickup time" value={view.window || "None chosen"} />
             <Row icon="card" title="Card" subtitle={view.remember && view.card ? "Remembered once you approve" : undefined} value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
+            {view.feesCents ? <Row icon="bag" title="Taxes and fees" value={cents(view.feesCents)} /> : null}
             <Row icon="cart" title="Total" value={cents(view.totalCents)} />
           </>
         ) : <Row icon="refresh" title="Get ready" subtitle="Shows Safeway's pickup days and free times." onClick={() => getTimes()} />}
