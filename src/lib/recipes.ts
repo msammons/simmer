@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTabIfAny, sheetsConfigured, updateRanges } from "./google/sheets";
+import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
 import { type Section, type Store } from "./groceries";
@@ -141,6 +141,21 @@ export async function saveRecipes(rs: Recipe[]): Promise<Recipe[]> {
   await updateRanges(data);
   if (fresh.length) await appendRows(TAB, fresh.map((r) => { const c = cells(r); return headers.map((h) => c[h] ?? ""); }));
   return rs;
+}
+
+/** Deletes a recipe from the collection (Matt, Nov 14: from its Edit sheet, asked first). Answers whether it was there. */
+export async function deleteRecipe(id: string): Promise<boolean> {
+  if (!sheetsConfigured()) {
+    const m = (memory ??= toRecipes(await local()));
+    const i = m.findIndex((x) => x.id === id);
+    if (i >= 0) m.splice(i, 1);
+    return i >= 0;
+  }
+  const rows = await readTabIfAny(TAB);
+  const keep = records(rows).filter((x) => x.get("id") !== id);
+  if (keep.length === Math.max(0, rows.length - 1)) return false;
+  await replaceTab(TAB, [rows[0], ...keep.map((x) => rows[x.rowNumber - 1])], rows);
+  return true;
 }
 
 export async function updateRecipe(id: string, change: (r: Recipe) => Recipe): Promise<Recipe> {

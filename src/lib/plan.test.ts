@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addItem, addItems, addStaple, loadList, removeItem } from "./groceries";
-import { addFrozen, changePlanned, clearPlanned, setCount, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
+import { addFrozen, changePlanned, removeRecipeFromPlan, clearPlanned, setCount, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
 import { todayIn } from "./time";
 import type { LunchOption } from "./week";
 
@@ -173,3 +173,14 @@ describe("a new plan (Nov 10)", () => {
   });
 });
 
+
+describe("a deleted recipe (Nov 14)", () => {
+  it("comes off the plan every time it's on it, with its groceries", async () => {
+    await clearPlanned();
+    await setCount("turkey-chili-1", "regular", 2, "Sam");
+    expect((await loadPlan()).dishes.filter((d) => d.recipe === "turkey-chili-1")).toHaveLength(2);
+    const { removed } = await removeRecipeFromPlan("turkey-chili-1");
+    expect((await loadPlan()).dishes.filter((d) => d.recipe === "turkey-chili-1")).toHaveLength(0);
+    expect(removed).toBeGreaterThan(0);
+  });
+});

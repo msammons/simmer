@@ -1,7 +1,8 @@
 import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
-import { fromDraft, loadRecipes, saveRecipes, sameName, updateRecipe, type Draft, type Recipe } from "@/lib/recipes";
+import { deleteRecipe, fromDraft, loadRecipes, saveRecipes, sameName, updateRecipe, type Draft, type Recipe } from "@/lib/recipes";
+import { removeRecipeFromPlan } from "@/lib/plan";
 
 const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
@@ -51,6 +52,13 @@ export async function POST(req: Request) {
       }
       case "effort": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, effort: b.effort === "quick" ? "quick" : "regular" }))).id]; break;
       case "active": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, active: Boolean(b.active) }))).id]; break;
+      // Deleting (Nov 14): off the collection, and off the plan with what only it needed on the list.
+      case "delete": {
+        const id = clean(b.id);
+        if (!(await deleteRecipe(id))) throw new AppError("That recipe isn't in the collection anymore.");
+        await removeRecipeFromPlan(id);
+        break;
+      }
       default: return Response.json({ error: "Unknown change." }, { status: 400 });
     }
     return Response.json({ recipes: await loadRecipes(), saved }, { headers: { "cache-control": "no-store" } });
