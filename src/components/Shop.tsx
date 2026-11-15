@@ -5,6 +5,7 @@ import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from
 import { CheckoutSheet } from "./Checkout";
 import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
 import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet } from "./ui";
+import { Icon } from "./icons";
 
 /**
  * Shop (Sam, Nov 12): one page, grouped by store (Safeway, Trader Joe's, Costco; a store with nothing doesn't show).
@@ -64,15 +65,27 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * "2 of 5 got" and Show got (Sam, Nov 14, in place of Done shopping): on, what's ticked stays, struck through; off, it's
- * hidden. Ticked things stay on the list until a new plan empties it (written down as bought then).
+ * One line above the list (Sam, Nov 14): a visible Show checked switch (on, what's ticked stays, struck through; off,
+ * it's hidden; ticked things stay on the list until a new plan empties it) and, with something in the Safeway cart, its
+ * price and a Check out button with a cart.
  */
-function TopLine({ text, showGot, onShowGot }: { text: string; showGot: boolean; onShowGot: (() => void) | null }) {
+function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void } | null }) {
   return (
-    // Sam, Nov 14: small, right beside the count: "3 of 5 got · Hide" (or Show when they're hidden).
-    <div className="flex min-h-10 items-center gap-2 px-4">
-      <span className="t-sub font-semibold">{text}</span>
-      {onShowGot && <button onClick={onShowGot} className="-my-2 py-2 t-sub font-semibold text-accent active:opacity-60">{showGot ? "Hide" : "Show"}</button>}
+    <div className="flex min-h-10 items-center gap-3 px-1">
+      <button role="switch" aria-checked={showGot} onClick={onShowGot} className="flex items-center gap-2.5 py-1 t-sub font-semibold active:opacity-70">
+        <span className={`relative inline-block h-[26px] w-11 shrink-0 rounded-full transition-colors ${showGot ? "bg-accent" : "bg-sunk"}`}>
+          <span className={`absolute left-0 top-[3px] block size-5 rounded-full bg-white shadow transition-transform ${showGot ? "translate-x-[21px]" : "translate-x-[3px]"}`} />
+        </span>
+        Show checked
+      </button>
+      {cart && (
+        <span className="ml-auto flex min-w-0 items-center gap-2.5">
+          <span className="truncate t-sub text-muted">{cart.price}</span>
+          <button onClick={cart.onCheckOut} className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 t-sub font-semibold text-on-accent active:scale-95">
+            <Icon name="cart" className="size-[18px]" strokeWidth={2} />Check out
+          </button>
+        </span>
+      )}
     </div>
   );
 }
@@ -158,9 +171,8 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     void act.add(t);
   };
 
-  // What the filter shows; "got" goes by it.
+  // What the filter shows.
   const here = where === "all" ? items : items.filter((i) => i.store === where);
-  const ticked = here.filter((i) => i.checked);
   /** The rows shown: what's ticked only with Show got on. */
   const visible = showGot ? items : items.filter((i) => !i.checked);
 
@@ -202,17 +214,13 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine text={here.length ? `${ticked.length} of ${here.length} got` : ""} showGot={showGot} onShowGot={() => setShowGot(!showGot)} />
+          <TopLine showGot={showGot} onShowGot={() => setShowGot(!showGot)}
+            cart={live && count > 0 && (where === "all" || where === "safeway") ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true) } : null} />
           {!shown.length && <EmptyState icon="list" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
-            <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && (count > 0 || usual.length > 1) && (
-              <span className="flex min-w-0 items-center gap-3 t-foot">
-                {count > 0 && <span className="truncate text-muted">{count} in the cart · {estimate ? "about " : ""}{money(total)}</span>}
-                {usual.length > 1 && <button onClick={autoFill} className="shrink-0 font-semibold text-accent">Auto-fill {usual.length}</button>}
-                {/* Check out (Nov 13): only with something in the cart; ordering's set-up and settings live in its sheet. */}
-                {count > 0 && <button onClick={() => setCheckingOut(true)} className="shrink-0 font-semibold text-accent">Check out</button>}
-              </span>
+            <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (
+              <button onClick={autoFill} className="shrink-0 t-foot font-semibold text-accent">Auto-fill {usual.length}</button>
             )}>
               {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}
