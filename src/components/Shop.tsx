@@ -65,17 +65,16 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * One line above the list (Sam, Nov 14): a visible Show checked switch (on, what's ticked stays, struck through; off,
+ * One line above the list (Sam, Nov 14): a Show checked checkbox, lined up with the rows' (on, what's ticked stays, struck through; off,
  * it's hidden; ticked things stay on the list until a new plan empties it) and, with something in the Safeway cart, its
  * price and a Check out button with a cart.
  */
 function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void } | null }) {
   return (
-    <div className="flex min-h-10 items-center gap-3 px-1">
-      <button role="switch" aria-checked={showGot} onClick={onShowGot} className="flex items-center gap-2.5 py-1 t-sub font-semibold active:opacity-70">
-        <span className={`relative inline-block h-[26px] w-11 shrink-0 rounded-full transition-colors ${showGot ? "bg-accent" : "bg-sunk"}`}>
-          <span className={`absolute left-0 top-[3px] block size-5 rounded-full bg-white shadow transition-transform ${showGot ? "translate-x-[21px]" : "translate-x-[3px]"}`} />
-        </span>
+    // The checkbox lines up with the rows' (Sam, Nov 14: "would look better as a checkbox aligned with the other checkboxes").
+    <div className="flex min-h-10 items-center gap-3 pl-4">
+      <button role="checkbox" aria-checked={showGot} onClick={onShowGot} className="flex items-center gap-3 py-1 t-sub font-semibold active:opacity-70">
+        <Check on={showGot} />
         Show checked
       </button>
       {cart && (
