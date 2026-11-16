@@ -51,3 +51,7 @@ review (docs/CHECKOUT.md).
 - Bags: the helper now reads Safeway's bags choice on Get ready, read only. The choice in Check out and the press come
   after that reading has been seen once with a real cart (the cart was empty, so the page couldn't be reached).
 - Before a real order: one test run with helper 26.11.16.1.
+- Stock: built. The big Add something opens a sheet: a name, Common or Specialty (Specialty picked first), a group
+  (tap one already used, or type a new one), and Add as Need. Typing shows things already kept; tapping one marks it
+  Need. ⋯ on a kept thing: Put in a group / Change group, Make common or Make specialty. Everything kept before today
+  is Common with no group. Two new columns on the Staples tab: kind, group.

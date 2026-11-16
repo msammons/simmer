@@ -25,7 +25,13 @@ export type Item = { id: string; item: string; quantity: string; store: Store; s
  * A thing the house keeps. It goes on a list only when someone taps it on Stock as out (Nov 10: no Every week; nothing
  * comes back on a list by itself, since deciding to buy it again is that tap).
  */
-export type Staple = { item: string; store: Store; section: Section; quantity: string; product: string };
+/**
+ * A thing the house keeps. kind (Nov 16, Robin's run): common things always show on Stock; specialty ones (goat
+ * cheese, five spice) show only while they're on the list or answered, and leave after the shop. group: the name of
+ * the group it sits in on Stock (Cheese, Yogurt), set by her; "" for none.
+ */
+export type Staple = { item: string; store: Store; section: Section; quantity: string; product: string; kind: StapleKind; group: string };
+export type StapleKind = "common" | "specialty";
 
 const LIST = "List", STAPLES = "Staples", INGREDIENTS = "Ingredients";
 const LIST_HEADERS = ["id", "item", "quantity", "store", "section", "for", "added_by", "added_at", "checked", "checked_at", "check"];
@@ -58,7 +64,10 @@ function toItems(rows: string[][]): Item[] {
   }] : []));
 }
 function toStaples(rows: string[][]): Staple[] {
-  return records(rows).flatMap((r) => (r.get("item") ? [{ item: r.get("item"), store: asStore(r.get("store")), section: asSection(r.get("section")), quantity: r.get("usual_quantity"), product: r.get("usual_product") }] : []));
+  return records(rows).flatMap((r) => (r.get("item") ? [{
+    item: r.get("item"), store: asStore(r.get("store")), section: asSection(r.get("section")), quantity: r.get("usual_quantity"), product: r.get("usual_product"),
+    kind: r.get("kind").trim().toLowerCase() === "specialty" ? "specialty" as const : "common" as const, group: r.get("group").replace(/\s+/g, " ").trim().slice(0, 40),
+  }] : []));
 }
 
 async function mem() {
@@ -526,8 +535,8 @@ export async function putBack(items: Item[]) {
 
 // ---- Stock: the things the house keeps (the Staples tab)
 
-const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product"];
-const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product];
+const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product", "kind", "group"];
+const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product, s.kind === "specialty" ? "specialty" : "", s.group];
 
 async function writeStaples(change: (all: Staple[]) => Staple[]) {
   if (!sheetsConfigured()) { const m = await mem(); m.staples = change(m.staples); return; }
@@ -540,13 +549,21 @@ async function writeStaples(change: (all: Staple[]) => Staple[]) {
   await replaceTab(STAPLES, [headers, ...next.map(cells)], rows); // one write (a missing tab is made first)
 }
 
-/** A new thing the house keeps, in the section given or guessed (the same name again changes nothing). */
-export async function addStaple(text: string, section?: Section) {
+/**
+ * A new thing the house keeps, in the section given or guessed. The same name again keeps it, changing only the kind
+ * or group given (quick add of something known, Nov 16).
+ */
+export async function addStaple(text: string, section?: Section, opts: { kind?: StapleKind; group?: string } = {}) {
   const item = text.replace(/\s+/g, " ").trim().slice(0, 80);
   if (!item) return;
   const f = await file(item);
-  await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item)) ? all : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "" }]));
+  await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item))
+    ? all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(opts.kind && { kind: opts.kind }), ...(opts.group !== undefined && { group: opts.group }) } : s))
+    : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "", kind: opts.kind ?? "common", group: opts.group ?? "" }]));
 }
+/** A kept thing made common or specialty, or put in a group ("" for none) (Nov 16). */
+export const setStaple = (item: string, change: { kind?: StapleKind; group?: string }) =>
+  writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(change.kind && { kind: change.kind }), ...(change.group !== undefined && { group: change.group }) } : s)));
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 

@@ -382,11 +382,20 @@ export default function App() {
       change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) }, showNew);
     },
     // Shown at once (Nov 11): the new thing's row, filed where Simmer would file it, until the server's list comes back.
-    keepAdd: (text, section) => change({ op: "keepAdd", text, ...(section && { section }) }, (l) => {
-      if (l.staples.some((x) => norm(x.item) === norm(text))) return l;
+    // Quick add (Nov 16): common or specialty, maybe in a group, and with need, a stand-in Need row at once.
+    keepAdd: (text, section, more = {}) => change({ op: "keepAdd", text, ...(section && { section }), ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }), ...(more.need && { need: true, by: me }) }, (l) => {
+      const had = l.staples.find((x) => norm(x.item) === norm(text));
       const f = known(text);
-      return { ...l, staples: [...l.staples, { item: text, store: f?.store ?? "safeway", section: section ?? f?.section ?? "pantry", quantity: "", product: "" }] };
+      const s = had
+        ? { ...had, ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }) }
+        : { item: text, store: f?.store ?? "safeway", section: section ?? f?.section ?? "pantry", quantity: "", product: "", kind: more.kind ?? "common" as const, group: more.group ?? "" };
+      const staples = had ? l.staples.map((x) => (x === had ? s : x)) : [...l.staples, s];
+      if (!more.need) return { ...l, staples };
+      const row = l.items.find((x) => !x.checked && norm(x.item) === norm(text));
+      const items = row ? l.items.map((x) => (x === row ? { ...x, check: false, have: false } : x)) : [...l.items, standInItem(s.item, s.quantity, { check: false }, s.store, s.section)];
+      return { ...l, staples, items };
     }),
+    keepSet: (item, c) => change({ op: "keepSet", item, ...c }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)) })),
     keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
     mealMove: (it, section) => change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
     keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
