@@ -357,6 +357,12 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       // The free times read for picking (Nov 14), each a window's id and words; only from the listing.
       ...(Array.isArray(raw.days) ? { days: (raw.days as Record<string, unknown>[]).slice(0, 14).map((d) => ({ label: str(d?.label, 80) })).filter((d) => d.label), day: str(raw.day, 80) } : {}),
       ...(Array.isArray(raw.times) ? { times: (raw.times as Record<string, unknown>[]).slice(0, 120).map((t) => ({ id: str(t?.id, 120), words: str(t?.words, 160) })).filter((t) => t.id) } : {}),
+      // How Safeway builds its bags choice (Nov 16), to learn from.
+      ...(raw.bags && typeof raw.bags === "object" ? { bags: {
+        text: str((raw.bags as Record<string, unknown>).text, 400),
+        controls: (Array.isArray((raw.bags as Record<string, unknown>).controls) ? (raw.bags as { controls: Record<string, unknown>[] }).controls : []).slice(0, 12)
+          .map((c) => ({ tag: str(c?.tag, 20), type: str(c?.type, 20), role: str(c?.role, 20), label: str(c?.label, 80), checked: c?.checked === true, name: str(c?.name, 40) })),
+      } } : {}),
       // What a stop saw (Nov 14: why the pickup times couldn't be reopened), kept with the job to read back.
       ...(raw.detail && typeof raw.detail === "object" ? { detail: { found: Number((raw.detail as Record<string, unknown>).found) || 0, why: str((raw.detail as Record<string, unknown>).why, 60) } } : {}),
     };

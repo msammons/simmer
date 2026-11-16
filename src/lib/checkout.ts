@@ -52,7 +52,7 @@ export function readFinal(text: string, buttons: string[]): Final {
     feesCents: money(t, /Est\. taxes and fees (\$[\d,]+\.\d\d)/),
     taxCents: money(t, /Sales Tax (\$[\d,]+\.\d\d)/),
     totalCents: money(t, /Estimated total (\$[\d,]+\.\d\d)/),
-    slot: { ready: once(t, /Ready by (\d{1,2}:\d\d ?[AP]M)/i)?.[1] ?? "", type: slot?.[1] ?? "", priceCents: cents(slot?.[2]) },
+    slot: { ready: once(t, /Ready by (\d{1,2}(?::\d\d)? ?[AP]M)/i)?.[1] ?? "", type: slot?.[1] ?? "", priceCents: cents(slot?.[2]) },
     asksCard: /CVV|security code|card number|expiration date/i.test(t),
     placeButton: buttons.filter((b) => squash(b) === "Place Order").length === 1,
   };
@@ -176,7 +176,7 @@ export function windowOf(id: string, words: string, order: number): PickupWindow
   return {
     id, words: w, order,
     date: id.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? "",
-    kind: id.match(/\d{8}([A-Z]+?)DUG/)?.[1] ?? "",
+    kind: /FLASH/i.test(`${id} ${w}`) ? "FLASH" : id.match(/\d{8}([A-Z]+?)DUG/)?.[1] ?? "",
     notFlash: /\d{8}[A-Z]+DUG/.test(id) && !/FLASH/i.test(`${id} ${w}`),
     priceCents: price === undefined ? null : /^free$/i.test(price) ? 0 : cents(price),
   };
@@ -206,9 +206,19 @@ const loose = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ 
  */
 export function pickupOf(f: Final, text: string, chosen: { id: string; words: string } | null): { final: Final; why: string[] } {
   const none = { ...f, slot: { ready: "", type: "", priceCents: null } };
-  if (!chosen) return { final: none, why: ["No free pickup time was chosen."] };
+  if (!chosen) return { final: none, why: ["No pickup time was chosen."] };
   const w = windowOf(chosen.id, chosen.words, 0);
-  if (!w.notFlash || w.priceCents !== 0) return { final: none, why: ["Safeway's pickup time isn't a free one."] };
+  if (w.priceCents === null) return { final: none, why: ["Safeway's pickup time price couldn't be read."] };
+  // Flash (Nov 16, Sam: "offer flash but show it"): the final page's own slot line must say Flash, the same ready time
+  // and the same price as the time picked.
+  if (w.kind === "FLASH") {
+    const ready = w.words.match(/Ready by (\d{1,2}(?::\d\d)? ?[AP]M)/i)?.[1] ?? "";
+    if (f.slot.type.toUpperCase() !== "FLASH" || f.slot.priceCents !== w.priceCents || !ready || squash(f.slot.ready).toUpperCase() !== squash(ready).toUpperCase()) {
+      return { final: none, why: ["Safeway's Flash pickup time couldn't be read."] };
+    }
+    return { final: { ...f, slot: { ready: `Ready by ${squash(ready)}`, type: "FLASH", priceCents: w.priceCents } }, why: [] };
+  }
+  if (w.priceCents !== 0) return { final: none, why: ["Safeway's pickup time isn't a free one."] };
   if (f.slot.type && (/FLASH/i.test(f.slot.type) || f.slot.priceCents !== 0)) return { final: none, why: ["Safeway's page shows a paid pickup time."] };
   // The kind on the page, when it says one, is the kind picked (outside review, Nov 14).
   if (f.slot.type && f.slot.type.toUpperCase() !== w.kind) return { final: none, why: ["Safeway's page shows a different pickup time."] };
@@ -223,6 +233,11 @@ export function pickupOf(f: Final, text: string, chosen: { id: string; words: st
 /** "Fri 6–7 AM": the day from the window's date, and its time range. */
 export function windowWords(chosen: { id: string; words: string }): string {
   const w = windowOf(chosen.id, chosen.words, 0);
+  if (w.kind === "FLASH") {
+    const day = w.date ? new Date(`${w.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }) : "";
+    const ready = w.words.match(/Ready by (\d{1,2}(?::\d\d)? ?[AP]M)/i)?.[1] ?? "";
+    return `${day} ready by ${ready} · Flash $${((w.priceCents ?? 0) / 100).toFixed(2)}`.trim();
+  }
   const r = rangeOf(w.words);
   const day = w.date ? new Date(`${w.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }) : "";
   if (!r) return day;

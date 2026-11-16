@@ -14,8 +14,14 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a
    day first": reading every day was slow); tapping another day has the helper press that one tile and read it. Only
-   free times, never Flash or a priced one; the helper chooses none. Free Express times count as well as Regular (Sam,
+   free times, plus Flash shown with its price (Sam, Nov 16: "offer flash but show it", his yes to this change); never
+   another paid time; the helper chooses none. Free Express times count as well as Regular (Sam,
    Nov 14: "why would i not use express times?"; today's first three were Express, and the Regular-only rule hid them).
+   A Flash time is chosen only when it's the one she tapped, with its price on the row; Getting ready stops unless
+   Safeway's final page shows Flash with the same ready time and price; its price is in the total she approves; and
+   Place Order checks the day, then "Ready by <time> Slot type FLASH price $<price>" exactly once, before pressing.
+   Bags (Nov 16, Sam: "user chooses bags", his yes to setting it): Getting ready reads Safeway's bags choice, read only,
+   so the choice can be offered per order; setting it isn't built until that reading has been seen with a real cart.
    Each day shows five times and a "More times" button; the helper may press it (Nov 14, to match the site): only on the
    checkout page, only a button reading exactly "More times", only one, once per day read. It shows more times only. With one picked, what
    the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Getting ready takes
