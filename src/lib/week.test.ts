@@ -38,7 +38,7 @@ describe("what a recipe is planned as", () => {
 
 describe("the usual counts, the first time", () => {
   it("is 2 quick, 3 regular, and the boys' own dinner when they have one", () => {
-    expect(firstCounts(["Theo", "Leo"], true)).toEqual({ quick: 2, regular: 3, kids: 1, dessert: 0, side: 0, breakfast: 0, lunches: { Theo: 5, Leo: 5 } });
+    expect(firstCounts(["Theo", "Leo"], true)).toEqual({ quick: 2, regular: 3, kids: 1, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: { Theo: 5, Leo: 5 } });
   });
 });
 

@@ -10,7 +10,7 @@ const lunchesFor = (kid: string, count: number, options: LunchOption[]) => Array
   return { kid, main: part("main"), fruit: part("fruit"), side: part("side"), treat: part("treat"), snack: part("snack") };
 });
 
-const counts = { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunches: { Theo: 2, Leo: 0 } };
+const counts = { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: { Theo: 2, Leo: 0 } };
 
 describe("planning by number", () => {
   it("never puts tap water on a list", () => {
@@ -180,5 +180,13 @@ describe("a deleted recipe (Nov 14)", () => {
     const { removed } = await removeRecipeFromPlan("turkey-chili-1");
     expect((await loadPlan()).dishes.filter((d) => d.recipe === "turkey-chili-1")).toHaveLength(0);
     expect(removed).toBeGreaterThan(0);
+  });
+});
+
+describe("meals by day (Nov 16)", () => {
+  it("keeps the day a meal is planned for, even when the tab had no day column", async () => {
+    await clearPlanned();
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: "2026-11-20" }], [], null, "Robin");
+    expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day: "2026-11-20" });
   });
 });

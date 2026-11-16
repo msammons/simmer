@@ -5,19 +5,23 @@ import type { Recipe } from "./recipes";
 import { norm } from "./words";
 
 /** The kinds of things planned. Quick and regular are the family's dinners; kids are the boys' own dinners. */
-export const KINDS = ["quick", "regular", "kids", "dessert", "side", "breakfast"] as const;
+export const KINDS = ["quick", "regular", "kids", "dessert", "side", "breakfast", "lunchmeal"] as const;
 export type Kind = (typeof KINDS)[number];
-export const KIND_NAMES: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids'", dessert: "Dessert", side: "Side", breakfast: "Breakfast" };
+/** `lunchmeal`: a lunch planned for a day (Sam, Nov 16: "keep lunch as an option", for holidays and breaks). */
+export const KIND_NAMES: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids'", dessert: "Dessert", side: "Side", breakfast: "Breakfast", lunchmeal: "Lunch" };
 
-/** One thing to make. recipe: a recipe id, or free text ("Dinner with G&G"). */
-export type Dish = { id: string; kind: Kind; recipe: string; pinned: boolean; added: string };
+/**
+ * One thing to make. recipe: a recipe id, or free text ("Dinner with G&G"). day: the day it's for, YYYY-MM-DD (Nov 16:
+ * Meals is a list of days); "" for one planned before days existed.
+ */
+export type Dish = { id: string; kind: Kind; recipe: string; pinned: boolean; added: string; day?: string };
 
 /** How many of each to plan, and how many lunches for each boy. */
 export type Counts = Record<Kind, number> & { lunches: Record<string, number> };
 export const MAX_COUNT = 14;
 /** The first time: a usual week. Desserts, sides and breakfasts start at none. */
 export const firstCounts = (kids: string[], kidsDinners: boolean): Counts => ({
-  quick: 2, regular: 3, kids: kidsDinners ? 1 : 0, dessert: 0, side: 0, breakfast: 0, lunches: Object.fromEntries(kids.map((k) => [k, 5])),
+  quick: 2, regular: 3, kids: kidsDinners ? 1 : 0, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: Object.fromEntries(kids.map((k) => [k, 5])),
 });
 
 /** Not a dinner: a recipe tagged as dessert, a side, breakfast, a snack or a drink (the pumpkin pie was Tuesday's dinner, Nov 3). */
@@ -33,6 +37,7 @@ export function kindOf(r: Pick<Recipe, "tags" | "for" | "effort">): Kind | null 
   if (tags.some((t) => /^desserts?$/.test(t))) return "dessert";
   if (tags.some((t) => /^(sides?|side dish(es)?)$/.test(t))) return "side";
   if (tags.some((t) => /^(breakfast|brunch)$/.test(t))) return "breakfast";
+  if (tags.some((t) => /^lunch(es)?$/.test(t))) return "lunchmeal";
   if (!isDinner(r)) return null;
   return r.for === "kids" ? "kids" : r.effort;
 }

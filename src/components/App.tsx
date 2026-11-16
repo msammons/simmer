@@ -6,7 +6,7 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
-import { AddMealSheet, MealsScreen } from "./Week";
+import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
@@ -96,7 +96,8 @@ export default function App() {
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
-  const [addingOne, setAddingOne] = useState<Kind | null>(null); // the kind being added to, from Meals
+  const [addingOne, setAddingOne] = useState<{ kind: Kind; day: string } | null>(null); // the kind and day being added to, from Meals
+  const [pickingDay, setPickingDay] = useState<Recipe | null>(null); // a recipe's Add to the plan, asking which day (Nov 16)
   const loaded = useRef(false); // the household has loaded from the server this session
   // Whether each is showing something (last time's copy or fresh): a failed read then says nothing.
   const listShowing = useRef(false), recipesShowing = useRef(false), planShowing = useRef(false);
@@ -286,18 +287,7 @@ export default function App() {
   }
   // Count changes go one at a time, in order, so two never cross in the Sheet.
   const counting = useRef<Promise<unknown>>(Promise.resolve());
-  /** How many of one dinner, sent once the taps stop (Meals); rejects on a problem, which shows on Meals. */
-  function countMeal(d: { recipe: string; kind: Kind }, count: number): Promise<void> {
-    ++planSaving.current;
-    const run = counting.current.then(async () => {
-      ++planChanges.current;
-      try { gotPlan(await api.planChange({ op: "count", recipe: d.recipe, kind: d.kind, count }, me)); }
-      catch (e) { didntSave(problemOf(e)); refreshPlan(); throw e; }
-      finally { --planSaving.current; }
-    });
-    counting.current = run.catch(() => {});
-    return run;
-  }
+
   /**
    * A dinner picked on Meals: shown at once, saved behind it, in turn with count changes (Nov 10: no "Saving…"). A save
    * that fails takes it back off and says so on Meals.
@@ -476,8 +466,7 @@ export default function App() {
       <OpenSettings.Provider value={phase === "app" ? () => setSettings(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).length}
-          onOpen={(d) => openRecipe(d.recipe)} onAdd={(k) => setAddingOne(k)}
-          onCount={countMeal}
+          onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
           onNewPlan={() => { changePlan({ op: "clear" }).then(didntSave); }}
           onRemove={(d) => { changePlan({ op: "remove", id: d.id }).then(didntSave); }} />
       )}
@@ -490,11 +479,13 @@ export default function App() {
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
           planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
-          onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => quickAdd({ kind: kindOf(open)!, recipe: open.id, pinned: true }) : undefined} />
+          onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => setPickingDay(open) : undefined} />
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {addingOne && plan && <AddMealSheet kind={addingOne} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
+      {pickingDay && kindOf(pickingDay) && <PickDaySheet name={pickingDay.name} onClose={() => setPickingDay(null)}
+        onPick={(day) => { const r = pickingDay; setPickingDay(null); quickAdd({ kind: kindOf(r)!, recipe: r.id, pinned: true, day }); }} />}
+      {addingOne && plan && <AddMealSheet kind={addingOne.kind} day={addingOne.day} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}
         onSave={(ds, duplicates, step) => { setRetry(null); saveNew(ds, duplicates, step); }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onDelete={() => deleteRecipe(open)} onClose={() => { setSheet(null); setRetry(null); }} />}

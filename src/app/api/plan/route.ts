@@ -10,7 +10,8 @@ const isPart = (s: unknown): s is LunchPart => typeof s === "string" && (LUNCH_P
 const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.min(MAX_COUNT, Math.round(n))) : 0);
 
 function dish(x: Record<string, unknown>): NewDish | null {
-  return isKind(x?.kind) && text(x.recipe) ? { kind: x.kind, recipe: text(x.recipe), pinned: Boolean(x.pinned) } : null;
+  const day = typeof x?.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.day) ? x.day : "";
+  return isKind(x?.kind) && text(x.recipe) ? { kind: x.kind, recipe: text(x.recipe), pinned: Boolean(x.pinned), day } : null;
 }
 function lunch(x: Record<string, unknown>): NewLunch | null {
   if (!text(x?.kid)) return null;
