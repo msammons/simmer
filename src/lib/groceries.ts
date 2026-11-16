@@ -131,6 +131,23 @@ async function fileAll(names: string[]): Promise<Filing[]> {
   return out;
 }
 
+/** The sections remembered for items by name (the Ingredients tab), for recipes to show what she set (Nov 16). */
+export async function savedSections(): Promise<Map<string, Section>> {
+  const saved: Map<string, Filing> = sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients;
+  return new Map([...saved].map(([n, f]) => [n, f.section]));
+}
+
+/** Moves an item to Fresh or Pantry everywhere (Robin, Nov 15: cashews landed in Fresh): remembered, and on the list now. */
+export async function fileSection(name: string, section: Section): Promise<void> {
+  // Its store as remembered or commonly known; no guess is asked for (she's only moving its section).
+  const saved: Map<string, Filing> = sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients;
+  const store = saved.get(norm(name))?.store ?? known(name)?.store ?? "safeway";
+  await rememberFilings([{ name, f: { store, section } }]);
+  const { items, rows } = await readList();
+  const same = items.filter((x) => norm(x.item) === norm(name) && x.section !== section && (section === "fresh" || section === "pantry"));
+  if (same.length) await setManyCells(same.map((x) => [x.id, { section }]), false, rows);
+}
+
 /** Remembers where things go: a row already there for the name is changed, the rest added, in one write each. */
 async function rememberFilings(list: { name: string; f: Filing }[], rows?: string[][]) {
   if (!list.length) return;
