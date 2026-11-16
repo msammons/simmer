@@ -258,3 +258,15 @@ describe("the one press that orders (phase 3, Nov 14)", () => {
     expect(pressedLabels).toEqual([]);
   });
 });
+
+describe("waiting for Place Order to turn on (Nov 16)", () => {
+  it("answers as soon as the one Place Order turns on", async () => {
+    window.history.replaceState(null, "", "/erums/checkout");
+    document.body.innerHTML = `<button disabled>Place Order</button>`;
+    const b = document.querySelector("button")!; Object.defineProperty(b, "offsetWidth", { value: 80 });
+    setTimeout(() => { b.disabled = false; }, 30);
+    expect(await safewayPage("waitFor", { until: "placeOn", ms: 2000 }, PAGE)).toEqual({ ok: true });
+    b.disabled = true;
+    expect(await safewayPage("waitFor", { until: "placeOn", ms: 100 }, PAGE)).toEqual({ ok: false });
+  });
+});
