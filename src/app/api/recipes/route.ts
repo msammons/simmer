@@ -3,6 +3,7 @@ import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { deleteRecipe, fromDraft, loadRecipes, saveRecipes, sameName, updateRecipe, type Draft, type Recipe } from "@/lib/recipes";
 import { removeRecipeFromPlan } from "@/lib/plan";
+import { fileSection } from "@/lib/groceries";
 
 const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
@@ -52,6 +53,14 @@ export async function POST(req: Request) {
       }
       case "effort": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, effort: b.effort === "quick" ? "quick" : "regular" }))).id]; break;
       case "active": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, active: Boolean(b.active) }))).id]; break;
+      // An ingredient moved between Fresh and Pantry (Nov 16): remembered for every recipe and the list.
+      case "section": {
+        if (b.section !== "fresh" && b.section !== "pantry") throw new AppError("Fresh or pantry?");
+        const item = typeof b.item === "string" ? b.item.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+        if (!item) throw new AppError("Which ingredient?");
+        await fileSection(item, b.section);
+        break;
+      }
       // Deleting (Nov 14): off the collection, and off the plan with what only it needed on the list.
       case "delete": {
         const id = clean(b.id);

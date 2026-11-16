@@ -7,7 +7,7 @@ import { generateJson } from "./google/gemini";
 import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
-import { type Section, type Store } from "./groceries";
+import { savedSections, type Section, type Store } from "./groceries";
 import { FRACTIONS, norm, parseIngredient } from "./words";
 
 export { parseIngredient };
@@ -61,8 +61,11 @@ function toRecipes(rows: string[][]): Recipe[] {
 const local = () => readFile(path.join(process.cwd(), "data", "recipes.csv"), "utf8").then(parseCsv, () => [] as string[][]);
 
 export async function loadRecipes(): Promise<Recipe[]> {
-  if (!sheetsConfigured()) return [...(memory ??= toRecipes(await local()))];
-  return toRecipes(await readTabIfAny(TAB));
+  const rs = !sheetsConfigured() ? [...(memory ??= toRecipes(await local()))] : toRecipes(await readTabIfAny(TAB));
+  // An ingredient's section as she set it (Nov 16), over the guess: the same place it goes on the list.
+  const saved = await savedSections().catch(() => new Map<string, Section>());
+  if (!saved.size) return rs;
+  return rs.map((r) => ({ ...r, ingredients: r.ingredients.map((i) => { const s = saved.get(norm(i.item)); return s === "fresh" || s === "pantry" ? { ...i, section: s } : i; }) }));
 }
 
 export { searchRecipes } from "./search";

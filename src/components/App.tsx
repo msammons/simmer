@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ShopScreen, type ShopActions } from "./Shop";
@@ -189,6 +189,14 @@ export default function App() {
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
 
+  /** An ingredient moved between Fresh and Pantry (Nov 16): every recipe with it shows the move at once; the list follows. */
+  function moveIngredient(r: Recipe, item: string, section: "fresh" | "pantry") {
+    const same = (i: Ingredient) => i.item.trim().toLowerCase() === item.trim().toLowerCase();
+    setRecipes((rs) => rs && rs.map((x) => (x.ingredients.some(same) ? { ...x, ingredients: x.ingredients.map((i) => (same(i) ? { ...i, section } : i)) } : x)));
+    api.recipeChange({ op: "section", id: r.id, item, section })
+      .then((a) => { gotRecipes(a.recipes); refreshList(); })
+      .catch((e) => { failed(e); refreshRecipes(); });
+  }
   /**
    * Delete, from Edit (asked there first): the sheet closes, the recipe page goes back and the recipe is gone at once;
    * the plan and the list follow from the server. A delete that fails puts it back, with the alert.
@@ -478,7 +486,7 @@ export default function App() {
       )}
       {phase === "app" && open && (
         <RecipeScreen key={open.id} r={open} onBack={back} backLabel={backLabel} onEdit={() => setSheet("edit")}
-          planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))}
+          planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} onSection={isStandIn(open.id) ? undefined : (item, section) => moveIngredient(open, item, section)}
           onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => setPickingDay(open) : undefined} />
       )}
       </OpenSettings.Provider>

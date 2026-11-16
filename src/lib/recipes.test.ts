@@ -94,3 +94,15 @@ describe("deleting a recipe (Nov 14)", () => {
     expect(await deleteRecipe(r.id)).toBe(false);
   });
 });
+
+describe("an ingredient's section, as she set it (Nov 16)", () => {
+  it("shows in every recipe with it once moved", async () => {
+    const { fileSection } = await import("./groceries");
+    const r = await saveRecipe(fromDraft({ name: "section-test salad", effort: "quick", minutes: null, serves: null, protein: "", ingredients: ["1 cup cashews", "1 head lettuce"], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" }));
+    await fileSection("cashews", "pantry");
+    const after = (await loadRecipes()).find((x) => x.id === r.id)!;
+    expect(after.ingredients.find((i) => i.item === "cashews")?.section).toBe("pantry");
+    await fileSection("cashews", "fresh");
+    expect((await loadRecipes()).find((x) => x.id === r.id)!.ingredients.find((i) => i.item === "cashews")?.section).toBe("fresh");
+  });
+});

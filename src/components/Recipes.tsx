@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Recipe } from "@/lib/client";
+import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Shop";
@@ -68,8 +68,10 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
 }
 
 /** A recipe (drill-in from Recipes or the week): what it is, what's in it, how it's made, and her one-tap corrections. */
-export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWeek }: {
+export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWeek, onSection }: {
   r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void;
+  /** An ingredient moved between Fresh and Pantry (Nov 16). */
+  onSection?: (item: string, section: "fresh" | "pantry") => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
   /**
@@ -90,6 +92,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
     return () => { document.removeEventListener("visibilitychange", take); lock?.release().catch(() => {}); };
   }, []);
   const fresh = r.ingredients.filter((i) => i.section === "fresh"), rest = r.ingredients.filter((i) => i.section !== "fresh");
+  const [moving, setMoving] = useState<Ingredient | null>(null); // an ingredient being moved between Fresh and Pantry
   const link = /^https?:\/\//.test(r.source) ? r.source : "";
   return (
     <div ref={screen} className="space-y-6">
@@ -100,8 +103,21 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {!planned && onAddToWeek && <Button onClick={onAddToWeek} icon="calendarPlus" className="w-full">Add to the plan</Button>}
       {r.ingredients.length ? (
         <>
-          {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
-          {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} />)}</Group>}
+          {/* Tap an ingredient to move it between Fresh and Pantry (Robin, Nov 15: cashews landed in Fresh). */}
+          {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} onClick={onSection ? () => setMoving(i) : undefined} />)}</Group>}
+          {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} onClick={onSection ? () => setMoving(i) : undefined} />)}</Group>}
+          {moving && onSection && (
+            <Sheet label="Move ingredient" title={moving.item} onClose={() => setMoving(null)}>
+              <div className="pb-2">
+                <Group header="Where it goes">
+                  {(["fresh", "pantry"] as const).map((sec) => (
+                    <Row key={sec} title={sec === "fresh" ? "Fresh" : "Pantry"} role="radio" checked={(moving.section === "fresh" ? "fresh" : "pantry") === sec} accessory="check"
+                      onClick={() => { const m = moving; setMoving(null); if ((m.section === "fresh" ? "fresh" : "pantry") !== sec) onSection(m.item, sec); }} />
+                  ))}
+                </Group>
+              </div>
+            </Sheet>
+          )}
         </>
       ) : (
         <Group><Row icon="pencil" title="No ingredients yet" value="Add them" accessory="chevron" onClick={onEdit} /></Group>
