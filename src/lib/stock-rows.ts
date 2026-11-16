@@ -19,6 +19,8 @@ export type StockRow = {
   meal: boolean; amount: string;
   /** Its List row, if it has one (on the list, answered Have, or waiting for a dinner). */
   item: Item | null; staple: Staple | null; frozen: Frozen | null;
+  /** The group it sits in on Stock (Nov 16), "" for none. */
+  group: string;
 };
 
 const answerOf = (it: Item | null): Answer => (!it ? "check" : it.have ? "have" : it.check ? "check" : "need");
@@ -28,14 +30,17 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
   const find = (name: string) => items.find((i) => norm(i.item) === norm(name)) ?? null;
   const row = (key: string, name: string, section: Section, store: Store, it: Item | null, staple: Staple | null, frozen: Frozen | null): StockRow => {
     const meal = Boolean(it && fromDinner(it));
-    return { key, name, section, store, answer: answerOf(it), meal, amount: meal ? it!.quantity : "", item: it, staple, frozen };
+    return { key, name, section, store, answer: answerOf(it), meal, amount: meal ? it!.quantity : "", item: it, staple, frozen, group: staple?.group ?? "" };
   };
   const rows: StockRow[] = [];
   const known = new Set<string>();
   for (const s of list?.staples ?? []) {
     if (known.has(norm(s.item))) continue;
+    const it = find(s.item);
+    // Specialty (Nov 16): shown only while on the list or answered; after the shop it leaves until added again.
+    if (s.kind === "specialty" && !it) continue;
     known.add(norm(s.item));
-    rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, find(s.item), s, null));
+    rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, it, s, null));
   }
   // What the dinners need that isn't kept: every dinner thing, fresh and pantry (Nov 14), in its own section, highlighted.
   for (const it of items) {
@@ -51,3 +56,26 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
   return rows;
 }
 
+
+/** One line on Stock within a section: a thing, or a group of two or more (Nov 16). */
+export type StockLine = { kind: "row"; row: StockRow } | { kind: "group"; name: string; rows: StockRow[] };
+
+/**
+ * A section's lines, A to Z (Nov 16, Robin's rule): things in the same group sit together under it; a group of one is
+ * just its thing, with its own Have | Need.
+ */
+export function linesOf(rows: StockRow[]): StockLine[] {
+  const groups = new Map<string, StockRow[]>();
+  for (const r of rows) if (r.group) groups.set(norm(r.group), [...(groups.get(norm(r.group)) ?? []), r]);
+  const lines: StockLine[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const g = r.group ? groups.get(norm(r.group))! : null;
+    if (!g || g.length < 2) { lines.push({ kind: "row", row: r }); continue; }
+    if (seen.has(norm(r.group))) continue;
+    seen.add(norm(r.group));
+    lines.push({ kind: "group", name: g[0].group, rows: [...g].sort((a, b) => a.name.localeCompare(b.name)) });
+  }
+  const nameOf = (l: StockLine) => (l.kind === "row" ? l.row.name : l.name);
+  return lines.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+}

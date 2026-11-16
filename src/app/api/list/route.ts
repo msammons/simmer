@@ -3,10 +3,12 @@ import { recordTrip } from "@/lib/plan";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { clearCart, loadCart } from "@/lib/safeway";
-import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, SECTIONS, STORES, type Item, type Section, type Store } from "@/lib/groceries";
+import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, setStaple, SECTIONS, STORES, type Item, type Section, type StapleKind, type Store } from "@/lib/groceries";
+import { norm } from "@/lib/words";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
 const isSection = (s: unknown): s is Section => typeof s === "string" && (SECTIONS as readonly string[]).includes(s);
+const isKind = (s: unknown): s is StapleKind => s === "common" || s === "specialty";
 const clean = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
 /** GET: the shared list and the staples. */
@@ -22,7 +24,7 @@ export async function GET(req: Request) {
 /**
  * POST { op, ... }: add { text, by }, many { items: { item, quantity, check? }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
  * done { store }, clear { ids } (answers with `cleared`, for Undo), putBack { items }, and Stock's keepAdd { text, section? },
- * keepRemove { item }, keepMove { item, section }. Answers with the list as it is after the change.
+ * keepRemove { item }, keepMove { item, section }, keepSet { item, kind?, group? } (keepAdd also takes kind?, group?, need?). Answers with the list as it is after the change.
  */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
@@ -64,7 +66,20 @@ export async function POST(req: Request) {
         }] : [])));
         break;
       }
-      case "keepAdd": await addStaple(clean(b.text), isSection(b.section) ? b.section : undefined); break;
+      case "keepAdd": {
+        // Quick add (Nov 16): common or specialty, maybe in a group, and with need, on the list at once.
+        const text = clean(b.text);
+        await addStaple(text, isSection(b.section) ? b.section : undefined, { ...(isKind(b.kind) && { kind: b.kind }), ...(typeof b.group === "string" && { group: clean(b.group, 40) }) });
+        if (b.need === true && text) {
+          const { items, staples } = await loadList();
+          const s = staples.find((x) => norm(x.item) === norm(text));
+          const row = items.find((x) => !x.checked && norm(x.item) === norm(text));
+          if (row) await needItem(row.id);
+          else if (s) await addItem(text, clean(b.by, 20), "", { store: s.store, section: s.section }, s.quantity || undefined);
+        }
+        break;
+      }
+      case "keepSet": await setStaple(clean(b.item), { ...(isKind(b.kind) && { kind: b.kind }), ...(typeof b.group === "string" && { group: clean(b.group, 40) }) }); break;
       case "keepRemove": await removeStaple(clean(b.item)); break;
       case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of Stock?"); await moveStaple(clean(b.item), b.section); break;
       case "done": if (!isStore(b.store)) throw new AppError("Which store?"); {

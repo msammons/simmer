@@ -278,7 +278,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Need puts it on its store's list. A dinner's things are highlighted in their own sections.
       await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
       await lookForBusy("Stock");
-      ok("stock: has the add field", await page.getByLabel("Add something to Stock").isVisible());
+      ok("stock: has the big Add something", await page.getByRole("button", { name: "Add something" }).isVisible());
       // None of the old things are back on Stock: the legend, the For this plan group, Every week.
       {
         const old = [];
@@ -321,10 +321,41 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: Cancel keeps it in Stock", (await removeAsk.count()) === 0 && (await needOf("Eggs").count()) === 1);
       // Something new shows at once, as a stand-in row the server's answer replaces (Nov 11: always responsive).
       await slow("**/api/list");
-      await page.getByLabel("Add something to Stock").fill("frozen waffles"); await page.keyboard.press("Enter");
-      ok("stock: something added shows within 150 ms", await within150(() => page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()));
+      // Quick add (Nov 16): the big + opens a sheet; added things come in as Need, specialty unless she picks Common.
+      await page.getByRole("button", { name: "Add something" }).tap(); await page.waitForTimeout(300);
+      const stockAdd = page.getByRole("dialog", { name: "Add something" });
+      ok("stock: Add something opens a sheet, Specialty picked, with groups to pick", (await stockAdd.isVisible())
+        && (await stockAdd.getByRole("radio", { name: "Specialty" }).getAttribute("aria-checked")) === "true"
+        && (await stockAdd.getByRole("button", { name: "No group" }).isVisible()));
+      await stockAdd.getByLabel("Add something to Stock").fill("frozen waffles");
+      await stockAdd.getByRole("button", { name: "Add as Need" }).tap();
+      ok("stock: something added shows within 150 ms, marked Need", await within150(async () => (await page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()) && (await answerOf("frozen waffles")) === "need"));
       await page.waitForTimeout(1800); await page.unroute("**/api/list");
-      ok("stock: and is still there once it's saved", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 1);
+      ok("stock: and is still there once it's saved, still Need", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 1 && (await answerOf("frozen waffles")) === "need");
+      await needOf("frozen waffles").tap(); await page.waitForTimeout(1500);
+      ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
+      // Again, from what's kept: typing shows it, tapping it marks it Need.
+      await page.getByRole("button", { name: "Add something" }).tap(); await page.waitForTimeout(300);
+      await stockAdd.getByLabel("Add something to Stock").fill("waffles");
+      await stockAdd.getByRole("button", { name: /^Frozen waffles/ }).tap(); await page.waitForTimeout(1500);
+      ok("stock: something kept, picked in Add something, comes back as Need", (await answerOf("frozen waffles")) === "need");
+      // Groups: two things in Cheese sit under it; closed it shows only what's Need.
+      for (const [n, g] of [["smoke cheddar", "Smoke cheese"], ["smoke swiss", ""]]) {
+        await page.getByRole("button", { name: "Add something" }).tap(); await page.waitForTimeout(300);
+        await stockAdd.getByLabel("Add something to Stock").fill(n);
+        await stockAdd.getByRole("radio", { name: "Common" }).tap();
+        if (g) await stockAdd.getByLabel("Group").fill(g); else await stockAdd.getByRole("button", { name: "Smoke cheese" }).tap();
+        await stockAdd.getByRole("button", { name: "Add as Need" }).tap(); await page.waitForTimeout(1500);
+      }
+      const cheese = page.getByRole("button", { name: "Smoke cheese" });
+      ok("stock: a group of two shows closed, with what's Need under it", (await cheese.getAttribute("aria-expanded")) === "false" && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
+      await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
+      ok("stock: closed, a thing answered Have tucks away", (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      await cheese.tap(); await page.waitForTimeout(300);
+      ok("stock: open, the group shows all of them", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
+      await page.getByRole("dialog", { name: "Remove Smoke swiss from Stock?" }).getByRole("button", { name: "Remove from Stock" }).tap(); await page.waitForTimeout(1500);
+      ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
       await page.screenshot({ path: `${dir}/5-stock-behaviour.png`, fullPage: true });
 
       // Shop (Nov 12): one page grouped by store, with a store filter at the top. What's out in Stock is on the list. Safeway's side is

@@ -2,13 +2,13 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { fromDinner, rowsOf } from "./stock-rows";
+import { fromDinner, linesOf, rowsOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
   addedAt: "", checked: false, check: true, ...p,
 });
-const staple = (name: string, section = "pantry") => ({ item: name, section, store: "safeway", quantity: "", product: "" }) as ListState["staples"][number];
+const staple = (name: string, section = "pantry", more: Partial<ListState["staples"][number]> = {}) => ({ item: name, section, store: "safeway", quantity: "", product: "", kind: "common", group: "", ...more }) as ListState["staples"][number];
 const list = (items: Item[], staples: ListState["staples"] = []): ListState => ({ items, staples });
 const one = (l: ListState) => rowsOf(l, null)[0];
 
@@ -41,5 +41,26 @@ describe("Stock rows", () => {
     expect(fromDinner(item({ for: "added by hand, Turkey chili" }))).toBe(false);
     expect(fromDinner(item({ for: "" }))).toBe(false);
     expect(fromDinner(item({ for: "Every week" }))).toBe(false);
+  });
+});
+
+// Nov 16 (Robin's run): common and specialty things, and groups.
+describe("Stock: specialty things and groups", () => {
+  it("shows a common thing always, a specialty one only while it's on the list or answered", () => {
+    const goat = staple("Goat cheese", "fresh", { kind: "specialty" });
+    expect(rowsOf(list([], [staple("Milk", "fresh"), goat]), null).map((r) => r.name)).toEqual(["Milk"]);
+    const need = rowsOf(list([item({ item: "goat cheese", section: "fresh", check: false, for: "added by hand" })], [goat]), null);
+    expect(need.map((r) => [r.name, r.answer])).toEqual([["Goat cheese", "need"]]);
+    expect(rowsOf(list([item({ item: "goat cheese", checked: true, for: "added by hand" })], [goat]), null)).toEqual([]);
+  });
+
+  it("puts a group of two or more together, A to Z among the rest; a group of one is just its thing", () => {
+    const rows = rowsOf(list([], [
+      staple("Swiss", "fresh", { group: "Cheese" }), staple("Cheddar", "fresh", { group: "cheese" }), staple("Apples", "fresh"),
+      staple("Greek yogurt", "fresh", { group: "Yogurt" }), staple("Eggs", "fresh"),
+    ]), null);
+    const lines = linesOf(rows);
+    expect(lines.map((l) => (l.kind === "row" ? l.row.name : `${l.name}: ${l.rows.map((r) => r.name).join(", ")}`)))
+      .toEqual(["Apples", "Cheese: Cheddar, Swiss", "Eggs", "Greek yogurt"]);
   });
 });

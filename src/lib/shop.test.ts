@@ -8,7 +8,7 @@ const line = (productId: string, itemId: string, qty: number, price = "$1.00"): 
 
 describe("Find", () => {
   const items = [item("a", "milk", { quantity: "2" }), item("b", "pop tarts"), item("c", "salt", { check: true }), item("d", "lemons", { checked: true }), item("e", "dressing", { store: "trader-joes" }), item("f", "eggs")];
-  const staples = [{ item: "milk", store: "safeway" as const, section: "fresh" as const, quantity: "1", product: "Lucerne 2% milk half gallon" }];
+  const staples = [{ item: "milk", store: "safeway" as const, section: "fresh" as const, quantity: "1", product: "Lucerne 2% milk half gallon", kind: "common" as const, group: "" }];
 
   it("goes through the Safeway items still needed, with Simmer's own search", () => {
     const f = findItems(items, staples, [{ item: "Pop Tarts", id: "77", name: "Pop-Tarts Frosted Strawberry" }]);
