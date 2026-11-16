@@ -171,5 +171,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
      asked, and no other order starts until it's reported (or 30 minutes pass when unsure); a placing job is claimed in
      one step only one helper can win. Known gap: a cart change made on Safeway during the ~30 s of checkout, to other
      products with the same count, subtotal and total, would not be noticed.
+   - Marcela's run (Nov 15): both Place order tries stopped, nothing ordered ("place order turned off": Safeway keeps
+     the button off a moment after the pickup time is set). Helper 26.11.16 waits for it to turn on (15 s at most, else
+     stops); and a step that finds the tab already on Safeway's checkout page reloads it there instead of starting over
+     from the cart (placing still reads the cart page first).
    - Not built yet: reading Safeway's order history after an unsure answer, and the weighed-items charge check (10%,
      $5) against what's charged. Removing phones isn't built, so there's no way around the Face ID approval.
