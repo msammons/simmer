@@ -26,12 +26,12 @@ function dayName(day: string, today: string): string {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-/** The kinds a day's More offers (Sam, Nov 16: lunch stays as an option; desserts and kids' lunches are mostly Stock). */
+/** The kinds a day's Other offers (named More until Nov 16) (Sam, Nov 16: lunch stays as an option; desserts and kids' lunches are mostly Stock). */
 const MORE: Kind[] = ["breakfast", "lunchmeal", "kids", "dessert", "side"];
 
 /**
  * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
- * day has Quick and Regular, which open her recipes of that kind to pick one for that day, and More for the other
+ * day has Quick and Regular, which open her recipes of that kind to pick one for that day, and Other (on the right) for the other
  * kinds. A day can hold more than one thing. Tap a meal for its recipe; − takes it off (asking first), and what only it
  * needed comes off the grocery list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
@@ -45,7 +45,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
-  const [more, setMore] = useState<string | null>(null); // the day whose More is open
+  const [more, setMore] = useState<string | null>(null); // the day whose Other is open
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
@@ -80,7 +80,8 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
               <div className="flex gap-2 px-4 py-3">
                 <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day, today)}`}>Quick</button>
                 <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day, today)}`}>Regular</button>
-                <button className={pill} onClick={() => setMore(day)} aria-label={`More for ${dayName(day, today)}`}>More</button>
+                {/* Other sits on the right, apart from the two main choices (Sam, Nov 16: "Other. But should other be aligned right?"). */}
+                <button className={`${pill} ml-auto`} onClick={() => setMore(day)} aria-label={`Other for ${dayName(day, today)}`}>Other</button>
               </div>
             </Group>
           ))}
@@ -90,7 +91,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         </>
       )}
       {more && (
-        <Sheet label="More" title={dayName(more, today)} onClose={() => setMore(null)}>
+        <Sheet label="Other" title={dayName(more, today)} onClose={() => setMore(null)}>
           <div className="pb-2">
             <Group>{MORE.map((k) => <Row key={k} title={KIND_NAMES[k] === "Kids'" ? "Kids' dinner" : KIND_NAMES[k]} accessory="chevron" onClick={() => { const d = more; setMore(null); onAdd(k, d); }} />)}</Group>
           </div>
