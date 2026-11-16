@@ -399,6 +399,8 @@ export async function safewayPage(action, arg, P) {
       continueOn: () => all().filter((b) => on(b) && label(b).toLowerCase() === "continue").length === 1,
       picked: () => pickupEdit(),
       more: () => radios().length > (Number(arg?.count) || 0),
+      // The one Place Order, turned on (Nov 15: Safeway keeps it off for a moment after the pickup time is set).
+      placeOn: () => all().filter((b) => label(b).trim() === "Place Order").length === 1 && all().some((b) => label(b).trim() === "Place Order" && on(b)),
     };
     const ok = checks[arg?.until] ?? (() => false);
     return new Promise((resolve) => {

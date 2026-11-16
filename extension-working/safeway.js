@@ -245,8 +245,14 @@ async function checkoutReady(tabId, page, windowId, list = null) {
   const look = () => onPage(tabId, "look", null, page);
   const shows = { [page.cartPath]: "cart", [`${page.cartPath}/dnf`]: "suggestions", [checkoutPath]: "checkout" };
   const settle = async (url) => { const w = shows[new URL(url).pathname]; if (w) await until(w); return look(); };
-  await go(tabId, `${page.site}${page.cartPath}`);
-  let here = await settle(`${page.site}${page.cartPath}`);
+  // Already on Safeway's checkout page (the last step left it there): reload it where it is, fresh, and carry on,
+  // instead of starting over from the cart (Sam, Nov 16: "like it got impatient and started over"). Placing reads the
+  // cart page first on purpose, so it always comes through the cart.
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const onCheckout = Boolean(tab?.url) && tab.url.startsWith(`${page.site}/`) && new URL(tab.url).pathname === checkoutPath;
+  const start = onCheckout ? tab.url : `${page.site}${page.cartPath}`;
+  await go(tabId, start);
+  let here = await settle(start);
   if (!here) return stop("page didn't load");
   if (/sign back in|sign in to continue/i.test(here.text)) return stop("signed out");
   const steps = [
@@ -348,6 +354,10 @@ async function placeOrder(tabId, page, settings, windowId, expect) {
   if (r.stopped !== "ready") return { ...r, pressed: false };
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
   const from = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
+  // Safeway turns Place Order on a moment after the pickup time is set (Nov 15, Robin's run: "place order turned
+  // off" twice). Wait for it, watching the page, then check everything and press.
+  const turnedOn = await onPage(tabId, "waitFor", { until: "placeOn", ms: 15000 }, page);
+  if (!turnedOn?.ok) return { ...r, stopped: "not pressed", pressed: false, why: "place order stayed off" };
   const press = await onPage(tabId, "placeOrder", { path: checkoutPath, expect }, page);
   if (!press?.pressed) return { ...r, stopped: "not pressed", pressed: false, why: String(press?.why ?? "no answer") };
   // Pressed. Whatever happens next, it's never pressed again: read where Safeway lands, for the order number.
