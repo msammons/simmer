@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   }
 }
 
-/** A pickup window's id as Safeway builds it ("3011SAT20261114REGULARDUG18001900-2026-11-14"). */
+/** A pickup window's id as Safeway builds it ("9999SAT20261114REGULARDUG18001900-2026-11-14"). */
 const windowId = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9-]{10,120}$/.test(s) ? s : "");
 const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(s) ? s : "");
 

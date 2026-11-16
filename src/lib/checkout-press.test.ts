@@ -189,10 +189,10 @@ describe("waiting for Safeway's page (Nov 14: no guessed pauses)", () => {
   it("waits for a pressed day's own times, not the last day's still showing", async () => {
     const sat = tile("select slots for SATURDAY Nov, 14 Sat Nov 14", true), sun = tile("select slots for SUNDAY Nov, 15 Sun Nov 15");
     document.body.innerHTML = "";
-    document.body.append(sat, sun, radio("3011SAT20261114REGULARDUG18001900-2026-11-14"));
+    document.body.append(sat, sun, radio("9999SAT20261114REGULARDUG18001900-2026-11-14"));
     setTimeout(() => { sat.classList.remove("date-is-active"); sun.classList.add("date-is-active"); }, 20);
     expect(await wait("day", { label: "select slots for SUNDAY Nov, 15 Sun Nov 15", dd: "15" }, 150)).toEqual({ ok: false });
-    setTimeout(() => document.body.append(radio("3011SUN20261115REGULARDUG600700-2026-11-15")), 20);
+    setTimeout(() => document.body.append(radio("9999SUN20261115REGULARDUG600700-2026-11-15")), 20);
     expect(await wait("day", { label: "select slots for SUNDAY Nov, 15 Sun Nov 15", dd: "15" }, 2000)).toEqual({ ok: true });
   });
 
@@ -206,10 +206,10 @@ describe("waiting for Safeway's page (Nov 14: no guessed pauses)", () => {
 
 describe("the one press that orders (phase 3, Nov 14)", () => {
   const EXPECT = {
-    total: "$30.96", items: 4, itemsLine: "Safeway Items (4) $32.96", card: "3184", storeLine: "Pick up your order here 100 Main St, Springfield, CA 90000",
+    total: "$30.96", items: 4, itemsLine: "Safeway Items (4) $32.96", card: "4242", storeLine: "Pick up your order here 100 Main St, Springfield, CA 90000",
     whenLine: "Pickup date & time Edit Sunday, Nov 15, 6 AM - 7 AM", deadline: Date.now() + 60_000,
   };
-  const PAGE_TEXT = "Pick up your order here 100 Main St, Springfield, CA 90000 Pickup date & time Edit Sunday, Nov 15, 6 AM - 7 AM Payment $30.96 Visa •••• 3184 Edit Place Order Order summary Safeway Items (4) $32.96 Estimated total $30.96";
+  const PAGE_TEXT = "Pick up your order here 100 Main St, Springfield, CA 90000 Pickup date & time Edit Sunday, Nov 15, 6 AM - 7 AM Payment $30.96 Visa •••• 4242 Edit Place Order Order summary Safeway Items (4) $32.96 Estimated total $30.96";
   const place = async (expect: Record<string, unknown> = EXPECT, path = "/erums/checkout") => (await safewayPage("placeOrder", { path, expect }, PAGE)) as unknown as { pressed: boolean; why: string };
   function checkout(text: string, buttons = ["Place Order"], path = "/erums/checkout") {
     window.history.replaceState(null, "", path);
@@ -230,14 +230,14 @@ describe("the one press that orders (phase 3, Nov 14)", () => {
     const cases: [string, string[], Record<string, unknown>, string][] = [
       [PAGE_TEXT.replace("Estimated total $30.96", "Estimated total $31.96"), ["Place Order"], EXPECT, "total"],
       [PAGE_TEXT.replace("Safeway Items (4)", "Safeway Items (5)"), ["Place Order"], EXPECT, "items"],
-      [PAGE_TEXT.replace("•••• 3184", "•••• 9999"), ["Place Order"], EXPECT, "card"],
+      [PAGE_TEXT.replace("•••• 4242", "•••• 9999"), ["Place Order"], EXPECT, "card"],
       [`${PAGE_TEXT} Mastercard •••• 5555`, ["Place Order"], EXPECT, "another card"],
       [PAGE_TEXT.replace("100 Main St", "200 Elm St"), ["Place Order"], EXPECT, "store"],
       [`${PAGE_TEXT.replace("Pick up your order here 100 Main St", "Pick up your order here 200 Elm St")} 100 Main St, Springfield, CA 90000`, ["Place Order"], EXPECT, "store"],
       [PAGE_TEXT.replace("6 AM - 7 AM", "7 AM - 8 AM"), ["Place Order"], EXPECT, "pickup time"],
       [`${PAGE_TEXT.replace("Edit Sunday, Nov 15, 6 AM - 7 AM", "Edit Sunday, Nov 15, 7 AM - 8 AM")} Sunday, Nov 15, 6 AM - 7 AM`, ["Place Order"], EXPECT, "pickup time"],
       [PAGE_TEXT.replace("Safeway Items (4) $32.96", "Safeway Items (4) $33.96"), ["Place Order"], EXPECT, "items subtotal"],
-      [PAGE_TEXT.replace("Payment $30.96 Visa •••• 3184", "Payment $30.96 Visa •••• 9999 Saved Visa •••• 3184"), ["Place Order"], EXPECT, "card"],
+      [PAGE_TEXT.replace("Payment $30.96 Visa •••• 4242", "Payment $30.96 Visa •••• 9999 Saved Visa •••• 4242"), ["Place Order"], EXPECT, "card"],
       [PAGE_TEXT, ["Place Order"], { ...EXPECT, deadline: Date.now() - 1 }, "approval ran out"],
       [`${PAGE_TEXT} Confirm CVV`, ["Place Order"], EXPECT, "asks for card details"],
       [PAGE_TEXT, ["Place Order", "Place Order"], EXPECT, "place order buttons: 2"],

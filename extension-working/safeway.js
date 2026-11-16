@@ -354,7 +354,7 @@ async function placeOrder(tabId, page, settings, windowId, expect) {
   if (r.stopped !== "ready") return { ...r, pressed: false };
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
   const from = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
-  // Safeway turns Place Order on a moment after the pickup time is set (Nov 15, Marcela's run: "place order turned
+  // Safeway turns Place Order on a moment after the pickup time is set (Nov 15, Robin's run: "place order turned
   // off" twice). Wait for it, watching the page, then check everything and press.
   const turnedOn = await onPage(tabId, "waitFor", { until: "placeOn", ms: 15000 }, page);
   if (!turnedOn?.ok) return { ...r, stopped: "not pressed", pressed: false, why: "place order stayed off" };
