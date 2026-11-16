@@ -25,7 +25,7 @@ const HEADERS: Record<string, string[]> = {
   [LUNCHES]: ["kid", "part", "item", "ingredients", "notes"],
   [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school", "groceries", "moved"],
   [FREEZER]: ["id", "item", "amount", "added", "store"],
-  [PLANNED]: ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned"],
+  [PLANNED]: ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned", "day"],
   [COUNTS]: ["what", "count"],
 };
 
@@ -100,6 +100,13 @@ async function append(tab: string, recs: Record<string, string>[], before?: stri
     return fresh;
   }
   const headers = all[0].map((h) => h.trim().toLowerCase());
+  // A column the tab doesn't have yet (Nov 16: "day" on Planned) is added to the header first, or its values are lost.
+  const missing = HEADERS[tab].filter((h) => !headers.includes(h));
+  if (missing.length) {
+    headers.push(...missing);
+    all[0] = [...headers];
+    if (sheetsConfigured()) await updateRanges([{ range: `${tab}!A1:${col(headers.length - 1)}1`, values: [headers] }]);
+  }
   const out = recs.map((r) => headers.map((h) => r[h] ?? ""));
   if (sheetsConfigured()) await appendRows(tab, out);
   else memory.set(tab, [...all, ...out]);
@@ -126,7 +133,7 @@ function toPlanned(all: string[][]) {
     if (!kind || !id) continue;
     if (r.get("made")) { if (kind !== "lunch") done.push({ recipe: r.get("recipe"), date: r.get("made") }); continue; }
     if (kind === "lunch") { if (r.get("kid")) lunches.push({ id, kid: r.get("kid"), ...partsOf(r.get) }); }
-    else if (r.get("recipe")) dishes.push({ id, kind, recipe: r.get("recipe"), pinned: yes(r.get("pinned")), added: r.get("added") });
+    else if (r.get("recipe")) dishes.push({ id, kind, recipe: r.get("recipe"), pinned: yes(r.get("pinned")), added: r.get("added"), day: DATE.test(r.get("day")) ? r.get("day") : "" });
   }
   return { dishes, lunches, done };
 }
@@ -275,7 +282,7 @@ async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set()
   return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
 }
 
-export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned">;
+export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned" | "day">;
 export type NewLunch = Omit<Lunch, "id">;
 
 /**
@@ -293,7 +300,7 @@ export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: C
   // Each tab read once (Nov 10: reading Planned again for every step ran into Google's limit of about 60 reads a minute).
   const [before, recipes, options, freezer] = await Promise.all([rows(PLANNED), loadRecipes(), rows(LUNCHES), loadFreezer()]);
   const fresh = [
-    ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "" })),
+    ...dishes.map((d) => ({ id: newId(), kind: d.kind, recipe: d.recipe, added: today, pinned: d.pinned ? "yes" : "", day: d.day && DATE.test(d.day) ? d.day : "" })),
     ...lunches.map((l) => ({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today })),
   ];
   let planned: string[][];
@@ -434,7 +441,10 @@ export async function tidyStock(): Promise<void> {
   const [planned, recipes] = await Promise.all([rows(PLANNED), loadRecipes()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
-  await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
+  // A dinner on a day before today is done with (Nov 16: days drop off by themselves).
+  const today = todayIn();
+  const current = now.dishes.filter((d) => !d.day || d.day >= today);
+  await dropHighlightsNotFor([...current.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
 }
 
 /** The freezer and when the next trips are, for the Groceries tab. */
