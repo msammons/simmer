@@ -13,7 +13,7 @@ vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
-import { approve, confirmed, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
+import { approve, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
 import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
@@ -101,17 +101,18 @@ describe("picking the pickup time (Nov 14)", () => {
   const FLASH = { id: "9999FRI20261113FLASHDUG2100-2026-11-13", words: "Ready by 9 PM price $3.95" };
   const PRICED = { id: "9999SAT20261114REGULARDUG10001100-2026-11-14", words: "10 AM - 11 AM price $2.00" };
   const FRI_TILE = "SelectedFRIDAY Nov, 13 Fri Nov 13", SAT_TILE = "select slots for SATURDAY Nov, 14 Sat Nov 14";
-  it("offers the days and the day's free regular times only, choosing none", async () => {
-    does = () => ({ stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: FRI_TILE, times: [FRI6, FLASH] } as never);
+  it("offers the days and the day's times, Flash too with its price (Nov 16), choosing none", async () => {
+    does = () => ({ stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: FRI_TILE, times: [FRI6, FLASH, { id: "9999FRI20261113REGULARDUG900100-2026-11-13", words: "9 AM - 10 AM" }] } as never);
     const t = await pickupTimes();
-    expect(t).toMatchObject({ days: [{ key: FRI_TILE, label: "Fri, Nov 13" }, { key: SAT_TILE, label: "Sat, Nov 14" }], day: FRI_TILE, times: [{ id: FRI6.id, time: "6–7 AM" }] });
+    expect(t).toMatchObject({ days: [{ key: FRI_TILE, label: "Fri, Nov 13" }, { key: SAT_TILE, label: "Sat, Nov 14" }], day: FRI_TILE,
+      times: [{ id: FRI6.id, time: "6–7 AM", price: "Free", flash: false }, { id: FLASH.id, time: "Ready by 9 PM", price: "$3.95", flash: true }] });
   });
   it("reads another day when asked, and remembers every time offered", async () => {
     does = (_k, a) => (a.windowId ? READY : a.day === SAT_TILE ? { stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }, { label: SAT_TILE }], day: SAT_TILE, times: [SAT, PRICED] } : { stopped: "times", chosen: null, final: null, days: [{ label: FRI_TILE }], day: FRI_TILE, times: [FRI6] }) as never;
     await pickupTimes();
     const sat = await pickupTimes(undefined, SAT_TILE);
     expect(queueJob).toHaveBeenLastCalledWith("checkoutPrepare", { list: true, day: SAT_TILE });
-    expect("times" in sat && sat.times.map((x) => x.id)).toEqual([SAT.id]);
+    expect("times" in sat && sat.times.map((x) => x.id)).toEqual([SAT.id]); // a paid time that isn't Flash isn't offered: it could never be ordered
     expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toEqual([]); // Friday's, offered first, still taken
   });
   it("never passes on a day that isn't Safeway's tile", async () => {
@@ -453,5 +454,19 @@ describe("placing the order (phase 3, Nov 14)", () => {
     expect(orderNumberIn("Thanks! Your order number is 2049384756.")).toBe("2049384756");
     expect(orderNumberIn("Order # 18374628 confirmed")).toBe("18374628");
     expect(orderNumberIn("Thanks for shopping")).toBe("");
+  });
+});
+
+// Flash (Nov 16, outside review): Place Order looks for the approved Flash ready time and price, as the page writes them.
+describe("what Place Order looks for on a Flash time", () => {
+  it("asks for the day, then the ready time and price on the slot line", () => {
+    const e = expectFor({
+      windowId: "9999THU20261112FLASHDUG2105-2026-11-12", windowWords: "Ready by 9:05 PM price $3.95", faceId: "", itemsCents: 500,
+      cartKey: "1x1", totalCents: 894, items: 1, card: "4242", store: "100 Main St", at: 0,
+      slot: { ready: "Ready by 9:05 PM", type: "FLASH", priceCents: 395 },
+    } as never);
+    expect(e.whenLine).toBe("Pickup date & time Edit Thursday, Nov 12");
+    expect(e.slotLine).toBe("Ready by 9:05 PM Slot type FLASH price $3.95");
+    expect(pages.pickup.text).toContain(e.slotLine);
   });
 });

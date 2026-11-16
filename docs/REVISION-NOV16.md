@@ -43,3 +43,11 @@ review (docs/CHECKOUT.md).
   code needed.
 - Known from the run: Place Order was still off when the helper checked (fixed, helper 26.11.16); steps started over from
   the cart (fixed). Before real orders again: one test run with the current helper.
+
+### Where it stands (Nov 16)
+
+- Flash: built (helper 26.11.16.1). Free times and Flash only; other paid times aren't offered (they couldn't be
+  ordered). Reviewed outside; the review's three finds were fixed.
+- Bags: the helper now reads Safeway's bags choice on Get ready, read only. The choice in Check out and the press come
+  after that reading has been seen once with a real cart (the cart was empty, so the page couldn't be reached).
+- Before a real order: one test run with helper 26.11.16.1.

@@ -197,11 +197,22 @@ describe("the pickup time on the final page, from the window chosen (Nov 13)", (
     expect(pickupOf(saysRegular, regularText, express).why).toEqual(["Safeway's page shows a different pickup time."]);
   });
 
+  // Flash (Nov 16): taken when the page's own slot line says Flash, the same ready time and the same price.
+  it("takes a Flash time only when the page shows that Flash time at that price", () => {
+    const flash = { id: "9999THU20261112FLASHDUG2105-2026-11-12", words: "Ready by 9:05 PM price $3.95" };
+    const ok = pickupOf(fixed, pages.pickup.text, flash);
+    expect(ok.why).toEqual([]);
+    expect(ok.final.slot).toEqual({ ready: "Ready by 9:05 PM", type: "FLASH", priceCents: 395 });
+    expect(pickupOf(fixed, pages.pickup.text, { ...flash, words: "Ready by 9:05 PM price $4.95" }).why).toEqual(["Safeway's Flash pickup time couldn't be read."]);
+    expect(pickupOf(fixed, pages.pickup.text, { ...flash, words: "Ready by 8:05 PM price $3.95" }).why).toEqual(["Safeway's Flash pickup time couldn't be read."]);
+    expect(pickupOf(fixed, pages.pickup.text, { ...flash, words: "Ready by 9:05 PM" }).why).toEqual(["Safeway's pickup time price couldn't be read."]);
+  });
+
   it("stops when the page doesn't say that time, shows a paid slot, or the window isn't free", () => {
     expect(pickupOf(regular, regularText.replace("6 AM - 7 AM", "7 AM - 8 AM"), chosen).why).toEqual(["Safeway's pickup time couldn't be read."]);
-    expect(pickupOf(regular, regularText, null).why).toEqual(["No free pickup time was chosen."]);
+    expect(pickupOf(regular, regularText, null).why).toEqual(["No pickup time was chosen."]);
     expect(pickupOf(fixed, pages.pickup.text, chosen).why).toEqual(["Safeway's page shows a paid pickup time."]);
-    expect(pickupOf(regular, regularText, { id: chosen.id.replace("REGULAR", "FLASH"), words: chosen.words }).why).toEqual(["Safeway's pickup time isn't a free one."]);
+    expect(pickupOf(regular, regularText, { id: chosen.id.replace("REGULAR", "FLASH"), words: chosen.words }).why).toEqual(["Safeway's Flash pickup time couldn't be read."]);
     expect(pickupOf(regular, regularText, { id: chosen.id, words: "6 AM - 7 AM price $2.95" }).why).toEqual(["Safeway's pickup time isn't a free one."]);
     const unread = pickupOf(regular, "nothing here", chosen).final;
     expect(stops(on, unread, null, now, cart, true)).toContain("No pickup time is chosen.");

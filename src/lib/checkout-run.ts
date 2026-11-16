@@ -46,7 +46,7 @@ export type Waiting = { waiting: string };
  * To pick the pickup time, as on Safeway's site (Sam, Nov 14: "let me pick", then "picking a day first"): the days
  * Safeway offers, the one showing, and that day's free times.
  */
-export type TimesView = { days: { key: string; label: string }[]; day: string; times: { id: string; time: string }[] };
+export type TimesView = { days: { key: string; label: string }[]; day: string; times: { id: string; time: string; price: string; flash: boolean }[] };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
 const PREPARED_KEY = "simmer:checkout-prepared";
@@ -162,7 +162,8 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
   if (job.status !== "done") throw new AppError(failedWords(job));
   const r = (job.result ?? {}) as { stopped?: string; days?: { label: string }[]; day?: string; times?: { id: string; words: string }[] };
   if (r.stopped && r.stopped !== "times") throw new AppError(stoppedWords(r.stopped));
-  const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.notFlash && w.priceCents === 0 && w.date);
+  // Free times, and Flash with its price (Nov 16); other paid times aren't offered.
+  const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.date && (w.priceCents === 0 || (w.kind === "FLASH" && w.priceCents !== null)));
   const before = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
   const ids = [...new Set([...(before && Date.now() - before.at < TIMES_MS ? before.ids : []), ...free.map((w) => w.id)])];
   await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids }), { ex: secs(TIMES_MS) });
@@ -170,7 +171,11 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
   return {
     days: (r.days ?? []).filter((d) => isDayTile(d.label)).map((d) => ({ key: d.label, label: dayLabel(d.label) })),
     day: r.day ?? "",
-    times: free.map((w) => ({ id: w.id, time: windowWords({ id: w.id, words: w.words }).replace(/^\S+\s/, "") })),
+    times: free.map((w) => ({
+      id: w.id, flash: w.kind === "FLASH",
+      time: w.kind === "FLASH" ? `Ready by ${w.words.match(/Ready by (\d{1,2}(?::\d\d)? ?[AP]M)/i)?.[1] ?? ""}`.trim() : windowWords({ id: w.id, words: w.words }).replace(/^\S+\s/, ""),
+      price: w.priceCents ? `$${(w.priceCents / 100).toFixed(2)}` : "Free",
+    })),
   };
 }
 
@@ -230,7 +235,8 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     const cart = await cartNow();
     if (cart !== p.cartKey) reasons.push("The cart changed since. Get ready again.");
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
-    if (!w.notFlash || w.priceCents !== 0) reasons.push("Safeway's pickup time isn't a free one.");
+    // Free, or a paid time (Flash) whose price was read and is in the total she sees (Nov 16).
+    if (w.priceCents === null) reasons.push("Safeway's pickup time price couldn't be read.");
     reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {
@@ -366,7 +372,8 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * which the helper checks itself right before pressing.
  */
 export function expectFor(a: Approved) {
-  const date = a.windowId.match(/(\d{4})-(\d{2})-(\d{2})$/);
+  const date = a.windowId.match(/(\d{4})-(\d{2})-(\d{2})/);
+  const flash = a.slot.type === "FLASH";
   const day = date ? new Date(`${date[0]}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }) : "";
   return {
     cart: a.cartKey,
@@ -375,7 +382,9 @@ export function expectFor(a: Approved) {
     itemsLine: a.itemsCents != null ? `Safeway Items (${a.items}) $${(a.itemsCents / 100).toFixed(2)}` : "",
     card: a.card,
     storeLine: `Pick up your order here ${a.store}`,
-    whenLine: date ? `Pickup date & time Edit ${day}, ${MONTHS[Number(date[2]) - 1]} ${Number(date[3])}, ${a.slot.ready}` : "",
+    whenLine: date ? `Pickup date & time Edit ${day}, ${MONTHS[Number(date[2]) - 1]} ${Number(date[3])}${flash ? "" : `, ${a.slot.ready}`}` : "",
+    // A Flash time: its slot line, with the approved ready time and price (Nov 16), as the page writes it.
+    ...(flash ? { slotLine: `${a.slot.ready} Slot type FLASH price $${((a.slot.priceCents ?? 0) / 100).toFixed(2)}` } : {}),
     deadline: a.at + APPROVAL_MS,
   };
 }

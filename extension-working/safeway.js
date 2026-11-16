@@ -274,8 +274,10 @@ async function checkoutReady(tabId, page, windowId, list = null) {
     if (!here) return stop("page didn't load");
   }
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
-  // Free times, Regular or Express (Sam, Nov 14: "why would i not use express times?"), never Flash or a priced one.
+  // Free times, Regular or Express (Nov 14), and since Nov 16 Flash too, shown with its price (Sam: "offer flash but
+  // show it"). Other paid times aren't offered.
   const free = (w) => !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
+  const offered = (w) => !w.off && (free(w) || (/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice \$[\d,]+\.\d\d\b/i.test(w.words)));
   const read = () => onPage(tabId, "readWindows", null, page);
   /** All of the day showing's times: Safeway shows five, and "More times" shows the rest (Nov 14), pressed once. */
   const allTimes = async (r) => {
@@ -310,7 +312,8 @@ async function checkoutReady(tabId, page, windowId, list = null) {
     if (list.day && !tile) return stop("pickup day gone");
     const r = tile && !tile.active ? await openDay(tile.label, ddOf(tile.label)) : await allTimes(seen);
     const dd = tile ? ddOf(tile.label) : "";
-    const times = (r?.windows ?? []).filter((w) => free(w) && (!dd || w.id.endsWith(`-${dd}`))).map((w) => ({ id: w.id, words: w.words }));
+    const onDay = (w) => !dd || (w.id.match(/(\d{4})-(\d{2})-(\d{2})/)?.[3] ?? "") === dd;
+    const times = (r?.windows ?? []).filter((w) => offered(w) && onDay(w)).map((w) => ({ id: w.id, words: w.words }));
     return { stopped: "times", days, day: tile?.label ?? "", times, chosen: null, final: null };
   }
   // The time picked: only exactly that one.
@@ -326,8 +329,9 @@ async function checkoutReady(tabId, page, windowId, list = null) {
     seen = tile.active ? seen : await openDay(tile.label, date[3]);
     target = seen?.windows.find((w) => w.id === windowId) ?? null;
   }
-  if (!target || !free(target)) return stop("pickup time gone");
-  const chose = await onPage(tabId, "chooseWindow", { path: checkoutPath, id: target.id }, page);
+  if (!target || !offered(target)) return stop("pickup time gone");
+  // A paid time (Flash) is chosen only when it's the one Simmer asked for, with its price shown to her.
+  const chose = await onPage(tabId, "chooseWindow", { path: checkoutPath, id: target.id, paid: !free(target) }, page);
   if (!chose?.pressed) return stop("couldn't choose the pickup time");
   // The pickup step's own Continue (exactly "Continue", the only one), which Safeway turns on once a time is chosen.
   await until("continueOn", {}, 8000);
@@ -335,7 +339,9 @@ async function checkoutReady(tabId, page, windowId, list = null) {
   if (on?.pressed) await until("picked");
   const final = await look();
   if (!final) return stop("page didn't load");
-  return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons } };
+  // How Safeway builds its bags choice, kept with the reading so Simmer can offer it (Nov 16: not seen with a cart yet).
+  const bags = await onPage(tabId, "readBags", null, page);
+  return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons }, bags };
 }
 
 /**

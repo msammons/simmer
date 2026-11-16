@@ -39,6 +39,7 @@ export async function safewayPage(action, arg, P) {
   const re = (pattern) => new RegExp(pattern, "i");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const label = (el) => `${el.getAttribute("aria-label") ?? ""} ${el.innerText ?? el.textContent ?? ""}`.replace(/\s+/g, " ").trim();
+  const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const idOf = (a) => a.getAttribute("href")?.match(re(P.link.pattern))?.[1] ?? null;
   // Safeway builds parts of its pages from components that keep their insides in a separate layer (a shadow root),
@@ -355,6 +356,8 @@ export async function safewayPage(action, arg, P) {
     if (/[•·*]{2,}\s*\d{4}/.test(t.replace(new RegExp(`[•·*]+\\s*${e.card}\\b`, "g"), ""))) return { pressed: false, why: "another card" };
     if (!e.storeLine || count(e.storeLine) !== 1) return { pressed: false, why: "store" };
     if (!e.whenLine || count(e.whenLine) !== 1) return { pressed: false, why: "pickup time" };
+    // A paid time (Flash): its slot line and price, exactly once.
+    if (e.slotLine && count(e.slotLine) !== 1) return { pressed: false, why: "paid pickup time" };
     // Anywhere on the page, even run into other words (a copy of the page wrote "Confirm CVVPlace Order"): never a press.
     if (/CVV|security code|card number|expiration date/i.test(t)) return { pressed: false, why: "asks for card details" };
     const place = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).filter((b) => (label(b) || b.value || "").trim() === "Place Order");
@@ -364,6 +367,19 @@ export async function safewayPage(action, arg, P) {
     if (!(Number(e.deadline) > Date.now())) return { pressed: false, why: "approval ran out" };
     place[0].click();
     return { pressed: true, why: "", label: "Place Order" };
+  }
+
+  // Safeway's bags choice, read only (Nov 16): the controls near "bags", so Simmer can learn how to set it.
+  if (action === "readBags") {
+    const near = deepAll(document, "*").filter((e) => e.children.length < 8 && /\bbags?\b/i.test(e.textContent || "")).slice(-1)[0];
+    const box = near?.closest("section") ?? near?.parentElement?.parentElement ?? null;
+    if (!box) return null;
+    return {
+      text: wordsOf(box).slice(0, 400),
+      controls: deepAll(box, "button, [role=button], input, [role=radio], [role=switch], [role=checkbox], select").slice(0, 12).map((e) => ({
+        tag: e.tagName, type: e.getAttribute("type") ?? "", role: e.getAttribute("role") ?? "", label: label(e).slice(0, 80), checked: Boolean(e.checked) || e.getAttribute("aria-checked") === "true", name: e.getAttribute("name") ?? "",
+      })),
+    };
   }
 
   // The day's times past the first five (Sam, Nov 14: "the times offered are not the same as on the site"): only on
@@ -411,7 +427,6 @@ export async function safewayPage(action, arg, P) {
     });
   }
 
-  const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
   // The pickup windows on the checkout page, read only (Nov 12): each window's radio id and words, and the day tiles.
   if (action === "readWindows") {
     const windows = deepAll(document, "input[type=radio][name=slot]").map((r) => ({
@@ -430,7 +445,9 @@ export async function safewayPage(action, arg, P) {
     const found = deepAll(document, "input[type=radio][name=slot]").filter((r) => r.id === arg.id && !r.disabled);
     if (found.length !== 1) return { pressed: false, why: "not there" };
     const words = wordsOf(found[0].closest("label, li, div")?.parentElement);
-    if (!/\bprice Free\b/i.test(words) || /flash/i.test(words)) return { pressed: false, why: "not free" };
+    // Free, unless Simmer asked for a paid one (Flash, with its price shown and approved; Nov 16), whose price must show.
+    const isFree = /\bprice Free\b/i.test(words) && !/flash/i.test(words);
+    if (!isFree && !(arg.paid === true && /\bprice \$[\d,]+\.\d\d\b/i.test(words))) return { pressed: false, why: "not free" };
     found[0].click();
     return { pressed: true, words: words.slice(0, 160), checked: found[0].checked };
   }
