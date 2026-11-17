@@ -24,7 +24,7 @@ type Opens = { onOpen: (r: Recipe) => void };
 /** A recipe in the collection: tap to open it. */
 function RecipeRow({ r, onOpen }: { r: Recipe } & Opens) {
   // Only what needs doing (Sam, Nov 10: no minutes or labels under rows); the rest is on the recipe's page.
-  return <Row title={r.name} subtitle={r.ingredients.length ? undefined : NO_INGREDIENTS} accessory="chevron" onClick={() => onOpen(r)} />;
+  return <Row title={r.name} subtitle={r.ingredients.length ? undefined : NO_INGREDIENTS} onClick={() => onOpen(r)} />;
 }
 
 /** A few of a group, and the rest one tap away, so the list stays short. */
@@ -55,7 +55,7 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
         </EmptyState>
       ) : (
         <>
-          <Group><Row icon="plus" title="Add recipes" accessory="chevron" onClick={onAdd} /></Group>
+          <Group><Row icon="plus" title="Add recipes" onClick={onAdd} /></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
@@ -127,7 +127,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
           {rest.length > 0 && <Group header="From the pantry">{rest.map(line)}</Group>}
         </>
       ) : (
-        <Group><Row icon="pencil" title="No ingredients yet" value="Add them" accessory="chevron" onClick={onEdit} /></Group>
+        <Group><Row icon="pencil" title="No ingredients yet" value="Add them" onClick={onEdit} /></Group>
       )}
       {r.steps.length > 0 && (
         <Group header="Steps">
@@ -239,10 +239,10 @@ export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
   if (step.at === "choose") {
     body = (
       <Group>
-        <Row icon="link" title="From a link" accessory="chevron" onClick={() => setStep({ at: "link" })} />
-        <Row icon="camera" title="From a photo" accessory="chevron" onClick={() => photo.current?.click()} />
-        <Row icon="book" title="From my files" accessory="chevron" onClick={() => files.current?.click()} />
-        <Row icon="pencil" title="Type it in" accessory="chevron" onClick={() => setStep({ at: "text" })} />
+        <Row icon="link" title="From a link" onClick={() => setStep({ at: "link" })} />
+        <Row icon="camera" title="From a photo" onClick={() => photo.current?.click()} />
+        <Row icon="book" title="From my files" onClick={() => files.current?.click()} />
+        <Row icon="pencil" title="Type it in" onClick={() => setStep({ at: "text" })} />
       </Group>
     );
     // Reading a photo or a file: the shimmer, as every first load looks (Nov 11: no "Reading it…").
