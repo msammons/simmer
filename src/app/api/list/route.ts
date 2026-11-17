@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       }
       case "keepSet": await setStaple(clean(b.item), { ...(isKind(b.kind) && { kind: b.kind }), ...(typeof b.group === "string" && { group: clean(b.group, 40) }) }); break;
       case "keepRemove": await removeStaple(clean(b.item)); break;
-      case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of Stock?"); await moveStaple(clean(b.item), b.section); break;
+      case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of the list?"); await moveStaple(clean(b.item), b.section); break;
       case "done": if (!isStore(b.store)) throw new AppError("Which store?"); {
         // Safeway: what's in the cart counts as bought too, and the cart starts empty again.
         // Ticked in the store (cart: false) leaves the online cart alone.

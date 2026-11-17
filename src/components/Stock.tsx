@@ -16,8 +16,8 @@ import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet } f
  *
  * Nov 16 (Robin's run): common things always show; specialty things show only while they're on the list or answered,
  * and leave after the shop. Things she puts in the same group (Cheese, Yogurt) sit under it: closed, a group shows
- * only what's marked Need; open, all of them; a group of one is just its thing. The field at the top and the tab bar's
- * Quick add put something on the list as Need at once.
+ * only what's marked Need; open, all of them; a group of one is just its thing. The field at the top puts something on
+ * the list as Need at once. Called List on screen since Nov 16 (Sam).
  */
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -46,11 +46,11 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   return (
     <div className="space-y-5">
       <BrandBar />
-      <h1 className="sr-only">Stock</h1>
+      <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} label="Add something to Stock" placeholder="Add something" onAdd={(t, more) => addNeed(list?.staples ?? [], t, act, more)} />
+      <AddFields staples={list?.staples ?? []} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => addNeed(list?.staples ?? [], t, act, more)} />
       {!list && <Held />}
-      {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
+      {list && !rows.length && <EmptyState icon="home" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
         if (!here.length) return null;
@@ -74,7 +74,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         );
       })}
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
-      <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from Stock?` : ""} message="It stops showing here." confirm="Remove from Stock" danger
+      <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="It stops showing here." confirm="Remove from the list" danger
         onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
     </div>
   );
@@ -165,18 +165,6 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
   );
 }
 
-/**
- * Quick add (Nov 16, Sam: the big + in the tab bar, from any page): only a name, and it's on the list as Need. Something
- * already kept shows as she types; tapping it marks it Need.
- */
-export function QuickAddSheet({ staples, onClose, onAdd }: { staples: Staple[]; onClose: () => void; onAdd: (text: string, more: { kind: StapleKind; group: string }) => void }) {
-  return (
-    <Sheet label="Quick add" title="Quick add" onClose={onClose}>
-      <div className="pb-2 pt-1"><AddFields staples={staples} label="Quick add" placeholder="Half and half" autoFocus onAdd={onAdd} /></div>
-    </Sheet>
-  );
-}
-
 /** Put a kept thing in a group, or none (Nov 16). */
 function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; groups: string[]; onClose: () => void; onSave: (g: string) => void }) {
   const [group, setGroup] = useState(staple.group);
@@ -233,7 +221,7 @@ function StockItem({ r, act, inGroup, onRemove, onGroup }: { r: StockRow; act: S
             {r.staple && (r.staple.kind === "specialty"
               ? <option value="common">Make common (always shows)</option>
               : <option value="specialty">Make specialty (shows until bought)</option>)}
-            {r.staple ? <option value="remove">Remove from Stock</option> : <option value="keep">Always keep in Stock</option>}
+            {r.staple ? <option value="remove">Remove from the list</option> : <option value="keep">Always keep on the list</option>}
           </select>
         </label>
       ) : <span aria-hidden className="size-9 shrink-0" />}

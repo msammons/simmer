@@ -5,7 +5,7 @@ import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNE
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ShopScreen, type ShopActions } from "./Shop";
-import { QuickAddSheet, StockScreen, addNeed, type StockActions } from "./Stock";
+import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
@@ -19,8 +19,8 @@ type Tab = "recipes" | "week" | "stock" | "shop";
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
 // Recipes · Meals · Stock · Shop (Sam, Nov 2; Lists became Shop, Nov 12); Simmer still opens on Meals (Oct 31).
-const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "Stock", icon: "home" }, { id: "shop", label: "Shop", icon: "list" }];
-const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "Stock", shop: "Shop" };
+const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "List", icon: "home" }, { id: "shop", label: "Shop", icon: "list" }];
+const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "List", shop: "Shop" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 
 /** Where to pick up after reloading into a new version (this tab only). */
@@ -86,7 +86,6 @@ export default function App() {
   const [problem, setProblem] = useState<{ title: string; message: string } | null>(null);
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
-  const [quick, setQuick] = useState(false); // Quick add, from the tab bar's +
   const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
   const [kitchen, setKitchen] = useState<Kitchen | null>(null);
   const me = ""; // "Who's using this?" is gone (Nov 3); added-by stays blank
@@ -507,12 +506,11 @@ export default function App() {
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}
         onSave={(ds, duplicates, step) => { setRetry(null); saveNew(ds, duplicates, step); }} />}
       {sheet === "edit" && open && <EditSheet key={open.id} r={open} initial={retry?.edit} onSave={(d) => { setRetry(null); saveEdit(open, d); }} onDelete={() => deleteRecipe(open)} onClose={() => { setSheet(null); setRetry(null); }} />}
-      {quick && <QuickAddSheet staples={list?.staples ?? []} onClose={() => setQuick(false)} onAdd={(t, more) => { setQuick(false); addNeed(list?.staples ?? [], t, stock, more); }} />}
       {settings && (
         <SettingsSheet theme={theme} onTheme={(t) => { setTheme(t); store.setTheme(t); }} onClose={() => setSettings(false)} />
       )}
       {phase === "app" && (
-        <TabBar tabs={TABS} active={root} onTab={onTab} onAdd={() => setQuick(true)} />
+        <TabBar tabs={TABS} active={root} onTab={onTab} />
       )}
       <Alert open={Boolean(problem)} title={problem?.title ?? ""} message={problem?.message ?? ""} onClose={() => setProblem(null)} />
     </main>
