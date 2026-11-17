@@ -201,3 +201,10 @@ button, a, [role="button"] {
 /* iPhone Safari zooms into a field or picker whose text is under 16px, and the page then slides sideways (Nov 16, Sam:
    "the page now scrolls right to left"). On touch screens every field and picker is at least 16px. */
 @media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
+
+/* The pop-up (Nov 17): fades in over a dimmed page, a touch of scale. CSS only, nothing timed in code. */
+@keyframes sm-dialog-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes sm-dim-in { from { opacity: 0; } to { opacity: 1; } }
+.sm-dialog { animation: sm-dialog-in 160ms ease-out; }
+.sm-dialog-dim { animation: sm-dim-in 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .sm-dialog, .sm-dialog-dim { animation: none; } }

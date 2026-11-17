@@ -214,19 +214,47 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
 }
 
 /**
+ * A pop-up in the middle of the screen, over a dimmed page (Nov 17, Sam: confirms and problems as a pop-up, the same in
+ * every studio app): a headline, a muted line, then its buttons. Drawn by the app, so its buttons say what they do and a
+ * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
+ */
+function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const dismiss = useRef(onDismiss);
+  useEffect(() => { dismiss.current = onDismiss; });
+  useEffect(() => {
+    // The way out has the focus first (the last button), so a stray Enter never confirms.
+    const buttons = box.current?.querySelectorAll("button");
+    buttons?.[buttons.length - 1]?.focus({ preventScroll: true });
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss.current(); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px] sm-dialog-dim" onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
+      <div ref={box} role="dialog" aria-modal="true" aria-label={title}
+        className="sm-dialog w-full max-w-[20rem] space-y-4 rounded-[1.5rem] bg-card p-5 text-center shadow-2xl">
+        <div className="space-y-1.5">
+          <h2 className="t-headline">{title}</h2>
+          {message && <p role="alert" className="whitespace-pre-line t-sub text-muted">{message}</p>}
+        </div>
+        <div className="space-y-2">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * A problem, shown over the page (never a bar that pushes it down): a short headline, the reason, OK. The same in every
  * studio app, so it can be copied across.
  */
 export function Alert({ open, title, message, onClose }: { open: boolean; title: string; message: ReactNode; onClose: () => void }) {
   if (!open || typeof document === "undefined") return null;
-  return createPortal(
-    <Sheet label={title} title={title} onClose={onClose}>
-      <div className="space-y-3 pb-2">
-        <p role="alert" className="t-sub text-muted">{message}</p>
-        <Button className="w-full" onClick={onClose}>OK</Button>
-      </div>
-    </Sheet>,
-    document.body,
+  return (
+    <Dialog title={title} message={message} onDismiss={onClose}>
+      <Button className="w-full" onClick={onClose}>OK</Button>
+    </Dialog>
   );
 }
 
@@ -238,19 +266,15 @@ export function ConfirmSheet({ open, title, message, confirm, onConfirm, onCance
   open: boolean; title: string; message?: ReactNode; confirm: string; onConfirm: () => void; onCancel: () => void; danger?: boolean;
 }) {
   if (!open || typeof document === "undefined") return null;
-  return createPortal(
-    <Sheet label={title} title={title} onClose={onCancel}>
-      <div className="space-y-3 pb-2">
-        {message && <p className="t-sub text-muted">{message}</p>}
-        {danger ? (
-          <button type="button" onClick={onConfirm} className={`inline-flex h-[52px] w-full items-center justify-center rounded-full bg-alert px-6 t-headline text-white ${PRESS}`}>{confirm}</button>
-        ) : (
-          <Button className="w-full" onClick={onConfirm}>{confirm}</Button>
-        )}
-        <Button variant="secondary" className="w-full" onClick={onCancel}>Cancel</Button>
-      </div>
-    </Sheet>,
-    document.body,
+  return (
+    <Dialog title={title} message={message} onDismiss={onCancel}>
+      {danger ? (
+        <button type="button" onClick={onConfirm} className={`inline-flex h-[52px] w-full items-center justify-center rounded-full bg-alert px-6 t-headline text-white ${PRESS}`}>{confirm}</button>
+      ) : (
+        <Button className="w-full" onClick={onConfirm}>{confirm}</Button>
+      )}
+      <Button variant="secondary" className="w-full" onClick={onCancel}>Cancel</Button>
+    </Dialog>
   );
 }
 
