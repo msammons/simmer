@@ -12,7 +12,7 @@ import {
   type Approval, type CheckoutSettings, type Final,
 } from "./checkout";
 import { AppError } from "./errors";
-import { HELPER_VERSION, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
+import { HELPER_VERSION, cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
 import { doneShopping } from "./groceries";
 import { clearCart } from "./safeway";
 import { json, kv, secs } from "./kv";
@@ -147,6 +147,9 @@ const dayLabel = (tile: string) => { const m = tile.match(/(Mon|Tue|Wed|Thu|Fri|
  */
 export const isDayTile = (s: string) => /^(?:select slots for |Selected)[A-Z]+DAY [A-Z][a-z]{2}, \d{1,2} [A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/.test(s);
 
+/** A cart change still on its way to Safeway stops every checkout step (Nov 16, Sam). */
+const CHANGING = "The cart is still changing on Safeway. Wait for it to finish, then check out.";
+
 /**
  * The days Safeway offers and one day's free times (or follows the reading started): the helper goes to Safeway's
  * checkout and reads the day showing, or presses the day asked for and reads it; it chooses no time. Only free times
@@ -155,6 +158,7 @@ export const isDayTile = (s: string) => /^(?:select slots for |Selected)[A-Z]+DA
  */
 export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
   await ready();
+  if (!jobId && (await cartChanging())) throw new AppError(CHANGING);
   const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true, ...(day && isDayTile(day) && { day }) })).id;
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
@@ -191,6 +195,7 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): 
   if (!id) {
     const offered = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
     if (!windowId || !offered || !offered.ids.includes(windowId)) throw new AppError("Pick a pickup time again.");
+    if (await cartChanging()) throw new AppError(CHANGING);
     id = (await queueAndWake("checkoutPrepare", { windowId })).id;
   }
   const { job } = await waitForJob(id, ms);
@@ -234,6 +239,7 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Get ready again.");
     const cart = await cartNow();
     if (cart !== p.cartKey) reasons.push("The cart changed since. Get ready again.");
+    if (await cartChanging()) reasons.push(CHANGING);
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
     // Free, or a paid time (Flash) whose price was read and is in the total she sees (Nov 16).
     if (w.priceCents === null) reasons.push("Safeway's pickup time price couldn't be read.");
@@ -276,6 +282,7 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
   const s = await loadSettings();
   if (!s.on) return refuse(["Ordering is off in Settings."]);
   if ((await cartNow()) !== a.cartKey) return refuse(["The cart changed after the approval."]);
+  if (await cartChanging()) return refuse([CHANGING]);
   const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId });
   await kv().set(RUN_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(15 * 60_000) });
   await record("test run started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId });
@@ -353,6 +360,7 @@ export async function placeOrder(approvalId: string, ms = WAIT_MS): Promise<Orde
   const now = Date.now(), cart = await cartNow();
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
   if (cart !== a.cartKey) why.push("The cart changed after the approval.");
+  if (await cartChanging()) why.push(CHANGING);
   if (why.length) return refuse(why);
   if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Get ready again."]);
   const expect = expectFor(a);

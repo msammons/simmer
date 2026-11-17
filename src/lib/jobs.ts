@@ -128,6 +128,15 @@ async function prune({ jobs, junk }: Tab) {
 const pickupFor = (j: Job) => (j.kind.startsWith("checkout") ? 60_000 : JOB_TIMES.pickup);
 const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > pickupFor(j)) || (j.status === "working" && age(j.updated) > JOB_TIMES.stuck);
 
+/**
+ * Whether a cart change is still on its way to Safeway (Nov 16, Sam: no checking out while things are in progress):
+ * a quantity change waiting for the helper or being made. One left too long doesn't count.
+ */
+export async function cartChanging(): Promise<boolean> {
+  const { jobs } = await read();
+  return jobs.some((j) => j.kind === "setQty" && (j.status === "waiting" || j.status === "working") && !overdue(j));
+}
+
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
 export const HELPER_VERSION: string = manifest.version;
 const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
