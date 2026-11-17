@@ -66,19 +66,19 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               const key = `${id}|${norm(l.name)}`;
               const isOpen = open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
-              // Nothing to show or hide (every thing in it is Need): no header row, the outline alone (Sam, Nov 16).
-              const header = !l.rows.every((r) => r.answer === "need");
+              // Nothing to show or hide (every thing in it is Need): the header stays, without Show all / Show less (Sam, Nov 16).
+              const toggles = !l.rows.every((r) => r.answer === "need");
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 16, Sam): full width with nothing indented, a colored line around its cells, a tinted header
               // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
-                  {header && <div className="flex h-[3.25rem] items-center bg-accent/[0.16] pr-2">
-                    <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={() => toggle(key)}
+                  <div className="flex h-[3.25rem] items-center bg-accent/[0.16] pr-2">
+                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && toggle(key)}
                       className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
                       <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
-                      <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>
+                      {toggles && <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>}
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-accent">
@@ -90,8 +90,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                         <option value="remove">Remove group (keeps its things)</option>
                       </select>
                     </label>
-                  </div>}
-                  {(header ? shown : l.rows).map((r) => item(r))}
+                  </div>
+                  {(toggles ? shown : l.rows).map((r) => item(r))}
                   <span aria-hidden className={`pointer-events-none absolute inset-0 !border-2 !border-accent/60 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];

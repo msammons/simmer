@@ -356,7 +356,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
       await page.getByLabel("New group").fill("Smoke cheese");
       await stockField.press("Enter"); await page.waitForTimeout(1500);
-      ok("stock: a group shows from its first thing, with no header while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0);
+      ok("stock: a group shows from its first thing, its header without Show all while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && !/Show all/.test(await page.getByRole("button", { name: "Smoke cheese" }).innerText()));
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "Smoke cheese" });
@@ -365,9 +365,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
-      ok("stock: a group of two, both Need, shows both with no header", (await cheese.count()) === 0 && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
+      ok("stock: a group of two, both Need, shows both, with nothing to show or hide", (await cheese.count()) === 1 && !/Show all|Show less/.test(await cheese.innerText()) && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
-      ok("stock: one answered Have: the header comes, closed, offering Show all, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && /Show all/.test(await cheese.innerText())
+      ok("stock: one answered Have: the group closes, offering Show all, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && /Show all/.test(await cheese.innerText())
         && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       await cheese.tap(); await page.waitForTimeout(300);
       ok("stock: open, the group shows all of them and offers Show less", /Show less/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
