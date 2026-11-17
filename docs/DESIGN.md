@@ -91,7 +91,7 @@ Changed:
 - Meals: tried **one Add per day** (recipes grouped by kind) and **reverted the same day**: Robin asked for Quick and
   Regular on the day, and the single Add made her scan every kind. Quick, Regular and Other (⋯) stay.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
-- Shop: **Add usuals (N)**; Safeway rows show **only how many** under the name; **Mark the Safeway cart bought** and
+- Shop: **Add usuals (N)**; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
   **Show checked** live in Shop's ⋯ above the list; the add buttons are a **round +**, and a row's + matches the quantity buttons.
 - Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".
 - Settings has no copy to the Google Sheet; Shop has no helper update note. The **Alpha** badge stays.

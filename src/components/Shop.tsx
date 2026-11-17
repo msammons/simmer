@@ -192,8 +192,9 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     const waiting = f?.picked ? sw.pending[f.picked.id] ?? 0 : 0; // just added, on its way to Safeway
     const amount = shownAmount(it.quantity);
     const need = amount;
-    // Only how many under the name (Sam, Nov 17); the product's own name shows in Find and on Safeway.
-    const sub = need ? (it.store === "safeway" ? `Need ${need}` : need) : undefined;
+    // Safeway's product and how many under the name (back Nov 17: Sam wanted the product kept, only the extra words gone).
+    const name = l?.name ?? f?.picked?.name;
+    const sub = it.store === "safeway" && name ? [name, need && `Need ${need}`].filter(Boolean).join(" · ") : need ? (it.store === "safeway" ? `Need ${need}` : need) : undefined;
     let control: React.ReactNode = null;
     if (it.store === "safeway" && live) {
       if (l) control = <Stepper compact qty={l.qty} name={cap(it.item)} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />;
