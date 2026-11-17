@@ -304,7 +304,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await haveOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: a meal thing: Have lights", (await answerOf(name)) === "have");
         await needOf(name).tap(); await page.waitForTimeout(1200);
-        ok("stock: Need switches it (never both), still highlighted", (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
+        ok("stock: Need switches it (never both), still marked", (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
         await needOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: tapping the lit side again makes it to check", (await answerOf(name)) === "check");
       } else ok("stock: meal things (none need anything from the house in the sample)", true);
@@ -629,9 +629,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
     await tabs.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
     await settingsHere("Stock");
     {
-      // A meal thing's amount under its name, and every row one height with or without it (Nov 11: uneven heights are annoying).
+      // A planned dinner's thing: its name in the accent color, no tint and nothing under it (Nov 16, Sam).
       const meal = page.locator("[data-meal]").filter({ has: page.getByRole("group", { name: /^Have or need / }) });
-      ok(`${tag}: a meal thing shows at most one line under its name`, (await meal.count()) === 0 || (await meal.first().locator("span.t-foot").count()) <= 1);
+      ok(`${tag}: a dinner's thing is marked by its name's color only`, (await meal.count()) === 0 || ((await meal.first().locator(".text-accent").count()) === 1 && (await meal.first().locator("span.t-foot").count()) === 0
+        && (await meal.first().evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgba(0, 0, 0, 0)"));
     }
     ok(`${tag}: every Stock row is the same height`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => new Set(gs.map((g) => Math.round(g.parentElement.getBoundingClientRect().height))).size === 1));
     // Every row has ⋯ or its space, so the switches line up (Nov 11).
