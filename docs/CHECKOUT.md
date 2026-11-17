@@ -64,6 +64,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 - Unusual things are highlighted on the confirm sheet: a count of 5 or more, one item over $30, a total more than 15%
   above Simmer's estimate (tunable).
 - Only a helper version that has passed a dry run on this account can place orders (an update needs a new dry run).
+- No checking out while the cart is changing (Nov 16, Sam): Check out is greyed while a change is on its way to
+  Safeway or the cart is being read, and every checkout step on the server refuses while a quantity change is waiting
+  or being made.
 - A record of every attempt (what was approved, what Safeway showed, what was pressed, the order number), kept even
   when it fails.
 
