@@ -3,9 +3,8 @@ import { useMemo, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
-import { Icon } from "./icons";
 import { addDays, todayIn } from "@/lib/time";
-import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
+import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet, IconBadge } from "./ui";
 
 // The Meals tab is a list of days from today, each with its meals, picked from her recipes (Nov 16, from Robin's run;
 // Simmer doesn't pick meals itself). Kids' lunches, snacks and desserts are mostly Stock; Lunch stays as an option.
@@ -99,8 +98,9 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
               <Group key={day} header={dayName(day)}>
                 {mine.map((d, i) => meal(d, i === 0))}
                 {!mine.length && (
-                  <label className="relative flex h-12 items-center gap-1.5 px-4 t-sub font-semibold text-accent">
-                    <Icon name="plus" className="size-4" strokeWidth={2.2} />Add
+                  // As Recipes' Add recipes row (Sam, Nov 17): the round tinted + and the words in the row's own type.
+                  <label className="relative flex w-full items-center gap-3 px-4 py-3 active:bg-sunk">
+                    <IconBadge icon="plus" /><span className="t-body">Add</span>
                     <select value="" aria-label={`Add to ${dayName(day)}`} className="absolute inset-0 cursor-pointer opacity-0 text-base"
                       onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                       <option value="" disabled>{dayName(day)}</option>
