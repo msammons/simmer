@@ -31,8 +31,9 @@ of her is a cost.
 - **One way to do a thing.** The same kind of action looks and works the same on every screen.
 - **Row actions live behind ⋯** (the phone's own picker), on the right of the row: move, group, remove, add-another-
   kind. The row itself shows only its name and its one main control (Have | Need, a tick, Find/Add, a stepper).
-- **Hide/show is a menu item with a ✓** (Show all), in the ⋯ of what it hides: the list's own ⋯ (above the list, on
-  the right), a group's ⋯.
+- **Hide/show is a menu item with a ✓**, in the ⋯ of what it hides, and its words name what it shows (Sam, Nov 17:
+  "Show all" didn't say all of what): **Show everything on the list** in the list's own ⋯ (above the list, on the
+  right), **Show everything in Cheese** in a group's ⋯, **Show checked** in Shop's.
 - **A page's own ⋯ sits above its list, on the right**, the same size as a row's; never beside an add field.
 - **No explaining text.** No legends, hints or "here's how this works" lines; a mark (the asterisk on a dinner's thing)
   or the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").

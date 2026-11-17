@@ -38,7 +38,7 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null, opts: { 
     if (known.has(norm(s.item))) continue;
     const it = find(s.item);
     // Specialty (Nov 16): shown only while on the list or answered; after the shop it leaves until added again.
-    // With Show all (Nov 17), every kept thing shows, hidden specialty things too.
+    // With Show everything on the list (Nov 17), every kept thing shows, hidden specialty things too.
     if (s.kind === "specialty" && !it && !opts.all) continue;
     known.add(norm(s.item));
     rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, it, s, null));

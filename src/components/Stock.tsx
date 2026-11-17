@@ -44,7 +44,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const [renaming, setRenaming] = useState<string | null>(null); // "Rename group" open for this group
   const [ungrouping, setUngrouping] = useState<string | null>(null); // waiting on "Remove the … group?"
   const [added, setAdded] = useState(""); // the thing just added: brought into view and lit for a moment
-  // Show all (Sam, Nov 17: a hide/show with a checkmark, in a ⋯ by Add): every kept thing and every group, opened.
+  // Show everything on the list (Sam, Nov 17: a hide/show with a checkmark; each says what it shows): every kept thing
+  // (specialty too) and every group, opened.
   const [showAll, setShowAll] = useState(false);
   const rows = rowsOf(list, kitchen, { all: showAll });
   const groups = [...new Map((list?.staples ?? []).filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
@@ -65,7 +66,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
             <select value="" aria-label="More for the list" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
               onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
               <option value="" disabled>List</option>
-              <option value="all">{showAll ? "✓ Show all" : "Show all"}</option>
+              <option value="all">{showAll ? "✓ Show everything on the list" : "Show everything on the list"}</option>
             </select>
           </label>
         </div>
@@ -82,12 +83,12 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               const key = `${id}|${norm(l.name)}`;
               const isOpen = showAll || open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
-              // Nothing to show or hide (every thing in it is Need): the header stays, without Show all / Show less (Sam, Nov 16).
+              // Nothing to show or hide (every thing in it is Need): the header stays, without its hide/show (Sam, Nov 16).
               const toggles = !l.rows.every((r) => r.answer === "need");
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 16-17, Sam): full width with nothing indented, a colored line around its cells, a tinted header
-              // row with the group's name; its ⋯ has Show all, checked while open (tapping the header does the same).
+              // row with the group's name; its ⋯ has Show everything in <group>, checked while open (tapping the header does the same).
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
                   <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
@@ -101,7 +102,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                       <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
                         onChange={(e) => { const v = e.target.value; if (v === "all") toggle(key); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
-                        {toggles && <option value="all" disabled={showAll}>{isOpen ? "✓ Show all" : "Show all"}</option>}
+                        {toggles && <option value="all" disabled={showAll}>{`${isOpen ? "✓ " : ""}Show everything in ${cap(l.name)}`}</option>}
                         <option value="rename">Rename group</option>
                         <option value="remove">Remove group</option>
                       </select>
