@@ -186,6 +186,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabs.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(600);
       await page.getByRole("button", { name: /^Turkey chili/ }).first().tap(); await page.waitForTimeout(500);
       const toWeek = page.getByRole("button", { name: "Add to the plan" });
+      {
+        const more = page.getByLabel(/^More for /).first();
+        ok("recipe: each ingredient has a ⋯ to move it to Fresh, Freezer or Pantry, as on List", (await more.count()) === 1
+          && (await more.locator("option", { hasText: "Move to Fresh" }).count()) === 1 && (await more.locator("option", { hasText: "Move to Freezer" }).count()) === 1 && (await more.locator("option", { hasText: "Move to Pantry" }).count()) === 1);
+      }
       ok("recipe: not planned, it offers Add to the plan only", (await toWeek.isVisible()) && (await page.getByRole("button", { name: /add to the list/i }).count()) === 0);
       await toWeek.tap(); await page.waitForTimeout(300);
       const which = page.getByRole("dialog", { name: "Which day" });

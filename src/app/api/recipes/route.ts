@@ -53,9 +53,9 @@ export async function POST(req: Request) {
       }
       case "effort": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, effort: b.effort === "quick" ? "quick" : "regular" }))).id]; break;
       case "active": saved = [(await updateRecipe(clean(b.id), (r) => ({ ...r, active: Boolean(b.active) }))).id]; break;
-      // An ingredient moved between Fresh and Pantry (Nov 16): remembered for every recipe and the list.
+      // An ingredient moved between Fresh, Freezer and Pantry (Nov 16-17): remembered for every recipe and the list.
       case "section": {
-        if (b.section !== "fresh" && b.section !== "pantry") throw new AppError("Fresh or pantry?");
+        if (b.section !== "fresh" && b.section !== "pantry" && b.section !== "freezer") throw new AppError("Fresh, freezer or pantry?");
         const item = typeof b.item === "string" ? b.item.replace(/\s+/g, " ").trim().slice(0, 80) : "";
         if (!item) throw new AppError("Which ingredient?");
         await fileSection(item, b.section);

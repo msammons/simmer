@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { type RecipeSection, api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
 import { ShopScreen, type ShopActions } from "./Shop";
@@ -190,7 +190,7 @@ export default function App() {
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
 
   /** An ingredient moved between Fresh and Pantry (Nov 16): every recipe with it shows the move at once; the list follows. */
-  function moveIngredient(r: Recipe, item: string, section: "fresh" | "pantry") {
+  function moveIngredient(r: Recipe, item: string, section: RecipeSection) {
     const same = (i: Ingredient) => i.item.trim().toLowerCase() === item.trim().toLowerCase();
     setRecipes((rs) => rs && rs.map((x) => (x.ingredients.some(same) ? { ...x, ingredients: x.ingredients.map((i) => (same(i) ? { ...i, section } : i)) } : x)));
     api.recipeChange({ op: "section", id: r.id, item, section })

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
+import { type RecipeSection, api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Shop";
@@ -71,7 +71,7 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
 export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWeek, onSection }: {
   r: Recipe; onBack: () => void; backLabel: string; onEdit: () => void;
   /** An ingredient moved between Fresh and Pantry (Nov 16). */
-  onSection?: (item: string, section: "fresh" | "pantry") => void;
+  onSection?: (item: string, section: RecipeSection) => void;
   /** It's one of this week's dinners: its groceries went on the list when it was planned. */
   planned?: boolean;
   /**
@@ -91,8 +91,26 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
     document.addEventListener("visibilitychange", take);
     return () => { document.removeEventListener("visibilitychange", take); lock?.release().catch(() => {}); };
   }, []);
-  const fresh = r.ingredients.filter((i) => i.section === "fresh"), rest = r.ingredients.filter((i) => i.section !== "fresh");
-  const [moving, setMoving] = useState<Ingredient | null>(null); // an ingredient being moved between Fresh and Pantry
+  const fresh = r.ingredients.filter((i) => i.section === "fresh"), frozen = r.ingredients.filter((i) => i.section === "freezer");
+  const rest = r.ingredients.filter((i) => i.section !== "fresh" && i.section !== "freezer");
+  // An ingredient's row: its line, and with moving allowed, a ⋯ as on List (Sam, Nov 17) to move it to Fresh, Freezer or Pantry.
+  const line = (i: Ingredient, n: number) => (
+    <div key={n} className="flex min-h-[3.25rem] items-center gap-2 pl-4 pr-2">
+      <span className="min-w-0 flex-1 py-3 t-body">{i.line}</span>
+      {onSection && (
+        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
+          <span aria-hidden>⋯</span>
+          <select value="" aria-label={`More for ${i.item}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+            onChange={(e) => { const sec = e.target.value as RecipeSection; if (sec) onSection(i.item, sec); }}>
+            <option value="" disabled>{i.item}</option>
+            <option value="fresh" disabled={i.section === "fresh"}>Move to Fresh</option>
+            <option value="freezer" disabled={i.section === "freezer"}>Move to Freezer</option>
+            <option value="pantry" disabled={i.section !== "fresh" && i.section !== "freezer"}>Move to Pantry</option>
+          </select>
+        </label>
+      )}
+    </div>
+  );
   const link = /^https?:\/\//.test(r.source) ? r.source : "";
   return (
     <div ref={screen} className="space-y-6">
@@ -103,21 +121,10 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {!planned && onAddToWeek && <Button onClick={onAddToWeek} icon="calendarPlus" className="w-full">Add to the plan</Button>}
       {r.ingredients.length ? (
         <>
-          {/* Tap an ingredient to move it between Fresh and Pantry (Robin, Nov 15: cashews landed in Fresh). */}
-          {fresh.length > 0 && <Group header="Fresh">{fresh.map((i, n) => <Row key={n} title={i.line} onClick={onSection ? () => setMoving(i) : undefined} />)}</Group>}
-          {rest.length > 0 && <Group header="From the pantry">{rest.map((i, n) => <Row key={n} title={i.line} onClick={onSection ? () => setMoving(i) : undefined} />)}</Group>}
-          {moving && onSection && (
-            <Sheet label="Move ingredient" title={moving.item} onClose={() => setMoving(null)}>
-              <div className="pb-2">
-                <Group header="Where it goes">
-                  {(["fresh", "pantry"] as const).map((sec) => (
-                    <Row key={sec} title={sec === "fresh" ? "Fresh" : "Pantry"} role="radio" checked={(moving.section === "fresh" ? "fresh" : "pantry") === sec} accessory="check"
-                      onClick={() => { const m = moving; setMoving(null); if ((m.section === "fresh" ? "fresh" : "pantry") !== sec) onSection(m.item, sec); }} />
-                  ))}
-                </Group>
-              </div>
-            </Sheet>
-          )}
+          {/* Moving an ingredient between Fresh, Freezer and Pantry (Robin, Nov 15: cashews landed in Fresh), from its ⋯. */}
+          {fresh.length > 0 && <Group header="Fresh">{fresh.map(line)}</Group>}
+          {frozen.length > 0 && <Group header="Freezer">{frozen.map(line)}</Group>}
+          {rest.length > 0 && <Group header="From the pantry">{rest.map(line)}</Group>}
         </>
       ) : (
         <Group><Row icon="pencil" title="No ingredients yet" value="Add them" accessory="chevron" onClick={onEdit} /></Group>

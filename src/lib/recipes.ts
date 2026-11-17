@@ -65,7 +65,7 @@ export async function loadRecipes(): Promise<Recipe[]> {
   // An ingredient's section as she set it (Nov 16), over the guess: the same place it goes on the list.
   const saved = await savedSections().catch(() => new Map<string, Section>());
   if (!saved.size) return rs;
-  return rs.map((r) => ({ ...r, ingredients: r.ingredients.map((i) => { const s = saved.get(norm(i.item)); return s === "fresh" || s === "pantry" ? { ...i, section: s } : i; }) }));
+  return rs.map((r) => ({ ...r, ingredients: r.ingredients.map((i) => { const s = saved.get(norm(i.item)); return s === "fresh" || s === "pantry" || s === "freezer" ? { ...i, section: s } : i; }) }));
 }
 
 export { searchRecipes } from "./search";
