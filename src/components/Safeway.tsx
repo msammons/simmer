@@ -179,7 +179,7 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
  */
 export function Stepper({ qty, name, off, compact, onChange }: { qty: number; name: string; off?: boolean; compact?: boolean; onChange: (n: number) => void }) {
   // `compact`: on a Shop row, beside the name, so the name keeps room.
-  const btn = `glass flex ${compact ? "size-8" : "size-9"} items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100`;
+  const btn = `glass relative before:absolute before:-inset-1.5 before:content-[''] flex ${compact ? "size-8" : "size-9"} items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100`;
   return (
     <div className={`flex shrink-0 items-center ${compact ? "gap-1" : "gap-1.5"}`}>
       <button className={btn} disabled={off} aria-label={qty <= 1 ? `Take ${name} out of the cart` : `One less ${name}`} onClick={() => onChange(qty - 1)}>

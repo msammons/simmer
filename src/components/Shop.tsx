@@ -48,7 +48,7 @@ function More({ name, options, onPick }: { name: string; options: { value: strin
   return (
     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
       <span aria-hidden>⋯</span>
-      <select value="" aria-label={`More for ${name}`} onChange={(e) => { if (e.target.value) onPick(e.target.value); }} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base">
+      <select value="" aria-label={`More for ${name}`} onChange={(e) => { if (e.target.value) onPick(e.target.value); }} className="absolute -inset-1 cursor-pointer opacity-0 text-base">
         <option value="" disabled>{name}</option>
         {options.map((o) => <option key={o.value} value={o.value} disabled={o.off}>{o.label}</option>)}
       </select>

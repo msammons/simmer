@@ -250,7 +250,7 @@ function TimesList({ view, picked, loading, onDay, onPick }: { view: TimesView; 
       </Group>
       {loading ? <Held groups={[4]} label="Reading that day's times" /> : chosen && (
         <Group header="Pickup time">
-          {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} subtitle={t.flash ? "Flash: ready sooner, costs extra" : undefined} value={t.price} accessory="chevron" onClick={() => onPick(t.id)} />)
+          {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} subtitle={t.flash ? "Flash: ready sooner, costs extra" : undefined} value={t.price} onClick={() => onPick(t.id)} />)
             : <Row title="No times this day" subtitle="Pick another day." />}
         </Group>
       )}
