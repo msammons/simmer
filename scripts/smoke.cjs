@@ -149,7 +149,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
       await page.waitForTimeout(400);
       ok("meals: picking one puts it on that day", (await todayMeals()) === before + 1);
-      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(400);
+      // Calmer (Nov 17): a day with a dinner drops its Quick and Regular words; its ⋯ has them.
+      const todayOther = page.getByLabel(`Other for ${TODAY}`);
+      ok("meals: a day with a dinner shows no Quick or Regular, and its ⋯ starts with them", (await todayGroup.getByRole("button", { name: /^(Quick|Regular) for / }).count()) === 0
+        && (await todayOther.locator("option").allInnerTexts()).slice(1, 3).join() === "Add a quick dinner,Add a regular dinner");
+      await todayOther.selectOption("quick"); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
       ok("meals: Other is a ⋯ whose items each say Add", (await page.getByLabel(`Other for ${TOMORROW}`).locator("option").allInnerTexts()).slice(1).join() === "Add breakfast,Add lunch,Add a kids' dinner,Add dessert,Add a side");
@@ -210,7 +214,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
       ok("recipe: it's on Meals, on tomorrow's date", (await dayGroup(TOMORROW).getByRole("button", { name: /^Turkey chili/ }).count()) === 1);
       // A search with no match.
-      await todayGroup.getByRole("button", { name: `Regular for ${TODAY}` }).tap(); await page.waitForTimeout(500);
+      await (await todayGroup.getByRole("button", { name: `Regular for ${TODAY}` }).count() ? todayGroup.getByRole("button", { name: `Regular for ${TODAY}` }).tap() : page.getByLabel(`Other for ${TODAY}`).selectOption("regular")); await page.waitForTimeout(500);
       const addSheet = page.getByRole("dialog", { name: "Add a meal" });
       const box = addSheet.getByLabel("Find a recipe");
       ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));

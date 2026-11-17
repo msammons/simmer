@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
+import { Icon } from "./icons";
 import { addDays, todayIn } from "@/lib/time";
 import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
 
@@ -48,7 +49,6 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
-  const pill = "glass flex h-9 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]";
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
@@ -86,25 +86,35 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
       {!plan && <Held groups={[2, 2, 2]} />}
       {plan && (
         <>
-          {days.map((day) => (
-            <Group key={day} header={dayName(day)}>
-              {dishes.filter((d) => d.day === day).map(meal)}
-              <div className="flex gap-2 px-4 py-3">
-                <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}>Quick</button>
-                <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}>Regular</button>
-                {/* Quick and Regular right on the day (Robin, Nov 15-16), Other in a ⋯ on the right (Sam, Nov 16-17). Back Nov 17
-                    after one Add per day hid her two main choices behind a longer sheet. */}
-                <label className="relative ml-auto flex size-9 shrink-0 items-center justify-center self-center text-[22px] leading-none text-muted">
+          {days.map((day) => {
+            // Calmer (Sam, Nov 17: "I like the one tap access to quick regular but the page is busy"): a day without a dinner
+            // shows Quick and Regular as quiet words, one tap each; a day with one shows only its dinners. The day's ⋯ by its
+            // date has the rest, and Quick and Regular too once the day has a dinner.
+            const planned = dishes.some((d) => d.day === day && (d.kind === "quick" || d.kind === "regular" || d.kind === "kids"));
+            const link = "relative flex h-11 items-center gap-1 t-sub font-semibold text-accent before:absolute before:-inset-x-2 before:inset-y-0 before:content-[''] active:opacity-60";
+            return (
+              <Group key={day} header={dayName(day)} aside={
+                <label className="relative -my-2 -mr-2 flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                   <span aria-hidden>⋯</span>
                   <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
                     onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                     <option value="" disabled>{dayName(day)}</option>
+                    {planned && <option value="quick">Add a quick dinner</option>}
+                    {planned && <option value="regular">Add a regular dinner</option>}
                     {MORE.map((k) => <option key={k} value={k}>{ADD_OTHER[k]}</option>)}
                   </select>
                 </label>
-              </div>
-            </Group>
-          ))}
+              }>
+                {dishes.filter((d) => d.day === day).map(meal)}
+                {!planned && (
+                  <div className="flex gap-6 px-4">
+                    <button className={link} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}><Icon name="plus" className="size-4" strokeWidth={2.2} />Quick</button>
+                    <button className={link} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}><Icon name="plus" className="size-4" strokeWidth={2.2} />Regular</button>
+                  </div>
+                )}
+              </Group>
+            );
+          })}
           <button onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>
           {later.length > 0 && <Group header="Later">{later.map(meal)}</Group>}
           {undated.length > 0 && <Group header="Not on a day">{undated.map(meal)}</Group>}
