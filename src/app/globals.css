@@ -197,3 +197,7 @@ button, a, [role="button"] {
 /* A thing just added on List, lit for a moment where it landed (Nov 16). */
 @keyframes sm-flash { from { background-color: color-mix(in srgb, var(--accent) 28%, transparent); } to { background-color: transparent; } }
 .sm-flash { animation: sm-flash 1.6s ease-out 0.3s backwards; }
+
+/* iPhone Safari zooms into a field or picker whose text is under 16px, and the page then slides sideways (Nov 16, Sam:
+   "the page now scrolls right to left"). On touch screens every field and picker is at least 16px. */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
