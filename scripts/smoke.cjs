@@ -432,6 +432,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       {
         const add = await page.getByLabel("Add something", { exact: true }).boundingBox(), menu = await shopMenu.boundingBox(), co = await page.getByRole("button", { name: "Check out" }).boundingBox();
         ok("shop: Shop's ⋯ sits above the list, after Check out", Boolean(add && menu && co) && menu.y > add.y + add.height - 2 && menu.x > co.x);
+        ok("shop: Check out sits on the left, away from the ⋯ (Nov 17)", Boolean(add && menu && co) && co.x - add.x < 24 && menu.x - (co.x + co.width) > 80);
       }
       const showCheckedText = async () => (await shopMenu.locator("option[value=checked]").innerText()).trim();
       ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add usuals by Safeway", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()

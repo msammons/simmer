@@ -72,17 +72,17 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  */
 function TopLine({ cart, menu }: { cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null; menu: React.ReactNode }) {
   return (
-    // Above the list (Sam, Nov 17): the cart's price and Check out, then Shop's own ⋯ on the right.
-    <div className="flex min-h-10 items-center justify-end gap-2.5 pl-4 pr-2">
+    // Above the list (Sam, Nov 17): Check out and the cart's price on the left, away from Shop's own ⋯ on the right.
+    <div className="flex min-h-10 items-center gap-2.5 pl-1 pr-2">
       {cart && (
-        <span className="flex min-w-0 items-center gap-2.5">
+        <span className="flex min-w-0 flex-row-reverse items-center justify-end gap-2.5">
           {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
           <button onClick={cart.onCheckOut} disabled={cart.off || cart.busy} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off || cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
             <Icon name="cart" className="size-[18px]" strokeWidth={2} />{cart.off ? "Signed out" : "Check out"}
           </button>
         </span>
       )}
-      {menu}
+      <span className="ml-auto">{menu}</span>
     </div>
   );
 }
