@@ -70,18 +70,19 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  * price, and the button says Signed out and can't be pressed. While the cart is changing or being read (Nov 16, Sam:
  * no checking out while things are in progress), Check out is greyed too.
  */
-function TopLine({ cart }: { cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null }) {
-  if (!cart) return null;
+function TopLine({ cart, menu }: { cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null; menu: React.ReactNode }) {
   return (
-    <div className="flex min-h-10 items-center gap-3 pl-4">
+    // Above the list (Sam, Nov 17): the cart's price and Check out, then Shop's own ⋯ on the right.
+    <div className="flex min-h-10 items-center justify-end gap-2.5 pl-4 pr-2">
       {cart && (
-        <span className="ml-auto flex min-w-0 items-center gap-2.5">
+        <span className="flex min-w-0 items-center gap-2.5">
           {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
           <button onClick={cart.onCheckOut} disabled={cart.off || cart.busy} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off || cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
             <Icon name="cart" className="size-[18px]" strokeWidth={2} />{cart.off ? "Signed out" : "Check out"}
           </button>
         </span>
       )}
+      {menu}
     </div>
   );
 }
@@ -217,21 +218,22 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something" enterKeyHint="done"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <AddButton disabled={!text.trim()} />
-        <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
-          <span aria-hidden>⋯</span>
-          <select value="" aria-label="More for Shop" className="absolute inset-0 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const v = e.target.value; if (v === "checked") setShowGot(!showGot); else if (v === "bought") setOrdering(true); }}>
-            <option value="" disabled>Shop</option>
-            <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
-            {/* For when Simmer can't tell by itself that the order went through (Sam, Nov 17: into this ⋯, from a link under Safeway). */}
-            {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
-          </select>
-        </label>
       </form>
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine
+          <TopLine menu={(
+          <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
+            <span aria-hidden>⋯</span>
+            <select value="" aria-label="More for Shop" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
+              onChange={(e) => { const v = e.target.value; if (v === "checked") setShowGot(!showGot); else if (v === "bought") setOrdering(true); }}>
+              <option value="" disabled>Shop</option>
+              <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
+              {/* For when Simmer can't tell by itself that the order went through (Sam, Nov 17: into this ⋯, from a link under Safeway). */}
+              {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
+            </select>
+          </label>
+          )}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }
               : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: reading || Object.keys(sw.pending).length > 0 } : null} />

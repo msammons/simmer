@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
-import { Icon } from "./icons";
 import { addDays, todayIn } from "@/lib/time";
 import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
 
@@ -16,6 +15,10 @@ export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r
 
 // ---- Meals (tab)
 
+/** The kinds a day's Other offers (named More until Nov 16) (Sam, Nov 16: lunch stays as an option; desserts and kids' lunches are mostly Stock). */
+const MORE: Kind[] = ["breakfast", "lunchmeal", "kids", "dessert", "side"];
+/** Other's menu, each saying what it does (Sam, Nov 17: "each item should say add"). */
+const ADD_OTHER: Partial<Record<Kind, string>> = { breakfast: "Add breakfast", lunchmeal: "Add lunch", kids: "Add a kids' dinner", dessert: "Add dessert", side: "Add a side" };
 /** The kinds in the order she plans them, with their headings in the add sheet (Nov 17). */
 const KIND_ORDER: Kind[] = ["quick", "regular", "kids", "breakfast", "lunchmeal", "dessert", "side"];
 const KIND_HEADERS: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids' dinners", breakfast: "Breakfast", lunchmeal: "Lunch", dessert: "Desserts", side: "Sides" };
@@ -31,8 +34,8 @@ function dayName(day: string): string {
 
 /**
  * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
- * day has one Add (Nov 17), which opens her recipes by kind; the one she taps sets the kind. A day can hold more than
- * one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
+ * day has Quick and Regular, which open her recipes of that kind, and Other (a ⋯ on the right) for the other kinds. A day
+ * can hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
  * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
  */
@@ -45,6 +48,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
+  const pill = "glass flex h-9 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]";
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
@@ -85,11 +89,20 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
           {days.map((day) => (
             <Group key={day} header={dayName(day)}>
               {dishes.filter((d) => d.day === day).map(meal)}
-              {/* One Add per day (Sam, Nov 17): her recipes by kind, and the recipe she taps sets the kind. Two taps a dinner. */}
-              <button onClick={() => onAdd(null, day)} aria-label={`Add to ${dayName(day)}`}
-                className="flex h-12 w-full items-center gap-2 px-4 t-body font-semibold text-accent active:bg-sunk">
-                <Icon name="plus" className="size-5" strokeWidth={2.2} />Add
-              </button>
+              <div className="flex gap-2 px-4 py-3">
+                <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}>Quick</button>
+                <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}>Regular</button>
+                {/* Quick and Regular right on the day (Robin, Nov 15-16), Other in a ⋯ on the right (Sam, Nov 16-17). Back Nov 17
+                    after one Add per day hid her two main choices behind a longer sheet. */}
+                <label className="relative ml-auto flex size-9 shrink-0 items-center justify-center self-center text-[22px] leading-none text-muted">
+                  <span aria-hidden>⋯</span>
+                  <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
+                    onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
+                    <option value="" disabled>{dayName(day)}</option>
+                    {MORE.map((k) => <option key={k} value={k}>{ADD_OTHER[k]}</option>)}
+                  </select>
+                </label>
+              </div>
             </Group>
           ))}
           <button onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>

@@ -107,10 +107,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const TODAY = dayOf(0), TOMORROW = dayOf(1);
       const todayGroup = dayGroup(TODAY);
       ok("meals: no day is called Today or Tomorrow", (await page.getByRole("heading", { name: /^(Today|Tomorrow)$/ }).count()) === 0);
-      ok("meals: days by date from today, each with one Add (Nov 17)", await todayGroup.getByRole("button", { name: `Add to ${TODAY}` }).isVisible()
-        && (await page.getByRole("button", { name: /^Add to / }).count()) === 7 && (await page.getByRole("button", { name: /^(Quick|Regular) for / }).count()) === 0 && (await page.getByLabel(/^Other for /).count()) === 0);
+      ok("meals: days by date from today, each with Quick, Regular and Other (Robin's two main choices on the day)", await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).isVisible()
+        && await dayGroup(TOMORROW).getByRole("button", { name: `Regular for ${TOMORROW}` }).isVisible()
+        && (await page.getByLabel(/^Other for /).count()) === 7);
+      {
+        // Other on the right, Quick and Regular on the left (Nov 16).
+        const box = async (n) => todayGroup.getByLabel(`${n} for ${TODAY}`).boundingBox();
+        const [q, o, g] = [await box("Quick"), await box("Other"), await todayGroup.locator("div.rounded-\\[1\\.375rem\\]").boundingBox()];
+        ok("meals: Other sits on the right of the day, Quick on the left", Boolean(q && o && g) && g.x + g.width - (o.x + o.width) < 24 && q.x - g.x < 24);
+      }
       await page.getByRole("button", { name: "Show more days" }).tap(); await page.waitForTimeout(200);
-      ok("meals: Show more shows 14 days, and Show fewer goes back", (await page.getByRole("button", { name: /^Add to / }).count()) === 14);
+      ok("meals: Show more shows 14 days, and Show fewer goes back", (await page.getByLabel(/^Other for /).count()) === 14);
       await page.getByRole("button", { name: "Show fewer days" }).tap(); await page.waitForTimeout(200);
       ok("meals: New plan sits in the top bar", (await page.locator(".fixed.max-w-md").getByRole("button", { name: "New plan" }).count()) === 1 || (await page.getByRole("button", { name: /^Take / }).count()) === 0);
       {
@@ -121,10 +128,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (/\bweek\b/i.test(await page.locator("main").innerText())) old.push("week");
         ok("meals: none of the old things are back", !old.length, old.join(", "));
       }
-      await todayGroup.getByRole("button", { name: `Add to ${TODAY}` }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       const kindSheet = page.getByRole("dialog", { name: "Add a meal" });
-      ok("meals: Add opens her recipes for that day, by kind", await kindSheet.getByRole("heading", { name: TODAY, exact: true }).isVisible()
-        && (await kindSheet.locator("section h2").allInnerTexts()).slice(0, 2).join() === "Quick,Regular");
+      ok("meals: Quick opens her quick dinners for that day", await kindSheet.getByRole("heading", { name: `${TODAY}: a quick dinner` }).isVisible());
       const mealMenus = (where) => where.getByLabel(/^More for /);
       const todayMeals = () => mealMenus(todayGroup).count();
       const before = await todayMeals();
@@ -138,14 +144,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await didnt.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
       ok("meals: after the alert, the page scrolls again", (await page.evaluate(() => document.getElementById("scroller").style.overflow)) === "");
       await page.unroute("**/api/plan");
-      await todayGroup.getByRole("button", { name: `Add to ${TODAY}` }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       await kindSheet.getByRole("button", { name: firstName, exact: true }).tap();
       await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
       await page.waitForTimeout(400);
       ok("meals: picking one puts it on that day", (await todayMeals()) === before + 1);
-      await todayGroup.getByRole("button", { name: `Add to ${TODAY}` }).tap(); await page.waitForTimeout(400);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
+      ok("meals: Other is a ⋯ whose items each say Add", (await page.getByLabel(`Other for ${TOMORROW}`).locator("option").allInnerTexts()).slice(1).join() === "Add breakfast,Add lunch,Add a kids' dinner,Add dessert,Add a side");
       // A meal: tap for its recipe; its ⋯ (Nov 17) takes it off after asking, or moves it to another day.
       const offs = mealMenus(page);
       ok("meals: each dinner has a ⋯ with Move to another day and Take off the plan", (await offs.count()) === 0 || (await offs.first().locator("option").allInnerTexts()).slice(1).join() === "Move to another day,Take off the plan");
@@ -203,7 +210,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
       ok("recipe: it's on Meals, on tomorrow's date", (await dayGroup(TOMORROW).getByRole("button", { name: /^Turkey chili/ }).count()) === 1);
       // A search with no match.
-      await todayGroup.getByRole("button", { name: `Add to ${TODAY}` }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Regular for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       const addSheet = page.getByRole("dialog", { name: "Add a meal" });
       const box = addSheet.getByLabel("Find a recipe");
       ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));
@@ -288,6 +295,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Need puts it on its store's list. A dinner's things are highlighted in their own sections.
       await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
       await lookForBusy("Stock");
+      {
+        const add = await page.getByLabel("Add something to the list").boundingBox(), menu = await page.getByLabel("More for the list").boundingBox();
+        ok("stock: the list's ⋯ sits above the list on the right, not beside Add", Boolean(add && menu) && menu.y > add.y + add.height - 2 && menu.x > 300);
+      }
       ok("stock: has a plain add field at the top", await page.getByLabel("Add something to the list").isVisible() && (await page.getByRole("button", { name: "Add something" }).count()) === 0);
       // None of the old things are back on Stock: the legend, the For this plan group, Every week.
       {
@@ -418,6 +429,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add usuals stays by Safeway.
       const checkOut = page.getByRole("button", { name: "Check out" });
       const shopMenu = page.getByLabel("More for Shop");
+      {
+        const add = await page.getByLabel("Add something", { exact: true }).boundingBox(), menu = await shopMenu.boundingBox(), co = await page.getByRole("button", { name: "Check out" }).boundingBox();
+        ok("shop: Shop's ⋯ sits above the list, after Check out", Boolean(add && menu && co) && menu.y > add.y + add.height - 2 && menu.x > co.x);
+      }
       const showCheckedText = async () => (await shopMenu.locator("option[value=checked]").innerText()).trim();
       ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add usuals by Safeway", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
         && /^Add usuals \(2\)$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));

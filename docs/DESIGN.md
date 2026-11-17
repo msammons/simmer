@@ -31,7 +31,9 @@ of her is a cost.
 - **One way to do a thing.** The same kind of action looks and works the same on every screen.
 - **Row actions live behind ⋯** (the phone's own picker), on the right of the row: move, group, remove, add-another-
   kind. The row itself shows only its name and its one main control (Have | Need, a tick, Find/Add, a stepper).
-- **Hide/show is a menu item with a ✓** (Show all), in the ⋯ of what it hides: the list's ⋯ by Add, a group's ⋯.
+- **Hide/show is a menu item with a ✓** (Show all), in the ⋯ of what it hides: the list's own ⋯ (above the list, on
+  the right), a group's ⋯.
+- **A page's own ⋯ sits above its list, on the right**, the same size as a row's; never beside an add field.
 - **No explaining text.** No legends, hints or "here's how this works" lines; a mark (the asterisk on a dinner's thing)
   or the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").
 - **No chevrons where a tap acts at once** (choices, recipe rows, import choices). A chevron only for a real drill-in
@@ -59,6 +61,10 @@ of her is a cost.
 - Buttons say what they do ("Add a side", "Remove group", "Take it off").
 - Days are dates ("Tue, Nov 17"), never Today/Tomorrow.
 
+### What people asked for comes first
+- **A path someone asked for stays as direct as they asked.** Robin asked for Quick and Regular right on each day; a
+  budget never folds that into a menu or a longer sheet. Budgets trim what nobody asked for.
+
 ### Simple, user-driven
 - Simple controls that do what they say; no smart behaviour that guesses, fills or decides for her. Nothing goes on a
   list by itself; a dinner's things wait on List until she says Need.
@@ -81,10 +87,11 @@ Kept against an outside critique that argued the other way:
 - **⋯ for row actions**, dinners included (Move to another day, Take off the plan).
 
 Changed:
-- Meals: **one Add per day**, opening her recipes grouped by kind; the recipe she taps sets the kind (two taps, as before).
+- Meals: tried **one Add per day** (recipes grouped by kind) and **reverted the same day**: Robin asked for Quick and
+  Regular on the day, and the single Add made her scan every kind. Quick, Regular and Other (⋯) stay.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
 - Shop: **Add usuals (N)**; Safeway rows show **only how many** under the name; **Mark the Safeway cart bought** and
-  **Show checked** live in the ⋯ by Add; the add buttons are a **round +**, and a row's + matches the quantity buttons.
+  **Show checked** live in Shop's ⋯ above the list; the add buttons are a **round +**, and a row's + matches the quantity buttons.
 - Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".
 - Settings has no copy to the Google Sheet; Shop has no helper update note. The **Alpha** badge stays.
 
@@ -100,7 +107,7 @@ Nov 17 with a small test household; the budget is where it should get to.
 | Taps per thing when checking the house | 1 | 1 |
 | Taps to put the usuals in the Safeway cart | 1 | 1 |
 | Taps to place a Safeway order, after Get ready | 3 + Face ID | 3 + Face ID |
-| Controls on Meals' first screen | 12 | 12 (was 25: one Add per day, Nov 17) |
+| Controls on Meals' first screen | 3 per day shown + top bar | 25 with one dinner (Quick, Regular, ⋯ per day: what Robin asked for) |
 | Controls on List's first screen | 25 | 37 |
 | Controls on Shop's first screen | 20 | 13 (test data) |
 | Words on a tab's first screen | 150 | not yet measured per screen |
