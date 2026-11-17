@@ -301,20 +301,12 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 /** One tab in the floating tab bar (as in current iOS: the tabs in one glass capsule). */
 export type TabDef<T extends string> = { id: T; label: string; icon: IconName; dot?: boolean };
 /** The tabs at the bottom of every screen once signed in, the one you're in lit. */
-export function TabBar<T extends string>({ tabs, active, onTab, onAdd }: { tabs: TabDef<T>[]; active: T | null; onTab: (t: T) => void; onAdd?: () => void }) {
-  // Quick add (Nov 16, Sam): a big + in the middle of the bar, from any page.
-  const add = onAdd && (
-    <button key="add" onClick={onAdd} aria-label="Quick add"
-      className="-my-2 flex size-[3.75rem] shrink-0 items-center justify-center self-center rounded-full bg-accent text-on-accent shadow-lg transition active:scale-95">
-      <Icon name="plus" className="size-7" strokeWidth={2.4} />
-    </button>
-  );
-  const mid = Math.ceil(tabs.length / 2);
+export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef<T>[]; active: T | null; onTab: (t: T) => void }) {
   return (
     <nav aria-label="Main" className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <span aria-hidden className="absolute inset-x-0 -top-6 bottom-0 -z-10 bg-bg/60 backdrop-blur-md [mask-image:linear-gradient(to_top,black_50%,transparent)]" />
       <div className="glass pointer-events-auto mx-auto flex h-[58px] max-w-md gap-1 rounded-full p-1">
-        {tabs.flatMap(({ id, label, icon, dot }, i) => [...(i === mid && add ? [add] : []), (
+        {tabs.map(({ id, label, icon, dot }) => (
           <button
             key={id}
             onClick={() => onTab(id)}
@@ -325,7 +317,7 @@ export function TabBar<T extends string>({ tabs, active, onTab, onAdd }: { tabs:
             {label}
             {dot && <span className="absolute right-[calc(50%-18px)] top-1.5 size-2 rounded-full bg-alert ring-2 ring-card" aria-label="new" />}
           </button>
-        )])}
+        ))}
       </div>
     </nav>
   );

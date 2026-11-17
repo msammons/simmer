@@ -232,7 +232,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         let gets = 0;
         const countGets = (r) => { if (r.url().includes("/api/") && r.method() === "GET") gets++; };
         page.on("request", countGets);
-        const round = async () => { for (const t of ["Meals", "Stock", "Shop", "Recipes", "Meals"]) { await page.locator("nav button", { hasText: t }).tap(); await page.waitForTimeout(250); } };
+        const round = async () => { for (const t of ["Meals", "List", "Shop", "Recipes", "Meals"]) { await page.locator("nav button", { hasText: t }).tap(); await page.waitForTimeout(250); } };
         await round(); await page.waitForTimeout(600);
         const first = gets;
         await round(); await page.waitForTimeout(600);
@@ -286,9 +286,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const clear = async (n) => { const a = await answerOf(n); if (a !== "check") { await (a === "have" ? haveOf(n) : needOf(n)).tap(); await page.waitForTimeout(1200); } };
       // Stock (Nov 11): every row answered with one switch, Have | Need (never both); the lit side tapped again clears it.
       // Need puts it on its store's list. A dinner's things are highlighted in their own sections.
-      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
+      await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
       await lookForBusy("Stock");
-      ok("stock: has a plain add field at the top", await page.getByLabel("Add something to Stock").isVisible() && (await page.getByRole("button", { name: "Add something" }).count()) === 0);
+      ok("stock: has a plain add field at the top", await page.getByLabel("Add something to the list").isVisible() && (await page.getByRole("button", { name: "Add something" }).count()) === 0);
       // None of the old things are back on Stock: the legend, the For this plan group, Every week.
       {
         const old = [];
@@ -325,34 +325,27 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       if ((await answerOf("Eggs")) !== "need") { await needOf("Eggs").tap(); await page.waitForTimeout(1500); }
       // Remove from Stock asks first (the shared confirm); Cancel keeps it.
       await page.getByLabel("More for Eggs").selectOption("remove"); await page.waitForTimeout(300);
-      const removeAsk = page.getByRole("dialog", { name: "Remove Eggs from Stock?" });
-      ok("stock: Remove from Stock asks first", (await removeAsk.isVisible()) && (await removeAsk.getByRole("button", { name: "Remove from Stock" }).isVisible()));
+      const removeAsk = page.getByRole("dialog", { name: "Remove Eggs from the list?" });
+      ok("stock: Remove from Stock asks first", (await removeAsk.isVisible()) && (await removeAsk.getByRole("button", { name: "Remove from the list" }).isVisible()));
       await removeAsk.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
       ok("stock: Cancel keeps it in Stock", (await removeAsk.count()) === 0 && (await needOf("Eggs").count()) === 1);
       // Something new shows at once, as a stand-in row the server's answer replaces (Nov 11: always responsive).
       await slow("**/api/list");
       // Stock's own field (Nov 16, Sam): a name, and it's in as Need; new things are specialty.
-      await page.getByLabel("Add something to Stock").fill("frozen waffles"); await page.keyboard.press("Enter");
+      await page.getByLabel("Add something to the list").fill("frozen waffles"); await page.keyboard.press("Enter");
       ok("stock: something added shows within 150 ms, marked Need", await within150(async () => (await page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()) && (await answerOf("frozen waffles")) === "need"));
       await page.waitForTimeout(1800); await page.unroute("**/api/list");
       ok("stock: and is still there once it's saved, still Need", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 1 && (await answerOf("frozen waffles")) === "need");
       await needOf("frozen waffles").tap(); await page.waitForTimeout(1500);
       ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
-      // Quick add (Nov 16, Sam): the big + in the tab bar, from any page; only a name. Something kept shows as she types.
-      const quickBtn = tabBar.getByRole("button", { name: "Quick add" });
-      const navBox = await tabBar.boundingBox(), qBox = await quickBtn.boundingBox();
-      ok("quick add: a big + in the middle of the tab bar", qBox && navBox && qBox.height >= 56 && Math.abs(qBox.x + qBox.width / 2 - (navBox.x + navBox.width / 2)) < 12);
-      await quickBtn.tap(); await page.waitForTimeout(300);
-      const quickSheet = page.getByRole("dialog", { name: "Quick add" });
-      ok("quick add: a sheet with only a name field and Add", (await quickSheet.isVisible()) && (await quickSheet.getByRole("textbox").count()) === 1
-        && (await quickSheet.getByRole("radio").count()) === 0 && (await quickSheet.getByRole("button", { name: "Add", exact: true }).isVisible()));
-      await quickSheet.getByLabel("Quick add").fill("smoke oat bars");
-      ok("quick add: a new name shows one small row, Specialty and No group", (await quickSheet.getByLabel("How often").inputValue()) === "specialty" && (await quickSheet.getByLabel("Group").inputValue()) === "");
-      await quickSheet.getByLabel("Quick add").fill("waffles");
-      await quickSheet.getByRole("button", { name: /^Frozen waffles/ }).tap(); await page.waitForTimeout(1500);
-      ok("quick add: something kept, picked as she types, comes back as Need", (await answerOf("frozen waffles")) === "need");
+      // Something kept shows as she types in the field; tapping it marks it Need.
+      await page.getByLabel("Add something to the list").fill("smoke oat bars");
+      ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group").inputValue()) === "");
+      await page.getByLabel("Add something to the list").fill("waffles");
+      await page.getByRole("button", { name: /^Frozen waffles/ }).tap(); await page.waitForTimeout(1500);
+      ok("stock: something kept, picked as she types, comes back as Need", (await answerOf("frozen waffles")) === "need");
       // Groups, picked or made as she adds (Nov 16): Common, and a new group for the first, the same group for the second.
-      const stockField = page.getByLabel("Add something to Stock");
+      const stockField = page.getByLabel("Add something to the list");
       await stockField.fill("smoke cheddar");
       await page.getByLabel("How often").selectOption("common");
       await page.getByLabel("Group").selectOption({ label: "New group…" });
@@ -370,7 +363,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await cheese.tap(); await page.waitForTimeout(300);
       ok("stock: open, the group shows all of them", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
       await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
-      await page.getByRole("dialog", { name: "Remove Smoke swiss from Stock?" }).getByRole("button", { name: "Remove from Stock" }).tap(); await page.waitForTimeout(1500);
+      await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await page.waitForTimeout(1500);
       ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
       await page.screenshot({ path: `${dir}/5-stock-behaviour.png`, fullPage: true });
 
@@ -409,7 +402,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await page.waitForTimeout(2500);
         ok("shop: and once it's done, Check out can be tapped again", await checkOut.isEnabled());
         fake.cart.splice(fake.cart.findIndex((l) => l.productId === "p-milk"), 1);
-        await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+        await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
         await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
         // The store and card in Settings (Nov 14): picked from what Safeway's checkout shows, in place of the rows. With
         // Face ID pretended on, Pickup store reads Safeway and offers its store; Back returns to the rows.
@@ -484,7 +477,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: ticked rows stay, struck through, with Show got on", (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1);
       await page.getByRole("checkbox", { name: "Show checked" }).tap();
       ok("shop: Show checked off hides them within 150 ms", await within150(async () => (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0) && (await tick("Milk").count()) === 1);
-      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(500);
+      await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(500);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(800);
       ok("shop: and it stays off on coming back", (await page.getByRole("checkbox", { name: "Show checked" }).getAttribute("aria-checked")) === "false" && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
       await page.getByRole("checkbox", { name: "Show checked" }).tap();
@@ -492,7 +485,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // An empty cart: no Check out.
       {
         const kept = fake.cart.splice(0);
-        await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+        await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
         await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
         ok("shop: Check out shows only with something in the cart", (await page.getByRole("button", { name: "Check out" }).count()) === 0);
         fake.cart.push(...kept);
@@ -500,14 +493,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Safeway out of reach: no Safeway controls, nothing extra in its header; its rows are a plain checklist.
       await fake.stop();
       const awayFake = await fakeSafeway({ away: true });
-      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+      await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
       ok("shop: with Safeway out of reach, its rows are a plain checklist", (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway|One more .*)$/ }).count()) === 0 && (await swGroup.locator("h2 + *").count()) === 0 && (await tick("Milk").count()) === 1);
       await page.screenshot({ path: `${dir}/5c-shop-away.png`, fullPage: true });
       await awayFake.stop();
       // Safeway signed out on the computer (Nov 16): the cart is greyed, says so, and shows nothing that's in it.
       const outFake = await fakeSafeway({ signedOut: true });
-      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+      await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
       ok("shop: with Safeway signed out, the cart is greyed and empty", (await page.getByRole("button", { name: "Signed out" }).isDisabled())
         && (await page.getByRole("button", { name: "Check out" }).count()) === 0
@@ -516,13 +509,13 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         && (await page.getByRole("button", { name: /Ordered\?/ }).count()) === 0);
       await page.screenshot({ path: `${dir}/5d-shop-signed-out.png`, fullPage: true });
       await outFake.stop();
-      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
+      await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
       await needOf("Milk").tap(); await page.waitForTimeout(1500);
       ok("stock: tapping Need again takes it back off", (await answerOf("Milk")) === "check");
       ok("stock: after the shop, Eggs isn't on the list any more", (await answerOf("Eggs")) === "check");
 
       // The Recipes tab, a recipe, and back.
-      ok("tabs: four tabs (Recipes, Meals, Stock, Shop), Quick add between Meals and Stock", (await tabBar.getByRole("button").allInnerTexts()).map((t) => t.trim()).join() === "Recipes,Meals,,Stock,Shop" && (await tabBar.getByRole("button").nth(2).getAttribute("aria-label")) === "Quick add");
+      ok("tabs: four tabs (Recipes, Meals, List, Shop), no Quick add", (await tabBar.getByRole("button").allInnerTexts()).join() === "Recipes,Meals,List,Shop" && (await tabBar.getByRole("button", { name: "Quick add" }).count()) === 0);
       await tabBar.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
       await lookForBusy("Recipes");
       ok("recipes: Recipes lit", (await tabBar.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
@@ -614,7 +607,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
     await page.screenshot({ path: `${dir}/4-settings-${tag}.png` });
     ok(`${tag}: sheets have a close button`, await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Close" }).last().isVisible());
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-    await tabs.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
+    await tabs.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
     await settingsHere("Stock");
     {
       // A meal thing's amount under its name, and every row one height with or without it (Nov 11: uneven heights are annoying).
