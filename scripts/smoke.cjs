@@ -150,7 +150,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
-      ok("meals: Other is a ⋯ offering Breakfast, Lunch, Kids' dinner, Dessert and Side", (await page.getByLabel(`Other for ${TOMORROW}`).locator("option").allInnerTexts()).slice(1).join() === "Breakfast,Lunch,Kids' dinner,Dessert,Side");
+      ok("meals: Other is a ⋯ whose items each say Add", (await page.getByLabel(`Other for ${TOMORROW}`).locator("option").allInnerTexts()).slice(1).join() === "Add breakfast,Add lunch,Add a kids' dinner,Add dessert,Add a side");
       // A meal: tap for its recipe; − takes it off after asking.
       const offs = page.getByRole("button", { name: /^Take .* off the plan$/ });
       let cooked = false;
