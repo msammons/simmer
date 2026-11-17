@@ -629,9 +629,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
     await tabs.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
     await settingsHere("Stock");
     {
-      // A planned dinner's thing: its name in the accent color, no tint and nothing under it (Nov 16, Sam).
+      // A planned dinner's thing: an asterisk after its name, no tint and nothing under it (Sam, Nov 16-17).
       const meal = page.locator("[data-meal]").filter({ has: page.getByRole("group", { name: /^Have or need / }) });
-      ok(`${tag}: a dinner's thing is marked by its name's color only`, (await meal.count()) === 0 || ((await meal.first().locator(".text-accent2").count()) === 1 && (await meal.first().locator("span.t-foot").count()) === 0
+      ok(`${tag}: a dinner's thing is marked by an asterisk only`, (await meal.count()) === 0 || ((await meal.first().getByText("*", { exact: true }).count()) === 1 && (await meal.first().locator("span.t-foot").count()) === 0
         && (await meal.first().evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgba(0, 0, 0, 0)"));
     }
     ok(`${tag}: every Stock row is the same height`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => new Set(gs.map((g) => Math.round(g.parentElement.getBoundingClientRect().height))).size === 1));
