@@ -109,15 +109,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("meals: no day is called Today or Tomorrow", (await page.getByRole("heading", { name: /^(Today|Tomorrow)$/ }).count()) === 0);
       ok("meals: days by date from today, none called Today or Tomorrow, each with Quick, Regular and Other", await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).isVisible()
         && await dayGroup(TOMORROW).getByRole("button", { name: `Regular for ${TOMORROW}` }).isVisible()
-        && (await page.getByRole("button", { name: /^Other for / }).count()) === 7);
+        && (await page.getByLabel(/^Other for /).count()) === 7);
       {
         // Other on the right, Quick and Regular on the left (Nov 16).
-        const box = async (n) => todayGroup.getByRole("button", { name: `${n} for ${TODAY}` }).boundingBox();
+        const box = async (n) => todayGroup.getByLabel(`${n} for ${TODAY}`).boundingBox();
         const [q, o, g] = [await box("Quick"), await box("Other"), await todayGroup.locator("div.rounded-\\[1\\.375rem\\]").boundingBox()];
         ok("meals: Other sits on the right of the day, Quick on the left", Boolean(q && o && g) && g.x + g.width - (o.x + o.width) < 24 && q.x - g.x < 24);
       }
       await page.getByRole("button", { name: "Show more days" }).tap(); await page.waitForTimeout(200);
-      ok("meals: Show more shows 14 days, and Show fewer goes back", (await page.getByRole("button", { name: /^Other for / }).count()) === 14);
+      ok("meals: Show more shows 14 days, and Show fewer goes back", (await page.getByLabel(/^Other for /).count()) === 14);
       await page.getByRole("button", { name: "Show fewer days" }).tap(); await page.waitForTimeout(200);
       ok("meals: New plan sits in the top bar", (await page.locator(".fixed.max-w-md").getByRole("button", { name: "New plan" }).count()) === 1 || (await page.getByRole("button", { name: /^Take / }).count()) === 0);
       {
@@ -150,10 +150,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
-      await page.getByRole("button", { name: `Other for ${TOMORROW}` }).tap(); await page.waitForTimeout(300);
-      const moreSheet = page.getByRole("dialog", { name: "Other" });
-      ok("meals: Other offers Breakfast, Lunch, Kids' dinner, Dessert and Side", (await moreSheet.getByRole("button").filter({ hasText: /^(Breakfast|Lunch|Kids' dinner|Dessert|Side)$/ }).count()) === 5);
-      await moreSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
+      ok("meals: Other is a ⋯ offering Breakfast, Lunch, Kids' dinner, Dessert and Side", (await page.getByLabel(`Other for ${TOMORROW}`).locator("option").allInnerTexts()).slice(1).join() === "Breakfast,Lunch,Kids' dinner,Dessert,Side");
       // A meal: tap for its recipe; − takes it off after asking.
       const offs = page.getByRole("button", { name: /^Take .* off the plan$/ });
       let cooked = false;

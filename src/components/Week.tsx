@@ -43,7 +43,6 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
-  const [more, setMore] = useState<string | null>(null); // the day whose Other is open
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
@@ -78,8 +77,15 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
               <div className="flex gap-2 px-4 py-3">
                 <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}>Quick</button>
                 <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}>Regular</button>
-                {/* Other sits on the right, apart from the two main choices (Sam, Nov 16: "Other. But should other be aligned right?"). */}
-                <button className={`${pill} ml-auto`} onClick={() => setMore(day)} aria-label={`Other for ${dayName(day)}`}>Other</button>
+                {/* Other, on the right apart from the two main choices (Sam, Nov 16), as a ⋯ menu (Sam, Nov 17). */}
+                <label className="relative ml-auto flex size-9 shrink-0 items-center justify-center self-center text-[22px] leading-none text-muted">
+                  <span aria-hidden>⋯</span>
+                  <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+                    onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
+                    <option value="" disabled>{dayName(day)}</option>
+                    {MORE.map((k) => <option key={k} value={k}>{KIND_NAMES[k] === "Kids'" ? "Kids' dinner" : KIND_NAMES[k]}</option>)}
+                  </select>
+                </label>
               </div>
             </Group>
           ))}
@@ -87,13 +93,6 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
           {later.length > 0 && <Group header="Later">{later.map(meal)}</Group>}
           {undated.length > 0 && <Group header="Not on a day">{undated.map(meal)}</Group>}
         </>
-      )}
-      {more && (
-        <Sheet label="Other" title={dayName(more)} onClose={() => setMore(null)}>
-          <div className="pb-2">
-            <Group>{MORE.map((k) => <Row key={k} title={KIND_NAMES[k] === "Kids'" ? "Kids' dinner" : KIND_NAMES[k]} accessory="chevron" onClick={() => { const d = more; setMore(null); onAdd(k, d); }} />)}</Group>
-          </div>
-        </Sheet>
       )}
       {/* A new plan asks first: every meal comes off and the lists are emptied; the Safeway cart stays. */}
       <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
