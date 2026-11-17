@@ -63,9 +63,9 @@ of her is a cost.
 - Days are dates ("Tue, Nov 17"), never Today/Tomorrow.
 
 ### What people asked for comes first
-- **A path someone asked for stays as direct as they asked.** Robin asked for Quick and Regular right on each day; a
-  budget never folds that into a menu or a longer sheet. Budgets trim what nobody asked for. (A day that already has
-  its dinner keeps them in its ⋯: Sam, Nov 17, to calm the page; the one tap stays wherever a dinner is still needed.)
+- **A path someone asked for stays as direct as they asked**, unless they choose otherwise. A budget alone never folds
+  it into a menu. Robin asked for Quick and Regular right on each day; on Nov 17 Sam chose two taps for a calmer page:
+  a day's adds are in its first row's ⋯ (Add on a day with nothing yet).
 
 ### Simple, user-driven
 - Simple controls that do what they say; no smart behaviour that guesses, fills or decides for her. Nothing goes on a
@@ -109,7 +109,7 @@ Nov 17 with a small test household; the budget is where it should get to.
 | Taps per thing when checking the house | 1 | 1 |
 | Taps to put the usuals in the Safeway cart | 1 | 1 |
 | Taps to place a Safeway order, after Get ready | 3 + Face ID | 3 + Face ID |
-| Controls on Meals' first screen | 3 per open day, 1 per planned day + top bar | Quick and Regular as quiet words only on days without a dinner (Sam, Nov 17: one tap kept, page calmer); a planned day has its ⋯ by the date |
+| Controls on Meals' first screen | 1 per day + 1 per meal + top bar | Add on an empty day; a day's adds in its first meal's ⋯ (Sam, Nov 17: two taps, calmer) |
 | Controls on List's first screen | 25 | 37 |
 | Controls on Shop's first screen | 20 | 13 (test data) |
 | Words on a tab's first screen | 150 | not yet measured per screen |
