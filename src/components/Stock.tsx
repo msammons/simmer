@@ -189,7 +189,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
               <select aria-label="Group" value={group} onChange={(e) => (e.target.value === "\u0000new" ? (setNewGroup(true), setGroup("")) : setGroup(e.target.value))} className={`${pillSelect} max-w-full`}>
                 <option value="">No group</option>
                 {groups.map((g) => <option key={g} value={g}>{cap(g)}</option>)}
-                {made.filter((m) => !groups.some((g) => norm(g) === norm(m))).map((m) => <option key={m} value={m}>{cap(m)} (new)</option>)}
+                {made.filter((m) => !groups.some((g) => norm(g) === norm(m))).map((m) => <option key={m} value={m}>{cap(m)}</option>)}
                 <option value={"\u0000new"}>New group…</option>
               </select>
               <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
