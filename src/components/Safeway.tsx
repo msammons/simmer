@@ -9,7 +9,6 @@ import { PAGE } from "@/lib/safeway-helper.mjs";
 import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group } from "./ui";
-import manifest from "../../extension-working/manifest.json";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -17,16 +16,6 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
  * Simmer on the computer is older than this one: where to get the new one. A quiet group at the end of Shop,
  * so it never pushes the list down when it shows (Nov 11: no bars).
  */
-export function UpdateNote() {
-  return (
-    <Group footer="Open it, put what's inside in place of the old Simmer folder, then press reload on Simmer in Chrome's extensions page.">
-      <a href={`/simmer-helper-v${manifest.version}.zip`} download className="flex items-center gap-3 px-4 py-3 active:bg-sunk">
-        <span className="min-w-0 flex-1 t-body">Simmer in Chrome needs an update</span>
-        <span className="shrink-0 t-sub text-accent">Get the new one</span>
-      </a>
-    </Group>
-  );
-}
 
 export const NOT_ANSWERING = "Can't reach Safeway right now. Check things off in the store instead.";
 /** Plain words for why a job didn't happen. */
@@ -177,6 +166,16 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
  * responsive); quick taps go to Safeway as one change (useSafeway's setQty). `off`: Safeway can't be reached just now,
  * so neither can be pressed (Nov 3).
  */
+/** A row's + into the Safeway cart (Sam, Nov 17: "Plus on rows. Same button as changing quantities"). */
+export function CartPlus({ name, onClick }: { name: string; onClick: () => void }) {
+  return (
+    <button aria-label={`Add ${name} to the cart`} onClick={onClick}
+      className="glass relative flex size-8 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
+      <Icon name="plus" className="size-[18px]" strokeWidth={2.2} />
+    </button>
+  );
+}
+
 export function Stepper({ qty, name, off, compact, onChange }: { qty: number; name: string; off?: boolean; compact?: boolean; onChange: (n: number) => void }) {
   // `compact`: on a Shop row, beside the name, so the name keeps room.
   const btn = `glass relative before:absolute before:-inset-1.5 before:content-[''] flex ${compact ? "size-8" : "size-9"} items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100`;

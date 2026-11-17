@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 8 * MAX_COUNT).map(lunch).filter((l: NewLunch | null): l is NewLunch => l !== null);
       ({ added, removed } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
     } else if (b?.op === "change" && id) {
-      ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }) }, text(b.by, 20)));
+      ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }), ...(/^\d{4}-\d{2}-\d{2}$/.test(text(b.day, 10)) && { day: text(b.day, 10) }) }, text(b.by, 20)));
     } else if (b?.op === "made" && id) await markMade(id);
     else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
     else if (b?.op === "clear") ({ removed } = await clearPlanned());

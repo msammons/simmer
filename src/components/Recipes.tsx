@@ -137,7 +137,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {r.notes && <Group header="Notes"><p className="t-sub whitespace-pre-line px-4 py-3">{r.notes}</p></Group>}
       {(r.tags.length > 0 || r.source) && (
         <Group>
-          {r.tags.length > 0 && <Row title="Find it by" value={r.tags.join(", ")} />}
+          {r.tags.length > 0 && <Row title="Tags" value={r.tags.join(", ")} />}
           {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
         </Group>
       )}
@@ -171,7 +171,7 @@ function Editor({ d, onChange }: { d: Draft; onChange: (d: Draft) => void }) {
       <Group><Row lead={<Check on={d.makeAhead} />} title="Can be made ahead" role="checkbox" checked={d.makeAhead} onClick={() => set({ makeAhead: !d.makeAhead })} /></Group>
       <Field label="Ingredients, one per line"><textarea className={`${FIELD} min-h-40`} value={d.ingredients.join("\n")} onChange={(e) => set({ ingredients: e.target.value.split("\n") })} placeholder={"1 lb ground turkey\n1 onion"} /></Field>
       <Field label="Steps, one per line"><textarea className={`${FIELD} min-h-32`} value={d.steps.join("\n")} onChange={(e) => set({ steps: e.target.value.split("\n") })} placeholder="Optional" /></Field>
-      <Field label="Find it by"><input className={FIELD} value={d.tags.join(", ")} onChange={(e) => set({ tags: e.target.value.split(",").map((t) => t.trimStart()) })} placeholder="tacos, one-pan" /></Field>
+      <Field label="Tags"><input className={FIELD} value={d.tags.join(", ")} onChange={(e) => set({ tags: e.target.value.split(",").map((t) => t.trimStart()) })} placeholder="tacos, one-pan" /></Field>
       <Field label="Notes"><textarea className={`${FIELD} min-h-20`} value={d.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="Double the spice for Sam" /></Field>
     </div>
   );
