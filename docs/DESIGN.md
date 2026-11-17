@@ -71,6 +71,27 @@ of her is a cost.
 - Phone first (Chrome on iPhone, so iPhone browser rules apply), 320-430px wide; a wide view for the Safeway helper.
 - Tap areas 44px or more, even where the control looks smaller.
 
+## Budgets (measured, Nov 17)
+
+The rules above become numbers, checked at 390×844 with the tab bar left out. "Now" is what the app measured on
+Nov 17 with a small test household; the budget is where it should get to.
+
+| Measure | Budget | Now |
+| --- | --- | --- |
+| Taps to plan one dinner | 2 | 2 |
+| Taps to plan a week of dinners | 14 | 14 |
+| Taps per thing when checking the house | 1 | 1 |
+| Taps to put the usuals in the Safeway cart | 1 | 1 |
+| Taps to place a Safeway order, after Get ready | 3 + Face ID | 3 + Face ID |
+| Controls on Meals' first screen | 12 | 25 |
+| Controls on List's first screen | 25 | 37 |
+| Controls on Shop's first screen | 20 | 13 (test data) |
+| Words on a tab's first screen | 150 | not yet measured per screen |
+| Tap areas under 44px | 0 | 0 |
+| Text contrast, body | 4.5:1 | dinner-mark and muted lines not yet measured |
+
+A change that adds a control or a tap to a job says which budget it spends, or takes something else away.
+
 ## Checking a screen against this page
 
 For each job: count the taps; list everything on screen before the first tap and ask of each item "does this help this
