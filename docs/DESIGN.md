@@ -71,6 +71,23 @@ of her is a cost.
 - Phone first (Chrome on iPhone, so iPhone browser rules apply), 320-430px wide; a wide view for the Safeway helper.
 - Tap areas 44px or more, even where the control looks smaller.
 
+## Decided, and why (Nov 17 review)
+
+Kept against an outside critique that argued the other way:
+- **Confirms, never Undo.** A removal asks first; nothing offers to undo afterwards.
+- **Only the + adds.** The keyboard's Done closes the keyboard.
+- **Dates only** on Meals; the first day is always today.
+- **The asterisk** marks a planned dinner's thing; no label or chip.
+- **⋯ for row actions**, dinners included (Move to another day, Take off the plan).
+
+Changed:
+- Meals: **one Add per day**, opening her recipes grouped by kind; the recipe she taps sets the kind (two taps, as before).
+- List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
+- Shop: **Add usuals (N)**; Safeway rows show **only how many** under the name; **Mark the Safeway cart bought** and
+  **Show checked** live in the ⋯ by Add; the add buttons are a **round +**, and a row's + matches the quantity buttons.
+- Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".
+- Settings has no copy to the Google Sheet; Shop has no helper update note. The **Alpha** badge stays.
+
 ## Budgets (measured, Nov 17)
 
 The rules above become numbers, checked at 390×844 with the tab bar left out. "Now" is what the app measured on
@@ -78,12 +95,12 @@ Nov 17 with a small test household; the budget is where it should get to.
 
 | Measure | Budget | Now |
 | --- | --- | --- |
-| Taps to plan one dinner | 2 | 2 |
+| Taps to plan one dinner | 2 | 2 (Add, then the recipe; the recipe sets the kind) |
 | Taps to plan a week of dinners | 14 | 14 |
 | Taps per thing when checking the house | 1 | 1 |
 | Taps to put the usuals in the Safeway cart | 1 | 1 |
 | Taps to place a Safeway order, after Get ready | 3 + Face ID | 3 + Face ID |
-| Controls on Meals' first screen | 12 | 25 |
+| Controls on Meals' first screen | 12 | 12 (was 25: one Add per day, Nov 17) |
 | Controls on List's first screen | 25 | 37 |
 | Controls on Shop's first screen | 20 | 13 (test data) |
 | Words on a tab's first screen | 150 | not yet measured per screen |

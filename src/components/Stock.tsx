@@ -254,9 +254,10 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
     return (
+      // A ✓ for Have and a cart for Need (Sam, Nov 17: icons in place of the words, same one tap).
       <button type="button" aria-pressed={on} aria-label={`${label}: ${r.name}`} onClick={() => act.answer(r, on ? "check" : a)}
-        className={`min-w-[3rem] rounded-full px-2.5 py-1.5 t-sub font-semibold transition-colors ${on ? "bg-accent text-on-accent" : "text-muted"}`}>
-        {label}
+        className={`flex h-8 w-11 items-center justify-center rounded-full transition-colors ${on ? "bg-accent text-on-accent" : "text-muted"}`}>
+        <Icon name={a === "have" ? "check" : "cart"} className="size-[18px]" strokeWidth={2.2} />
       </button>
     );
   };

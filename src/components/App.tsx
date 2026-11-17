@@ -96,7 +96,7 @@ export default function App() {
   // What's still to make and pack: last time's at first, for opening offline.
   const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
-  const [addingOne, setAddingOne] = useState<{ kind: Kind; day: string } | null>(null); // the kind and day being added to, from Meals
+  const [addingOne, setAddingOne] = useState<{ kind: Kind | null; day: string } | null>(null); // the kind and day being added to, from Meals
   const [pickingDay, setPickingDay] = useState<Recipe | null>(null); // a recipe's Add to the plan, asking which day (Nov 16)
   const loaded = useRef(false); // the household has loaded from the server this session
   // Whether each is showing something (last time's copy or fresh): a failed read then says nothing.
