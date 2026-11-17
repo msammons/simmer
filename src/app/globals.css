@@ -64,7 +64,13 @@
   --g3: color-mix(in srgb, var(--accent) 85%, black);
 }
 
+/* A second accent (Nov 16, Sam: dinner things in "a different accent color from category names but still in theme",
+   "a lighter shade"): the theme's own accent, lightened. */
+:root { --accent2: color-mix(in srgb, var(--accent) 78%, white); }
+@media (prefers-color-scheme: dark) { :root { --accent2: color-mix(in srgb, var(--accent) 62%, white); } }
+
 @theme inline {
+  --color-accent2: var(--accent2);
   --color-bg: var(--bg);
   --color-card: var(--card);
   --color-sunk: var(--sunk);
