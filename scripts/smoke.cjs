@@ -344,6 +344,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: Specialty and Group wait until she types something new", (await page.getByLabel("How often").count()) === 0 && (await page.getByLabel("Group").count()) === 0);
       await page.getByLabel("Add something to the list").fill("smoke oat bars");
       ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group").inputValue()) === "");
+      await page.getByLabel("Add something to the list").fill("mil"); await page.waitForTimeout(200);
+      ok("stock: typing doesn't suggest what's already showing on the list", (await page.getByRole("button", { name: /^Milk\s*Need$/ }).count()) === 0);
       await page.getByLabel("Add something to the list").fill("waffles");
       await page.getByRole("button", { name: /^Frozen waffles/ }).tap(); await page.waitForTimeout(1500);
       ok("stock: something kept, picked as she types, comes back as Need", (await answerOf("frozen waffles")) === "need");
