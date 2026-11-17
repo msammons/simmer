@@ -74,7 +74,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
-                  <div className="flex h-[3.25rem] items-center bg-accent/[0.16] pr-2">
+                  <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
                     <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && toggle(key)}
                       className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
                       <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
@@ -92,7 +92,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                     </label>
                   </div>
                   {(toggles ? shown : l.rows).map((r) => item(r))}
-                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border-2 !border-accent/60 ${afterGroup ? "!border-t-0" : ""}`} />
+                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border-[1.5px] !border-accent/35 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
             })}
@@ -150,13 +150,14 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
   const [kind, setKind] = useState<StapleKind>("specialty");
   const [group, setGroup] = useState("");
   const [newGroup, setNewGroup] = useState(false);
+  const [made, setMade] = useState<string[]>([]); // new group names typed for this thing, to pick between
   const groups = [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const q = norm(text);
   const kept = staples.some((s) => norm(s.item) === q);
   // Only what's kept but not showing (Nov 16, Sam: why show what's already on the list?): a specialty thing that left
   // after the shop, to bring back as Need instead of adding it twice. What's showing has its own Need on its row.
   const known = q ? staples.filter((s) => norm(s.item).includes(q) && norm(s.item) !== q && !shown.has(norm(s.item))).slice(0, 4) : [];
-  const reset = () => { setText(""); setKind("specialty"); setGroup(""); setNewGroup(false); };
+  const reset = () => { setText(""); setKind("specialty"); setGroup(""); setNewGroup(false); setMade([]); };
   const add = (t: string) => { onAdd(t, { kind, group: group.trim() }); reset(); };
   return (
     // Only Add adds (Sam, Nov 17: finishing a new group's name added the thing): the keyboard's Done closes the keyboard.
@@ -179,13 +180,16 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
             <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
           </span>
           {newGroup ? (
+            // Done or a tap elsewhere turns it back into the Group pill, showing the new name, to change again (Sam, Nov 17).
             <input value={group} onChange={(e) => setGroup(e.target.value.slice(0, 40))} placeholder="Group name" aria-label="New group" autoFocus enterKeyHint="done"
+              onBlur={() => { const g = group.trim(); setGroup(g); if (g) setMade((m) => (m.some((x) => norm(x) === norm(g)) ? m : [...m, g])); setNewGroup(false); }}
               className="h-9 min-w-0 flex-1 rounded-full bg-sunk px-3.5 text-base outline-none ring-accent focus:ring-2" />
           ) : (
             <span className="relative min-w-0">
               <select aria-label="Group" value={group} onChange={(e) => (e.target.value === "\u0000new" ? (setNewGroup(true), setGroup("")) : setGroup(e.target.value))} className={`${pillSelect} max-w-full`}>
                 <option value="">No group</option>
                 {groups.map((g) => <option key={g} value={g}>{cap(g)}</option>)}
+                {made.filter((m) => !groups.some((g) => norm(g) === norm(m))).map((m) => <option key={m} value={m}>{cap(m)} (new)</option>)}
                 <option value={"\u0000new"}>New group…</option>
               </select>
               <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />

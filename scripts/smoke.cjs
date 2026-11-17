@@ -357,6 +357,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByLabel("How often").selectOption("common");
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
       await page.getByLabel("New group").fill("Smoke cheese");
+      await page.getByLabel("New group").press("Enter"); await page.waitForTimeout(200);
+      const groupPick = page.getByLabel("Group", { exact: true });
+      ok("stock: a new group's name, once done, shows in the Group pill, and she can change her mind", (await groupPick.inputValue()) === "Smoke cheese"
+        && (await groupPick.selectOption("").then(() => groupPick.inputValue())) === "" && (await groupPick.selectOption("Smoke cheese").then(() => groupPick.inputValue())) === "Smoke cheese");
       await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       ok("stock: a group shows from its first thing, its header without Show all while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && !/Show all/.test(await page.getByRole("button", { name: "Smoke cheese" }).innerText()));
       await stockField.fill("smoke swiss");
