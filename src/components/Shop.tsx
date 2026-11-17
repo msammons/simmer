@@ -224,13 +224,13 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </form>
 
-      {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
+      {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
           <TopLine showGot={showGot} onShowGot={() => setShowGot(!showGot)}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }
               : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: reading || Object.keys(sw.pending).length > 0 } : null} />
-          {!shown.length && <EmptyState icon="list" title="Everything's got" />}
+          {!shown.length && <EmptyState icon="cart" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (

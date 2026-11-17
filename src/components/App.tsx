@@ -19,7 +19,7 @@ type Tab = "recipes" | "week" | "stock" | "shop";
  */
 type Screen = { kind: Tab } | { kind: "recipe"; id: string };
 // Recipes · Meals · Stock · Shop (Sam, Nov 2; Lists became Shop, Nov 12); Simmer still opens on Meals (Oct 31).
-const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "List", icon: "home" }, { id: "shop", label: "Shop", icon: "list" }];
+const TABS: TabDef<Tab>[] = [{ id: "recipes", label: "Recipes", icon: "book" }, { id: "week", label: "Meals", icon: "pot" }, { id: "stock", label: "List", icon: "list" }, { id: "shop", label: "Shop", icon: "cart" }];
 const TAB_NAMES: Record<Tab, string> = { recipes: "Recipes", week: "Meals", stock: "List", shop: "Shop" };
 const isTab = (v: unknown): v is Tab => typeof v === "string" && Object.hasOwn(TAB_NAMES, v);
 

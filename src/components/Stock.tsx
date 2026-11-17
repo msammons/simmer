@@ -50,7 +50,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
       <AddFields staples={list?.staples ?? []} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => addNeed(list?.staples ?? [], t, act, more)} />
       {!list && <Held />}
-      {list && !rows.length && <EmptyState icon="home" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
+      {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
         if (!here.length) return null;
