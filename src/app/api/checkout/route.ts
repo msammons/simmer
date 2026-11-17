@@ -65,7 +65,7 @@ async function run(req: Request, b: Record<string, unknown>) {
   try {
     const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
       : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined)
-      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined)
+      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined, undefined, typeof b.bagsOwn === "boolean" ? b.bagsOwn : undefined)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId))
       // Placing for real (phase 3): only with an approval made with Face ID, or following the one started.
       : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId)) : await placeOrder(id(b.approvalId)))

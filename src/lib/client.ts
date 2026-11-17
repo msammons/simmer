@@ -154,7 +154,7 @@ export const api = {
    */
   checkoutLook: (jobId?: string, signal?: AbortSignal) => call<Choices | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "look", jobId }), signal }),
   checkoutTimes: (jobId: string | undefined, day: string | undefined, signal?: AbortSignal) => call<TimesView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "times", jobId, day }), signal }),
-  checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId }), signal }),
+  checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal, bagsOwn?: boolean) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId, bagsOwn }), signal }),
   checkoutApprove: (faceId: unknown) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId }) }),
   checkoutPlace: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<OrderResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
   checkoutTestRun: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<RunResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),

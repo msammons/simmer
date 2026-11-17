@@ -102,13 +102,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Meals by day (Nov 16, from Robin's run): days from today, 7 with Show more for 14; each day has Quick, Regular and
       // More, which open her recipes of that kind for that day. Simmer picks nothing itself.
       const dayGroup = (name) => page.locator("section").filter({ has: page.getByRole("heading", { name, exact: true }) });
-      const todayGroup = dayGroup("Today");
-      ok("meals: days from today, each with Quick, Regular and Other", await todayGroup.getByRole("button", { name: "Quick for Today" }).isVisible()
-        && await dayGroup("Tomorrow").getByRole("button", { name: "Regular for Tomorrow" }).isVisible()
+      // Days by their dates (Nov 16): "Mon, Nov 16", as the app writes them in the household's time.
+      const dayOf = (n) => { const d = new Date(`${new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }); };
+      const TODAY = dayOf(0), TOMORROW = dayOf(1);
+      const todayGroup = dayGroup(TODAY);
+      ok("meals: no day is called Today or Tomorrow", (await page.getByRole("heading", { name: /^(Today|Tomorrow)$/ }).count()) === 0);
+      ok("meals: days by date from today, none called Today or Tomorrow, each with Quick, Regular and Other", await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).isVisible()
+        && await dayGroup(TOMORROW).getByRole("button", { name: `Regular for ${TOMORROW}` }).isVisible()
         && (await page.getByRole("button", { name: /^Other for / }).count()) === 7);
       {
         // Other on the right, Quick and Regular on the left (Nov 16).
-        const box = async (n) => todayGroup.getByRole("button", { name: `${n} for Today` }).boundingBox();
+        const box = async (n) => todayGroup.getByRole("button", { name: `${n} for ${TODAY}` }).boundingBox();
         const [q, o, g] = [await box("Quick"), await box("Other"), await todayGroup.locator("div.rounded-\\[1\\.375rem\\]").boundingBox()];
         ok("meals: Other sits on the right of the day, Quick on the left", Boolean(q && o && g) && g.x + g.width - (o.x + o.width) < 24 && q.x - g.x < 24);
       }
@@ -124,9 +128,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (/\bweek\b/i.test(await page.locator("main").innerText())) old.push("week");
         ok("meals: none of the old things are back", !old.length, old.join(", "));
       }
-      await todayGroup.getByRole("button", { name: "Quick for Today" }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       const kindSheet = page.getByRole("dialog", { name: "Add a meal" });
-      ok("meals: Quick opens her quick dinners for that day", await kindSheet.getByRole("heading", { name: "Today: a quick dinner" }).isVisible());
+      ok("meals: Quick opens her quick dinners for that day", await kindSheet.getByRole("heading", { name: `${TODAY}: a quick dinner` }).isVisible());
       const todayMeals = () => todayGroup.getByRole("button", { name: /^Take .* off the plan$/ }).count();
       const before = await todayMeals();
       await page.route("**/api/plan", (r) => (r.request().method() === "POST" ? r.abort() : r.fallback()));
@@ -138,15 +142,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await didnt.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
       ok("meals: after the alert, the page scrolls again", (await page.evaluate(() => document.getElementById("scroller").style.overflow)) === "");
       await page.unroute("**/api/plan");
-      await todayGroup.getByRole("button", { name: "Quick for Today" }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       await kindSheet.getByRole("button", { name: firstName, exact: true }).tap();
       await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
       await page.waitForTimeout(400);
       ok("meals: picking one puts it on that day", (await todayMeals()) === before + 1);
-      await todayGroup.getByRole("button", { name: "Quick for Today" }).tap(); await page.waitForTimeout(400);
+      await todayGroup.getByRole("button", { name: `Quick for ${TODAY}` }).tap(); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
-      await page.getByRole("button", { name: "Other for Tomorrow" }).tap(); await page.waitForTimeout(300);
+      await page.getByRole("button", { name: `Other for ${TOMORROW}` }).tap(); await page.waitForTimeout(300);
       const moreSheet = page.getByRole("dialog", { name: "Other" });
       ok("meals: Other offers Breakfast, Lunch, Kids' dinner, Dessert and Side", (await moreSheet.getByRole("button").filter({ hasText: /^(Breakfast|Lunch|Kids' dinner|Dessert|Side)$/ }).count()) === 5);
       await moreSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
@@ -185,16 +189,16 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("recipe: not planned, it offers Add to the plan only", (await toWeek.isVisible()) && (await page.getByRole("button", { name: /add to the list/i }).count()) === 0);
       await toWeek.tap(); await page.waitForTimeout(300);
       const which = page.getByRole("dialog", { name: "Which day" });
-      ok("recipe: Add to the plan asks which day", await which.isVisible() && (await which.getByRole("button").filter({ hasText: /^(Today|Tomorrow)$/ }).count()) === 2);
+      ok("recipe: Add to the plan asks which day", await which.isVisible() && (await which.getByRole("button").filter({ hasText: new RegExp(`^(${TODAY}|${TOMORROW})$`) }).count()) === 2);
       await slow("**/api/plan");
-      await which.getByRole("button", { name: "Tomorrow", exact: true }).tap();
+      await which.getByRole("button", { name: TOMORROW, exact: true }).tap();
       ok("recipe: picking a day shows it planned within 150 ms, with no Adding", await within150(() => page.getByText("On the plan.").isVisible()) && (await page.getByText("Adding…").count()) === 0);
       await page.waitForTimeout(1800); await page.unroute("**/api/plan");
       await page.locator("header").getByRole("button", { name: "Back to Recipes" }).tap(); await page.waitForTimeout(300);
       await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
-      ok("recipe: it's on Meals, on Tomorrow", (await dayGroup("Tomorrow").getByRole("button", { name: /^Turkey chili/ }).count()) === 1);
+      ok("recipe: it's on Meals, on tomorrow's date", (await dayGroup(TOMORROW).getByRole("button", { name: /^Turkey chili/ }).count()) === 1);
       // A search with no match.
-      await todayGroup.getByRole("button", { name: "Regular for Today" }).tap(); await page.waitForTimeout(500);
+      await todayGroup.getByRole("button", { name: `Regular for ${TODAY}` }).tap(); await page.waitForTimeout(500);
       const addSheet = page.getByRole("dialog", { name: "Add a meal" });
       const box = addSheet.getByLabel("Find a recipe");
       ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));

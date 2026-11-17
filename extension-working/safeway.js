@@ -204,7 +204,8 @@ export async function runJob(job, windowId) {
   if (job.kind === "checkoutPrepare") {
     const id = typeof args.windowId === "string" ? args.windowId : "";
     const day = typeof args.day === "string" ? args.day : "";
-    return { ok: true, result: id ? await checkoutReady(tabId, page, id) : await checkoutReady(tabId, page, null, { day }) };
+    const own = typeof args.bagsOwn === "boolean" ? args.bagsOwn : null;
+    return { ok: true, result: id ? await checkoutReady(tabId, page, id, null, own) : await checkoutReady(tabId, page, null, { day }) };
   }
   // Placing an approved order (phase 3, Nov 14): run once, never again (Simmer never hands this job out twice).
   if (job.kind === "checkoutPlace") {
@@ -214,7 +215,8 @@ export async function runJob(job, windowId) {
   }
   if (job.kind === "checkoutDry") {
     const id = typeof job.args?.windowId === "string" ? job.args.windowId : "";
-    return { ok: true, result: id ? await checkoutReady(tabId, page, id) : { stopped: "no window", chosen: null, final: null } };
+    const own = typeof job.args?.bagsOwn === "boolean" ? job.args.bagsOwn : null;
+    return { ok: true, result: id ? await checkoutReady(tabId, page, id, null, own) : { stopped: "no window", chosen: null, final: null } };
   }
   if (job.kind === "sample" || job.kind === "snapshot") {
     const onCart = args.on === "cart";
@@ -240,7 +242,7 @@ export async function runJob(job, windowId) {
  * picked, and test runs) it takes exactly that window or stops. Each step waits for what it needs to see, never a pause. It presses nothing else: there is no code here that presses
  * Place Order, and the final page is only read. Simmer checks what it read (src/lib/checkout.ts).
  */
-async function checkoutReady(tabId, page, windowId, list = null) {
+async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null) {
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");
   const stop = (stopped) => ({ stopped, chosen: null, final: null });
   // Each step waits for what it needs to see on Safeway's page (Sam, Nov 14: no guessed pauses), with one limit each.
@@ -340,11 +342,30 @@ async function checkoutReady(tabId, page, windowId, list = null) {
   await until("continueOn", {}, 8000);
   const on = await onPage(tabId, "pressCheckout", { path: checkoutPath, words: ["continue"] }, page);
   if (on?.pressed) await until("picked");
+  // The bags she picked for this order (Nov 16): the one switch pressed once if it isn't already that way, then read
+  // back until Safeway shows it (its fee, if any, is in the total read next).
+  if (typeof bagsOwn === "boolean") {
+    const set = await onPage(tabId, "setBags", { path: checkoutPath, own: bagsOwn }, page);
+    if (!set?.ok && !set?.pressed) return stop("couldn't set the bags");
+    let own = set.ok ? bagsOwn : null;
+    for (let i = 0; own !== bagsOwn && i < 20; i++) { await sleep(250); own = (await onPage(tabId, "bagsState", null, page))?.own ?? null; }
+    if (own !== bagsOwn) return stop("couldn't set the bags");
+    // Pressed: Safeway may add or take off a bag fee. The total is read only once it has held the same for 2 s.
+    if (set.pressed) {
+      let last = "", since = Date.now(), held = false;
+      for (let i = 0; i < 40 && !held; i++) {
+        const t = (await onPage(tabId, "bagsState", null, page))?.total ?? "";
+        if (t !== last) { last = t; since = Date.now(); } else if (t && Date.now() - since >= 2000) held = true;
+        if (!held) await sleep(250);
+      }
+      if (!held) return stop("total didn't settle");
+    }
+  }
   const final = await look();
   if (!final) return stop("page didn't load");
-  // How Safeway builds its bags choice, kept with the reading so Simmer can offer it (Nov 16: not seen with a cart yet).
   const bags = await onPage(tabId, "readBags", null, page);
-  return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons }, bags };
+  const bagsNow = (await onPage(tabId, "bagsState", null, page))?.own ?? null;
+  return { stopped: "ready", chosen: { id: target.id, words: target.words }, final: { url: final.url, text: final.text, buttons: final.buttons }, bags, bagsOwn: bagsNow };
 }
 
 /**
@@ -359,6 +380,7 @@ async function placeOrder(tabId, page, settings, windowId, expect) {
   if (!cart || cart.signedIn === false) return stop(cart ? "signed out" : "page didn't load");
   const key = cart.products.filter((p) => p.inCart).map((p) => `${p.id}x${p.qty || 1}`).sort().join(",");
   if (key !== expect.cart) return stop("cart changed");
+  // The bags were set when getting ready; placing never presses the switch, and Place Order checks it's as approved.
   const r = await checkoutReady(tabId, page, windowId);
   if (r.stopped !== "ready") return { ...r, pressed: false };
   const checkoutPath = page.cartPath.replace(/cart$/, "checkout");

@@ -11,7 +11,14 @@ import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/brow
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
 import { usePrepared, useOrdering } from "./Ordering";
-import { Alert, Button, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
+import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet } from "./ui";
+
+/** Bags for this order (Nov 16, Sam: "user chooses bags"): picked with the time; the last choice comes back next time. */
+type Bags = "own" | "store";
+const BAGS: { value: Bags; label: string }[] = [{ value: "own", label: "Bring my own" }, { value: "store", label: "Safeway's bags" }];
+const BAGS_KEY = "sm.bags";
+const lastBags = (): Bags => { try { return localStorage.getItem(BAGS_KEY) === "store" ? "store" : "own"; } catch { return "own"; } };
+const bagsWords = (own: boolean | null | undefined) => (own === true ? "Bring my own" : own === false ? "Safeway's bags" : "Couldn't be read");
 
 type Run = { stage: "idle" } | { stage: "reading" } | { stage: "times"; times: TimesView; loading?: string; picked?: boolean } | { stage: "ready"; view: ReadyView } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult }
   | { stage: "ordering"; view: ReadyView } | { stage: "ordered"; view: ReadyView; result: OrderResult };
@@ -53,6 +60,8 @@ function TestRun() {
   const busy = useRef(false);
   const offered = useRef<TimesView | null>(null); // the day and times last read, to go back to
   const [confirming, setConfirming] = useState(false); // Place order's confirm sheet (docs/CHECKOUT.md)
+  const [bags, setBagsState] = useState<Bags>(lastBags);
+  const setBags = (b: Bags) => { setBagsState(b); try { localStorage.setItem(BAGS_KEY, b); } catch { /* kept for this order only */ } };
   useEffect(() => () => stop.current?.abort(), []);
 
   /** Ready to approve: Face ID's check is fetched now, so it shows straight from the tap (Safari). */
@@ -92,7 +101,7 @@ function TestRun() {
     setRun({ stage: "reading" });
     const ac = (stop.current = new AbortController());
     try {
-      let r = await api.checkoutPrepare(undefined, windowId, ac.signal);
+      let r = await api.checkoutPrepare(undefined, windowId, ac.signal, bags === "own");
       while ("waiting" in r) r = await api.checkoutPrepare(r.waiting, undefined, ac.signal);
       showReady(r);
     } catch (e) {
@@ -163,6 +172,12 @@ function TestRun() {
   const view = run.stage === "ready" || run.stage === "running" || run.stage === "done" || run.stage === "ordering" || run.stage === "ordered" ? run.view : null;
   return (
     <>
+      {run.stage === "times" && !run.loading && (
+        <div className="space-y-2">
+          <p className="px-4 t-sub font-semibold text-muted">Bags</p>
+          <Segmented label="Bags" value={bags} options={BAGS} onChange={setBags} />
+        </div>
+      )}
       {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading}
         onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
       <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
@@ -170,6 +185,7 @@ function TestRun() {
           <>
             <Row icon="home" title="Pickup store" subtitle={view.remember && view.store ? "Remembered once you approve" : undefined} value={view.store ? view.store.split(",")[0] : "Couldn't be read"} />
             <Row icon="clock" title="Pickup time" value={view.window || "None chosen"} />
+            <Row icon="bag" title="Bags" value={bagsWords(view.bagsOwn)} />
             <Row icon="card" title="Card" subtitle={view.remember && view.card ? "Remembered once you approve" : undefined} value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
             {view.feesCents ? <Row icon="bag" title="Taxes and fees" value={cents(view.feesCents)} /> : null}
@@ -201,7 +217,7 @@ function TestRun() {
       )}
       {run.stage === "ready" && (
         <ConfirmSheet open={confirming} title={`Place order · ${cents(run.view.totalCents)}?`} confirm="Place order"
-          message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}
+          message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, bagsWords(run.view.bagsOwn), ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}
           onConfirm={() => placeIt(run.view)} onCancel={() => setConfirming(false)} />
       )}
       {run.stage === "running" && <Held groups={[1]} label="Test run going" />}

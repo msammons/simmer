@@ -19,10 +19,8 @@ export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r
 /** "a quick dinner", "a dessert": one of a kind, in a sentence. */
 const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular dinner", kids: "a kids' dinner", dessert: "a dessert", side: "a side", breakfast: "a breakfast", lunchmeal: "a lunch" };
 
-/** "Today", "Tomorrow", then "Wed, Nov 18". */
-function dayName(day: string, today: string): string {
-  if (day === today) return "Today";
-  if (day === addDays(today, 1)) return "Tomorrow";
+/** "Wed, Nov 18": every day by its date (Sam, Nov 16: dates, not Today and Tomorrow). */
+function dayName(day: string): string {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
@@ -75,13 +73,13 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
       {plan && (
         <>
           {days.map((day) => (
-            <Group key={day} header={dayName(day, today)}>
+            <Group key={day} header={dayName(day)}>
               {dishes.filter((d) => d.day === day).map(meal)}
               <div className="flex gap-2 px-4 py-3">
-                <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day, today)}`}>Quick</button>
-                <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day, today)}`}>Regular</button>
+                <button className={pill} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}>Quick</button>
+                <button className={pill} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}>Regular</button>
                 {/* Other sits on the right, apart from the two main choices (Sam, Nov 16: "Other. But should other be aligned right?"). */}
-                <button className={`${pill} ml-auto`} onClick={() => setMore(day)} aria-label={`Other for ${dayName(day, today)}`}>Other</button>
+                <button className={`${pill} ml-auto`} onClick={() => setMore(day)} aria-label={`Other for ${dayName(day)}`}>Other</button>
               </div>
             </Group>
           ))}
@@ -91,7 +89,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         </>
       )}
       {more && (
-        <Sheet label="Other" title={dayName(more, today)} onClose={() => setMore(null)}>
+        <Sheet label="Other" title={dayName(more)} onClose={() => setMore(null)}>
           <div className="pb-2">
             <Group>{MORE.map((k) => <Row key={k} title={KIND_NAMES[k] === "Kids'" ? "Kids' dinner" : KIND_NAMES[k]} accessory="chevron" onClick={() => { const d = more; setMore(null); onAdd(k, d); }} />)}</Group>
           </div>
@@ -146,7 +144,7 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
       onClick={here ? undefined : () => add({ kind: kindOf(r) ?? kind, recipe: r.id, pinned: true, day })} />;
   };
   return (
-    <Sheet label="Add a meal" title={`${dayName(day, todayIn())}: ${ONE[kind]}`} onClose={onClose} tall>
+    <Sheet label="Add a meal" title={`${dayName(day)}: ${ONE[kind]}`} onClose={onClose} tall>
       <div className="space-y-5 pb-2">
         {/* No autofocus: on a phone the keyboard would cover the list. */}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
@@ -168,7 +166,7 @@ export function PickDaySheet({ name, onPick, onClose }: { name: string; onPick: 
     <Sheet label="Which day" title={name} onClose={onClose}>
       <div className="pb-2">
         <Group header="Which day?">
-          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day, today)} accessory="chevron" onClick={() => onPick(day)} />)}
+          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day)} accessory="chevron" onClick={() => onPick(day)} />)}
         </Group>
       </div>
     </Sheet>
