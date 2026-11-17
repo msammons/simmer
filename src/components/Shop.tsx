@@ -68,9 +68,10 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  * One line above the list (Sam, Nov 14): a Show checked checkbox, lined up with the rows' (on, what's ticked stays, struck through; off,
  * it's hidden; ticked things stay on the list until a new plan empties it) and, with something in the Safeway cart, its
  * price and a Check out button with a cart. With Safeway signed out on the computer (Nov 16) the cart is greyed: no
- * price, and the button says Signed out and can't be pressed.
+ * price, and the button says Signed out and can't be pressed. While the cart is changing or being read (Nov 16, Sam:
+ * no checking out while things are in progress), Check out is greyed too.
  */
-function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void; off?: boolean } | null }) {
+function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null }) {
   return (
     // The checkbox lines up with the rows' (Sam, Nov 14: "would look better as a checkbox aligned with the other checkboxes").
     <div className="flex min-h-10 items-center gap-3 pl-4">
@@ -81,7 +82,7 @@ function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: ()
       {cart && (
         <span className="ml-auto flex min-w-0 items-center gap-2.5">
           {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
-          <button onClick={cart.onCheckOut} disabled={cart.off} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
+          <button onClick={cart.onCheckOut} disabled={cart.off || cart.busy} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off || cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
             <Icon name="cart" className="size-[18px]" strokeWidth={2} />{cart.off ? "Signed out" : "Check out"}
           </button>
         </span>
@@ -128,6 +129,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const tickIt = (it: Item, on: boolean) => act.check(it, on);
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   const [checkingOut, setCheckingOut] = useState(false); // the Check out sheet (Nov 13)
+  const [reading, setReading] = useState(true); // Safeway's cart being read as Shop opens
   const [where, setWhere] = useState<Where>("all");
   const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on the list yet
   // What Find goes through: the Safeway things not got yet.
@@ -145,7 +147,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const { run, refresh } = sw;
   useEffect(() => {
     const c = new AbortController();
-    run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
+    run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); }).finally(() => { if (!c.signal.aborted) setReading(false); });
     return () => c.abort();
   }, [run, refresh]);
   // Signed out: coming back to Simmer (after signing in on the computer) reads Safeway's cart again.
@@ -227,7 +229,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           <TopLine showGot={showGot} onShowGot={() => setShowGot(!showGot)}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }
-              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true) } : null} />
+              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: reading || Object.keys(sw.pending).length > 0 } : null} />
           {!shown.length && <EmptyState icon="list" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">

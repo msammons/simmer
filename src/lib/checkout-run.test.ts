@@ -8,13 +8,13 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyRegistrationResponse: vi.fn(),
   verifyAuthenticationResponse: vi.fn(),
 }));
-vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ answering: true, seen: "", away: false, outdated: false })) }));
+vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), cartChanging: vi.fn(async () => false), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ answering: true, seen: "", away: false, outdated: false })) }));
 vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
 import { approve, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
-import { queueJob, waitForJob, type Job, type JobKind } from "./jobs";
+import { cartChanging, queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
 import { checkOptions, registrationOptions, resetPasskeys, verifyRegistration } from "./passkeys";
@@ -130,6 +130,13 @@ describe("picking the pickup time (Nov 14)", () => {
     does = () => ({ ...READY, chosen: { id: "9999FRI20261113REGULARDUG700800-2026-11-13", words: "7 AM - 8 AM price Free" } });
     expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toContain("Safeway's pickup time isn't the one picked.");
   });
+  it("doesn't start while a cart change is still on its way to Safeway (Nov 16)", async () => {
+    vi.mocked(cartChanging).mockResolvedValueOnce(true);
+    const asked = vi.mocked(queueJob).mock.calls.length;
+    await expect(pickupTimes()).rejects.toThrow(/still changing/);
+    expect(vi.mocked(queueJob).mock.calls.length).toBe(asked);
+  });
+
   it("says where Safeway stopped, in plain words", async () => {
     does = () => ({ stopped: "signed out", chosen: null, final: null });
     await expect(pickupTimes()).rejects.toThrow(/signed out/);

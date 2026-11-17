@@ -393,6 +393,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         ok("shop: no test run before ordering is set up", (await co.getByRole("button", { name: /^(Test run|Get ready)/ }).count()) === 0);
         ok("shop: no button anywhere on the page says Place order", (await page.getByRole("button", { name: /place order/i }).count()) === 0);
         await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+        // A cart change on its way to Safeway (Nov 16, Sam): Check out is greyed until it's done.
+        await page.getByRole("button", { name: "Add Milk to the cart" }).tap();
+        ok("shop: while a cart change is on its way, Check out is greyed", await within150(() => checkOut.isDisabled()));
+        await page.waitForTimeout(2500);
+        ok("shop: and once it's done, Check out can be tapped again", await checkOut.isEnabled());
+        fake.cart.splice(fake.cart.findIndex((l) => l.productId === "p-milk"), 1);
+        await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+        await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
         // The store and card in Settings (Nov 14): picked from what Safeway's checkout shows, in place of the rows. With
         // Face ID pretended on, Pickup store reads Safeway and offers its store; Back returns to the rows.
         await page.route("**/api/checkout", async (r) => {

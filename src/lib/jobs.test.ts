@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetKv } from "./kv";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, safewaySignedOut, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, safewaySignedOut, cartChanging, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
 
 describe("jobs for the Safeway helper", () => {
   beforeEach(() => { resetJobs(); resetSafeway(); resetKv(); });
+
+  it("knows when a cart change is still on its way, so checking out waits (Nov 16)", async () => {
+    expect(await cartChanging()).toBe(false);
+    const j = await queueJob("setQty", { productId: "1", qty: 2 });
+    expect(await cartChanging()).toBe(true);
+    await takeJob("1.0.0", true);
+    expect(await cartChanging()).toBe(true);
+    await finishJob(j.id, true, { ok: true, qty: 2, name: "Milk" });
+    expect(await cartChanging()).toBe(false);
+  });
 
   it("keeps whether Safeway was last seen signed out, and doesn't change the cart while it is (Nov 16)", async () => {
     await setCartLine({ ...milk, qty: 1 });
