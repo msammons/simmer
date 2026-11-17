@@ -140,6 +140,18 @@ export const olderVersion = (have: string, want: string) => {
 /** Whether the helper that checked in is older than the one this Simmer ships, so it needs updating on the computer. */
 export const helperOutdated = (h: Helper | null) => Boolean(h?.version) && olderVersion(h!.version, HELPER_VERSION);
 
+/**
+ * Whether Safeway was last seen signed out on the computer (Nov 16, Sam: Shop showed the cart while Safeway was signed
+ * out, and it may not be right). Set by a cart read or search that sees Safeway signed out, and by a checkout step
+ * that stopped "signed out"; only a cart read that sees Safeway signed in clears it (and puts the cart right). Kept under its own key, so a check-in never writes over it.
+ */
+const SIGNED_OUT_KEY = "simmer:safeway-signed-out";
+async function noteSignedIn(signedIn: boolean): Promise<void> {
+  if (signedIn) await kv().del(SIGNED_OUT_KEY);
+  else await kv().set(SIGNED_OUT_KEY, now(), { ex: 30 * 24 * 3600 });
+}
+export const safewaySignedOut = async (): Promise<boolean> => Boolean(await kv().get(SIGNED_OUT_KEY));
+
 export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
   const { helper } = await read();
   // No timer keeps a check-in fresh any more (Nov 11): the helper only checks in when there's work. So Simmer doesn't
@@ -302,6 +314,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
+    // Signed out, noted; signed in leaves it to the cart page, which also puts the cart right.
+    if (!result.signedIn) await noteSignedIn(false);
     // Safeway's search results don't reliably show what's in the cart (a product in it came back "not in the cart",
     // Oct 31), so a search only ever brings Simmer's quantity up; the cart page (kind "cart") decides what's gone.
     // All of them in one save (one read, and one write only when a quantity went up).
@@ -324,6 +338,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind === "cart") {
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
+    await noteSignedIn(result.signedIn === true);
     if (result.signedIn && raw.empty === true) result = { ...result, ...(await emptied(raw.orders)) };
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
@@ -347,6 +362,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       ? { stopped: str(raw.stopped, 60), pressed: raw.pressed === true, why: str(raw.why, 80), after: a ? { url: str(a.url, 300), text: typeof a.text === "string" ? a.text.slice(0, 4000) : "" } : null }
       : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   }
+  if (ok && j.kind.startsWith("checkout") && raw.stopped === "signed out") await noteSignedIn(false);
   if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
     const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;
     const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;
