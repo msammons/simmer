@@ -100,7 +100,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {onSection && (
         <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
-          <select value="" aria-label={`More for ${i.item}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+          <select value="" aria-label={`More for ${i.item}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
             onChange={(e) => { const sec = e.target.value as RecipeSection; if (sec) onSection(i.item, sec); }}>
             <option value="" disabled>{i.item}</option>
             <option value="fresh" disabled={i.section === "fresh"}>Move to Fresh</option>
@@ -150,7 +150,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
 const FIELD = "w-full rounded-2xl bg-card px-4 py-3 text-base outline-none ring-accent focus:ring-2";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block space-y-1.5"><span className="t-foot px-4 uppercase tracking-wide text-muted">{label}</span>{children}</label>;
+  return <label className="block space-y-1.5"><span className="t-foot px-4 font-semibold text-muted">{label}</span>{children}</label>;
 }
 
 const draftOf = (r: Recipe): Draft => ({ ...r, ingredients: r.ingredients.map((i) => i.line) });

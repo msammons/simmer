@@ -59,7 +59,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         trailing={
           <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
             <span aria-hidden>⋯</span>
-            <select value="" aria-label="More for the list" className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+            <select value="" aria-label="More for the list" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
               onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
               <option value="" disabled>List</option>
               <option value="all">{showAll ? "✓ Show all" : "Show all"}</option>
@@ -94,7 +94,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-accent">
                       <span aria-hidden>⋯</span>
-                      <select value="" aria-label={`More for the ${l.name} group`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+                      <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
                         onChange={(e) => { const v = e.target.value; if (v === "all") toggle(key); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
                         {toggles && <option value="all" disabled={showAll}>{isOpen ? "✓ Show all" : "Show all"}</option>}
@@ -274,7 +274,7 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
       {menu ? (
         <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
-          <select value="" aria-label={`More for ${r.name}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+          <select value="" aria-label={`More for ${r.name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
             onChange={(e) => {
               const v = e.target.value;
               if (v === "remove" && r.staple) onRemove(r.staple);

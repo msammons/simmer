@@ -88,7 +88,7 @@ export function TopBar({ title, subtitle, onBack, backLabel = "", trailing }: {
 /** The round back button at the start of a screen's title; its label names the screen it goes back to. */
 function BackButton({ onBack, label, className = "" }: { onBack: () => void; label: string; className?: string }) {
   return (
-    <button onClick={onBack} aria-label={label} className={`glass -ml-1 flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition active:scale-90 ${className}`}>
+    <button onClick={onBack} aria-label={label} className={`glass relative before:absolute before:-inset-1.5 before:content-[''] -ml-1 flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition active:scale-90 ${className}`}>
       <Icon name="left" className="size-[18px]" strokeWidth={2.4} />
     </button>
   );
@@ -223,9 +223,7 @@ function Dialog({ title, message, children, onDismiss }: { title: string; messag
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; });
   useEffect(() => {
-    // The way out has the focus first (the last button), so a stray Enter never confirms.
-    const buttons = box.current?.querySelectorAll("button");
-    buttons?.[buttons.length - 1]?.focus({ preventScroll: true });
+    // No focus moved here: in Chrome on iPhone that drew the browser's blue ring around Cancel (Nov 17).
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss.current(); };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
@@ -545,7 +543,7 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
-          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-accent transition active:scale-90">
+          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-accent transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
             <Icon name="close" className="size-[18px]" strokeWidth={2.2} />
           </button>
           {pager && pager.total > 1 && <Dots {...pager} />}

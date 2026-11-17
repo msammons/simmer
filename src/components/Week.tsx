@@ -82,7 +82,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                 {/* Other, on the right apart from the two main choices (Sam, Nov 16), as a ⋯ menu (Sam, Nov 17). */}
                 <label className="relative ml-auto flex size-9 shrink-0 items-center justify-center self-center text-[22px] leading-none text-muted">
                   <span aria-hidden>⋯</span>
-                  <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+                  <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
                     onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                     <option value="" disabled>{dayName(day)}</option>
                     {MORE.map((k) => <option key={k} value={k}>{ADD_OTHER[k]}</option>)}
@@ -96,16 +96,16 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
           {undated.length > 0 && <Group header="Not on a day">{undated.map(meal)}</Group>}
         </>
       )}
-      {/* A new plan asks first: every meal comes off and the lists are emptied; the Safeway cart stays. */}
+      {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
       <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
         message={`Everything starts fresh: ${[
           dishes.length ? (dishes.length === 1 ? "this meal comes off" : `these ${dishes.length} meals come off`) : "",
-          dinnerGroceries ? `the lists are emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
+          dinnerGroceries ? `the list is emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
         ].filter(Boolean).join(" and ")}. What's in the Safeway cart stays.`}
         onConfirm={() => { onNewPlan(); setStarting(false); }} onCancel={() => setStarting(false)} />
       {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
       <ConfirmSheet open={Boolean(taking)} title={taking ? `Take ${mealName(taking.recipe, recipes)} off the plan?` : ""} confirm="Take it off" danger
-        message="What only it needed comes off the grocery list."
+        message="What only it needed comes off the list."
         onConfirm={() => { if (taking) onRemove(taking); setTaking(null); }} onCancel={() => setTaking(null)} />
     </div>
   );
@@ -167,7 +167,7 @@ export function PickDaySheet({ name, onPick, onClose }: { name: string; onPick: 
     <Sheet label="Which day" title={name} onClose={onClose}>
       <div className="pb-2">
         <Group header="Which day?">
-          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day)} accessory="chevron" onClick={() => onPick(day)} />)}
+          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day)} onClick={() => onPick(day)} />)}
         </Group>
       </div>
     </Sheet>
@@ -178,7 +178,7 @@ export function PickDaySheet({ name, onPick, onClose }: { name: string; onPick: 
 
 function RoundButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
   return (
-    <button aria-label={label} onClick={onClick} className="glass flex size-8 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100">
+    <button aria-label={label} onClick={onClick} className="glass relative before:absolute before:-inset-1.5 before:content-[''] flex size-8 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100">
       <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
     </button>
   );
