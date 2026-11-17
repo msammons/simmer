@@ -61,16 +61,20 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         if (!here.length) return null;
         return (
           <Group key={id} header={name}>
-            {linesOf(here).flatMap((l) => {
+            {linesOf(here).flatMap((l, i, all) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
               const isOpen = open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
+              // Nothing to show or hide (every thing in it is Need): no header row, the outline alone (Sam, Nov 16).
+              const header = !l.rows.every((r) => r.answer === "need");
+              // Right under another group: one line between them, not two.
+              const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 16, Sam): full width with nothing indented, a colored line around its cells, a tinted header
               // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
               return [
-                <div key={key} className="relative divide-y divide-line">
-                  <div className="flex h-[3.25rem] items-center bg-accent/10 pr-2">
+                <div key={key} data-group={l.name} className="relative divide-y divide-line">
+                  {header && <div className="flex h-[3.25rem] items-center bg-accent/[0.16] pr-2">
                     <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={() => toggle(key)}
                       className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
                       <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
@@ -86,9 +90,9 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                         <option value="remove">Remove group (keeps its things)</option>
                       </select>
                     </label>
-                  </div>
-                  {shown.map((r) => item(r))}
-                  <span aria-hidden className="pointer-events-none absolute inset-0 !border-0 ring-2 ring-inset ring-accent/60" />
+                  </div>}
+                  {(header ? shown : l.rows).map((r) => item(r))}
+                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border-2 !border-accent/60 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
             })}
@@ -239,7 +243,7 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""} ${fresh ? "sm-flash" : ""}`}>
+    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/[0.06]" : ""} ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       <span className="min-w-0 flex-1">
