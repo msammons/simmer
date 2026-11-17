@@ -93,6 +93,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 import type { Item, Section, Staple, StapleKind, Store } from "./groceries";
+/** Where a recipe's ingredient goes (Nov 17: Freezer too). */
+export type RecipeSection = "fresh" | "pantry" | "freezer";
 export type { Item, Section, Staple, StapleKind, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
@@ -125,7 +127,7 @@ export const api = {
   change: (c: Change) => call<ListState & { cleared?: Item[] }>("/api/list", { method: "POST", body: JSON.stringify(c) }),
   recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }),
   saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
-  recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean } | { op: "delete"; id: string } | { op: "section"; id: string; item: string; section: "fresh" | "pantry" }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
+  recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean } | { op: "delete"; id: string } | { op: "section"; id: string; item: string; section: RecipeSection }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
   readRecipe: (from: { link: string } | { text: string } | { file: { name: string; type: string; data: string } }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
   /** What's still to make and pack. */
   plan: (signal?: AbortSignal) => call<PlanData>("/api/plan", { signal }),
