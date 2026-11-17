@@ -339,6 +339,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await needOf("frozen waffles").tap(); await page.waitForTimeout(1500);
       ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
       // Something kept shows as she types in the field; tapping it marks it Need.
+      await page.getByLabel("Add something to the list").tap(); await page.waitForTimeout(200);
+      ok("stock: Specialty and Group are there from the start", await page.getByLabel("How often").isVisible() && await page.getByLabel("Group").isVisible());
       await page.getByLabel("Add something to the list").fill("smoke oat bars");
       ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group").inputValue()) === "");
       await page.getByLabel("Add something to the list").fill("waffles");
@@ -357,6 +359,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // And from ⋯ for something already kept.
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
+      ok("stock: a group says how many things are in it, and isn't indented", /2/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-label")) === "Smoke cheese, 2 things");
       ok("stock: a group of two shows closed, with what's Need under it", (await cheese.getAttribute("aria-expanded")) === "false" && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
       ok("stock: closed, a thing answered Have tucks away", (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
