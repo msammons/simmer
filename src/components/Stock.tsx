@@ -247,8 +247,8 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       {/* A planned dinner's thing (Nov 16, Sam: "a treatment that's not a highlight", "a text color difference"): its name in
-          the accent color, nothing more (the dinner and amount aren't needed here, Sam the same day). */}
-      <span className={`min-w-0 flex-1 truncate t-body ${r.meal ? "font-medium text-accent" : ""}`}>{cap(r.name)}</span>
+          a lighter shade of the accent (apart from group names), nothing more (the dinner and amount aren't needed here, Sam the same day). */}
+      <span className={`min-w-0 flex-1 truncate t-body ${r.meal ? "font-medium text-accent2" : ""}`}>{cap(r.name)}</span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">
         {side("have", "Have")}
         {side("need", "Need")}
