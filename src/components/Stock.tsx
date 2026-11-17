@@ -62,13 +62,13 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               const isOpen = open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
               // A group (Nov 16, Sam): full width with nothing indented, a colored line around its cells, a tinted header
-              // row with the group's name, and a plain "Show all" / "Need only" in place of a caret.
+              // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
               return [
                 <div key={key} className="relative divide-y divide-line">
                   <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={() => toggle(key)}
                     className="flex h-[3.25rem] w-full items-center gap-2 bg-accent/10 pl-4 pr-4 text-left">
                     <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
-                    <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Need only" : "Show all"}</span>
+                    <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>
                   </button>
                   {shown.map((r) => item(r))}
                   <span aria-hidden className="pointer-events-none absolute inset-0 !border-0 ring-2 ring-inset ring-accent/60" />

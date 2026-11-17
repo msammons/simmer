@@ -364,7 +364,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
       ok("stock: closed, a thing answered Have tucks away", (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: open, the group shows all of them and offers Need only", /Need only/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: open, the group shows all of them and offers Show less", /Show less/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
       await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
       await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await page.waitForTimeout(1500);
       ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
