@@ -56,8 +56,11 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
       <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }}
-        trailing={
-          <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
+ />
+      {/* The list's own ⋯, above the list on the right (Sam, Nov 17: not beside Add), the same as a row's. */}
+      {list && rows.length > 0 && (
+        <div className="-mb-3 flex justify-end pr-2">
+          <label className="relative flex size-9 items-center justify-center text-[22px] leading-none text-muted">
             <span aria-hidden>⋯</span>
             <select value="" aria-label="More for the list" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
               onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
@@ -65,7 +68,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               <option value="all">{showAll ? "✓ Show all" : "Show all"}</option>
             </select>
           </label>
-        } />
+        </div>
+      )}
       {!list && <Held />}
       {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
