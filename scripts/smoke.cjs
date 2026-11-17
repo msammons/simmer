@@ -332,7 +332,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Something new shows at once, as a stand-in row the server's answer replaces (Nov 11: always responsive).
       await slow("**/api/list");
       // Stock's own field (Nov 16, Sam): a name, and it's in as Need; new things are specialty.
-      await page.getByLabel("Add something to the list").fill("frozen waffles"); await page.keyboard.press("Enter");
+      await page.getByLabel("Add something to the list").fill("frozen waffles"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+      ok("stock: the keyboard's Done doesn't add; only Add does", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0 && (await page.getByLabel("Add something to the list").inputValue()) === "frozen waffles");
+      await page.getByRole("button", { name: "Add", exact: true }).first().tap();
       ok("stock: something added is brought into view and lit where it landed", (await page.locator("[data-fresh]").count()) === 1);
       ok("stock: something added shows within 150 ms, marked Need", await within150(async () => (await page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()) && (await answerOf("frozen waffles")) === "need"));
       await page.waitForTimeout(1800); await page.unroute("**/api/list");
@@ -355,12 +357,12 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByLabel("How often").selectOption("common");
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
       await page.getByLabel("New group").fill("Smoke cheese");
-      await stockField.press("Enter"); await page.waitForTimeout(1500);
+      await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       ok("stock: a group shows from its first thing, its header without Show all while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && !/Show all/.test(await page.getByRole("button", { name: "Smoke cheese" }).innerText()));
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "Smoke cheese" });
-      await stockField.press("Enter"); await page.waitForTimeout(1500);
+      await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       // And from ⋯ for something already kept.
       ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
