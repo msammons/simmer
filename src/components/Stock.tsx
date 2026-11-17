@@ -53,7 +53,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       <BrandBar />
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }} />
+      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }} />
       {!list && <Held />}
       {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
@@ -138,8 +138,8 @@ const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-
  * specialty, without a crowded sheet): Specialty or Common, and a group, each the phone's own picker; New group… turns
  * the group into a small box. Something already kept shows as she types; tapping it marks it Need.
  */
-function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
-  staples: Staple[]; label: string; placeholder: string; autoFocus?: boolean;
+function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = false }: {
+  staples: Staple[]; shown: Set<string>; label: string; placeholder: string; autoFocus?: boolean;
   onAdd: (text: string, more: { kind: StapleKind; group: string }) => void;
 }) {
   const [text, setText] = useState("");
@@ -149,7 +149,9 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
   const groups = [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const q = norm(text);
   const kept = staples.some((s) => norm(s.item) === q);
-  const known = q ? staples.filter((s) => norm(s.item).includes(q) && norm(s.item) !== q).slice(0, 4) : [];
+  // Only what's kept but not showing (Nov 16, Sam: why show what's already on the list?): a specialty thing that left
+  // after the shop, to bring back as Need instead of adding it twice. What's showing has its own Need on its row.
+  const known = q ? staples.filter((s) => norm(s.item).includes(q) && norm(s.item) !== q && !shown.has(norm(s.item))).slice(0, 4) : [];
   const reset = () => { setText(""); setKind("specialty"); setGroup(""); setNewGroup(false); };
   const add = (t: string) => { onAdd(t, { kind, group: group.trim() }); reset(); };
   return (
