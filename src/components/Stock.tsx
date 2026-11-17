@@ -87,7 +87,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                         onChange={(e) => { if (e.target.value === "rename") setRenaming(l.name); else if (e.target.value === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
                         <option value="rename">Rename group</option>
-                        <option value="remove">Remove group (keeps its things)</option>
+                        <option value="remove">Remove group</option>
                       </select>
                     </label>
                   </div>
@@ -100,7 +100,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         );
       })}
       {renaming && <RenameGroupSheet name={renaming} onClose={() => setRenaming(null)} onSave={(to) => { const from = renaming; setRenaming(null); if (to !== from) act.keepGroup(from, to); }} />}
-      <ConfirmSheet open={Boolean(ungrouping)} title={ungrouping ? `Remove the ${cap(ungrouping)} group?` : ""} message="The things in it stay on the list, on their own." confirm="Remove group"
+      <ConfirmSheet open={Boolean(ungrouping)} title={ungrouping ? `Remove the ${cap(ungrouping)} group?` : ""} confirm="Remove group"
         onConfirm={() => { if (ungrouping) act.keepGroup(ungrouping, ""); setUngrouping(null); }} onCancel={() => setUngrouping(null)} />
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
       <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="It stops showing here." confirm="Remove from the list" danger
