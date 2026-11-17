@@ -318,6 +318,7 @@ export default function App() {
     const clearing = c.op === "clear";
     if (clearing) { setPlan((p) => (p ? { ...p, dishes: [] } : p)); ++listChanges.current; ++listSaving.current; setList((l) => l && { ...l, items: [] }); }
     if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
+    if (c.op === "change" && "day" in c) setPlan((p) => (p ? { ...p, dishes: p.dishes.map((d) => (d.id === c.id ? { ...d, day: c.day } : d)) } : p));
     ++planSaving.current;
     try {
       ++planChanges.current;
@@ -486,7 +487,8 @@ export default function App() {
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).length}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
           onNewPlan={() => { changePlan({ op: "clear" }).then(didntSave); }}
-          onRemove={(d) => { changePlan({ op: "remove", id: d.id }).then(didntSave); }} />
+          onRemove={(d) => { changePlan({ op: "remove", id: d.id }).then(didntSave); }}
+          onMove={(d, day) => { changePlan({ op: "change", id: d.id, day }).then(didntSave); }} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} act={stock} />}
       {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} act={shop} />}

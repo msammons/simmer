@@ -1,0 +1,77 @@
+# Simmer: design requirements
+
+What Simmer is for, and the rules every screen is held to. Gathered Nov 17 from what Sam has asked for since October
+(docs/ARCHITECTURE.md, the decision notes, and the Nov 16-17 rounds). When a screen and this page disagree, the screen
+is wrong or this page needs Sam's update; say which.
+
+## The goal
+
+**Save the household time and thinking on meal planning and shopping.** Robin plans the dinners, checks the house,
+shops (in store, or Safeway from the phone), and gets out. Every screen is judged by two questions:
+
+1. **Time:** how few taps, and how little waiting, does the job take?
+2. **Thinking:** how little is on screen to read, weigh or decide before the next tap?
+
+A clean, minimal interface is part of the goal, not decoration: anything on screen that doesn't help the job in front
+of her is a cost.
+
+## The jobs, and what good looks like
+
+| Job | Where | Good |
+| --- | --- | --- |
+| Plan dinners | Meals | A day's dinner in two taps (kind, then recipe). Simmer never picks meals. |
+| Check the house | List | One tap per thing (Have or Need); what a planned dinner needs is marked; nothing she didn't ask for appears. |
+| Shop in store | Shop | Tick as she goes; one list by store; ticked things tuck away. |
+| Shop Safeway from the phone | Shop, Check out | Usuals in one tap (Auto-fill), the order placed in a few taps, every protection kept (docs/CHECKOUT.md). |
+| Keep recipes | Recipes | Add from a link, photo, file or typing; fix where an ingredient goes in one tap. |
+
+## Rules
+
+### Less on screen
+- **One way to do a thing.** The same kind of action looks and works the same on every screen.
+- **Row actions live behind ⋯** (the phone's own picker), on the right of the row: move, group, remove, add-another-
+  kind. The row itself shows only its name and its one main control (Have | Need, a tick, Find/Add, a stepper).
+- **Hide/show is a menu item with a ✓** (Show all), in the ⋯ of what it hides: the list's ⋯ by Add, a group's ⋯.
+- **No explaining text.** No legends, hints or "here's how this works" lines; a mark (the asterisk on a dinner's thing)
+  or the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").
+- **No chevrons where a tap acts at once** (choices, recipe rows, import choices). A chevron only for a real drill-in
+  that a person would otherwise not expect.
+- **Labels in sentence case**, the same small muted style everywhere.
+- **Quiet structure.** Groups get a subtle tint and outline, sections a plain heading; a dinner's thing an accent
+  asterisk, never a tinted row or a second color.
+- **Selectors appear only when needed** (Specialty/Common and Group show once she types a new name).
+
+### Never make her wait or wonder
+- **Every tap shows its result at once** (within ~150 ms) and saves behind it. No "Saving…", no disabled-while-saving,
+  no spinners; first loads shimmer.
+- **Nothing moves under her finger.** No bars that push the page, no rows that appear or vanish around the control she
+  is about to tap, no auto-zoom (fields and pickers are 16px or more).
+- **Problems are a pop-up in the middle of the screen** (headline, reason, OK). Nothing else interrupts.
+- **Risky actions ask first** with the same pop-up (the action in red for a removal, then Cancel). No Undo anywhere.
+  Harmless, easily redone taps (a tick, Have/Need) never ask.
+- **Only the button adds.** The keyboard's Done closes the keyboard; it never submits a half-made thing.
+- **Things she adds come into view** where they landed, lit for a moment.
+
+### Plain words
+- No technical words or device names on screen (no "Sheet", "tab", "API", "phone", "Chrome", "extension").
+- One name per thing: **List** (what the house keeps and needs), **Shop** (where she buys it), **the plan**
+  (dinners on days), **Safeway cart**. "The list" never means two places.
+- Buttons say what they do ("Add a side", "Remove group", "Take it off").
+- Days are dates ("Tue, Nov 17"), never Today/Tomorrow.
+
+### Simple, user-driven
+- Simple controls that do what they say; no smart behaviour that guesses, fills or decides for her. Nothing goes on a
+  list by itself; a dinner's things wait on List until she says Need.
+- No timers, polling or background jobs; load on open, on return and after a change.
+
+### Look and fit
+- One component set (`components/ui.tsx`) and one line-icon set; no emoji. Shared pieces are the same in all five
+  studio apps (change one, change all).
+- Themes from the accent color; dark mode as good as light.
+- Phone first (Chrome on iPhone, so iPhone browser rules apply), 320-430px wide; a wide view for the Safeway helper.
+- Tap areas 44px or more, even where the control looks smaller.
+
+## Checking a screen against this page
+
+For each job: count the taps; list everything on screen before the first tap and ask of each item "does this help this
+job right now?"; look for two ways of doing one thing; read every word as Robin would. Do it at 390px, light and dark.

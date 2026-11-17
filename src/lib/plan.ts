@@ -330,10 +330,15 @@ export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: C
  * What the new one needs goes on the list; what only the old one needed comes off, unless it's ticked off or in the
  * cart (Nov 10: before, it stayed, and a swap left its groceries behind).
  */
-export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string }, by: string): Promise<{ added: number; removed?: number }> {
+export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string; day?: string }, by: string): Promise<{ added: number; removed?: number }> {
   const before = await rows(PLANNED);
   const now = toPlanned(before);
   const dish = now.dishes.find((d) => d.id === id), lunch = now.lunches.find((l) => l.id === id);
+  // Moved to another day (Nov 17, from the dinner's ⋯): only the day changes; the list stays as it is.
+  if (dish && change.day && DATE.test(change.day) && !change.recipe) {
+    await upsert(PLANNED, [{ id, day: change.day }], ["id"], before);
+    return { added: 0 };
+  }
   if (dish && change.recipe) {
     await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"], before);
     const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);

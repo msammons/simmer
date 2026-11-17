@@ -4,7 +4,6 @@ import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
-import { Icon, type IconName } from "./icons";
 import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
 
 // The Meals tab is a list of days from today, each with its meals, picked from her recipes (Nov 16, from Robin's run;
@@ -36,14 +35,15 @@ const ADD_OTHER: Partial<Record<Kind, string>> = { breakfast: "Add breakfast", l
  * needed comes off the grocery list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
  */
-export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, onMove, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[];
   /** How many lines are on the lists: what New plan empties. */
   dinnerGroceries: number;
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onAdd: (kind: Kind, day: string) => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind, day: string) => void; onNewPlan: () => void;
 }) {
   const dishes = plan?.dishes ?? [];
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
+  const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
@@ -58,7 +58,16 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         <div className="min-w-0 flex-1">
           <Row title={name} value={d.kind === "quick" || d.kind === "regular" ? undefined : KIND_NAMES[d.kind]} onClick={r ? () => onOpen(d) : undefined} />
         </div>
-        <RoundButton icon="minus" label={`Take ${name} off the plan`} onClick={() => setTaking(d)} />
+        {/* The dinner's ⋯ (Sam, Nov 17: row actions behind ⋯, as on every screen). */}
+        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
+          <span aria-hidden>⋯</span>
+          <select value="" aria-label={`More for ${name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
+            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}>
+            <option value="" disabled>{name}</option>
+            <option value="move">Move to another day</option>
+            <option value="take">Take off the plan</option>
+          </select>
+        </label>
       </div>
     );
   };
@@ -96,6 +105,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
           {undated.length > 0 && <Group header="Not on a day">{undated.map(meal)}</Group>}
         </>
       )}
+      {moving && <PickDaySheet name={mealName(moving.recipe, recipes)} onClose={() => setMoving(null)} onPick={(day) => { const d = moving; setMoving(null); if (day !== d.day) onMove(d, day); }} />}
       {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
       <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
         message={`Everything starts fresh: ${[
@@ -174,12 +184,4 @@ export function PickDaySheet({ name, onPick, onClose }: { name: string; onPick: 
   );
 }
 
-// ---- Small pieces
 
-function RoundButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
-  return (
-    <button aria-label={label} onClick={onClick} className="glass relative before:absolute before:-inset-1.5 before:content-[''] flex size-8 shrink-0 items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100">
-      <Icon name={icon} className="size-[18px]" strokeWidth={2.2} />
-    </button>
-  );
-}

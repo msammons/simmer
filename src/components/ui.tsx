@@ -29,6 +29,16 @@ export function Button({ children, onClick, href, disabled, type = "button", var
     : <button type={type} onClick={onClick} disabled={disabled} className={cls}>{inner}</button>;
 }
 
+/** Add, as a round + beside an add field (Nov 17): submits its form; named "Add" for screen readers. */
+export function AddButton({ disabled }: { disabled?: boolean }) {
+  return (
+    <button type="submit" aria-label="Add" disabled={disabled}
+      className={`glass-tint inline-flex size-[52px] shrink-0 items-center justify-center rounded-full text-on-accent disabled:shadow-none ${PRESS}`}>
+      <Icon name="plus" className="size-6" strokeWidth={2.4} />
+    </button>
+  );
+}
+
 /** The brand: the app icon and "Simmer" in SF Pro Rounded. sm in every screen's top bar; md on the splash and sign-in. */
 export function Brand({ size = "sm" }: { size?: "sm" | "md" }) {
   const s = { sm: ["size-7 rounded-[8px]", "text-[19px]", "gap-2"], md: ["size-20 rounded-[1.4rem]", "text-[36px]", "gap-4 flex-col"] }[size];

@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
 import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
-import { FindView, Stepper, UpdateNote, useSafeway, type Safeway } from "./Safeway";
-import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet } from "./ui";
+import { CartPlus, FindView, Stepper, useSafeway, type Safeway } from "./Safeway";
+import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet, AddButton } from "./ui";
 import { Icon } from "./icons";
 
 /**
@@ -65,20 +65,15 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * One line above the list (Sam, Nov 14): a Show checked checkbox, lined up with the rows' (on, what's ticked stays, struck through; off,
- * it's hidden; ticked things stay on the list until a new plan empties it) and, with something in the Safeway cart, its
- * price and a Check out button with a cart. With Safeway signed out on the computer (Nov 16) the cart is greyed: no
+ * One line above the list, with something in the Safeway cart: its price and a Check out button with a cart. (Show
+ * checked moved to the ⋯ by Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) With Safeway signed out on the computer (Nov 16) the cart is greyed: no
  * price, and the button says Signed out and can't be pressed. While the cart is changing or being read (Nov 16, Sam:
  * no checking out while things are in progress), Check out is greyed too.
  */
-function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null }) {
+function TopLine({ cart }: { cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null }) {
+  if (!cart) return null;
   return (
-    // The checkbox lines up with the rows' (Sam, Nov 14: "would look better as a checkbox aligned with the other checkboxes").
     <div className="flex min-h-10 items-center gap-3 pl-4">
-      <button role="checkbox" aria-checked={showGot} onClick={onShowGot} className="flex shrink-0 items-center gap-3 whitespace-nowrap py-1 t-sub font-semibold active:opacity-70">
-        <Check on={showGot} />
-        Show checked
-      </button>
       {cart && (
         <span className="ml-auto flex min-w-0 items-center gap-2.5">
           {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
@@ -202,7 +197,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     if (it.store === "safeway" && live) {
       if (l) control = <Stepper compact qty={l.qty} name={cap(it.item)} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />;
       else if (f?.picked && waiting > 0) control = <Stepper compact qty={waiting} name={cap(it.item)} onChange={(q) => sw.setQty(product(f.picked!), q, f.query, f)} />;
-      else if (!it.checked && f?.picked) control = <button onClick={() => addUsual(f)} aria-label={`Add ${cap(it.item)} to the cart`} className={`${pill} glass text-accent`}>Add</button>;
+      else if (!it.checked && f?.picked) control = <CartPlus name={cap(it.item)} onClick={() => addUsual(f)} />;
       else if (!it.checked && findOf(it.id)) control = <button onClick={() => setFinding(it.id)} aria-label={`Find ${cap(it.item)} at Safeway`} className={`${pill} glass text-accent`}>Find</button>;
     }
     const canPick = it.store === "safeway" && live && Boolean(findOf(it.id)) && Boolean(f?.picked || l);
@@ -221,12 +216,20 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something" enterKeyHint="done"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
+        <AddButton disabled={!text.trim()} />
+        <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
+          <span aria-hidden>⋯</span>
+          <select value="" aria-label="More for Shop" className="absolute inset-0 cursor-pointer opacity-0 text-base"
+            onChange={(e) => { if (e.target.value === "checked") setShowGot(!showGot); }}>
+            <option value="" disabled>Shop</option>
+            <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
+          </select>
+        </label>
       </form>
 
-      {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
+      {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (
         <>
-          <TopLine showGot={showGot} onShowGot={() => setShowGot(!showGot)}
+          <TopLine
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }
               : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: reading || Object.keys(sw.pending).length > 0 } : null} />
@@ -245,13 +248,12 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
             </Group>
             {/* For when Simmer can't tell by itself that the order went through (it reads Safeway's Purchases page once
                 the cart page says it's empty, Nov 3). */}
-            {s === "safeway" && lines.length > 0 && <button onClick={() => setOrdering(true)} className="w-full py-2 t-sub font-semibold text-muted">Ordered? Take the cart off the list</button>}
+            {s === "safeway" && lines.length > 0 && <button onClick={() => setOrdering(true)} className="w-full py-2 t-sub font-semibold text-muted">Ordered? Mark the cart bought</button>}
             </div>
           ))}
         </>
       )}
       {/* Last, so it never pushes the list down when it shows. */}
-      {sw.outdated && <UpdateNote />}
 
       {finding && findOf(finding) && (
         <Sheet label="Safeway's choices" wide onClose={() => setFinding(null)}>
@@ -259,7 +261,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         </Sheet>
       )}
       {checkingOut && <CheckoutSheet count={count} total={total} estimate={estimate} onClose={() => { setCheckingOut(false); void sw.refresh(); }} />}
-      <ConfirmSheet open={ordering} title="Take the cart off the list?" message="Everything in the cart comes off the Safeway list, as bought." confirm="Take it off"
+      <ConfirmSheet open={ordering} title="Mark the cart bought?" message="Everything in the cart comes off Shop, as bought." confirm="Mark it bought"
         onConfirm={() => {
           setOrdering(false);
           // Shown at once: the cart and what it was for come off, then Safeway's cart is read again.
