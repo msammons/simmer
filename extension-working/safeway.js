@@ -78,7 +78,10 @@ async function waitForProducts(tabId, page, settings, tries = settings.resultsTr
   let last = null, none = 0;
   for (let i = 0; i < tries; i++) {
     last = await onPage(tabId, "read", null, page);
-    if (last && (last.products.length || last.signedIn === false)) return last;
+    // On the cart page only what's in the cart counts: an empty cart lists past purchases, each with Add, under "Your
+    // shopping cart is empty" (Nov 16: 40 of them kept Simmer's copy of a cart Safeway no longer had).
+    const counted = page.onlyInCart ? last?.products.filter((p) => p.inCart).length : last?.products.length;
+    if (last && (counted || last.signedIn === false)) return last;
     // `held`: it said "none" for the whole hold, so it means it (the cart page's "cart is empty" counts on this).
     if (last?.noResults) { none ||= Date.now(); if (Date.now() - none >= (settings.noResultsHold ?? 4000)) return { ...last, held: true }; }
     else none = 0;
@@ -103,7 +106,7 @@ async function searchHere(tabId, query, page, settings) {
   return r && r.products.length ? r : search(tabId, query, page, settings);
 }
 /** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
-const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults });
+const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults, onlyInCart: true });
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
 /** The cart page as it is: read where it stands when the tab is already showing it (no reload), else opened. */
 async function cartHere(tabId, page, settings) {
@@ -111,7 +114,7 @@ async function cartHere(tabId, page, settings) {
   if (!tab?.url || new URL(tab.url).pathname !== page.cartPath) return openCart(tabId, page, settings);
   // Watched where it stands, without a reload, long enough that an empty cart is Safeway saying so (not a page still building).
   const r = await waitForProducts(tabId, cartPage(page), settings, settings.cartTries ?? 8);
-  return r && (r.products.length || r.held) ? r : openCart(tabId, page, settings);
+  return r && (r.products.some((p) => p.inCart) || r.held) ? r : openCart(tabId, page, settings);
 }
 
 /**
@@ -153,7 +156,7 @@ export async function runJob(job, windowId) {
   if (job.kind === "cart") {
     const r = await cartHere(tabId, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
-    const empty = Boolean(r.held && r.noResults && !r.products.length);
+    const empty = Boolean(r.held && r.noResults && !r.products.some((p) => p.inCart));
     // An empty cart may mean the order went through: Safeway's Purchases page (Online) says, and Simmer decides (1.3).
     // Only asked for when Simmer's copy of the cart has something in it (`args.orders`).
     const orders = empty && args.orders === true && r.signedIn !== false && page.orders?.path ? await readOrders(tabId, page, settings) : null;
