@@ -16,10 +16,13 @@ export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r
 
 // ---- Meals (tab)
 
-/** The kinds a day's Other offers (named More until Nov 16) (Sam, Nov 16: lunch stays as an option; desserts and kids' lunches are mostly Stock). */
-const MORE: Kind[] = ["breakfast", "lunchmeal", "kids", "dessert", "side"];
-/** Other's menu, each saying what it does (Sam, Nov 17: "each item should say add"). */
-const ADD_OTHER: Partial<Record<Kind, string>> = { breakfast: "Add breakfast", lunchmeal: "Add lunch", kids: "Add a kids' dinner", dessert: "Add dessert", side: "Add a side" };
+/**
+ * What a day's adds offer, in its first row's ⋯ (Sam, Nov 17: two taps for Quick and Regular are fine, for a calmer page;
+ * lunch stays as an option, Nov 16), each saying what it does ("each item should say add").
+ */
+const ADDS: Kind[] = ["quick", "regular", "breakfast", "lunchmeal", "kids", "dessert", "side"];
+const ADD_WORDS: Record<Kind, string> = { quick: "Add a quick dinner", regular: "Add a regular dinner", breakfast: "Add breakfast", lunchmeal: "Add lunch", kids: "Add a kids' dinner", dessert: "Add dessert", side: "Add a side" };
+const addOptions = ADDS.map((k) => <option key={k} value={k}>{ADD_WORDS[k]}</option>);
 /** The kinds in the order she plans them, with their headings in the add sheet (Nov 17). */
 const KIND_ORDER: Kind[] = ["quick", "regular", "kids", "breakfast", "lunchmeal", "dessert", "side"];
 const KIND_HEADERS: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids' dinners", breakfast: "Breakfast", lunchmeal: "Lunch", dessert: "Desserts", side: "Sides" };
@@ -35,8 +38,8 @@ function dayName(day: string): string {
 
 /**
  * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
- * day has Quick and Regular, which open her recipes of that kind, and Other (a ⋯ on the right) for the other kinds. A day
- * can hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
+ * day's adds (Quick, Regular and the other kinds) are in its first row's ⋯, or a quiet Add on a day with nothing yet. A
+ * day can hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
  * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
  */
@@ -55,7 +58,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
   const undated = dishes.filter((d) => !d.day);
   const later = dishes.filter((d) => d.day && d.day > days[days.length - 1]);
-  const meal = (d: Dish) => {
+  const meal = (d: Dish, first = false) => {
     const r = recipes.find((x) => x.id === d.recipe);
     const name = mealName(d.recipe, recipes);
     return (
@@ -67,10 +70,12 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
           <select value="" aria-label={`More for ${name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}>
+            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); else if (v && d.day) onAdd(v as Kind, d.day); }}>
             <option value="" disabled>{name}</option>
             <option value="move">Move to another day</option>
             <option value="take">Take off the plan</option>
+            {/* The day's adds ride on its first row's ⋯ (Sam, Nov 17), under the day's name. */}
+            {first && d.day && <optgroup label={`Add to ${dayName(d.day)}`}>{addOptions}</optgroup>}
           </select>
         </label>
       </div>
@@ -87,37 +92,28 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
       {plan && (
         <>
           {days.map((day) => {
-            // Calmer (Sam, Nov 17: "I like the one tap access to quick regular but the page is busy"): a day without a dinner
-            // shows Quick and Regular as quiet words, one tap each; a day with one shows only its dinners. The day's ⋯ by its
-            // date has the rest, and Quick and Regular too once the day has a dinner.
-            const planned = dishes.some((d) => d.day === day && (d.kind === "quick" || d.kind === "regular" || d.kind === "kids"));
-            const link = "relative flex h-11 items-center gap-1 t-sub font-semibold text-accent before:absolute before:-inset-x-2 before:inset-y-0 before:content-[''] active:opacity-60";
+            // Calmer (Sam, Nov 17): the day's adds live in its first row's ⋯, two taps to the sheet. A day without a meal
+            // has one quiet row, Add, which opens the same choices; a day with meals adds through its first meal's ⋯.
+            const mine = dishes.filter((d) => d.day === day);
             return (
-              <Group key={day} header={dayName(day)} aside={
-                <label className="relative -my-2 -mr-2 flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-                  <span aria-hidden>⋯</span>
-                  <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-                    onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
-                    <option value="" disabled>{dayName(day)}</option>
-                    {planned && <option value="quick">Add a quick dinner</option>}
-                    {planned && <option value="regular">Add a regular dinner</option>}
-                    {MORE.map((k) => <option key={k} value={k}>{ADD_OTHER[k]}</option>)}
-                  </select>
-                </label>
-              }>
-                {dishes.filter((d) => d.day === day).map(meal)}
-                {!planned && (
-                  <div className="flex gap-6 px-4">
-                    <button className={link} onClick={() => onAdd("quick", day)} aria-label={`Quick for ${dayName(day)}`}><Icon name="plus" className="size-4" strokeWidth={2.2} />Quick</button>
-                    <button className={link} onClick={() => onAdd("regular", day)} aria-label={`Regular for ${dayName(day)}`}><Icon name="plus" className="size-4" strokeWidth={2.2} />Regular</button>
-                  </div>
+              <Group key={day} header={dayName(day)}>
+                {mine.map((d, i) => meal(d, i === 0))}
+                {!mine.length && (
+                  <label className="relative flex h-12 items-center gap-1.5 px-4 t-sub font-semibold text-accent">
+                    <Icon name="plus" className="size-4" strokeWidth={2.2} />Add
+                    <select value="" aria-label={`Add to ${dayName(day)}`} className="absolute inset-0 cursor-pointer opacity-0 text-base"
+                      onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
+                      <option value="" disabled>{dayName(day)}</option>
+                      {addOptions}
+                    </select>
+                  </label>
                 )}
               </Group>
             );
           })}
           <button onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>
-          {later.length > 0 && <Group header="Later">{later.map(meal)}</Group>}
-          {undated.length > 0 && <Group header="Not on a day">{undated.map(meal)}</Group>}
+          {later.length > 0 && <Group header="Later">{later.map((d) => meal(d))}</Group>}
+          {undated.length > 0 && <Group header="Not on a day">{undated.map((d) => meal(d))}</Group>}
         </>
       )}
       {moving && <PickDaySheet name={mealName(moving.recipe, recipes)} onClose={() => setMoving(null)} onPick={(day) => { const d = moving; setMoving(null); if (day !== d.day) onMove(d, day); }} />}
