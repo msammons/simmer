@@ -25,7 +25,7 @@ export type StockRow = {
 
 const answerOf = (it: Item | null): Answer => (!it ? "check" : it.have ? "have" : it.check ? "check" : "need");
 
-export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRow[] {
+export function rowsOf(list: ListState | null, kitchen: Kitchen | null, opts: { all?: boolean } = {}): StockRow[] {
   const items = (list?.items ?? []).filter((i) => !i.checked);
   const find = (name: string) => items.find((i) => norm(i.item) === norm(name)) ?? null;
   const row = (key: string, name: string, section: Section, store: Store, it: Item | null, staple: Staple | null, frozen: Frozen | null): StockRow => {
@@ -38,7 +38,8 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
     if (known.has(norm(s.item))) continue;
     const it = find(s.item);
     // Specialty (Nov 16): shown only while on the list or answered; after the shop it leaves until added again.
-    if (s.kind === "specialty" && !it) continue;
+    // With Show all (Nov 17), every kept thing shows, hidden specialty things too.
+    if (s.kind === "specialty" && !it && !opts.all) continue;
     known.add(norm(s.item));
     rows.push(row(`s|${norm(s.item)}`, s.item, s.section, s.store, it, s, null));
   }

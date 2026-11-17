@@ -44,7 +44,9 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const [renaming, setRenaming] = useState<string | null>(null); // "Rename group" open for this group
   const [ungrouping, setUngrouping] = useState<string | null>(null); // waiting on "Remove the … group?"
   const [added, setAdded] = useState(""); // the thing just added: brought into view and lit for a moment
-  const rows = rowsOf(list, kitchen);
+  // Show all (Sam, Nov 17: a hide/show with a checkmark, in a ⋯ by Add): every kept thing and every group, opened.
+  const [showAll, setShowAll] = useState(false);
+  const rows = rowsOf(list, kitchen, { all: showAll });
   const groups = [...new Map((list?.staples ?? []).filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const toggle = (key: string) => setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={() => setAdded("")} />;
@@ -53,7 +55,17 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       <BrandBar />
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }} />
+      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }}
+        trailing={
+          <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
+            <span aria-hidden>⋯</span>
+            <select value="" aria-label="More for the list" className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+              onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
+              <option value="" disabled>List</option>
+              <option value="all">{showAll ? "✓ Show all" : "Show all"}</option>
+            </select>
+          </label>
+        } />
       {!list && <Held />}
       {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
@@ -64,28 +76,28 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
             {linesOf(here).flatMap((l, i, all) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
-              const isOpen = open.has(key);
+              const isOpen = showAll || open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
               // Nothing to show or hide (every thing in it is Need): the header stays, without Show all / Show less (Sam, Nov 16).
               const toggles = !l.rows.every((r) => r.answer === "need");
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
-              // A group (Nov 16, Sam): full width with nothing indented, a colored line around its cells, a tinted header
-              // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
+              // A group (Nov 16-17, Sam): full width with nothing indented, a colored line around its cells, a tinted header
+              // row with the group's name; its ⋯ has Show all, checked while open (tapping the header does the same).
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
                   <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
-                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && toggle(key)}
+                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && !showAll && toggle(key)}
                       className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
                       <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
-                      {toggles && <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>}
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-accent">
                       <span aria-hidden>⋯</span>
                       <select value="" aria-label={`More for the ${l.name} group`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
-                        onChange={(e) => { if (e.target.value === "rename") setRenaming(l.name); else if (e.target.value === "remove") setUngrouping(l.name); }}>
+                        onChange={(e) => { const v = e.target.value; if (v === "all") toggle(key); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
+                        {toggles && <option value="all" disabled={showAll}>{isOpen ? "✓ Show all" : "Show all"}</option>}
                         <option value="rename">Rename group</option>
                         <option value="remove">Remove group</option>
                       </select>
@@ -142,8 +154,8 @@ const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-
  * specialty, without a crowded sheet): Specialty or Common, and a group, each the phone's own picker; New group… turns
  * the group into a small box. Something already kept shows as she types; tapping it marks it Need.
  */
-function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = false }: {
-  staples: Staple[]; shown: Set<string>; label: string; placeholder: string; autoFocus?: boolean;
+function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = false, trailing }: {
+  staples: Staple[]; shown: Set<string>; label: string; placeholder: string; autoFocus?: boolean; trailing?: React.ReactNode;
   onAdd: (text: string, more: { kind: StapleKind; group: string }) => void;
 }) {
   const [text, setText] = useState("");
@@ -167,6 +179,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
+        {trailing}
       </div>
       {/* Once she types something new (Nov 16, Sam: they "don't need to appear until you add"). It shows under the field
           as she types, so nothing she's about to tap moves; something already kept needs neither. */}
