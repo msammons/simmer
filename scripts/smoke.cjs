@@ -478,7 +478,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await page.keyboard.press("Escape"); await page.waitForTimeout(400);
         await page.unroute("**/api/checkout");
       }
-      ok("shop: a Safeway row says only how many under its name (Nov 17)", await seen(tick("Milk").getByText(/^Need 1 gallon$/)) && (await tick("Milk").getByText(/Lucerne/).count()) === 0);
+      ok("shop: a Safeway row says its Safeway product and how many under its name", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
       ok("shop: no Done shopping; Show checked starts on (Nov 14)", (await page.getByRole("button", { name: "Done shopping" }).count()) === 0 && (await showCheckedText()) === "✓ Show checked");
       // Add puts the usual in the cart: − n + at once, the helper's answer behind it.
