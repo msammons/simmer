@@ -159,7 +159,9 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
   const reset = () => { setText(""); setKind("specialty"); setGroup(""); setNewGroup(false); };
   const add = (t: string) => { onAdd(t, { kind, group: group.trim() }); reset(); };
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5">
+    // Only Add adds (Sam, Nov 17: finishing a new group's name added the thing): the keyboard's Done closes the keyboard.
+    <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5"
+      onKeyDown={(e) => { if (e.key === "Enter" && e.target instanceof HTMLInputElement) { e.preventDefault(); e.target.blur(); } }}>
       <div className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
