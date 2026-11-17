@@ -131,7 +131,7 @@ export function addNeed(staples: Staple[], text: string, act: Pick<StockActions,
   act.keepAdd(had?.item ?? text, had ? undefined : with_?.section, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
 }
 
-const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 t-sub font-semibold text-ink outline-none ring-accent focus:ring-2";
+const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 text-base font-semibold text-ink outline-none ring-accent focus:ring-2";
 
 /**
  * A name and Add, and for something new one small row (Nov 16, Sam: "the option to pick or make a group" and common or
@@ -174,7 +174,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
           </span>
           {newGroup ? (
             <input value={group} onChange={(e) => setGroup(e.target.value.slice(0, 40))} placeholder="Group name" aria-label="New group" autoFocus enterKeyHint="done"
-              className="h-9 min-w-0 flex-1 rounded-full bg-sunk px-3.5 t-sub outline-none ring-accent focus:ring-2" />
+              className="h-9 min-w-0 flex-1 rounded-full bg-sunk px-3.5 text-base outline-none ring-accent focus:ring-2" />
           ) : (
             <span className="relative min-w-0">
               <select aria-label="Group" value={group} onChange={(e) => (e.target.value === "\u0000new" ? (setNewGroup(true), setGroup("")) : setGroup(e.target.value))} className={`${pillSelect} max-w-full`}>
