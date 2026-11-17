@@ -1,13 +1,28 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetKv } from "./kv";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, safewaySignedOut, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
 
 describe("jobs for the Safeway helper", () => {
-  beforeEach(() => { resetJobs(); resetSafeway(); });
+  beforeEach(() => { resetJobs(); resetSafeway(); resetKv(); });
+
+  it("keeps whether Safeway was last seen signed out, and doesn't change the cart while it is (Nov 16)", async () => {
+    await setCartLine({ ...milk, qty: 1 });
+    const finish = async (kind: "cart" | "checkoutPrepare", raw: Record<string, unknown>) => {
+      const j = await queueJob(kind, {}); await takeJob("1.0.0", true); await finishJob(j.id, true, raw);
+    };
+    expect(await safewaySignedOut()).toBe(false);
+    await finish("cart", { products: [], signedIn: false });
+    expect(await safewaySignedOut()).toBe(true);
+    expect((await loadCart()).map((l) => l.productId)).toEqual([milk.productId]);
+    await finish("cart", { products: [{ id: milk.productId, name: milk.name, price: milk.price, image: "", inCart: true, qty: 1 }], signedIn: true });
+    expect(await safewaySignedOut()).toBe(false);
+    await finish("checkoutPrepare", { stopped: "signed out", chosen: null, final: null });
+    expect(await safewaySignedOut()).toBe(true);
+  });
 
   it("never guesses the helper's away from when it last checked in (Nov 11: no timer keeps that fresh)", async () => {
     expect(await helperStatus()).toMatchObject({ answering: true, away: false });

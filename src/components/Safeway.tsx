@@ -51,6 +51,8 @@ export function useSafeway() {
   // A job the helper didn't pick up: Shop drops its Safeway controls and the Safeway rows are a plain checklist (Nov 3).
   const [away, setAway] = useState(false);
   const [outdated, setOutdated] = useState(false);
+  // Safeway signed out on the computer (Nov 16): Shop greys the cart and hides what's in it, since it may not be right.
+  const [signedOut, setSignedOut] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Record<string, number>>({});
   const [problem, setProblem] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export function useSafeway() {
     try {
       const r = await api.cart();
       if (!alive.current) return;
-      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setAway(r.away === true); setOutdated(r.outdated === true); setLoaded(true);
+      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setAway(r.away === true); setOutdated(r.outdated === true); setSignedOut(r.signedOut === true); setLoaded(true);
     } catch (e) { if (!(e instanceof AuthError) && alive.current) setLoaded(true); }
   }, []);
   useEffect(() => {
@@ -152,7 +154,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, answering, away, outdated, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf, forget, show };
+  return { cart, picks, answering, away, outdated, signedOut, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf, forget, show };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
@@ -260,7 +262,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       : { query: q, state: "failed", products: [], signedIn: true } }));
     // A problem shows over the page (Nov 11: no bars); the results place says what's left to do.
     if (!r.ok) sw.setProblem(r.problem || NOT_ANSWERING);
-    else if (!signedIn) sw.setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`);
+    else if (!signedIn) { sw.setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`); void sw.refresh(); }
   }, [sw, store]);
   // The item showing is searched for when it comes up (once; going back to it shows what was found). Its search words
   // are kept from then on, so a pick saved while it shows doesn't start another search.

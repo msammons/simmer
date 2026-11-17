@@ -47,14 +47,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
      * for Milk, Eggs and a long-named thing, and the helper doing each cart change (1.5 s later with `helperSlow`).
      * `away`: a job went unanswered, so Shop is a plain checklist.
      */
-    const fakeSafeway = async ({ helperSlow = false, away = false } = {}) => {
+    const fakeSafeway = async ({ helperSlow = false, away = false, signedOut = false } = {}) => {
       const cart = [{ cart: "safeway", productId: "p-loose", name: "Safeway Kitchens Sparkling Water Lime Flavored 12 Pack 12 Fl Oz Cans", price: "$5.99", image: "", qty: 1, itemId: "", item: "", updated: "" }];
       const picks = [
         { item: "Milk", id: "p-milk", name: "Lucerne 2% Reduced Fat Milk - 1 Gallon" },
         { item: "Eggs", id: "p-eggs", name: "Lucerne Large Eggs - 12 Count" },
         { item: "Extra large organic heirloom tomatoes for the big salad", id: "p-tom", name: "O Organics Heirloom Tomatoes Extra Large Family Size Value Pack - 2 Lb" },
       ];
-      const onCart = (r) => r.fulfill({ json: { cart, picks, answering: !away, away, outdated: false } });
+      const onCart = (r) => r.fulfill({ json: { cart, picks, answering: !away, away, outdated: false, signedOut } });
       const onJobs = async (r) => {
         const req = r.request();
         if (req.method() !== "POST") return r.fulfill({ json: { job: { id: "fake", kind: "setQty", status: "done", result: {} }, answering: true } });
@@ -487,6 +487,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: with Safeway out of reach, its rows are a plain checklist", (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway|One more .*)$/ }).count()) === 0 && (await swGroup.locator("h2 + *").count()) === 0 && (await tick("Milk").count()) === 1);
       await page.screenshot({ path: `${dir}/5c-shop-away.png`, fullPage: true });
       await awayFake.stop();
+      // Safeway signed out on the computer (Nov 16): the cart is greyed, says so, and shows nothing that's in it.
+      const outFake = await fakeSafeway({ signedOut: true });
+      await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(400);
+      await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
+      ok("shop: with Safeway signed out, the cart is greyed and empty", (await page.getByRole("button", { name: "Signed out" }).isDisabled())
+        && (await page.getByRole("button", { name: "Check out" }).count()) === 0
+        && (await page.getByText(/Sparkling Water/).count()) === 0
+        && (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway)$/ }).count()) === 0
+        && (await page.getByRole("button", { name: /Ordered\?/ }).count()) === 0);
+      await page.screenshot({ path: `${dir}/5d-shop-signed-out.png`, fullPage: true });
+      await outFake.stop();
       await tabBar.getByRole("button", { name: "Stock" }).tap(); await page.waitForTimeout(800);
       await needOf("Milk").tap(); await page.waitForTimeout(1500);
       ok("stock: tapping Need again takes it back off", (await answerOf("Milk")) === "check");

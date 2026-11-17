@@ -67,21 +67,22 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 /**
  * One line above the list (Sam, Nov 14): a Show checked checkbox, lined up with the rows' (on, what's ticked stays, struck through; off,
  * it's hidden; ticked things stay on the list until a new plan empties it) and, with something in the Safeway cart, its
- * price and a Check out button with a cart.
+ * price and a Check out button with a cart. With Safeway signed out on the computer (Nov 16) the cart is greyed: no
+ * price, and the button says Signed out and can't be pressed.
  */
-function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void } | null }) {
+function TopLine({ showGot, onShowGot, cart }: { showGot: boolean; onShowGot: () => void; cart: { price: string; onCheckOut: () => void; off?: boolean } | null }) {
   return (
     // The checkbox lines up with the rows' (Sam, Nov 14: "would look better as a checkbox aligned with the other checkboxes").
     <div className="flex min-h-10 items-center gap-3 pl-4">
-      <button role="checkbox" aria-checked={showGot} onClick={onShowGot} className="flex items-center gap-3 py-1 t-sub font-semibold active:opacity-70">
+      <button role="checkbox" aria-checked={showGot} onClick={onShowGot} className="flex shrink-0 items-center gap-3 whitespace-nowrap py-1 t-sub font-semibold active:opacity-70">
         <Check on={showGot} />
         Show checked
       </button>
       {cart && (
         <span className="ml-auto flex min-w-0 items-center gap-2.5">
-          <span className="truncate t-sub text-muted">{cart.price}</span>
-          <button onClick={cart.onCheckOut} className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 t-sub font-semibold text-on-accent active:scale-95">
-            <Icon name="cart" className="size-[18px]" strokeWidth={2} />Check out
+          {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
+          <button onClick={cart.onCheckOut} disabled={cart.off} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
+            <Icon name="cart" className="size-[18px]" strokeWidth={2} />{cart.off ? "Signed out" : "Check out"}
           </button>
         </span>
       )}
@@ -134,7 +135,10 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const findOf = (id: string) => toFind.find((f) => f.id === id);
   // Every Safeway row's product (ticked ones too, so a ticked row still says what was bought).
   const infos = new Map(findItems(items.filter((i) => i.store === "safeway").map((i) => ({ ...i, checked: false })), list?.staples ?? [], sw.picks).map((f) => [f.id, f]));
-  const live = sw.loaded && !sw.away; // Safeway can be reached: its rows get their controls
+  // Safeway signed out on the computer (Nov 16, Sam): what Simmer has as the cart may not be right, so it isn't shown
+  // and the Safeway rows are a plain checklist until a cart read sees Safeway signed in again.
+  const signedOut = sw.loaded && sw.signedOut;
+  const live = sw.loaded && !sw.away && !signedOut; // Safeway can be reached: its rows get their controls
 
   // Opening Shop reads Safeway's own cart, and Simmer's copy takes what's there (Nov 14: only the helper's panel did,
   // so on the phone the copy went stale: 6 in the cart here, 4 on Safeway).
@@ -144,9 +148,16 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); });
     return () => c.abort();
   }, [run, refresh]);
+  // Signed out: coming back to Simmer (after signing in on the computer) reads Safeway's cart again.
+  useEffect(() => {
+    if (!signedOut) return;
+    const back = () => { if (document.visibilityState === "visible") run("cart", {}).then((r) => { if (r.ok) refresh(); }); };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [signedOut, run, refresh]);
 
   // The cart, with a change on its way counted (taken out: gone at once).
-  const lines = sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })).filter((l) => l.qty > 0);
+  const lines = signedOut ? [] : sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })).filter((l) => l.qty > 0);
   const { total, estimate } = cartTotal(lines);
   const count = lines.reduce((n, l) => n + l.qty, 0);
   // Each Safeway row's cart line (its first, when there are more); every other line ends the Safeway group.
@@ -214,7 +225,9 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="list" title={where === "all" ? "Nothing on the list" : `Nothing for ${STORE_NAMES[where]}`} /> : (
         <>
           <TopLine showGot={showGot} onShowGot={() => setShowGot(!showGot)}
-            cart={live && count > 0 && (where === "all" || where === "safeway") ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true) } : null} />
+            cart={where !== "all" && where !== "safeway" ? null
+              : signedOut ? { price: "", onCheckOut: () => {}, off: true }
+              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true) } : null} />
           {!shown.length && <EmptyState icon="list" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
@@ -243,7 +256,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) tickIt(x, true); }} />
         </Sheet>
       )}
-      {checkingOut && <CheckoutSheet count={count} total={total} estimate={estimate} onClose={() => setCheckingOut(false)} />}
+      {checkingOut && <CheckoutSheet count={count} total={total} estimate={estimate} onClose={() => { setCheckingOut(false); void sw.refresh(); }} />}
       <ConfirmSheet open={ordering} title="Take the cart off the list?" message="Everything in the cart comes off the Safeway list, as bought." confirm="Take it off"
         onConfirm={() => {
           setOrdering(false);
