@@ -12,7 +12,7 @@ import { Icon } from "./icons";
  * Every row is the same: a tick (got it, in the store or delivered), the household's name for the thing, and one small
  * line under it (Safeway's product and how much is needed, or just the amount). While Safeway can be reached, a Safeway
  * row also has Add (its usual product into the cart), Find (Safeway's choices, in a sheet) or − n + once it's in the
- * cart; the Safeway header has what's in the cart and Auto-fill, and cart things added on Safeway's own site end the
+ * cart; the Safeway header has what's in the cart and Add usuals, and cart things added on Safeway's own site end the
  * group. When Safeway can't be reached (a job the helper didn't pick up), its rows are a plain checklist. One Done
  * shopping (confirmed first) takes what's ticked off in every store. No Clear here (Nov 11): New plan on Meals is the
  * one fresh start, and it empties the list.
@@ -191,8 +191,8 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
     const waiting = f?.picked ? sw.pending[f.picked.id] ?? 0 : 0; // just added, on its way to Safeway
     const amount = shownAmount(it.quantity);
     const need = amount;
-    const name = l?.name ?? f?.picked?.name;
-    const sub = it.store === "safeway" && name ? [name, need && `Need ${need}`].filter(Boolean).join(" · ") : amount || undefined;
+    // Only how many under the name (Sam, Nov 17); the product's own name shows in Find and on Safeway.
+    const sub = need ? (it.store === "safeway" ? `Need ${need}` : need) : undefined;
     let control: React.ReactNode = null;
     if (it.store === "safeway" && live) {
       if (l) control = <Stepper compact qty={l.qty} name={cap(it.item)} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />;
@@ -220,9 +220,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
         <label className="relative flex size-[52px] shrink-0 items-center justify-center rounded-full bg-card text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
           <select value="" aria-label="More for Shop" className="absolute inset-0 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { if (e.target.value === "checked") setShowGot(!showGot); }}>
+            onChange={(e) => { const v = e.target.value; if (v === "checked") setShowGot(!showGot); else if (v === "bought") setOrdering(true); }}>
             <option value="" disabled>Shop</option>
             <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
+            {/* For when Simmer can't tell by itself that the order went through (Sam, Nov 17: into this ⋯, from a link under Safeway). */}
+            {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
           </select>
         </label>
       </form>
@@ -237,7 +239,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (
-              <button onClick={autoFill} className="shrink-0 t-foot font-semibold text-accent">Auto-fill {usual.length}</button>
+              <button onClick={autoFill} className="shrink-0 t-foot font-semibold text-accent">Add usuals ({usual.length})</button>
             )}>
               {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}
@@ -248,7 +250,6 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
             </Group>
             {/* For when Simmer can't tell by itself that the order went through (it reads Safeway's Purchases page once
                 the cart page says it's empty, Nov 3). */}
-            {s === "safeway" && lines.length > 0 && <button onClick={() => setOrdering(true)} className="w-full py-2 t-sub font-semibold text-muted">Ordered? Mark the cart bought</button>}
             </div>
           ))}
         </>
