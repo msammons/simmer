@@ -4,7 +4,7 @@ import { type Item, type Kitchen, type ListState, type Section, type Staple, typ
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
 import { Icon } from "./icons";
-import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Segmented, Sheet } from "./ui";
+import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
@@ -16,8 +16,8 @@ import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Segmented
  *
  * Nov 16 (Robin's run): common things always show; specialty things show only while they're on the list or answered,
  * and leave after the shop. Things she puts in the same group (Cheese, Yogurt) sit under it: closed, a group shows
- * only what's marked Need; open, all of them; a group of one is just its thing. The big + adds something in a few taps,
- * marked Need at once.
+ * only what's marked Need; open, all of them; a group of one is just its thing. The field at the top and the tab bar's
+ * Quick add put something on the list as Need at once.
  */
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -37,7 +37,6 @@ export type StockActions = {
 
 export function StockScreen({ list, kitchen, act }: { list: ListState | null; kitchen: Kitchen | null; act: StockActions }) {
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
-  const [adding, setAdding] = useState(false);
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   const [open, setOpen] = useState<Set<string>>(new Set()); // the groups opened
   const rows = rowsOf(list, kitchen);
@@ -48,7 +47,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
     <div className="space-y-5">
       <BrandBar />
       <h1 className="sr-only">Stock</h1>
-      <Button icon="plus" onClick={() => setAdding(true)} className="w-full">Add something</Button>
+      {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
+      <AddFields staples={list?.staples ?? []} label="Add something to Stock" placeholder="Add something" onAdd={(t, more) => addNeed(list?.staples ?? [], t, act, more)} />
       {!list && <Held />}
       {list && !rows.length && <EmptyState icon="home" title="Nothing in Stock yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
@@ -73,7 +73,6 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
           </Group>
         );
       })}
-      {adding && <AddSheet staples={list?.staples ?? []} groups={groups} onClose={() => setAdding(false)} onAdd={(text, more) => { setAdding(false); act.keepAdd(text, undefined, { ...more, need: true }); }} />}
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
       <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from Stock?` : ""} message="It stops showing here." confirm="Remove from Stock" danger
         onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
@@ -97,44 +96,83 @@ function GroupPicker({ groups, value, onChange }: { groups: string[]; value: str
 }
 
 /**
- * Quick add (Nov 16): a name, common or specialty, maybe a group, and it's on the list as Need. Something already kept
- * shows as she types; tapping it marks it Need.
+ * Something added as Need (Nov 16): a thing already kept is marked Need as it is; a new one is kept as specialty (it
+ * leaves Stock after the shop; ⋯ makes it common or puts it in a group).
  */
-function AddSheet({ staples, groups, onClose, onAdd }: {
-  staples: Staple[]; groups: string[]; onClose: () => void;
-  onAdd: (text: string, more: { kind?: StapleKind; group?: string }) => void;
+export function addNeed(staples: Staple[], text: string, act: Pick<StockActions, "keepAdd">, more: { kind?: StapleKind; group?: string } = {}) {
+  const had = staples.find((s) => norm(s.item) === norm(text));
+  act.keepAdd(had?.item ?? text, undefined, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
+}
+
+const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 t-sub font-semibold text-ink outline-none ring-accent focus:ring-2";
+
+/**
+ * A name and Add, and for something new one small row (Nov 16, Sam: "the option to pick or make a group" and common or
+ * specialty, without a crowded sheet): Specialty or Common, and a group, each the phone's own picker; New group… turns
+ * the group into a small box. Something already kept shows as she types; tapping it marks it Need.
+ */
+function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
+  staples: Staple[]; label: string; placeholder: string; autoFocus?: boolean;
+  onAdd: (text: string, more: { kind: StapleKind; group: string }) => void;
 }) {
   const [text, setText] = useState("");
   const [kind, setKind] = useState<StapleKind>("specialty");
   const [group, setGroup] = useState("");
+  const [newGroup, setNewGroup] = useState(false);
+  const groups = [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const q = norm(text);
-  const known = q ? staples.filter((s) => norm(s.item).includes(q)).slice(0, 5) : [];
-  const exact = staples.some((s) => norm(s.item) === q);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) onAdd(text.trim(), { kind, group: group.trim() }); };
+  const kept = staples.some((s) => norm(s.item) === q);
+  const known = q ? staples.filter((s) => norm(s.item).includes(q) && norm(s.item) !== q).slice(0, 4) : [];
+  const reset = () => { setText(""); setGroup(""); setNewGroup(false); };
+  const add = (t: string) => { onAdd(t, { kind, group: group.trim() }); reset(); };
   return (
-    <Sheet label="Add something" title="Add something" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-5 pb-2">
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Half and half" aria-label="Add something to Stock" enterKeyHint="done" autoFocus
-          className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        {known.length > 0 && (
-          <Group header="Already in Stock">
-            {known.map((s) => <Row key={s.item} title={cap(s.item)} value="Need" accessory="chevron" onClick={() => onAdd(s.item, {})} />)}
-          </Group>
-        )}
-        {!exact && (
-          <>
-            <div className="space-y-1.5">
-              <Segmented label="How often" value={kind} onChange={setKind} options={[{ value: "common", label: "Common" }, { value: "specialty", label: "Specialty" }]} />
-              <p className="px-4 t-foot text-muted">{kind === "common" ? "Shows on Stock every time, to check." : "Shows on Stock until it's bought."}</p>
-            </div>
-            <div className="space-y-1.5">
-              <h2 className="px-4 t-foot font-semibold text-muted">Group</h2>
-              <GroupPicker groups={groups} value={group} onChange={setGroup} />
-            </div>
-          </>
-        )}
-        <Button type="submit" disabled={!text.trim()} className="w-full">Add as Need</Button>
-      </form>
+    <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5">
+      <div className="flex gap-2">
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
+          className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
+        <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
+      </div>
+      {text.trim() && !kept && (
+        <div className="flex items-center gap-2 px-1">
+          <span className="relative shrink-0">
+            <select aria-label="How often" value={kind} onChange={(e) => setKind(e.target.value as StapleKind)} className={pillSelect}>
+              <option value="specialty">Specialty</option>
+              <option value="common">Common</option>
+            </select>
+            <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          </span>
+          {newGroup ? (
+            <input value={group} onChange={(e) => setGroup(e.target.value.slice(0, 40))} placeholder="Group name" aria-label="New group" autoFocus enterKeyHint="done"
+              className="h-9 min-w-0 flex-1 rounded-full bg-sunk px-3.5 t-sub outline-none ring-accent focus:ring-2" />
+          ) : (
+            <span className="relative min-w-0">
+              <select aria-label="Group" value={group} onChange={(e) => (e.target.value === "\u0000new" ? (setNewGroup(true), setGroup("")) : setGroup(e.target.value))} className={`${pillSelect} max-w-full`}>
+                <option value="">No group</option>
+                {groups.map((g) => <option key={g} value={g}>{cap(g)}</option>)}
+                <option value={"\u0000new"}>New group…</option>
+              </select>
+              <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            </span>
+          )}
+        </div>
+      )}
+      {known.length > 0 && (
+        <Group>
+          {known.map((s) => <Row key={s.item} title={cap(s.item)} value="Need" onClick={() => add(s.item)} />)}
+        </Group>
+      )}
+    </form>
+  );
+}
+
+/**
+ * Quick add (Nov 16, Sam: the big + in the tab bar, from any page): only a name, and it's on the list as Need. Something
+ * already kept shows as she types; tapping it marks it Need.
+ */
+export function QuickAddSheet({ staples, onClose, onAdd }: { staples: Staple[]; onClose: () => void; onAdd: (text: string, more: { kind: StapleKind; group: string }) => void }) {
+  return (
+    <Sheet label="Quick add" title="Quick add" onClose={onClose}>
+      <div className="pb-2 pt-1"><AddFields staples={staples} label="Quick add" placeholder="Half and half" autoFocus onAdd={onAdd} /></div>
     </Sheet>
   );
 }
