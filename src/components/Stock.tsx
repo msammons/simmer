@@ -42,7 +42,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const rows = rowsOf(list, kitchen);
   const groups = [...new Map((list?.staples ?? []).filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const toggle = (key: string) => setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const item = (r: StockRow, inGroup = false) => <StockItem key={r.key} r={r} act={act} inGroup={inGroup} onRemove={setRemoving} onGroup={setGrouping} />;
+  const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} />;
   return (
     <div className="space-y-5">
       <BrandBar />
@@ -61,13 +61,17 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               const key = `${id}|${norm(l.name)}`;
               const isOpen = open.has(key);
               const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
+              // A group (Nov 16, Sam): outlined, its things not indented; the header says how many are in it.
               return [
-                <button key={key} type="button" aria-expanded={isOpen} onClick={() => toggle(key)}
-                  className={`flex h-[3.75rem] w-full items-center gap-2 pl-4 pr-4 text-left ${l.rows.some((r) => r.meal) ? "bg-accent/15" : ""}`}>
-                  <span className="min-w-0 flex-1 truncate t-body font-semibold">{cap(l.name)}</span>
-                  <Icon name="down" className={`size-5 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`} />
-                </button>,
-                ...shown.map((r) => item(r, true)),
+                <div key={key} className="m-1.5 divide-y divide-line overflow-hidden rounded-2xl ring-1 ring-ink/15">
+                  <button type="button" aria-expanded={isOpen} aria-label={`${cap(l.name)}, ${l.rows.length} things`} onClick={() => toggle(key)}
+                    className={`flex h-[3.25rem] w-full items-center gap-2 pl-4 pr-3.5 text-left ${l.rows.some((r) => r.meal) ? "bg-accent/15" : ""}`}>
+                    <span className="min-w-0 flex-1 truncate t-body font-semibold">{cap(l.name)}</span>
+                    <span className="t-sub text-muted">{l.rows.length}</span>
+                    <Icon name="down" className={`size-5 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {shown.map((r) => item(r))}
+                </div>,
               ];
             })}
           </Group>
@@ -132,7 +136,8 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </div>
-      {text.trim() && !kept && (
+      {/* Always there (Nov 16, Sam: they should "appear immediately"); shown on focus, it moved the page under her tap. */}
+      {!kept && (
         <div className="flex items-center gap-2 px-1">
           <span className="relative shrink-0">
             <select aria-label="How often" value={kind} onChange={(e) => setKind(e.target.value as StapleKind)} className={pillSelect}>
@@ -179,7 +184,7 @@ function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; group
 }
 
 /** One thing: its name (a meal thing's amount under it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
-function StockItem({ r, act, inGroup, onRemove, onGroup }: { r: StockRow; act: StockActions; inGroup: boolean; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void }) {
+function StockItem({ r, act, onRemove, onGroup }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void }) {
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
     return (
@@ -191,7 +196,7 @@ function StockItem({ r, act, inGroup, onRemove, onGroup }: { r: StockRow; act: S
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div className={`flex h-[3.75rem] items-center gap-2 pr-2 ${inGroup ? "pl-8" : "pl-4"} ${r.meal ? "bg-accent/15" : ""}`}>
+    <div className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       <span className="min-w-0 flex-1">
