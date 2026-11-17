@@ -193,3 +193,7 @@ button, a, [role="button"] {
 .wash {
   background: radial-gradient(120% 55% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%) center top / 100vw 100dvh no-repeat;
 }
+
+/* A thing just added on List, lit for a moment where it landed (Nov 16). */
+@keyframes sm-flash { from { background-color: color-mix(in srgb, var(--accent) 28%, transparent); } to { background-color: transparent; } }
+.sm-flash { animation: sm-flash 1.6s ease-out 0.3s backwards; }

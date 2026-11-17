@@ -564,6 +564,9 @@ export async function addStaple(text: string, section?: Section, opts: { kind?: 
 /** A kept thing made common or specialty, or put in a group ("" for none) (Nov 16). */
 export const setStaple = (item: string, change: { kind?: StapleKind; group?: string }) =>
   writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(change.kind && { kind: change.kind }), ...(change.group !== undefined && { group: change.group }) } : s)));
+/** A group renamed, or removed with `to` "" (Nov 16, Sam): every thing in it moves with it; the things stay kept. */
+export const renameGroup = (from: string, to: string) =>
+  writeStaples((all) => all.map((s) => (s.group && norm(s.group) === norm(from) ? { ...s, group: to } : s)));
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 

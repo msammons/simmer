@@ -3,7 +3,7 @@ import { recordTrip } from "@/lib/plan";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { clearCart, loadCart } from "@/lib/safeway";
-import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, setStaple, SECTIONS, STORES, type Item, type Section, type StapleKind, type Store } from "@/lib/groceries";
+import { addItem, addItems, addStaple, file, parseEntry, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, putBack, removeItem, removeItems, removeStaple, renameGroup, setStaple, SECTIONS, STORES, type Item, type Section, type StapleKind, type Store } from "@/lib/groceries";
 import { norm } from "@/lib/words";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
@@ -24,7 +24,8 @@ export async function GET(req: Request) {
 /**
  * POST { op, ... }: add { text, by }, many { items: { item, quantity, check? }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
  * done { store }, clear { ids } (answers with `cleared`, for Undo), putBack { items }, and Stock's keepAdd { text, section? },
- * keepRemove { item }, keepMove { item, section }, keepSet { item, kind?, group? } (keepAdd also takes kind?, group?, need?). Answers with the list as it is after the change.
+ * keepRemove { item }, keepMove { item, section }, keepSet { item, kind?, group? } (keepAdd also takes kind?, group?, need?),
+ * keepGroup { from, to } (a group renamed, or removed with to ""). Answers with the list as it is after the change.
  */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
         break;
       }
       case "keepSet": await setStaple(clean(b.item), { ...(isKind(b.kind) && { kind: b.kind }), ...(typeof b.group === "string" && { group: clean(b.group, 40) }) }); break;
+      case "keepGroup": if (!clean(b.from, 40)) throw new AppError("Which group?"); await renameGroup(clean(b.from, 40), typeof b.to === "string" ? clean(b.to, 40) : ""); break;
       case "keepRemove": await removeStaple(clean(b.item)); break;
       case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of the list?"); await moveStaple(clean(b.item), b.section); break;
       case "done": if (!isStore(b.store)) throw new AppError("Which store?"); {

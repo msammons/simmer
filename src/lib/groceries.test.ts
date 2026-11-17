@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple, renameGroup } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -79,6 +79,20 @@ describe("adding amounts up (Nov 9)", () => {
     const rows = (await loadList()).items.filter((x) => x.item === "sum-test ground turkey");
     expect(rows.map((x) => x.quantity)).toEqual(["2½ lb"]);
     await removeItems(rows.map((x) => x.id));
+  });
+});
+
+describe("groups on List (Nov 16)", () => {
+  it("renames a group with everything in it, and removing it keeps its things on their own", async () => {
+    await addStaple("smoke brie", undefined, { group: "Cheese" });
+    await addStaple("smoke gouda", undefined, { group: "cheese" });
+    await addStaple("smoke oats", undefined, { group: "Breakfast" });
+    await renameGroup("CHEESE", "Fancy cheese");
+    const group = async (n: string) => (await loadList()).staples.find((s) => s.item === n)?.group;
+    expect([await group("smoke brie"), await group("smoke gouda"), await group("smoke oats")]).toEqual(["Fancy cheese", "Fancy cheese", "Breakfast"]);
+    await renameGroup("fancy cheese", "");
+    expect([await group("smoke brie"), await group("smoke gouda")]).toEqual(["", ""]);
+    for (const n of ["smoke brie", "smoke gouda", "smoke oats"]) await removeStaple(n);
   });
 });
 

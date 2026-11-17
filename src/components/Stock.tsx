@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Item, type Kitchen, type ListState, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
@@ -30,6 +30,8 @@ export type StockActions = {
   keepMove: (item: string, section: Section) => void;
   /** A kept thing made common or specialty, or put in a group ("" for none). */
   keepSet: (item: string, change: { kind?: StapleKind; group?: string }) => void;
+  /** A group renamed, or removed (`to` ""): its things move with it and stay kept. */
+  keepGroup: (from: string, to: string) => void;
   /** A dinner's thing that isn't kept in Stock: moved to another section (it's on the list under that section too). */
   mealMove: (it: Item, section: Section) => void;
   keepRemove: (s: Staple) => void;
@@ -39,16 +41,19 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   const [open, setOpen] = useState<Set<string>>(new Set()); // the groups opened
+  const [renaming, setRenaming] = useState<string | null>(null); // "Rename group" open for this group
+  const [ungrouping, setUngrouping] = useState<string | null>(null); // waiting on "Remove the … group?"
+  const [added, setAdded] = useState(""); // the thing just added: brought into view and lit for a moment
   const rows = rowsOf(list, kitchen);
   const groups = [...new Map((list?.staples ?? []).filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const toggle = (key: string) => setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} />;
+  const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={() => setAdded("")} />;
   return (
     <div className="space-y-5">
       <BrandBar />
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => addNeed(list?.staples ?? [], t, act, more)} />
+      <AddFields staples={list?.staples ?? []} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }} />
       {!list && <Held />}
       {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
@@ -65,11 +70,23 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               // row with the group's name, and a plain "Show all" / "Show less" in place of a caret.
               return [
                 <div key={key} className="relative divide-y divide-line">
-                  <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={() => toggle(key)}
-                    className="flex h-[3.25rem] w-full items-center gap-2 bg-accent/10 pl-4 pr-4 text-left">
-                    <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
-                    <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>
-                  </button>
+                  <div className="flex h-[3.25rem] items-center bg-accent/10 pr-2">
+                    <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={() => toggle(key)}
+                      className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
+                      <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
+                      <span className="shrink-0 t-sub font-semibold text-accent">{isOpen ? "Show less" : "Show all"}</span>
+                    </button>
+                    {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
+                    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-accent">
+                      <span aria-hidden>⋯</span>
+                      <select value="" aria-label={`More for the ${l.name} group`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
+                        onChange={(e) => { if (e.target.value === "rename") setRenaming(l.name); else if (e.target.value === "remove") setUngrouping(l.name); }}>
+                        <option value="" disabled>{cap(l.name)}</option>
+                        <option value="rename">Rename group</option>
+                        <option value="remove">Remove group (keeps its things)</option>
+                      </select>
+                    </label>
+                  </div>
                   {shown.map((r) => item(r))}
                   <span aria-hidden className="pointer-events-none absolute inset-0 !border-0 ring-2 ring-inset ring-accent/60" />
                 </div>,
@@ -78,6 +95,9 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
           </Group>
         );
       })}
+      {renaming && <RenameGroupSheet name={renaming} onClose={() => setRenaming(null)} onSave={(to) => { const from = renaming; setRenaming(null); if (to !== from) act.keepGroup(from, to); }} />}
+      <ConfirmSheet open={Boolean(ungrouping)} title={ungrouping ? `Remove the ${cap(ungrouping)} group?` : ""} message="The things in it stay on the list, on their own." confirm="Remove group"
+        onConfirm={() => { if (ungrouping) act.keepGroup(ungrouping, ""); setUngrouping(null); }} onCancel={() => setUngrouping(null)} />
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
       <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="It stops showing here." confirm="Remove from the list" danger
         onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
@@ -106,7 +126,9 @@ function GroupPicker({ groups, value, onChange }: { groups: string[]; value: str
  */
 export function addNeed(staples: Staple[], text: string, act: Pick<StockActions, "keepAdd">, more: { kind?: StapleKind; group?: string } = {}) {
   const had = staples.find((s) => norm(s.item) === norm(text));
-  act.keepAdd(had?.item ?? text, undefined, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
+  // Into a group: where the group's other things are, so it doesn't split across sections (Nov 16).
+  const with_ = more.group ? staples.find((s) => s.group && norm(s.group) === norm(more.group!)) : undefined;
+  act.keepAdd(had?.item ?? text, had ? undefined : with_?.section, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
 }
 
 const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 t-sub font-semibold text-ink outline-none ring-accent focus:ring-2";
@@ -128,7 +150,7 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
   const q = norm(text);
   const kept = staples.some((s) => norm(s.item) === q);
   const known = q ? staples.filter((s) => norm(s.item).includes(q) && norm(s.item) !== q).slice(0, 4) : [];
-  const reset = () => { setText(""); setGroup(""); setNewGroup(false); };
+  const reset = () => { setText(""); setKind("specialty"); setGroup(""); setNewGroup(false); };
   const add = (t: string) => { onAdd(t, { kind, group: group.trim() }); reset(); };
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5">
@@ -137,8 +159,9 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
         <Button type="submit" disabled={!text.trim()} className="shrink-0 px-5">Add</Button>
       </div>
-      {/* Always there (Nov 16, Sam: they should "appear immediately"); shown on focus, it moved the page under her tap. */}
-      {!kept && (
+      {/* Once she types something new (Nov 16, Sam: they "don't need to appear until you add"). It shows under the field
+          as she types, so nothing she's about to tap moves; something already kept needs neither. */}
+      {text.trim() && !kept && (
         <div className="flex items-center gap-2 px-1">
           <span className="relative shrink-0">
             <select aria-label="How often" value={kind} onChange={(e) => setKind(e.target.value as StapleKind)} className={pillSelect}>
@@ -171,6 +194,20 @@ function AddFields({ staples, label, placeholder, onAdd, autoFocus = false }: {
   );
 }
 
+/** A group's new name (Nov 16): its things move with it. */
+function RenameGroupSheet({ name, onClose, onSave }: { name: string; onClose: () => void; onSave: (to: string) => void }) {
+  const [to, setTo] = useState(cap(name));
+  return (
+    <Sheet label="Rename group" title="Rename group" onClose={onClose}>
+      <form onSubmit={(e) => { e.preventDefault(); if (to.trim()) onSave(to.trim()); }} className="space-y-4 pb-2 pt-1">
+        <input value={to} onChange={(e) => setTo(e.target.value.slice(0, 40))} aria-label="Group name" enterKeyHint="done" autoFocus
+          className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
+        <Button type="submit" disabled={!to.trim()} className="w-full">Save</Button>
+      </form>
+    </Sheet>
+  );
+}
+
 /** Put a kept thing in a group, or none (Nov 16). */
 function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; groups: string[]; onClose: () => void; onSave: (g: string) => void }) {
   const [group, setGroup] = useState(staple.group);
@@ -185,7 +222,10 @@ function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; group
 }
 
 /** One thing: its name (a meal thing's amount under it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
-function StockItem({ r, act, onRemove, onGroup }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void }) {
+function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void; fresh?: boolean; onSeen?: () => void }) {
+  // Just added (Nov 16): brought into view and lit for a moment, so she sees where it went (no note, nothing moves).
+  const own = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (fresh) own.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [fresh]);
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
     return (
@@ -197,7 +237,7 @@ function StockItem({ r, act, onRemove, onGroup }: { r: StockRow; act: StockActio
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""}`}>
+    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/15" : ""} ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       <span className="min-w-0 flex-1">
