@@ -41,10 +41,15 @@ async function safewayTab(windowId) {
   if (open) return open.id;
   // The panel's window may be gone (closed since; Nov 12, searches "failed" at once): then any window will do.
   try { return (await chrome.tabs.create({ url: SAFEWAY, active: false, ...(inPanel && { windowId }) })).id; }
-  catch (e) {
-    if (!inPanel) throw e;
-    await chrome.storage.session.remove("panelWindow").catch(() => {});
-    return (await chrome.tabs.create({ url: SAFEWAY, active: false })).id;
+  catch {
+    if (inPanel) {
+      await chrome.storage.session.remove("panelWindow").catch(() => {});
+      try { return (await chrome.tabs.create({ url: SAFEWAY, active: false })).id; } catch { /* no window at all */ }
+    }
+    // Chrome running with every window closed (Nov 17: every job failed with "No current window"): open a window of
+    // its own for Safeway, without taking the focus.
+    const w = await chrome.windows.create({ url: SAFEWAY, focused: false });
+    return w.tabs[0].id;
   }
 }
 

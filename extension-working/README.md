@@ -18,6 +18,8 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
   the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **Opens its own window (26.11.17).** With Chrome running but every window closed, a job opens a Safeway window
+  without taking the focus (until then each job failed with "No current window").
 - **Did the order go through? (1.3)** When the cart page says "Your shopping cart is empty." and Simmer's copy of the
   cart had something in it, the helper opens Safeway's Purchases page (`PAGE.orders.path`), presses its **Online** tab,
   reads it, and goes back to the cart page. Simmer decides: an order listed with a date on or after the day the cart was
