@@ -359,12 +359,12 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // And from ⋯ for something already kept.
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
-      ok("stock: a group says how many things are in it, and isn't indented", /2/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-label")) === "Smoke cheese, 2 things");
+      ok("stock: a closed group offers Show all", /Show all/.test(await cheese.innerText()));
       ok("stock: a group of two shows closed, with what's Need under it", (await cheese.getAttribute("aria-expanded")) === "false" && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
       ok("stock: closed, a thing answered Have tucks away", (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: open, the group shows all of them", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: open, the group shows all of them and offers Need only", /Need only/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
       await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
       await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await page.waitForTimeout(1500);
       ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
