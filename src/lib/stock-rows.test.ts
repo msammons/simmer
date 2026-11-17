@@ -54,13 +54,13 @@ describe("Stock: specialty things and groups", () => {
     expect(rowsOf(list([item({ item: "goat cheese", checked: true, for: "added by hand" })], [goat]), null)).toEqual([]);
   });
 
-  it("puts a group of two or more together, A to Z among the rest; a group of one is just its thing", () => {
+  it("puts a group's things together under it, A to Z among the rest, even a group of one (Nov 16, Sam)", () => {
     const rows = rowsOf(list([], [
       staple("Swiss", "fresh", { group: "Cheese" }), staple("Cheddar", "fresh", { group: "cheese" }), staple("Apples", "fresh"),
       staple("Greek yogurt", "fresh", { group: "Yogurt" }), staple("Eggs", "fresh"),
     ]), null);
     const lines = linesOf(rows);
     expect(lines.map((l) => (l.kind === "row" ? l.row.name : `${l.name}: ${l.rows.map((r) => r.name).join(", ")}`)))
-      .toEqual(["Apples", "Cheese: Cheddar, Swiss", "Eggs", "Greek yogurt"]);
+      .toEqual(["Apples", "Cheese: Cheddar, Swiss", "Eggs", "Yogurt: Greek yogurt"]);
   });
 });

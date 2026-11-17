@@ -341,9 +341,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
       // Something kept shows as she types in the field; tapping it marks it Need.
       await page.getByLabel("Add something to the list").tap(); await page.waitForTimeout(200);
-      ok("stock: Specialty and Group wait until she types something new", (await page.getByLabel("How often").count()) === 0 && (await page.getByLabel("Group").count()) === 0);
+      ok("stock: Specialty and Group wait until she types something new", (await page.getByLabel("How often").count()) === 0 && (await page.getByLabel("Group", { exact: true }).count()) === 0);
       await page.getByLabel("Add something to the list").fill("smoke oat bars");
-      ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group").inputValue()) === "");
+      ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group", { exact: true }).inputValue()) === "");
       await page.getByLabel("Add something to the list").fill("mil"); await page.waitForTimeout(200);
       ok("stock: typing doesn't suggest what's already showing on the list", (await page.getByRole("button", { name: /^Milk\s*Need$/ }).count()) === 0);
       await page.getByLabel("Add something to the list").fill("waffles");
@@ -353,12 +353,13 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const stockField = page.getByLabel("Add something to the list");
       await stockField.fill("smoke cheddar");
       await page.getByLabel("How often").selectOption("common");
-      await page.getByLabel("Group").selectOption({ label: "New group…" });
+      await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
       await page.getByLabel("New group").fill("Smoke cheese");
       await stockField.press("Enter"); await page.waitForTimeout(1500);
+      ok("stock: a group shows from its first thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1);
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
-      await page.getByLabel("Group").selectOption({ label: "Smoke cheese" });
+      await page.getByLabel("Group", { exact: true }).selectOption({ label: "Smoke cheese" });
       await stockField.press("Enter"); await page.waitForTimeout(1500);
       // And from ⋯ for something already kept.
       ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
@@ -382,7 +383,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1 && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
       await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await page.waitForTimeout(1500);
-      ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
+      ok("stock: with its group removed, a thing is on its own", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
       await page.screenshot({ path: `${dir}/5-stock-behaviour.png`, fullPage: true });
 
       // Shop (Nov 12): one page grouped by store, with a store filter at the top. What's out in Stock is on the list. Safeway's side is

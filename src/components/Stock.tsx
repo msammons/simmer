@@ -16,7 +16,7 @@ import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet } f
  *
  * Nov 16 (Robin's run): common things always show; specialty things show only while they're on the list or answered,
  * and leave after the shop. Things she puts in the same group (Cheese, Yogurt) sit under it: closed, a group shows
- * only what's marked Need; open, all of them; a group of one is just its thing. The field at the top puts something on
+ * only what's marked Need; open, all of them; a group shows from its first thing (Sam). The field at the top puts something on
  * the list as Need at once. Called List on screen since Nov 16 (Sam).
  */
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];

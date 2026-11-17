@@ -57,12 +57,12 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null): StockRo
 }
 
 
-/** One line on Stock within a section: a thing, or a group of two or more (Nov 16). */
+/** One line on Stock within a section: a thing, or a group (Nov 16; one thing is enough since Sam's note that day). */
 export type StockLine = { kind: "row"; row: StockRow } | { kind: "group"; name: string; rows: StockRow[] };
 
 /**
- * A section's lines, A to Z (Nov 16, Robin's rule): things in the same group sit together under it; a group of one is
- * just its thing, with its own Have | Need.
+ * A section's lines, A to Z (Nov 16, Robin's rule): things in the same group sit together under it. A group shows from
+ * its first thing (Sam, Nov 16: a group just made with one thing didn't show).
  */
 export function linesOf(rows: StockRow[]): StockLine[] {
   const groups = new Map<string, StockRow[]>();
@@ -71,7 +71,7 @@ export function linesOf(rows: StockRow[]): StockLine[] {
   const seen = new Set<string>();
   for (const r of rows) {
     const g = r.group ? groups.get(norm(r.group))! : null;
-    if (!g || g.length < 2) { lines.push({ kind: "row", row: r }); continue; }
+    if (!g) { lines.push({ kind: "row", row: r }); continue; }
     if (seen.has(norm(r.group))) continue;
     seen.add(norm(r.group));
     lines.push({ kind: "group", name: g[0].group, rows: [...g].sort((a, b) => a.name.localeCompare(b.name)) });
