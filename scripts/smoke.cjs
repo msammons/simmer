@@ -333,6 +333,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await slow("**/api/list");
       // Stock's own field (Nov 16, Sam): a name, and it's in as Need; new things are specialty.
       await page.getByLabel("Add something to the list").fill("frozen waffles"); await page.keyboard.press("Enter");
+      ok("stock: something added is brought into view and lit where it landed", (await page.locator("[data-fresh]").count()) === 1);
       ok("stock: something added shows within 150 ms, marked Need", await within150(async () => (await page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()) && (await answerOf("frozen waffles")) === "need"));
       await page.waitForTimeout(1800); await page.unroute("**/api/list");
       ok("stock: and is still there once it's saved, still Need", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 1 && (await answerOf("frozen waffles")) === "need");
@@ -340,7 +341,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
       // Something kept shows as she types in the field; tapping it marks it Need.
       await page.getByLabel("Add something to the list").tap(); await page.waitForTimeout(200);
-      ok("stock: Specialty and Group are there from the start", await page.getByLabel("How often").isVisible() && await page.getByLabel("Group").isVisible());
+      ok("stock: Specialty and Group wait until she types something new", (await page.getByLabel("How often").count()) === 0 && (await page.getByLabel("Group").count()) === 0);
       await page.getByLabel("Add something to the list").fill("smoke oat bars");
       ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group").inputValue()) === "");
       await page.getByLabel("Add something to the list").fill("waffles");
@@ -354,9 +355,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByLabel("New group").fill("Smoke cheese");
       await stockField.press("Enter"); await page.waitForTimeout(1500);
       await stockField.fill("smoke swiss");
+      await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
       await page.getByLabel("Group").selectOption({ label: "Smoke cheese" });
       await stockField.press("Enter"); await page.waitForTimeout(1500);
       // And from ⋯ for something already kept.
+      ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
       ok("stock: a closed group offers Show all", /Show all/.test(await cheese.innerText()));
@@ -365,6 +368,16 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: closed, a thing answered Have tucks away", (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       await cheese.tap(); await page.waitForTimeout(300);
       ok("stock: open, the group shows all of them and offers Show less", /Show less/.test(await cheese.innerText()) && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      // A group renamed, then removed (Nov 16, Sam: "remove or rename a category"): its things go with it, and stay.
+      await page.getByLabel("More for the Smoke cheese group").selectOption("rename"); await page.waitForTimeout(300);
+      const rename = page.getByRole("dialog", { name: "Rename group" });
+      await rename.getByLabel("Group name").fill("Smoke dairy"); await rename.getByRole("button", { name: "Save" }).tap(); await page.waitForTimeout(1500);
+      ok("stock: a group can be renamed, its things with it", (await page.getByRole("button", { name: "Smoke dairy" }).count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0
+        && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
+      await page.getByLabel("More for the Smoke dairy group").selectOption("remove"); await page.waitForTimeout(300);
+      await page.getByRole("dialog", { name: "Remove the Smoke dairy group?" }).getByRole("button", { name: "Remove group" }).tap(); await page.waitForTimeout(1500);
+      ok("stock: removing a group asks first and keeps its things on their own", (await page.getByRole("button", { name: "Smoke dairy" }).count()) === 0
+        && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1 && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       await page.getByLabel("More for smoke swiss").selectOption("remove"); await page.waitForTimeout(300);
       await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await page.waitForTimeout(1500);
       ok("stock: a group down to one is just its thing", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
