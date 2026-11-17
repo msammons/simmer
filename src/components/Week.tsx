@@ -26,6 +26,8 @@ function dayName(day: string): string {
 
 /** The kinds a day's Other offers (named More until Nov 16) (Sam, Nov 16: lunch stays as an option; desserts and kids' lunches are mostly Stock). */
 const MORE: Kind[] = ["breakfast", "lunchmeal", "kids", "dessert", "side"];
+/** Other's menu, each saying what it does (Sam, Nov 17: "each item should say add"). */
+const ADD_OTHER: Partial<Record<Kind, string>> = { breakfast: "Add breakfast", lunchmeal: "Add lunch", kids: "Add a kids' dinner", dessert: "Add dessert", side: "Add a side" };
 
 /**
  * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
@@ -83,7 +85,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                   <select value="" aria-label={`Other for ${dayName(day)}`} className="absolute inset-0 size-full cursor-pointer opacity-0 text-base"
                     onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                     <option value="" disabled>{dayName(day)}</option>
-                    {MORE.map((k) => <option key={k} value={k}>{KIND_NAMES[k] === "Kids'" ? "Kids' dinner" : KIND_NAMES[k]}</option>)}
+                    {MORE.map((k) => <option key={k} value={k}>{ADD_OTHER[k]}</option>)}
                   </select>
                 </label>
               </div>
