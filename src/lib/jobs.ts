@@ -377,6 +377,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;
     result = {
       stopped: str(raw.stopped, 60),
+      // Safeway's bags switch as the final page showed it (Nov 16): on is bringing her own; null when it wasn't read.
+      bagsOwn: typeof raw.bagsOwn === "boolean" ? raw.bagsOwn : null,
       chosen: c && str(c.id, 120) ? { id: str(c.id, 120), words: str(c.words, 160) } : null,
       final: f ? { url: str(f.url, 300), text: typeof f.text === "string" ? f.text.slice(0, 12000) : "", buttons: (Array.isArray(f.buttons) ? f.buttons : []).slice(0, 80).map((b: unknown) => str(b, 80)) } : null,
       // The free times read for picking (Nov 14), each a window's id and words; only from the listing.

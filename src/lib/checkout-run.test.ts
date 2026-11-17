@@ -38,8 +38,8 @@ const page = (change: (t: string) => string = (t) => t) => ({
   text: change(pages.pickup.text.replace(/Confirm CVV /, "").replace(/Ready by 9:05 PM Slot type FLASH price \$3\.95/, "6 AM - 7 AM price Free")),
   buttons: pages.pickup.buttons,
 });
-type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: ReturnType<typeof page> | null; times?: { id: string; words: string }[] };
-const READY: Reading = { stopped: "ready", chosen: FRI6, final: page() };
+type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: ReturnType<typeof page> | null; times?: { id: string; words: string }[]; bagsOwn?: boolean };
+const READY: Reading = { stopped: "ready", chosen: FRI6, final: page(), bagsOwn: true };
 /** The helper's listing of free times (Nov 14), and its getting ready with the one picked. */
 const helper = (kind: JobKind, args: Record<string, unknown>): Reading => (args.list ? { stopped: "times", chosen: null, final: null, times: [FRI6] } : READY);
 
@@ -171,6 +171,15 @@ describe("getting ready", () => {
     expect((await ready()).highlights).toEqual([expect.stringMatching(/more than Simmer expected/)]);
   });
 
+  it("asks for the bags she picked, shows Safeway's, and stops when they aren't the ones picked (Nov 16)", async () => {
+    does = (k, a) => (a.list ? helper(k, a) : { ...READY, bagsOwn: true });
+    await pickupTimes();
+    expect(await prepare(undefined, FRI6.id, undefined, true)).toMatchObject({ bagsOwn: true, stops: [] });
+    expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", { windowId: FRI6.id, bagsOwn: true });
+    await pickupTimes();
+    expect(((await prepare(undefined, FRI6.id, undefined, false)) as ReadyView).stops).toContain("Safeway's bags aren't the ones picked.");
+  });
+
   it("is followed while the helper is still at it, without the app keeping time", async () => {
     await pickupTimes();
     going = true;
@@ -270,7 +279,7 @@ describe("the test run", () => {
   it("goes with exactly the approved pickup time and says what it would place", async () => {
     const id = await approved();
     expect(await testRun(id)).toEqual({ ok: true, would: "Would place $6.94 · Fri 6–7 AM" });
-    expect(queueJob).toHaveBeenLastCalledWith("checkoutDry", { approvalId: id, windowId: FRI6.id });
+    expect(queueJob).toHaveBeenLastCalledWith("checkoutDry", { approvalId: id, windowId: FRI6.id, bagsOwn: true });
     expect(recorded("test run").at(-1)).toMatchObject({ ok: true, faceId: "cred-1", approvalId: id });
   });
 
@@ -475,5 +484,11 @@ describe("what Place Order looks for on a Flash time", () => {
     expect(e.whenLine).toBe("Pickup date & time Edit Thursday, Nov 12");
     expect(e.slotLine).toBe("Ready by 9:05 PM Slot type FLASH price $3.95");
     expect(pages.pickup.text).toContain(e.slotLine);
+  });
+
+  it("asks for the bags as approved, when the approval has them (Nov 16)", () => {
+    const base = { windowId: FRI6.id, windowWords: "Fri 6–7 AM", faceId: "", itemsCents: 299, cartKey: "1x1", totalCents: 694, items: 1, card: "4242", store: "100 Main St", at: 0, slot: { ready: "6 AM - 7 AM", type: "", priceCents: 0 } };
+    expect(expectFor({ ...base, bagsOwn: false } as never).bagsOwn).toBe(false);
+    expect("bagsOwn" in expectFor(base as never)).toBe(false);
   });
 });

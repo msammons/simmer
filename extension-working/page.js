@@ -41,6 +41,11 @@ export async function safewayPage(action, arg, P) {
   const label = (el) => `${el.getAttribute("aria-label") ?? ""} ${el.innerText ?? el.textContent ?? ""}`.replace(/\s+/g, " ").trim();
   const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  // Safeway's one bags switch, "Bring your own bag" (Nov 16), for setting it and for Place Order's check.
+  // Shown on the page: the switch, or the label it sits in (a styled switch hides its own box).
+  const bagSwitches = () => deepAll(document, "input[type=checkbox], [role=switch]")
+    .filter((e) => /^bring your own bags?\b/i.test(label(e)) && (visible(e) || Boolean(e.closest("label") && visible(e.closest("label")))));
+  const isOn = (e) => Boolean(e.checked) || e.getAttribute("aria-checked") === "true";
   const idOf = (a) => a.getAttribute("href")?.match(re(P.link.pattern))?.[1] ?? null;
   // Safeway builds parts of its pages from components that keep their insides in a separate layer (a shadow root),
   // which plain lookups don't see, so every lookup here goes into those layers too, and climbs back out of them.
@@ -358,6 +363,8 @@ export async function safewayPage(action, arg, P) {
     if (!e.whenLine || count(e.whenLine) !== 1) return { pressed: false, why: "pickup time" };
     // A paid time (Flash): its slot line and price, exactly once.
     if (e.slotLine && count(e.slotLine) !== 1) return { pressed: false, why: "paid pickup time" };
+    // The bags as approved (Nov 16): exactly one bags switch, set that way.
+    if (typeof e.bagsOwn === "boolean") { const b = bagSwitches(); if (b.length !== 1 || isOn(b[0]) !== e.bagsOwn) return { pressed: false, why: "bags" }; }
     // Anywhere on the page, even run into other words (a copy of the page wrote "Confirm CVVPlace Order"): never a press.
     if (/CVV|security code|card number|expiration date/i.test(t)) return { pressed: false, why: "asks for card details" };
     const place = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).filter((b) => (label(b) || b.value || "").trim() === "Place Order");
@@ -367,6 +374,25 @@ export async function safewayPage(action, arg, P) {
     if (!(Number(e.deadline) > Date.now())) return { pressed: false, why: "approval ran out" };
     place[0].click();
     return { pressed: true, why: "", label: "Place Order" };
+  }
+
+  // Safeway's bags choice (Nov 16, Sam: "user chooses bags", his yes to setting it): one switch, "Bring your own bag",
+  // on for bringing her own. `setBags` (only on the checkout page, only when there's exactly one such switch) presses it
+  // once, and only when it isn't already as asked; it reads `own` back. Nothing else near it is touched.
+  if (action === "bagsState") {
+    const found = bagSwitches();
+    const total = ((document.body?.innerText ?? "").replace(/\s+/g, " ").match(/Estimated total \$[\d,]+\.\d\d/) ?? [""])[0];
+    return found.length === 1 ? { own: isOn(found[0]), total } : { own: null, found: found.length, total };
+  }
+  if (action === "setBags") {
+    if (!arg?.path || location.pathname !== arg.path) return { pressed: false, why: "not that page" };
+    const found = bagSwitches();
+    if (found.length !== 1) return { pressed: false, why: `bag switches: ${found.length}` };
+    const want = arg.own === true;
+    if (isOn(found[0]) === want) return { pressed: false, ok: true, own: want };
+    if (found[0].disabled || found[0].getAttribute("aria-disabled") === "true") return { pressed: false, why: "switch off" };
+    found[0].click();
+    return { pressed: true, own: isOn(found[0]) };
   }
 
   // Safeway's bags choice, read only (Nov 16): the controls near "bags", so Simmer can learn how to set it.

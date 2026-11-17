@@ -22,11 +22,11 @@ import { loadCart } from "./safeway";
 import { cartTotal, priceOf } from "./shop";
 
 /** What the helper sends back from getting ready or a test run (jobs.ts trims it). */
-type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: { url: string; text: string; buttons: string[] } | null };
+type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: { url: string; text: string; buttons: string[] } | null; bagsOwn: boolean | null };
 /** Kept from getting ready, for the approval: the figures as read, the window chosen, and the cart as it was. */
-type Prepared = { at: number; final: Final; chosen: { id: string; words: string }; cartKey: string; why: string[] };
+type Prepared = { at: number; final: Final; chosen: { id: string; words: string }; cartKey: string; why: string[]; bagsOwn?: boolean | null };
 /** An approval, with the window it's for and the Face ID check that made it. */
-type Approved = Approval & { windowId: string; windowWords: string; faceId: string; itemsCents?: number | null };
+type Approved = Approval & { windowId: string; windowWords: string; faceId: string; itemsCents?: number | null; bagsOwn?: boolean | null };
 
 /** What the sheet shows after getting ready. */
 export type ReadyView = {
@@ -34,6 +34,8 @@ export type ReadyView = {
   stops: string[]; highlights: string[];
   /** The store and card aren't remembered yet: approving this remembers the ones shown (Sam, Nov 14). */
   remember: boolean;
+  /** Safeway's bags switch on the final page (Nov 16): true, she brings her own; false, Safeway's bags; null, unread. */
+  bagsOwn?: boolean | null;
   /** Safeway's taxes and fees in the total ("Est. taxes and fees"), shown as their own row; null when unread. */
   feesCents?: number | null;
   /** Placing for real is open (phase 3): the server allows it and this helper has passed a test run; else why not. */
@@ -105,7 +107,7 @@ async function stillGoing(job: Job): Promise<Waiting> {
 const cartNow = async () => cartKey(await loadCart());
 const readingOf = (j: Job): Reading => {
   const r = (j.result ?? {}) as Partial<Reading>;
-  return { stopped: typeof r.stopped === "string" ? r.stopped : "", chosen: r.chosen ?? null, final: r.final ?? null };
+  return { stopped: typeof r.stopped === "string" ? r.stopped : "", chosen: r.chosen ?? null, final: r.final ?? null, bagsOwn: typeof r.bagsOwn === "boolean" ? r.bagsOwn : null };
 };
 /** A job that didn't finish: in words. */
 function failedWords(j: Job | null): string {
@@ -189,14 +191,15 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
  * Gets ready with the pickup time picked (or follows it): only one of the times just offered. The helper chooses it on
  * Safeway's checkout and reads the final page: the helper's reading, checked, or still going.
  */
-export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): Promise<ReadyView | Waiting> {
+export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, bagsOwn?: boolean): Promise<ReadyView | Waiting> {
   const s = await ready();
   let id = jobId;
   if (!id) {
     const offered = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
     if (!windowId || !offered || !offered.ids.includes(windowId)) throw new AppError("Pick a pickup time again.");
     if (await cartChanging()) throw new AppError(CHANGING);
-    id = (await queueAndWake("checkoutPrepare", { windowId })).id;
+    // The bags she picked for this order (Nov 16): the helper sets Safeway's switch to match before reading the total.
+    id = (await queueAndWake("checkoutPrepare", { windowId, ...(typeof bagsOwn === "boolean" && { bagsOwn }) })).id;
   }
   const { job } = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
@@ -206,14 +209,16 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS): 
   const { final, why } = finalOf(r);
   const picked = typeof job.args?.windowId === "string" ? job.args.windowId : "";
   if (r.stopped === "ready" && (!picked || r.chosen?.id !== picked)) why.push("Safeway's pickup time isn't the one picked.");
+  const bagsPicked = typeof job.args?.bagsOwn === "boolean" ? job.args.bagsOwn : null;
+  if (r.stopped === "ready" && bagsPicked !== null && r.bagsOwn !== bagsPicked) why.push("Safeway's bags aren't the ones picked.");
   const cart = await cartNow();
   const reasons = allStops(why, r.stopped === "ready" ? stops(expected(s, final), final, null, Date.now(), cart, true) : []);
   if (r.chosen && r.stopped === "ready") {
-    await kv().set(PREPARED_KEY, JSON.stringify({ at: Date.now(), final, chosen: r.chosen, cartKey: cart, why: reasons } satisfies Prepared), { ex: secs(APPROVAL_MS) });
+    await kv().set(PREPARED_KEY, JSON.stringify({ at: Date.now(), final, chosen: r.chosen, cartKey: cart, why: reasons, bagsOwn: r.bagsOwn } satisfies Prepared), { ex: secs(APPROVAL_MS) });
   } else await kv().del(PREPARED_KEY);
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
-    stops: reasons, highlights: await highlights(final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents,
+    stops: reasons, highlights: await highlights(final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents, bagsOwn: r.bagsOwn,
     ...(await orderOpen()),
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });
@@ -243,6 +248,8 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
     // Free, or a paid time (Flash) whose price was read and is in the total she sees (Nov 16).
     if (w.priceCents === null) reasons.push("Safeway's pickup time price couldn't be read.");
+    // The bags, as Safeway's switch showed them (Nov 16): no approval without them.
+    if (typeof p.bagsOwn !== "boolean") reasons.push("Safeway's bags couldn't be read. Get ready again.");
     reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {
@@ -255,6 +262,7 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
     store: p.final.store, card: p.final.card, items: p.final.items, totalCents: p.final.totalCents,
     slot: { ready: p.final.slot.ready, type: p.final.slot.type, priceCents: p.final.slot.priceCents },
     windowId: p.chosen.id, windowWords: windowWords(p.chosen), faceId: check.credentialId ?? "", itemsCents: p.final.itemsCents,
+    bagsOwn: typeof p.bagsOwn === "boolean" ? p.bagsOwn : null,
   };
   await kv().set(APPROVAL_KEY + a.id, JSON.stringify(a), { ex: secs(APPROVAL_MS) });
   await record("test approval", { ok: true, ...a });
@@ -283,7 +291,8 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
   if (!s.on) return refuse(["Ordering is off in Settings."]);
   if ((await cartNow()) !== a.cartKey) return refuse(["The cart changed after the approval."]);
   if (await cartChanging()) return refuse([CHANGING]);
-  const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId });
+  if (typeof a.bagsOwn !== "boolean") return refuse(["Safeway's bags couldn't be read. Get ready again."]);
+  const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId, ...(typeof a.bagsOwn === "boolean" && { bagsOwn: a.bagsOwn }) });
   await kv().set(RUN_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(15 * 60_000) });
   await record("test run started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId });
   return followTestRun(job.id, ms);
@@ -307,6 +316,7 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
     if (reading.stopped === "ready") {
       // Only the approved pickup time: any other one is a difference, whatever its price.
       if (reading.chosen?.id !== a.windowId) reasons.push("Safeway's pickup time changed.");
+      if (typeof a.bagsOwn === "boolean" && reading.bagsOwn !== a.bagsOwn) reasons.push("Safeway's bags changed.");
       // Checked as at the moment the helper read the final page, which is when a real press would happen.
       const at = Date.parse(job.updated) || Date.now();
       reasons.push(...stops(await loadSettings(), final, { ...a, used: false }, at, await cartNow(), true).filter((x) => !reasons.includes(x)));
@@ -361,6 +371,7 @@ export async function placeOrder(approvalId: string, ms = WAIT_MS): Promise<Orde
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
   if (cart !== a.cartKey) why.push("The cart changed after the approval.");
   if (await cartChanging()) why.push(CHANGING);
+  if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Get ready again.");
   if (why.length) return refuse(why);
   if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Get ready again."]);
   const expect = expectFor(a);
@@ -393,6 +404,8 @@ export function expectFor(a: Approved) {
     whenLine: date ? `Pickup date & time Edit ${day}, ${MONTHS[Number(date[2]) - 1]} ${Number(date[3])}${flash ? "" : `, ${a.slot.ready}`}` : "",
     // A Flash time: its slot line, with the approved ready time and price (Nov 16), as the page writes it.
     ...(flash ? { slotLine: `${a.slot.ready} Slot type FLASH price $${((a.slot.priceCents ?? 0) / 100).toFixed(2)}` } : {}),
+    // The bags as approved (Nov 16): the helper sets them on the way and checks the switch right before the press.
+    ...(typeof a.bagsOwn === "boolean" ? { bagsOwn: a.bagsOwn } : {}),
     deadline: a.at + APPROVAL_MS,
   };
 }

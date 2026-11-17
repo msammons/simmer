@@ -259,5 +259,7 @@ const STOPPED: Record<string, string> = {
   "no free pickup time": "No free pickup time in the next week.",
   "couldn't choose the pickup time": "The pickup time couldn't be chosen.",
   "no window": "No pickup time could be chosen.",
+  "couldn't set the bags": "Safeway's bags couldn't be set. Try again.",
+  "total didn't settle": "Safeway's total kept changing after the bags were set. Try again.",
 };
 export const stoppedWords = (stopped: string) => STOPPED[stopped] ?? "Safeway's checkout didn't go as expected.";
