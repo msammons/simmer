@@ -98,9 +98,10 @@ Changed:
   at full colour (an empty tap does nothing).
 - List groups keep their outline and tinted header, toned down: a 1px faint outline, a lighter tint, the name in medium
   weight, a grey ⋯ (Sam, Nov 17: "pretty close… just too bold").
+- **Add words:** "Add" and one word for what's added: Add meal, Add recipe, Add item (Sam, Nov 17).
 - **Colour (Nov 17 pass):** orange is for things you tap (row actions on glass, text buttons, the one filled button per
   screen); a new row's + is grey everywhere; recipe step numbers and a sheet's × are grey.
-- Adding from a page (Meals' Add, Recipes' Add recipes) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
+- Adding from a page (Meals' Add meal, Recipes' Add recipe) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
   filled button is only **Add to the plan**. Settings values are grey with a chevron; Settings is a **gear**.
 - Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".
 - Settings has no copy to the Google Sheet; Shop has no helper update note. The **Alpha** badge stays.
