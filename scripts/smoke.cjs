@@ -380,6 +380,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       const groupMenu = () => page.getByLabel("More for the Smoke cheese group");
       const showAllText = async () => ((await groupMenu().locator("option[value=all]").count()) ? (await groupMenu().locator("option[value=all]").innerText()).trim() : "");
+      if (process.env.SHOT) { await page.locator('[data-group="Smoke cheese"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.SHOT}/${tag}-group.png` }); }
       ok("stock: a group shows from its first thing, no Show all in its ⋯ while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await showAllText()) === "");
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
@@ -391,17 +392,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
       ok("stock: a group of two, both Need, shows both, with nothing to show or hide", (await cheese.count()) === 1 && (await showAllText()) === "" && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
-      ok("stock: one answered Have: the group closes, its ⋯ offering Show everything in it, unchecked, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && (await showAllText()) === "Show everything in Smoke cheese"
+      ok("stock: one answered Have: the group closes, its ⋯ offering Show everything in it, unchecked, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && (await showAllText()) === "Show all items"
         && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       await groupMenu().selectOption("all"); await page.waitForTimeout(300);
-      ok("stock: Show everything in the group, from its's ⋯ opens it, checked", (await showAllText()) === "✓ Show everything in Smoke cheese" && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: Show everything in the group, from its's ⋯ opens it, checked", (await showAllText()) === "✓ Show all items" && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
       // The list's own ⋯ by Add: Show all shows every kept thing and opens every group; checked while on.
       const listMenu = page.getByLabel("More for the list");
       await groupMenu().selectOption("all"); await page.waitForTimeout(300);
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
-      ok("stock: the list's ⋯ Show everything on the list opens every group, checked", (await listMenu.locator("option[value=all]").innerText()).trim() === "✓ Show everything on the list" && (await cheese.getAttribute("aria-expanded")) === "true");
+      ok("stock: the list's ⋯ Show all groups opens every group, checked", (await listMenu.locator("option[value=all]").innerText()).trim() === "✓ Show all groups" && (await cheese.getAttribute("aria-expanded")) === "true");
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
-      ok("stock: and off again, unchecked", (await listMenu.locator("option[value=all]").innerText()).trim() === "Show everything on the list" && (await cheese.getAttribute("aria-expanded")) === "false");
+      ok("stock: and off again, unchecked", (await listMenu.locator("option[value=all]").innerText()).trim() === "Show all groups" && (await cheese.getAttribute("aria-expanded")) === "false");
       await groupMenu().selectOption("all"); await page.waitForTimeout(300);
       // A group renamed, then removed (Nov 16, Sam: "remove or rename a category"): its things go with it, and stay.
       await page.getByLabel("More for the Smoke cheese group").selectOption("rename"); await page.waitForTimeout(300);
