@@ -209,18 +209,18 @@ export function useOrdering() {
 
   // ---- what each place shows
 
-  const onOffRow = <Row icon="cart" title="Order from Simmer" value={s.on ? "On" : "Off"} onClick={tapOnOff} />;
+  const onOffRow = <Row icon="cart" title="Order from Simmer" value={s.on ? "On" : "Off"} onClick={tapOnOff} accessory="chevron" />;
   const faceIdRows = (
     <>
-      <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={tapFaceId} />
+      <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={tapFaceId} accessory="chevron" />
       {fresh && <Row icon="face" title="Set up after approving" subtitle="Approve this phone on one with Face ID, then tap here." value={fresh.code} onClick={setUpAfterApproving} />}
       {adding && faceIds > 0 && adding.code !== fresh?.code && <Row icon="face" title="Approve a new phone" value={adding.code} onClick={() => openApprove(adding.code)} />}
     </>
   );
-  const limitRow = <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => edit("limit")} />;
+  const limitRow = <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => edit("limit")} accessory="chevron" />;
   // Picked from what Safeway's checkout shows (Nov 14); the limit is typed. Each opens a page inside Check out.
-  const storeRow = <Row icon="home" title="Pickup store" value={s.store ? s.store.split(",")[0] : "From Safeway"} onClick={() => edit("store")} />;
-  const cardRow = <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "From Safeway"} onClick={() => edit("card")} />;
+  const storeRow = <Row icon="home" title="Pickup store" value={s.store ? s.store.split(",")[0] : "From Safeway"} onClick={() => edit("store")} accessory="chevron" />;
+  const cardRow = <Row icon="card" title="Card" value={s.card ? `•••• ${s.card}` : "From Safeway"} onClick={() => edit("card")} accessory="chevron" />;
 
   const sheets = (
     <>
@@ -277,7 +277,7 @@ export function OrderingSettings() {
       {/* Sam, Nov 14: the set-once things live here (Face ID, limit, store, card, on/off); Check out is the order itself.
           A field opens in place of the group. */}
       {o.editor ?? (
-        <Group header="Ordering" footer={o.server ? "Pickup orders from Shop → Check out." : "Ordering from Simmer isn't available yet."}>
+        <Group header="Ordering">
           {o.faceIdRows}
           {o.limitRow}
           {o.storeRow}

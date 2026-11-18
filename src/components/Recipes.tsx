@@ -55,7 +55,8 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
         </EmptyState>
       ) : (
         <>
-          <Group><Row icon="plus" title="Add recipes" onClick={onAdd} /></Group>
+          {/* As a day's Add on Meals (Sam, Nov 17): a plain + and the words in the accent, at a row's height. */}
+          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-accent" strokeWidth={2.2} /><span className="t-body text-accent">Add recipes</span></button></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
@@ -124,7 +125,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
           {/* Moving an ingredient between Fresh, Freezer and Pantry (Robin, Nov 15: cashews landed in Fresh), from its ⋯. */}
           {fresh.length > 0 && <Group header="Fresh">{fresh.map(line)}</Group>}
           {frozen.length > 0 && <Group header="Freezer">{frozen.map(line)}</Group>}
-          {rest.length > 0 && <Group header="From the pantry">{rest.map(line)}</Group>}
+          {rest.length > 0 && <Group header="Pantry">{rest.map(line)}</Group>}
         </>
       ) : (
         <Group><Row icon="pencil" title="No ingredients yet" value="Add them" onClick={onEdit} /></Group>
@@ -252,15 +253,15 @@ export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
       <Field label="Link to the recipe"><input className={FIELD} type="url" inputMode="url" autoFocus value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste the link" /></Field>
       {busy && <Held groups={[4]} label="Reading the recipe" />}
     </>;
-    footer = <Button className="w-full" disabled={busy || !link.trim()} onClick={() => read({ link })}>Read it</Button>;
+    footer = <Button className="w-full" disabled={busy} onClick={() => { if (link.trim()) read({ link }); }}>Next</Button>;
   } else if (step.at === "text") {
     body = (
       <Field label="The recipe, or a list of meal ideas">
-        <textarea className={`${FIELD} min-h-56`} autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={"Grandma's enchiladas\n2 cups shredded chicken\n…\n\nOr one idea per line:\nTacos\nSalmon and broccoli"} />
+        <textarea className={`${FIELD} min-h-56`} autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste or type a recipe" />
       </Field>
     );
     if (busy) body = <Held groups={[4]} label="Reading the recipe" />;
-    footer = <Button className="w-full" disabled={busy || !text.trim()} onClick={() => read({ text })}>Read it</Button>;
+    footer = <Button className="w-full" disabled={busy} onClick={() => { if (text.trim()) read({ text }); }}>Next</Button>;
   } else if (step.at === "pick") {
     const flip = (i: number) => setPicked((s) => { const t = new Set(s); if (t.has(i)) t.delete(i); else t.add(i); return t; });
     body = (

@@ -120,7 +120,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       <ConfirmSheet open={Boolean(ungrouping)} title={ungrouping ? `Remove the ${cap(ungrouping)} group?` : ""} confirm="Remove group"
         onConfirm={() => { if (ungrouping) act.keepGroup(ungrouping, ""); setUngrouping(null); }} onCancel={() => setUngrouping(null)} />
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
-      <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="It stops showing here." confirm="Remove from the list" danger
+      <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="You can add it again any time." confirm="Remove from the list" danger
         onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
     </div>
   );
@@ -183,7 +183,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
       <div className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        <AddButton disabled={!text.trim()} />
+        <AddButton />
         {trailing}
       </div>
       {/* Once she types something new (Nov 16, Sam: they "don't need to appear until you add"). It shows under the field

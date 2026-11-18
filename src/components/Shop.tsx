@@ -218,7 +218,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       <form onSubmit={submit} className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Add something" aria-label="Add something" enterKeyHint="done"
           className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        <AddButton disabled={!text.trim()} />
+        <AddButton />
       </form>
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (
