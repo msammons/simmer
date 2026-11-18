@@ -1,10 +1,12 @@
 // The helper's hands on safeway.com: Simmer queues small jobs (search, set a product's quantity in the cart, or read a
 // page so Simmer can learn how Safeway builds it), and this does one at a time in a Safeway tab, using the page details
 // each job carries (`PAGE` in Simmer's src/lib/safeway-helper.mjs). It only opens Safeway's pages and presses Safeway's
-// own buttons, at a person's pace. It never signs in and never goes near checkout.
+// own buttons, at a person's pace. It never signs in (signed out, it opens Safeway's sign-in page for Sam and waits)
+// and never goes near checkout.
 import { safewayPage } from "./page.js";
 
 export const SAFEWAY = "https://www.safeway.com";
+const SIGN_IN = `${SAFEWAY}/account/sign-in.html`;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const store = {
   get: async (k, d) => (await chrome.storage.local.get(k))[k] ?? d,
@@ -150,9 +152,23 @@ async function readOrders(tabId, page, settings) {
  * ("signed-out", "not-found", "not-loaded", "failed").
  */
 export async function runJob(job, windowId) {
-  const { page, settings = {}, args = {} } = job;
-  if (!page?.site) return { ok: false, error: "failed" };
+  if (!job.page?.site) return { ok: false, error: "failed" };
   const tabId = await safewayTab(windowId);
+  // Signed out (Sam, Nov 17: "why does the app not open the page?"): the Safeway tab waits on Safeway's sign-in page for
+  // him, and jobs leave it alone there, so nothing reloads it while he types. Signing in takes Safeway off that page,
+  // and the jobs carry on. It only opens the page; it never types or presses anything on it.
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab?.url?.startsWith(SIGN_IN)) {
+    return job.kind === "search" || job.kind === "cart" ? { ok: true, result: { products: [], signedIn: false, ...(job.kind === "cart" && { empty: false }) } } : { ok: false, error: "signed-out" };
+  }
+  const r = await doJob(job, tabId);
+  const out = r.error === "signed-out" || r.result?.signedIn === false;
+  if (out && (job.kind === "search" || job.kind === "cart" || job.kind === "setQty")) await go(tabId, SIGN_IN);
+  return r;
+}
+
+async function doJob(job, tabId) {
+  const { page, settings = {}, args = {} } = job;
   if (job.kind === "search") {
     const r = await search(tabId, args.query, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
