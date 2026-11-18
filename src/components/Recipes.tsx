@@ -132,7 +132,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       )}
       {r.steps.length > 0 && (
         <Group header="Steps">
-          {r.steps.map((s, n) => <Row key={n} lead={<span className="t-sub w-6 shrink-0 text-center font-semibold text-accent tabular-nums">{n + 1}</span>} title={<span className="font-normal">{s}</span>} />)}
+          {r.steps.map((s, n) => <Row key={n} lead={<span className="t-sub w-6 shrink-0 text-center font-semibold text-muted tabular-nums">{n + 1}</span>} title={<span className="font-normal">{s}</span>} />)}
         </Group>
       )}
       {r.notes && <Group header="Notes"><p className="t-sub whitespace-pre-line px-4 py-3">{r.notes}</p></Group>}

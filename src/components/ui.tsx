@@ -31,7 +31,7 @@ export function Button({ children, onClick, href, disabled, type = "button", var
 
 /** Add, as a round + beside an add field (Nov 17): submits its form; named "Add" for screen readers. */
 /**
- * The add field: a text box with a plain + inside its right end (Sam, Nov 17: a big filled + beside it was overkill).
+ * The add field: a text box with a plain grey + inside its right end, as the other adds (Sam, Nov 17: a big filled + beside it was overkill).
  * The + is always at full colour; an empty field's tap does nothing. Put it in a form whose submit adds.
  */
 export function AddField({ value, onChange, placeholder, label, autoFocus }: {
@@ -42,7 +42,7 @@ export function AddField({ value, onChange, placeholder, label, autoFocus }: {
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
         className="h-[52px] min-w-0 flex-1 rounded-full bg-card pl-5 pr-14 text-base outline-none ring-accent focus:ring-2" />
       <button type="submit" aria-label="Add"
-        className={`absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-full text-accent active:bg-sunk ${PRESS}`}>
+        className={`absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-full text-muted active:bg-sunk ${PRESS}`}>
         <Icon name="plus" className="size-6" strokeWidth={2.2} />
       </button>
     </span>
@@ -563,7 +563,7 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
-          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-accent transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
+          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-muted transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
             <Icon name="close" className="size-[18px]" strokeWidth={2.2} />
           </button>
           {pager && pager.total > 1 && <Dots {...pager} />}
