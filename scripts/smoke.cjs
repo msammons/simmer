@@ -288,7 +288,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByRole("radio", { name: /^Apricot/ }).tap();
       ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
       await page.getByRole("radio", { name: /^Simmer$/ }).tap();
-      ok("settings: none of the old things are back (Add recipes)", (await settings.getByRole("button", { name: /^Add recipes/ }).count()) === 0);
+      ok("settings: none of the old things are back (Add recipe)", (await settings.getByRole("button", { name: /^Add recipe/ }).count()) === 0);
       await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
       const tabBar = page.getByRole("navigation", { name: "Main" });
@@ -301,10 +301,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
       await lookForBusy("Stock");
       {
-        const add = await page.getByLabel("Add something to the list").boundingBox(), menu = await page.getByLabel("More for the list").boundingBox();
+        const add = await page.getByLabel("Add item to the list").boundingBox(), menu = await page.getByLabel("More for the list").boundingBox();
         ok("stock: the list's ⋯ sits above the list on the right, not beside Add", Boolean(add && menu) && menu.y > add.y + add.height - 2 && menu.x > 300);
       }
-      ok("stock: has a plain add field at the top", await page.getByLabel("Add something to the list").isVisible() && (await page.getByRole("button", { name: "Add something" }).count()) === 0);
+      ok("stock: has a plain add field at the top", await page.getByLabel("Add item to the list").isVisible() && (await page.getByRole("button", { name: "Add item" }).count()) === 0);
       // None of the old things are back on Stock: the legend, the For this plan group, Every week.
       {
         const old = [];
@@ -348,8 +348,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Something new shows at once, as a stand-in row the server's answer replaces (Nov 11: always responsive).
       await slow("**/api/list");
       // Stock's own field (Nov 16, Sam): a name, and it's in as Need; new things are specialty.
-      await page.getByLabel("Add something to the list").fill("frozen waffles"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
-      ok("stock: the keyboard's Done doesn't add; only Add does", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0 && (await page.getByLabel("Add something to the list").inputValue()) === "frozen waffles");
+      await page.getByLabel("Add item to the list").fill("frozen waffles"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+      ok("stock: the keyboard's Done doesn't add; only Add does", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0 && (await page.getByLabel("Add item to the list").inputValue()) === "frozen waffles");
       await page.getByRole("button", { name: "Add", exact: true }).first().tap();
       ok("stock: something added is brought into view and lit where it landed", (await page.locator("[data-fresh]").count()) === 1);
       ok("stock: something added shows within 150 ms, marked Need", await within150(async () => (await page.getByRole("group", { name: /Have or need frozen waffles/i }).first().isVisible()) && (await answerOf("frozen waffles")) === "need"));
@@ -358,17 +358,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await needOf("frozen waffles").tap(); await page.waitForTimeout(1500);
       ok("stock: a specialty thing no longer needed leaves Stock", (await page.getByRole("group", { name: /Have or need frozen waffles/i }).count()) === 0);
       // Something kept shows as she types in the field; tapping it marks it Need.
-      await page.getByLabel("Add something to the list").tap(); await page.waitForTimeout(200);
+      await page.getByLabel("Add item to the list").tap(); await page.waitForTimeout(200);
       ok("stock: Specialty and Group wait until she types something new", (await page.getByLabel("How often").count()) === 0 && (await page.getByLabel("Group", { exact: true }).count()) === 0);
-      await page.getByLabel("Add something to the list").fill("smoke oat bars");
+      await page.getByLabel("Add item to the list").fill("smoke oat bars");
       ok("stock: a new name shows one small row, Specialty and No group", (await page.getByLabel("How often").inputValue()) === "specialty" && (await page.getByLabel("Group", { exact: true }).inputValue()) === "");
-      await page.getByLabel("Add something to the list").fill("mil"); await page.waitForTimeout(200);
+      await page.getByLabel("Add item to the list").fill("mil"); await page.waitForTimeout(200);
       ok("stock: typing doesn't suggest what's already showing on the list", (await page.getByRole("button", { name: /^Milk\s*Need$/ }).count()) === 0);
-      await page.getByLabel("Add something to the list").fill("waffles");
+      await page.getByLabel("Add item to the list").fill("waffles");
       await page.getByRole("button", { name: /^Frozen waffles/ }).tap(); await page.waitForTimeout(1500);
       ok("stock: something kept, picked as she types, comes back as Need", (await answerOf("frozen waffles")) === "need");
       // Groups, picked or made as she adds (Nov 16): Common, and a new group for the first, the same group for the second.
-      const stockField = page.getByLabel("Add something to the list");
+      const stockField = page.getByLabel("Add item to the list");
       await stockField.fill("smoke cheddar");
       await page.getByLabel("How often").selectOption("common");
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
@@ -427,7 +427,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
       await lookForBusy("Shop");
       const tick = (n) => page.getByRole("checkbox", { name: new RegExp(`^${n}`) }).first();
-      ok("shop: the tab is named Shop, lit, with the add field", (await page.getByRole("heading", { name: "Shop" }).count()) === 1 && (await tabBar.getByRole("button", { name: "Shop" }).getAttribute("aria-current")) === "page" && (await page.getByLabel("Add something").isVisible()));
+      ok("shop: the tab is named Shop, lit, with the add field", (await page.getByRole("heading", { name: "Shop" }).count()) === 1 && (await tabBar.getByRole("button", { name: "Shop" }).getAttribute("aria-current")) === "page" && (await page.getByLabel("Add item").isVisible()));
       ok("shop: grouped by store, Safeway first, then Trader Joe's, Costco", (await page.locator("main section h2").allInnerTexts()).join() === "Safeway,Trader Joe's,Costco", (await page.locator("main section h2").allInnerTexts()).join());
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
@@ -436,7 +436,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const checkOut = page.getByRole("button", { name: "Check out" });
       const shopMenu = page.getByLabel("More for Shop");
       {
-        const add = await page.getByLabel("Add something", { exact: true }).boundingBox(), menu = await shopMenu.boundingBox(), co = await page.getByRole("button", { name: "Check out" }).boundingBox();
+        const add = await page.getByLabel("Add item", { exact: true }).boundingBox(), menu = await shopMenu.boundingBox(), co = await page.getByRole("button", { name: "Check out" }).boundingBox();
         ok("shop: Shop's ⋯ sits above the list, after Check out", Boolean(add && menu && co) && menu.y > add.y + add.height - 2 && menu.x > co.x);
         ok("shop: Check out sits on the left, away from the ⋯ (Nov 17)", Boolean(add && menu && co) && co.x - add.x < 24 && menu.x - (co.x + co.width) > 80);
       }
@@ -501,7 +501,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: a tick shows within 150 ms, struck through", await within150(async () => (await tick("Milk").getAttribute("aria-checked")) === "true" && (await tick("Milk").locator(".line-through").count()) === 1));
       ok("shop: with Show got on, a ticked row stays", (await tick("Milk").count()) === 1);
       // Added by hand: on the list at once, as a stand-in row until the server's list comes back.
-      await page.getByLabel("Add something").fill("smoke basil"); await page.keyboard.press("Enter");
+      await page.getByLabel("Add item").fill("smoke basil"); await page.keyboard.press("Enter");
       ok("shop: something added shows within 150 ms", await within150(() => page.getByRole("checkbox", { name: /smoke basil/i }).first().isVisible()));
       await page.waitForTimeout(1800); await page.unroute("**/api/list");
       ok("shop: and is there once, once it's saved", (await page.getByRole("checkbox", { name: /smoke basil/i }).count()) === 1);
@@ -582,7 +582,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       {
         const old = [];
         if (await page.getByRole("search").count()) old.push("search");
-        if (await page.locator("header, .fixed.max-w-md").getByRole("button", { name: "Add recipes" }).count()) old.push("plus button at the top");
+        if (await page.locator("header, .fixed.max-w-md").getByRole("button", { name: "Add recipe" }).count()) old.push("plus button at the top");
         if (await page.getByRole("button", { name: /^Add .+ to the list$/ }).count()) old.push("add-to-list buttons on rows");
         ok("recipes: none of the old things are back", !old.length, old.join(", "));
       }
@@ -634,9 +634,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // Adding recipes: Save closes the sheet and the recipe shows at once (one: its page; several: the collection),
       // before the server answers; then it's the saved recipe.
       await tabBar.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
-      const addRecipes = page.getByRole("dialog", { name: "Add recipes" });
+      const addRecipes = page.getByRole("dialog", { name: "Add recipe" });
       const typeIn = async (text) => {
-        await page.getByRole("button", { name: "Add recipes" }).first().tap(); await page.waitForTimeout(300);
+        await page.getByRole("button", { name: "Add recipe" }).first().tap(); await page.waitForTimeout(300);
         await addRecipes.getByRole("button", { name: "Type it in" }).tap();
         await addRecipes.locator("textarea").fill(text);
         await page.getByRole("button", { name: "Next" }).tap();
@@ -719,7 +719,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       // The passcode changes while the app is open, with a sheet up: back to the passcode screen, nothing left open.
       await tabs.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(500);
       await page.evaluate(() => localStorage.setItem("sm.passcode", JSON.stringify("changed")));
-      await page.getByLabel("Add something").fill("paper towels"); await page.keyboard.press("Enter");
+      await page.getByLabel("Add item").fill("paper towels"); await page.keyboard.press("Enter");
       ok("passcode: a turned-down passcode asks again", await seen(page.getByLabel("Household passcode"), 8000));
       ok("passcode: and closes what was open (only the wrong-passcode alert shows)", (await page.getByRole("dialog").count()) === (await page.getByRole("dialog", { name: "That passcode didn't work" }).count()));
       await page.screenshot({ path: `${dir}/7-signed-out.png` });

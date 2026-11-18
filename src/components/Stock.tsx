@@ -56,7 +56,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
       <BrandBar />
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add something to the list" placeholder="Add something" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }}
+      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }}
  />
       {/* The list's own ⋯, above the list on the right (Sam, Nov 17: not beside Add), the same as a row's. */}
       {list && rows.length > 0 && (

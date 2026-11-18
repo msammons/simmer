@@ -216,7 +216,7 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />} />
       <h1 className="sr-only">Shop</h1>
       <form onSubmit={submit} className="flex gap-2">
-        <AddField value={text} onChange={setText} placeholder="Add something" label="Add something" />
+        <AddField value={text} onChange={setText} placeholder="Add item" label="Add item" />
       </form>
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (

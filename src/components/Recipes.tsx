@@ -51,12 +51,12 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
       <BrandBar />
       <h1 className="sr-only">Recipes</h1>
       {!recipes ? <Held groups={[1, 5, 4]} /> : !all.length ? (
-        <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipes</Button>}>
+        <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipe</Button>}>
         </EmptyState>
       ) : (
         <>
           {/* As a day's Add on Meals (Sam, Nov 17): a grey + and grey words at a row's height. */}
-          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipes</span></button></Group>
+          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipe</span></button></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
@@ -288,9 +288,9 @@ export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
     footer = <Button className="w-full" disabled={busy || !step.d.name.trim()} onClick={() => save([step.d], t && dup === "replace" ? "replace" : undefined)}>Save</Button>;
   }
   return (
-    <Sheet label="Add recipes" title="Add recipes" onClose={onClose} footer={footer}>
+    <Sheet label="Add recipe" title="Add recipe" onClose={onClose} footer={footer}>
       <div className="space-y-4 pb-2">
-        {back && <button aria-label="Back to Add recipes" className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
+        {back && <button aria-label="Back to Add recipe" className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
         {body}
         <input ref={photo} type="file" accept="image/*" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         <input ref={files} type="file" accept="application/pdf,image/*,text/plain,.pdf,.txt" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />

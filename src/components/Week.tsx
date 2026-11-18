@@ -99,9 +99,9 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
               <Group key={day} header={dayName(day)}>
                 {mine.map((d, i) => meal(d, i === 0))}
                 {!mine.length && (
-                  // As Recipes' Add recipes row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
+                  // As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
                   <label className="relative flex w-full items-center gap-3 px-4 py-3 active:bg-sunk">
-                    <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add</span>
+                    <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
                     <select value="" aria-label={`Add to ${dayName(day)}`} className="absolute inset-0 cursor-pointer opacity-0 text-base"
                       onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                       <option value="" disabled>{dayName(day)}</option>
