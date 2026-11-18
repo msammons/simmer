@@ -32,8 +32,8 @@ of her is a cost.
 - **Row actions live behind ⋯** (the phone's own picker), on the right of the row: move, group, remove, add-another-
   kind. The row itself shows only its name and its one main control (Have | Need, a tick, Find/Add, a stepper).
 - **Hide/show is a menu item with a ✓**, in the ⋯ of what it hides, and its words name what it shows (Sam, Nov 17:
-  "Show all" didn't say all of what): **Show everything on the list** in the list's own ⋯ (above the list, on the
-  right), **Show everything in Cheese** in a group's ⋯, **Show checked** in Shop's.
+  "Show all" didn't say all of what): **Show all groups** in the list's own ⋯ (above the list, on the
+  right), **Show all items** in a group's ⋯ (Sam's words, Nov 17), **Show checked** in Shop's.
 - **A page's own ⋯ sits above its list, on the right**, the same size as a row's; never beside an add field.
 - **No explaining text.** No legends, hints or "here's how this works" lines; a mark (the asterisk on a dinner's thing)
   or the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").
@@ -96,6 +96,8 @@ Changed:
 - Shop: **Add usuals (N)**; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
   **Show checked** live in Shop's ⋯ above the list; the add field has a **plain orange + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
   at full colour (an empty tap does nothing).
+- List groups keep their outline and tinted header, toned down: a 1px faint outline, a lighter tint, the name in medium
+  weight, a grey ⋯ (Sam, Nov 17: "pretty close… just too bold").
 - Adding from a page (Meals' Add, Recipes' Add recipes) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
   filled button is only **Add to the plan**. Settings values are grey with a chevron; Settings is a **gear**.
 - Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".

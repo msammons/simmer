@@ -66,7 +66,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
             <select value="" aria-label="More for the list" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
               onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
               <option value="" disabled>List</option>
-              <option value="all">{showAll ? "✓ Show everything on the list" : "Show everything on the list"}</option>
+              <option value="all">{showAll ? "✓ Show all groups" : "Show all groups"}</option>
             </select>
           </label>
         </div>
@@ -87,29 +87,29 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               const toggles = !l.rows.every((r) => r.answer === "need");
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
-              // A group (Nov 16-17, Sam): full width with nothing indented, a colored line around its cells, a tinted header
+              // A group (Nov 16-17, Sam): full width with nothing indented, a faint colored line around its cells, a lightly tinted header (Nov 17: toned down, "just too bold")
               // row with the group's name; its ⋯ has Show everything in <group>, checked while open (tapping the header does the same).
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
-                  <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
+                  <div className="flex h-[3.25rem] items-center bg-accent/[0.04] pr-2">
                     <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && !showAll && toggle(key)}
                       className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
-                      <span className="min-w-0 flex-1 truncate t-body font-semibold text-accent">{cap(l.name)}</span>
+                      <span className="min-w-0 flex-1 truncate t-body font-medium text-accent">{cap(l.name)}</span>
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
-                    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-accent">
+                    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                       <span aria-hidden>⋯</span>
                       <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
                         onChange={(e) => { const v = e.target.value; if (v === "all") toggle(key); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
-                        {toggles && <option value="all" disabled={showAll}>{`${isOpen ? "✓ " : ""}Show everything in ${cap(l.name)}`}</option>}
+                        {toggles && <option value="all" disabled={showAll}>{`${isOpen ? "✓ " : ""}Show all items`}</option>}
                         <option value="rename">Rename group</option>
                         <option value="remove">Remove group</option>
                       </select>
                     </label>
                   </div>
                   {(toggles ? shown : l.rows).map((r) => item(r))}
-                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border-[1.5px] !border-accent/35 ${afterGroup ? "!border-t-0" : ""}`} />
+                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border !border-accent/20 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
             })}
