@@ -503,7 +503,7 @@ export default function App() {
       )}
       </OpenSettings.Provider>
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
-      {pickingDay && kindOf(pickingDay) && <PickDaySheet name={pickingDay.name} onClose={() => setPickingDay(null)}
+      {pickingDay && kindOf(pickingDay) && <PickDaySheet name={pickingDay.name} dishes={plan?.dishes ?? []} recipes={recipes ?? []} onClose={() => setPickingDay(null)}
         onPick={(day) => { const r = pickingDay; setPickingDay(null); quickAdd({ kind: kindOf(r)!, recipe: r.id, pinned: true, day }); }} />}
       {addingOne && plan && <AddMealSheet kind={addingOne.kind} day={addingOne.day} plan={plan} recipes={recipes ?? []} onAdd={quickAdd} onClose={() => setAddingOne(null)} />}
       {sheet === "add" && <AddRecipesSheet recipes={recipes ?? []} initial={retry?.add} onClose={() => { setSheet(null); setRetry(null); }}

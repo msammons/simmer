@@ -233,7 +233,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const listBefore = await listNow();
       await page.getByRole("button", { name: "New plan", exact: true }).tap(); await page.waitForTimeout(300);
       const fresh = page.getByRole("dialog", { name: "Start a new plan?" });
-      ok("new plan: asks first, saying everything starts fresh and the cart stays", (await fresh.isVisible()) && (await fresh.getByText(/Everything starts fresh/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
+      ok("new plan: asks first, saying the dinners come off and the cart stays", (await fresh.isVisible()) && (await fresh.getByText(/dinners? comes? off/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
       await slow("**/api/plan");
       await fresh.getByRole("button", { name: "New plan" }).tap();
       ok("new plan: the meals come off within 150 ms", await within150(async () => (await mealMenus(page).count()) === 0));
@@ -638,7 +638,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await page.getByRole("button", { name: "Add recipes" }).first().tap(); await page.waitForTimeout(300);
         await addRecipes.getByRole("button", { name: "Type it in" }).tap();
         await addRecipes.locator("textarea").fill(text);
-        await page.getByRole("button", { name: "Read it" }).tap();
+        await page.getByRole("button", { name: "Next" }).tap();
       };
       await typeIn("Smoke soup");
       ok("add recipes: reading shows its review", await seen(addRecipes.getByLabel("Name"), 15000) || await seen(addRecipes.getByPlaceholder("Turkey chili"), 1000));

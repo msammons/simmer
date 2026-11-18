@@ -30,10 +30,11 @@ export function Button({ children, onClick, href, disabled, type = "button", var
 }
 
 /** Add, as a round + beside an add field (Nov 17): submits its form; named "Add" for screen readers. */
-export function AddButton({ disabled }: { disabled?: boolean }) {
+/** The add field's +, always at full colour (Sam, Nov 17: a pale + looked broken); an empty field's tap does nothing. */
+export function AddButton() {
   return (
-    <button type="submit" aria-label="Add" disabled={disabled}
-      className={`glass-tint inline-flex size-[52px] shrink-0 items-center justify-center rounded-full text-on-accent disabled:shadow-none ${PRESS}`}>
+    <button type="submit" aria-label="Add"
+      className={`glass-tint inline-flex size-[52px] shrink-0 items-center justify-center rounded-full text-on-accent ${PRESS}`}>
       <Icon name="plus" className="size-6" strokeWidth={2.4} />
     </button>
   );
@@ -148,7 +149,7 @@ export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: Re
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 wash opacity-30 ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
       <div className="flex h-11 items-center justify-between">
         <Brand />
-        <div className="flex gap-2">{trailing}{settings && <IconButton icon="sliders" label="Settings" onClick={settings} />}</div>
+        <div className="flex gap-2">{trailing}{settings && <IconButton icon="gear" label="Settings" onClick={settings} />}</div>
       </div>
       {below && <div className="pb-2 pt-3">{below}</div>}
     </PinnedBar>
@@ -209,7 +210,7 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
       </span>
       {/* A value on a row you can tap reads as the action ("Directions", "Try again"); otherwise it's information. */}
       {/* At most a little over half the row, cut short with "…" (Nov 14: a long store address ran over "Pickup store"). */}
-      {value && <span className={`min-w-0 max-w-[55%] shrink-0 truncate text-right t-sub ${href || onClick ? "text-accent" : "text-muted"}`}>{value}</span>}
+      {value && <span className={`min-w-0 max-w-[55%] shrink-0 truncate text-right t-sub ${(href || onClick) && accessory !== "chevron" ? "text-accent" : "text-muted"}`}>{value}</span>}
       {accessory === "chevron" ? <Icon name="right" className="size-4 text-muted/70" strokeWidth={2.2} />
         : accessory === "external" ? <Icon name="external" className="size-4 text-muted/70" strokeWidth={2.2} />
         : accessory === "check" ? <Icon name="check" className={`size-5 text-accent ${checked ? "" : "invisible"}`} strokeWidth={2.4} />

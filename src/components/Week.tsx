@@ -4,7 +4,8 @@ import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
-import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet, IconBadge } from "./ui";
+import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
+import { Icon } from "./icons";
 
 // The Meals tab is a list of days from today, each with its meals, picked from her recipes (Nov 16, from Robin's run;
 // Simmer doesn't pick meals itself). Kids' lunches, snacks and desserts are mostly Stock; Lunch stays as an option.
@@ -100,7 +101,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                 {!mine.length && (
                   // As Recipes' Add recipes row (Sam, Nov 17): the round tinted + and the words in the row's own type.
                   <label className="relative flex w-full items-center gap-3 px-4 py-3 active:bg-sunk">
-                    <IconBadge icon="plus" /><span className="t-body">Add</span>
+                    <Icon name="plus" className="size-5 text-accent" strokeWidth={2.2} /><span className="t-body text-accent">Add</span>
                     <select value="" aria-label={`Add to ${dayName(day)}`} className="absolute inset-0 cursor-pointer opacity-0 text-base"
                       onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
                       <option value="" disabled>{dayName(day)}</option>
@@ -116,13 +117,13 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
           {undated.length > 0 && <Group header="Not on a day">{undated.map((d) => meal(d))}</Group>}
         </>
       )}
-      {moving && <PickDaySheet name={mealName(moving.recipe, recipes)} onClose={() => setMoving(null)} onPick={(day) => { const d = moving; setMoving(null); if (day !== d.day) onMove(d, day); }} />}
+      {moving && <PickDaySheet name={mealName(moving.recipe, recipes)} dishes={dishes} recipes={recipes} onClose={() => setMoving(null)} onPick={(day) => { const d = moving; setMoving(null); if (day !== d.day) onMove(d, day); }} />}
       {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
       <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
-        message={`Everything starts fresh: ${[
-          dishes.length ? (dishes.length === 1 ? "this meal comes off" : `these ${dishes.length} meals come off`) : "",
-          dinnerGroceries ? `the list is emptied (${dinnerGroceries} ${dinnerGroceries === 1 ? "thing" : "things"})` : "",
-        ].filter(Boolean).join(" and ")}. What's in the Safeway cart stays.`}
+        message={`${[
+          dishes.length ? (dishes.length === 1 ? "The dinner comes off" : `All ${dishes.length} dinners come off`) : "",
+          dinnerGroceries ? `${dishes.length ? "the" : "The"} list empties` : "",
+        ].filter(Boolean).join(" and ")}. The Safeway cart stays.`}
         onConfirm={() => { onNewPlan(); setStarting(false); }} onCancel={() => setStarting(false)} />
       {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
       <ConfirmSheet open={Boolean(taking)} title={taking ? `Take ${mealName(taking.recipe, recipes)} off the plan?` : ""} confirm="Take it off" danger
@@ -189,13 +190,15 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
 }
 
 /** Which day, for a recipe added from its own page (Nov 16): the next 14 days, tap one. */
-export function PickDaySheet({ name, onPick, onClose }: { name: string; onPick: (day: string) => void; onClose: () => void }) {
+/** Which day, each showing what's already on it (Sam, Nov 17), as Meals marks what's planned. */
+export function PickDaySheet({ name, dishes, recipes, onPick, onClose }: { name: string; dishes: Dish[]; recipes: Recipe[]; onPick: (day: string) => void; onClose: () => void }) {
   const today = todayIn();
+  const on = (day: string) => dishes.filter((d) => d.day === day).map((d) => mealName(d.recipe, recipes)).join(", ") || undefined;
   return (
     <Sheet label="Which day" title={name} onClose={onClose}>
       <div className="pb-2">
         <Group header="Which day?">
-          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day)} onClick={() => onPick(day)} />)}
+          {Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((day) => <Row key={day} title={dayName(day)} subtitle={on(day)} onClick={() => onPick(day)} />)}
         </Group>
       </div>
     </Sheet>
