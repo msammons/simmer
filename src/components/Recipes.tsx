@@ -55,8 +55,8 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
         </EmptyState>
       ) : (
         <>
-          {/* As a day's Add on Meals (Sam, Nov 17): a plain + and the words in the accent, at a row's height. */}
-          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-accent" strokeWidth={2.2} /><span className="t-body text-accent">Add recipes</span></button></Group>
+          {/* As a day's Add on Meals (Sam, Nov 17): a grey + and grey words at a row's height. */}
+          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipes</span></button></Group>
           <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
           <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
           <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
