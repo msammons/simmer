@@ -4,7 +4,7 @@ import { type Item, type Kitchen, type ListState, type Section, type Staple, typ
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
 import { Icon } from "./icons";
-import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet, AddButton } from "./ui";
+import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet, AddField } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
@@ -181,9 +181,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
     <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5"
       onKeyDown={(e) => { if (e.key === "Enter" && e.target instanceof HTMLInputElement) { e.preventDefault(); e.target.blur(); } }}>
       <div className="flex gap-2">
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
-          className="h-[52px] min-w-0 flex-1 rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        <AddButton />
+        <AddField value={text} onChange={setText} placeholder={placeholder} label={label} autoFocus={autoFocus} />
         {trailing}
       </div>
       {/* Once she types something new (Nov 16, Sam: they "don't need to appear until you add"). It shows under the field

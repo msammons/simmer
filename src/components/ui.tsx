@@ -30,13 +30,22 @@ export function Button({ children, onClick, href, disabled, type = "button", var
 }
 
 /** Add, as a round + beside an add field (Nov 17): submits its form; named "Add" for screen readers. */
-/** The add field's +, always at full colour (Sam, Nov 17: a pale + looked broken); an empty field's tap does nothing. */
-export function AddButton() {
+/**
+ * The add field: a text box with a plain + inside its right end (Sam, Nov 17: a big filled + beside it was overkill).
+ * The + is always at full colour; an empty field's tap does nothing. Put it in a form whose submit adds.
+ */
+export function AddField({ value, onChange, placeholder, label, autoFocus }: {
+  value: string; onChange: (v: string) => void; placeholder: string; label: string; autoFocus?: boolean;
+}) {
   return (
-    <button type="submit" aria-label="Add"
-      className={`glass-tint inline-flex size-[52px] shrink-0 items-center justify-center rounded-full text-on-accent ${PRESS}`}>
-      <Icon name="plus" className="size-6" strokeWidth={2.4} />
-    </button>
+    <span className="relative flex min-w-0 flex-1">
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={label} enterKeyHint="done" autoFocus={autoFocus}
+        className="h-[52px] min-w-0 flex-1 rounded-full bg-card pl-5 pr-14 text-base outline-none ring-accent focus:ring-2" />
+      <button type="submit" aria-label="Add"
+        className={`absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-full text-accent active:bg-sunk ${PRESS}`}>
+        <Icon name="plus" className="size-6" strokeWidth={2.2} />
+      </button>
+    </span>
   );
 }
 

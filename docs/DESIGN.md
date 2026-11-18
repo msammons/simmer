@@ -94,8 +94,9 @@ Changed:
   adds sit in its first dinner's ⋯, and a day with no dinner has one Add row.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
 - Shop: **Add usuals (N)**; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
-  **Show checked** live in Shop's ⋯ above the list; the add field's button is a **filled round +**, always at full colour (an empty tap does nothing).
-- Adding from a page (Meals' Add, Recipes' Add recipes) is a **plain accent + and words** at a row's height; the big
+  **Show checked** live in Shop's ⋯ above the list; the add field has a **plain orange + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
+  at full colour (an empty tap does nothing).
+- Adding from a page (Meals' Add, Recipes' Add recipes) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
   filled button is only **Add to the plan**. Settings values are grey with a chevron; Settings is a **gear**.
 - Words: Shop says "Nothing to buy"; a recipe's tags are "Tags".
 - Settings has no copy to the Google Sheet; Shop has no helper update note. The **Alpha** badge stays.
