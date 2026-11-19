@@ -387,10 +387,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         && (await groupPick.selectOption("").then(() => groupPick.inputValue())) === "" && (await groupPick.selectOption("Smoke cheese").then(() => groupPick.inputValue())) === "Smoke cheese");
       await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       const groupMenu = () => page.getByLabel("More for the Smoke cheese group");
-      const showAllText = async () => ((await groupMenu().locator("option[value=all]").count()) ? (await groupMenu().locator("option[value=all]").innerText()).trim() : "");
+      const noToggle = async () => (await page.getByRole("button", { name: "Smoke cheese" }).getAttribute("aria-expanded")) === null;
       if (process.env.SHOT) { await page.locator('[data-group="Smoke cheese"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.SHOT}/${tag}-group.png` }); }
       ok("stock: a group's header row is tinted", !/rgba\(0, 0, 0, 0\)|transparent/.test(await page.locator('[data-group="Smoke cheese"]').evaluate((g) => getComputedStyle(g.firstElementChild).backgroundColor)));
-      ok("stock: a group shows from its first thing, no Show all in its ⋯ while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await showAllText()) === "");
+      ok("stock: a group shows from its first thing, nothing to show or hide while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await noToggle()));
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "Smoke cheese" });
@@ -399,26 +399,24 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
-      ok("stock: a group of two, both Need, shows both, with nothing to show or hide", (await cheese.count()) === 1 && (await showAllText()) === "" && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
+      ok("stock: a group of two, both Need, shows both, with nothing to show or hide", (await cheese.count()) === 1 && (await noToggle()) && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
-      ok("stock: one answered Have: the group closes, its ⋯ offering Show everything in it, unchecked, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && (await showAllText()) === "Show all items"
+      ok("stock: one answered Have: the group closes and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false"
         && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
-      const cartText = async () => (await groupMenu().locator("option[value=cart]").innerText()).trim();
-      ok("stock: closed, the group's ⋯ has Show cart items only checked", (await cartText()) === "✓ Show cart items only");
-      await groupMenu().selectOption("all"); await page.waitForTimeout(300);
-      ok("stock: Show everything in the group, from its's ⋯ opens it, checked", (await showAllText()) === "✓ Show all items" && (await cartText()) === "Show cart items only" && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: the group's ⋯ only renames or removes it", JSON.stringify(await groupMenu().locator("option:not([disabled])").evaluateAll((os) => os.map((o) => o.value))) === '["rename","remove"]');
+      const outline = await page.locator('[data-group="Smoke cheese"] > span[aria-hidden]').last().evaluate((el) => getComputedStyle(el).borderTopWidth);
+      ok("stock: a group has its faint line around it", outline !== "0px", outline);
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: tapping the group's name goes back to cart items only", (await cheese.getAttribute("aria-expanded")) === "false" && (await cartText()) === "✓ Show cart items only" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      ok("stock: tapping the group's name shows all its items", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: and again to all items", (await cheese.getAttribute("aria-expanded")) === "true" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
+      ok("stock: and again goes back to cart items only", (await cheese.getAttribute("aria-expanded")) === "false" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
       // The list's own ⋯ by Add: Show all shows every kept thing and opens every group; checked while on.
       const listMenu = page.getByLabel("More for the list");
-      await groupMenu().selectOption("cart"); await page.waitForTimeout(300);
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
       ok("stock: the list's ⋯ Show all groups opens every group, checked", (await listMenu.locator("option[value=all]").innerText()).trim() === "✓ Show all groups" && (await cheese.getAttribute("aria-expanded")) === "true");
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
       ok("stock: and off again, unchecked", (await listMenu.locator("option[value=all]").innerText()).trim() === "Show all groups" && (await cheese.getAttribute("aria-expanded")) === "false");
-      await groupMenu().selectOption("all"); await page.waitForTimeout(300);
+      await cheese.tap(); await page.waitForTimeout(300);
       // A group renamed, then removed (Nov 16, Sam: "remove or rename a category"): its things go with it, and stay.
       await page.getByLabel("More for the Smoke cheese group").selectOption("rename"); await page.waitForTimeout(300);
       const rename = page.getByRole("dialog", { name: "Rename group" });
