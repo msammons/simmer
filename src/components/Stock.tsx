@@ -82,14 +82,14 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
             {linesOf(here).flatMap((l, i, all) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
-              const isOpen = showAll || open.has(key);
               // Closed, a group shows what's in the cart (Need) and what the planned dinners need (Sam, Nov 19: a dinner's
-              // thing in a group shows by itself); open, everything in it.
+              // thing in a group shows by itself); open, everything in it. Every group closes (Sam, Nov 19: "strange that any
+              // category can't be collapsed"): one whose things all show anyway starts open and closes to its name alone.
               const wanted = (r: StockRow) => r.answer === "need" || r.meal;
-              const shown = isOpen ? l.rows : l.rows.filter(wanted);
-              // Nothing to show or hide (everything in it already shows): the header stays, without its hide/show (Sam, Nov 16).
-              const toggles = !l.rows.every(wanted);
-              const flip = () => { if (toggles && !showAll) toggle(key); };
+              const allWanted = l.rows.every(wanted);
+              const isOpen = showAll || (allWanted ? !open.has(key) : open.has(key));
+              const shown = isOpen ? l.rows : allWanted ? [] : l.rows.filter(wanted);
+              const flip = () => { if (!showAll) toggle(key); };
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 19, Sam): its header row tinted, the name in the usual colour (coloured words are a dinner's
@@ -98,10 +98,10 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               return [
                 <div key={key} data-group={l.name} className="relative divide-y divide-line">
                   <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
-                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={flip}
+                    <button type="button" aria-expanded={isOpen} aria-label={cap(l.name)} onClick={flip}
                       className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-4 pr-2 text-left">
                       <span className="min-w-0 truncate t-body font-semibold text-ink">{cap(l.name)}</span>
-                      {toggles && <Icon name="down" className={`size-4 shrink-0 text-muted transition-transform ${isOpen ? "" : "-rotate-90"}`} strokeWidth={2.2} />}
+                      <Icon name="down" className={`size-4 shrink-0 text-muted transition-transform ${isOpen ? "" : "-rotate-90"}`} strokeWidth={2.2} />
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
@@ -114,7 +114,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                       </select>
                     </label>
                   </div>
-                  {(toggles ? shown : l.rows).map((r) => item(r))}
+                  {shown.map((r) => item(r))}
                   <span aria-hidden className={`pointer-events-none absolute inset-0 !border !border-accent/20 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
