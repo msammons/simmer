@@ -11,7 +11,7 @@ import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simpl
 import { loadSettings, recordedForTests, resetCheckout, saveSettings, type CheckoutSettings } from "./checkout";
 import { useTabStore, type TabStore } from "./google/redis-tabs";
 import {
-  ADD_MS, addWaiting, changeSettings, approveOptions, askToAdd, CHALLENGE_MS, checkOptions, loadPasskeys, registrationOptions, resetPasskeys, site, verifyApprove,
+  ADD_MS, addStatus, addWaiting, changeSettings, approveOptions, askToAdd, CHALLENGE_MS, checkOptions, loadPasskeys, registrationOptions, resetPasskeys, site, verifyApprove,
   verifyCheck, verifyRegistration,
 } from "./passkeys";
 
@@ -433,5 +433,16 @@ describe("Face ID for ordering", () => {
       expect(await changeSettings(req(), { ...set, on: true }, answer(options.challenge))).toMatchObject({ ok: false });
       expect(await loadSettings()).toEqual(set);
     });
+  });
+
+  it("tells the new phone whether its own request is waiting, approved or gone (Nov 18)", async () => {
+    await setUp();
+    const { token } = await askToAdd();
+    expect(await addStatus(token)).toBe("waiting");
+    expect(await addStatus("x".repeat(43))).toBe("gone");
+    expect((await approve()).ok).toBe(true);
+    expect(await addStatus(token)).toBe("approved");
+    vi.setSystemTime(Date.now() + ADD_MS + 1000);
+    expect(await addStatus(token)).toBe("gone");
   });
 });

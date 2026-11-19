@@ -27,6 +27,12 @@ const ADD_MS = 5 * 60_000;
  * component, so closing and reopening Settings or Check out keeps it; never saved, as it's only good for 5 minutes anyway.
  */
 type MyAdd = { token: string; code: string; at: number };
+// Kept on this phone too (Nov 18: Robin's page reloaded while she waited, the row went, and asking again made a new
+// code that undid Sam's approval). Read back while it's still good.
+const MINE = "simmer:face-id-add";
+const readMine = (): MyAdd | null => {
+  try { const m = JSON.parse(localStorage.getItem(MINE) ?? "null") as MyAdd | null; return m?.token && Date.now() - m.at < ADD_MS ? m : null; } catch { return null; }
+};
 let myAdd: MyAdd | null = null;
 const FIELD = "w-full rounded-2xl bg-card px-4 py-3 text-base outline-none ring-accent focus:ring-2";
 type Problem = { title: string; message: string };
@@ -96,7 +102,28 @@ export function useOrdering() {
     return () => ac.abort();
   }, []);
 
-  const keepMine = (m: MyAdd | null) => { myAdd = m; setMine(m); };
+  const keepMine = (m: MyAdd | null) => {
+    myAdd = m; setMine(m);
+    try { if (m?.token) localStorage.setItem(MINE, JSON.stringify(m)); else if (!m) localStorage.removeItem(MINE); } catch { /* this phone keeps nothing */ }
+  };
+  // Whether the other phone has approved this one: asked when the page opens and whenever she comes back to it (an
+  // event, no timer), so the row says when to tap.
+  const [approved, setApproved] = useState(false);
+  useEffect(() => {
+    const look = () => {
+      const m = myAdd ?? readMine();
+      if (!m?.token || document.visibilityState !== "visible") return;
+      if (!myAdd) { myAdd = m; setMine(m); }
+      api.faceIdAddStatus(m.token).then(({ status }) => {
+        if (status === "gone") { if (myAdd?.token === m.token) { myAdd = null; setMine(null); try { localStorage.removeItem(MINE); } catch { /* */ } } setApproved(false); }
+        else setApproved(status === "approved");
+      }).catch(() => {});
+    };
+    look();
+    document.addEventListener("visibilitychange", look);
+    window.addEventListener("focus", look);
+    return () => { document.removeEventListener("visibilitychange", look); window.removeEventListener("focus", look); };
+  }, []);
 
   // ---- settings
 
@@ -156,7 +183,13 @@ export function useOrdering() {
   function setUpAfterApproving() {
     const token = myAdd?.token;
     if (!token) return; // still asking: the code (and this) come with the answer
-    openSetup(token);
+    if (approved) return openSetup(token);
+    // Not seen approved yet: ask, and only go on if it is (Nov 18: tapped too soon, she got an error and asked again).
+    api.faceIdAddStatus(token).then(({ status }) => {
+      if (status === "approved") { setApproved(true); openSetup(token); }
+      else if (status === "gone") { keepMine(null); setProblem({ title: "That request ran out", message: "Tap Face ID to ask again; the other phone approves the new code." }); }
+      else setProblem({ title: "Not approved yet", message: `Approve ${myAdd?.code ?? "this phone"} on the phone with Face ID, then come back here.` });
+    }).catch((e) => setProblem({ title: "Face ID wasn't set up", message: errorText(e) }));
   }
   async function setUpFace() {
     setSheet(null);
@@ -183,6 +216,7 @@ export function useOrdering() {
     if (busy.current) return;
     const asked: MyAdd = { token: "", code: "", at: Date.now() };
     keepMine(asked);
+    setApproved(false);
     api.faceIdAsk().then((r) => { if (myAdd === asked) keepMine({ ...r, at: asked.at }); }).catch((e) => {
       if (myAdd === asked) keepMine(null);
       setProblem({ title: "This phone wasn't added", message: errorText(e) });
@@ -221,7 +255,7 @@ export function useOrdering() {
   const faceIdRows = (
     <>
       <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={tapFaceId} accessory="chevron" />
-      {fresh && <Row icon="face" title="Set up after approving" subtitle="Approve this phone on one with Face ID, then tap here." value={fresh.code} onClick={setUpAfterApproving} />}
+      {fresh && <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other phone." : "Approve this code on the phone with Face ID."} value={fresh.code} onClick={setUpAfterApproving} />}
       {adding && faceIds > 0 && adding.code !== fresh?.code && <Row icon="face" title="Approve a new phone" value={adding.code} onClick={() => openApprove(adding.code)} />}
     </>
   );
@@ -276,7 +310,7 @@ export function useOrdering() {
 
   // Offered on Check out after an approval made on another phone (Nov 18): set it up here, approved there once.
   const hereRow = faceIds > 0 && (where === "elsewhere" || fresh) && (
-    fresh ? <Row icon="face" title="Set up after approving" subtitle="Approve this phone on one with Face ID, then tap here." value={fresh.code} onClick={setUpAfterApproving} /> : <Row icon="face" title="Set up Face ID on this phone" subtitle="Then approve here, without the other phone." onClick={tapFaceId} accessory="chevron" />
+    fresh ? <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other phone." : "Approve this code on the phone with Face ID."} value={fresh.code} onClick={setUpAfterApproving} /> : <Row icon="face" title="Set up Face ID on this phone" subtitle="Then approve here, without the other phone." onClick={tapFaceId} accessory="chevron" />
   );
 
   return { loaded, s, server, faceIds, onOffRow, faceIdRows, hereRow, limitRow, storeRow, cardRow, sheets, editor, turnOn: tapOnOff };

@@ -145,6 +145,7 @@ export const api = {
   faceIdCheckOptions: () => passkey<{ options: PublicKeyCredentialRequestOptionsJSON }>({ op: "check-options" }),
   /** A new phone asks to be added: its token (kept on it only) and the code both phones show. */
   faceIdAsk: () => passkey<{ token: string; code: string }>({ op: "add" }),
+  faceIdAddStatus: (token: string) => passkey<{ status: "waiting" | "approved" | "gone" }>({ op: "add-status", token }),
   /** A phone with Face ID: the check that approves the new phone waiting now, and that phone's code. */
   faceIdApproveOptions: () => passkey<{ options: PublicKeyCredentialRequestOptionsJSON; code: string }>({ op: "approve-options" }),
   faceIdApprove: (response: unknown) => passkey<{ ok: true }>({ op: "approve", response }),
