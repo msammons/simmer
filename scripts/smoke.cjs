@@ -131,12 +131,12 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       }
       await addOn(TODAY); await page.waitForTimeout(500);
       const kindSheet = page.getByRole("dialog", { name: "Add a meal" });
-      ok("meals: Add opens her recipes for that day, all kinds, with a kind filter", await kindSheet.getByRole("heading", { name: TODAY }).isVisible()
-        && ((await kindSheet.getByLabel("Kind").count()) === 0 || (await kindSheet.getByLabel("Kind").locator("option").first().innerText()) === "All kinds"));
-      if (await kindSheet.getByLabel("Kind").count()) {
-        await kindSheet.getByLabel("Kind").selectOption("quick"); await page.waitForTimeout(200);
-        ok("meals: the filter shows one kind, without headings", (await kindSheet.locator("section h2, section h3").count()) === 0 || (await kindSheet.getByRole("heading", { name: "Regular" }).count()) === 0);
-      }
+      const pills = kindSheet.getByRole("radiogroup", { name: "Kind" }).getByRole("radio");
+      ok("meals: Add opens her recipes for that day, with every kind as a pill, All first and picked", await kindSheet.getByRole("heading", { name: TODAY }).isVisible()
+        && (await pills.allInnerTexts()).join() === "All,Quick,Regular,Kids' dinners,Breakfast,Lunch,Desserts,Sides" && (await pills.first().getAttribute("aria-checked")) === "true");
+      await pills.filter({ hasText: /^Quick$/ }).tap(); await page.waitForTimeout(200);
+      ok("meals: a pill shows one kind, without headings", (await pills.filter({ hasText: /^Quick$/ }).getAttribute("aria-checked")) === "true" && (await kindSheet.getByRole("heading", { name: "Regular" }).count()) === 0);
+      await pills.first().tap(); await page.waitForTimeout(200);
       const mealMenus = (where) => where.getByLabel(/^More for /);
       const todayMeals = () => mealMenus(todayGroup).count();
       const before = await todayMeals();

@@ -142,7 +142,6 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
   const planned = useMemo(() => new Set(plan.dishes.filter((d) => d.day === day).map((d) => d.recipe)), [plan.dishes, day]);
   const term = q.trim();
   const all = useMemo(() => recipes.filter(plannable).sort((a, b) => a.name.localeCompare(b.name)), [recipes]);
-  const kinds = KIND_ORDER.filter((k) => all.some((r) => kindOf(r) === k));
   const mine = only ? all.filter((r) => kindOf(r) === only) : all;
   const found = useMemo(() => (term ? searchRecipes(recipes, term).filter((r) => plannable(r) && (!only || kindOf(r) === only)) : []), [recipes, term, only]);
   // Closes at once (Sam, Nov 10: no "Saving…"): the dinner shows on Meals straight away and saves behind it.
@@ -162,16 +161,13 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
         {/* No autofocus: on a phone the keyboard would cover the list. */}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        {kinds.length > 1 && (
-          <span className="relative inline-block">
-            <select aria-label="Kind" value={only} onChange={(e) => setOnly(e.target.value as Kind | "")}
-              className="h-9 appearance-none rounded-full bg-sunk pl-3.5 pr-8 text-base font-semibold text-ink outline-none ring-accent focus:ring-2">
-              <option value="">All kinds</option>
-              {kinds.map((k) => <option key={k} value={k}>{KIND_HEADERS[k]}</option>)}
-            </select>
-            <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          </span>
-        )}
+        {/* Every kind as a pill, All first (Sam, Nov 18: pills, all types), wrapping on a narrow phone. */}
+        <div role="radiogroup" aria-label="Kind" className="flex flex-wrap gap-2">
+          {([["", "All"], ...KIND_ORDER.map((k) => [k, KIND_HEADERS[k]])] as [Kind | "", string][]).map(([k, name]) => (
+            <button key={k || "all"} type="button" role="radio" aria-checked={only === k} onClick={() => setOnly(k)}
+              className={`h-9 rounded-full px-4 t-sub font-semibold transition active:scale-95 ${only === k ? "glass-tint text-on-accent" : "bg-sunk text-ink"}`}>{name}</button>
+          ))}
+        </div>
         {term || only ? (
           <Group>
             {term ? found.slice(0, 30).map((r) => row(r)) : mine.map((r) => row(r))}

@@ -98,7 +98,7 @@ Changed:
 - List groups keep their outline and tinted header, toned down: a 1px faint outline, a lighter tint, the name in medium
   weight, a grey ⋯ (Sam, Nov 17: "pretty close… just too bold").
 - **Add words:** "Add" and one word for what's added: Add meal, Add recipe, Add item (Sam, Nov 17).
-- **Meals adds with one Add** (Sam, Nov 18): no kind picked first; the add sheet shows every kind under its heading, with an All kinds filter. No sentence on screen speaks of Simmer in the third person ("Not sure the order went through", not "Simmer isn't sure").
+- **Meals adds with one Add** (Sam, Nov 18): no kind picked first; the add sheet shows every kind under its heading, with a pill for each kind and All first. No sentence on screen speaks of Simmer in the third person ("Not sure the order went through", not "Simmer isn't sure").
 - **Colour (Nov 17 pass):** orange is for things you tap (row actions on glass, text buttons, the one filled button per
   screen); a new row's + is grey everywhere; recipe step numbers and a sheet's × are grey.
 - Adding from a page (Meals' Add meal, Recipes' Add recipe) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
