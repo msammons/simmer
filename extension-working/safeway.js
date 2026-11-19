@@ -113,10 +113,11 @@ async function searchHere(tabId, query, page, settings) {
   const r = await waitForProducts(tabId, page, settings, 3);
   return r && r.products.length ? r : search(tabId, query, page, settings);
 }
-/** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
+// not-checkout:end
+/** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). Placing reads
+ * the cart with it, so it counts for checkout. */
 const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults, onlyInCart: true });
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
-// not-checkout:end
 /** The cart page as it is: read where it stands when the tab is already showing it (no reload), else opened. */
 async function cartHere(tabId, page, settings) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -422,7 +423,8 @@ async function placeOrder(tabId, page, settings, windowId, expect) {
   // Simmer couldn't say the order went through). Watched, not polled: read as soon as its thank-you words show.
   await onPage(tabId, "waitFor", { until: "confirmed", ms: 15000 }, page);
   const after = await onPage(tabId, "look", null, page);
-  return { stopped: to ? "placed" : "pressed", pressed: true, chosen: r.chosen, final: r.final, after: after ? { url: after.url, text: after.text.slice(0, 4000) } : null };
+  // `landed`: the address Chrome says the tab moved to after the press, so Simmer can tell the page it read is that one.
+  return { stopped: to ? "placed" : "pressed", pressed: true, landed: to ?? "", chosen: r.chosen, final: r.final, after: after ? { url: after.url, text: after.text.slice(0, 4000) } : null };
 }
 
 /**

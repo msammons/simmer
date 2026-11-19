@@ -18,6 +18,7 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
   the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **Tighter checkout fingerprint (26.11.18.2).** The cart read placing uses is no longer marked, page.js's marked actions come after every checkout action, and placing reports the address the tab moved to (`landed`).
 - **A test run only when checkout changes (26.11.18.1).** Parts checkout never uses are marked `not-checkout`; a change anywhere else changes the checkout fingerprint and Simmer asks for a test run before ordering (docs/CHECKOUT.md).
 - **Faster + and a full confirmation read (26.11.18.1).** A + from one no longer waits 3 s for a remove question; after Place Order the confirmation page is read once its words fill in.
 - **A plain description (26.11.18).** Chrome shows "Finds groceries and fills your Safeway cart for Simmer."

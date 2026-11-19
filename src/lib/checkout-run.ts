@@ -14,7 +14,7 @@ import {
   type Approval, type CheckoutSettings, type Final,
 } from "./checkout";
 import { AppError } from "./errors";
-import { cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
+import { HELPER_VERSION, cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
 import { doneShopping } from "./groceries";
 import { clearCart } from "./safeway";
 import { json, kv, secs } from "./kv";
@@ -326,7 +326,10 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
     const all = allStops(why, reasons.slice(why.length));
     result = all.length ? { ok: false, reasons: all } : { ok: true, would: `Would place $${(a.totalCents / 100).toFixed(2)} · ${a.windowWords}` };
     // A test run that matched: this helper version may place orders (docs/CHECKOUT.md).
-    if (result.ok) await passedDryRun(CHECKOUT_PRINT);
+    // Only when the helper that ran it is the one Simmer ships (outside review, Nov 18): an older helper's run, made
+    // while the new one wasn't on the computer yet, never counts for the new code.
+    if (result.ok && job?.args.by === HELPER_VERSION) await passedDryRun(CHECKOUT_PRINT);
+    else if (result.ok) result = { ok: false, reasons: ["The helper on the computer isn't up to date, so this run doesn't count. Update it, then try again."] };
   }
   await record("test run", { ...result, approvalId: a.id, jobId, faceId: a.faceId, stopped: reading?.stopped ?? "", chosen: reading?.chosen ?? null, url: reading?.final?.url ?? "" });
   return result;
@@ -418,11 +421,12 @@ export function expectFor(a: Approved) {
   };
 }
 
-/** Safeway's page after the press says the order went through: an order number, or its thank-you or confirmation words (never the address alone). */
+/** Safeway's page after the press says the order went through: an order number, its thank-you or confirmation words, or the confirmation address the tab moved to. */
 // Or Safeway's confirmation address with its order number (Nov 18: the page was read before its words filled in, so a
-// placed order came back "not sure" and the cart stayed).
-export const confirmed = (after: { url: string; text: string } | null | undefined) =>
-  Boolean(after) && (Boolean(orderNumberIn(after!.text)) || Boolean(confirmationNumberIn(after!.url)) || /thank you for your order|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after!.text));
+// placed order came back "not sure" and the cart stayed), but only when the tab moved there after the press: `landed`
+// is the address Chrome reported the move to, and it must be the page read (outside review, Nov 18).
+export const confirmed = (after: { url: string; text: string } | null | undefined, landed = "") =>
+  Boolean(after) && (Boolean(orderNumberIn(after!.text)) || (Boolean(landed) && landed === after!.url && Boolean(confirmationNumberIn(after!.url))) || /thank you for your order|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after!.text));
 
 /**
  * How placing stands: still going, or what happened (reported once). Ordered: the cart comes off the Safeway list as
@@ -434,7 +438,7 @@ export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderRes
   if (job && job.kind === "checkoutPlace" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(ORDER_KEY + jobId));
   if (!a) throw new AppError("That order was already reported. Check Safeway.");
-  const r = (job?.result ?? {}) as { stopped?: string; pressed?: boolean; why?: string; error?: string; after?: { url: string; text: string } | null };
+  const r = (job?.result ?? {}) as { stopped?: string; pressed?: boolean; why?: string; error?: string; landed?: string; after?: { url: string; text: string } | null };
   const unsure: OrderResult = { ok: false, unsure: true, reasons: ["Not sure the order went through. Check Safeway before trying again."] };
   let result: OrderResult;
   if (!job || job.kind !== "checkoutPlace") result = unsure;
@@ -443,7 +447,7 @@ export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderRes
   else if (job.status !== "done") result = r.error === "not-answering" ? { ok: false, unsure: true, reasons: [failedWords(job), "Check Safeway before trying again."] } : unsure;
   // Ordered only when Safeway's page says so (outside review): a move to some other page isn't proof.
   // Whether or not the page moved (Safeway may confirm in place), as long as it says so.
-  else if (r.pressed && confirmed(r.after)) {
+  else if (r.pressed && confirmed(r.after, r.stopped === "placed" ? r.landed ?? "" : "")) {
     const number = orderNumberIn(r.after?.text ?? "") || confirmationNumberIn(r.after?.url ?? "");
     result = { ok: true, ordered: `Ordered · pickup ${a.windowWords} · $${(a.totalCents / 100).toFixed(2)}`, number };
     const lines = await loadCart();

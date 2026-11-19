@@ -287,7 +287,8 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
   // same moment could both have read it as waiting). The loser gets nothing this time.
   if (j?.kind === "checkoutPlace" && (await kv().set(`simmer:claimed:${j.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") j = undefined;
   if (h && j && tab.helperRow && sheetsConfigured()) {
-    const job: Row = { ...j, status: "working", updated: now() };
+    // Which helper took it (outside review, Nov 18): a test run counts only for the helper Simmer ships.
+    const job: Row = { ...j, status: "working", args: { ...j.args, by: str(version, 40) }, updated: now() };
     await updateRanges([{ range: `${TAB}!A${tab.helperRow}:G${tab.helperRow}`, values: [helperRowCells(h)] }, { range: `${TAB}!A${j.row}:G${j.row}`, values: [cells(job)] }]);
     for (const t of [cache, lastGood]) if (t) t.helper = h;
     if (cache) cache.jobs = cache.jobs.map((x) => (x.id === job.id ? job : x));
@@ -295,7 +296,7 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
   }
   if (h) await writeHelper(h).catch((e) => console.error("couldn't note the helper", e));
   if (!j) return null;
-  return write({ ...j, status: "working" }, j.row);
+  return write({ ...j, status: "working", args: { ...j.args, by: str(version, 40) } }, j.row);
 }
 
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");

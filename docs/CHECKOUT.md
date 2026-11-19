@@ -164,9 +164,12 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    server's switch (`CHECKOUT_ENABLED`, off until Sam turns it on):
    - **Place order · $X** shows beside Test run only when the server allows it and this helper version has passed a
      test run on the account, kept by the helper's checkout fingerprint (Sam, Nov 18): a hash of the helper's
-     code with only the parts marked `not-checkout` (searching, adding, quantities, the Purchases page, samples) left out,
+     code, its manifest and the page details Simmer sends it (`src/lib/safeway-helper.mjs`), with only the parts marked
+     `not-checkout` (whole marker lines; a test pins what each part may hold and that they come after every checkout
+     action) (searching, adding, quantities, the Purchases page, samples) left out,
      so an update that touches anything checkout runs, or anything it shares, needs a new test run, and a search or cart
-     fix doesn't. `scripts/checkout-print.mjs` writes it; a test fails if it's stale. Every order is still checked
+     fix doesn't. `scripts/checkout-print.mjs` writes it; a test fails if it's stale. A test run counts only when the
+     helper that ran it is the one Simmer ships (outside review, Nov 18). Every order is still checked
      against what was approved (cart, total, store, card, time, bags) right before the press, and stops on any difference. Tapping it asks first (store, time, card,
      total, highlights), then Face ID approves exactly those figures.
    - The approval is taken out in one step (single use), must be within 2 minutes and the cart unchanged, and every stop
@@ -183,7 +186,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    - Outside review (Codex, Nov 14), all six fixed: the helper checks the 2-minute deadline itself right before the
      press; the final page must show the item count with its subtotal; the store, time and card are checked in the
      lines where Safeway shows the chosen ones, each exactly once; "ordered" only when Safeway's page says so (an order
-     number or its confirmation words, whether or not the page moved); an order is marked going before the helper is
+     number or its confirmation words, whether or not the page moved; since Nov 18 also Safeway's confirmation address
+     with its order number, only when Chrome reports the tab moved to exactly that address after the press, so a placed
+     order whose page hadn't filled in isn't "not sure"); an order is marked going before the helper is
      asked, and no other order starts until it's reported (or 30 minutes pass when unsure); a placing job is claimed in
      one step only one helper can win. Known gap: a cart change made on Safeway during the ~30 s of checkout, to other
      products with the same count, subtotal and total, would not be noticed.
