@@ -7,7 +7,7 @@ export const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").r
   .replace(/(?<=[a-z]{2})ies$/, "y").replace(/(?<=[a-z]{2}(?:ss|x|z|ch|sh|o))es$/, "").replace(/(?<=[a-z]{2}[^s])s$/, "");
 
 // Spices and dried herbs: what the house nearly always has, so a recipe's go to "Check you have these", not "To buy".
-const SPICES = new Set(("salt cumin paprika oregano cinnamon nutmeg turmeric coriander cayenne allspice cardamom peppercorn " +
+const SPICES = new Set(("salt cumin paprika oregano cinnamon nutmeg turmeric tumeric coriander cayenne allspice cardamom peppercorn " +
   "clove anise saffron sumac marjoram tarragon fenugreek masala spice seasoning zaatar adobo").split(" "));
 /** Things that are spices only in some phrases: "chili powder" but not "baking powder", "black pepper" but not "bell pepper". */
 const SPICE_PHRASES = /\b(?:chil[ei] powder|garlic powder|onion powder|curry powder|mustard powder|ground (?:ginger|mustard|pepper)|(?:black|white|cracked|ground) pepper|pepper flake|chil[ei] flake|red pepper flake|crushed red pepper|(?:fennel|cumin|mustard|celery|caraway|coriander) seed|garlic salt|onion salt|celery salt|five spice|herbes de provence|bay lea(?:f|ves)|dried (?:\w+ )?(?:basil|thyme|rosemary|oregano|parsley|dill|sage|mint|chive|herb|chil[ei])|(?:basil|thyme|rosemary|parsley|dill|sage|mint) dried)s?\b/;
@@ -43,7 +43,7 @@ export function parseEntry(text: string): { item: string; quantity: string } {
  */
 const KNOWN: Record<string, [Store, Section]> = Object.fromEntries(([
   ["milk, egg, yogurt, butter, cheese, cream, sour cream, half and half, banana, apple, orange, lemon, lime, grape, strawberr, raspberr, blueberr, berry, avocado, tomato, onion, garlic, potato, carrot, celery, lettuce, spinach, broccoli, cucumber, bell pepper, cilantro, parsley, fresh basil, herb, bread, tortilla, ground beef, ground turkey, chicken, salmon, fish, shrimp, bacon, ham, deli, turkey, salad, zucchini, squash, mushroom, kale, cabbage, ginger root, jalapeno, scallion, green onion, mint, thyme, rosemary, dill, shallot, leek, asparagus, green bean, pork, sausage, steak, tofu, mozzarella, parmesan, cheddar, feta, ricotta, hummus, pie crust", "safeway", "fresh"],
-  ["rice, pasta, spaghetti, penne, macaroni, lasagna noodle, flour, sugar, salt, oil, olive oil, vinegar, cereal, oat, oatmeal, peanut butter, jam, jelly, honey, cracker, goldfish, chip, pretzel, snack, granola, granola bar, canned, broth, stock, soup, sauce, salsa, ketchup, mustard, mayo, spice, coffee, tea, cumin, paprika, oregano, chili powder, cinnamon, vanilla, baking soda, baking powder, breadcrumb, panko, soy sauce, coconut milk, evaporated milk, condensed milk, tomato paste, tomato sauce, crushed tomato, diced tomato, noodle, quinoa, lentil, chickpea, black bean, refried bean, kidney bean, pinto bean, brown sugar, corn syrup, seasoning, taco seasoning, pecan, walnut, almond", "safeway", "pantry"],
+  ["rice, pasta, spaghetti, penne, macaroni, lasagna noodle, flour, bread flour, dressing, salad dressing, cornmeal, corn meal, polenta, sugar, salt, oil, olive oil, vinegar, cereal, oat, oatmeal, peanut butter, jam, jelly, honey, cracker, goldfish, chip, pretzel, snack, granola, granola bar, canned, broth, stock, soup, sauce, salsa, ketchup, mustard, mayo, spice, coffee, tea, cumin, paprika, oregano, chili powder, cinnamon, vanilla, baking soda, baking powder, breadcrumb, panko, soy sauce, coconut milk, evaporated milk, condensed milk, tomato paste, tomato sauce, crushed tomato, diced tomato, noodle, quinoa, lentil, chickpea, black bean, refried bean, kidney bean, pinto bean, brown sugar, corn syrup, seasoning, taco seasoning, pecan, walnut, almond", "safeway", "pantry"],
   ["frozen, ice cream, nugget, frozen pizza, frozen vegetable", "safeway", "freezer"],
   ["toilet paper, tp, paper towel, napkin, soap, detergent, dish soap, trash bag, foil, plastic wrap, sponge, tissue, shampoo, toothpaste", "costco", "household"],
 ] as const).flatMap(([words, st, sec]) => words.split(",").map((w) => [w.trim(), [st, sec]])));
@@ -67,13 +67,17 @@ const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\
 
 /** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
 export function parseIngredient(raw: string): Ingredient {
-  const line = raw.replace(/[½¼¾⅓⅔⅛]/g, (f) => ` ${FRACTIONS[f]}`).replace(/(\d)\s+(\d\/)/, "$1 $2").replace(/\s+/g, " ").trim();
+  const line = raw.replace(/[½¼¾⅓⅔⅛]/g, (f) => ` ${FRACTIONS[f]}`).replace(/(\d)\s+(\d\/)/, "$1 $2").replace(/\s+/g, " ").trim()
+    // Typed the way people write cards (Nov 18): "Optional: dressing", "a little ginger", "2c cheese".
+    .replace(/^optional\s*:\s*(?:add\s+)?/i, "").replace(/^(?:a little|a bit of|a few|a splash of|a drizzle of|some)\s+/i, "")
+    .replace(/^(\d+(?:\/\d+)?)(c|T|t|tbsp|tsp|oz|lbs?|g|kg|ml)\.?\s/, "$1 $2 ");
   const m = line.match(LINE);
   let quantity = "", unit = "", item = line;
-  if (m) { quantity = m[1].toLowerCase().replace(/^(an?|one)$/, "1").replace(/^two$/, "2").replace(/^three$/, "3").replace(/^four$/, "4"); unit = (m[2] ?? "").toLowerCase(); item = m[3]; }
+  // T is a tablespoon and t a teaspoon, so the case counts before it's lowered.
+  if (m) { quantity = m[1].toLowerCase().replace(/^(an?|one)$/, "1").replace(/^two$/, "2").replace(/^three$/, "3").replace(/^four$/, "4"); unit = m[2] === "T" ? "tbsp" : m[2] === "t" ? "tsp" : /^c$/i.test(m[2] ?? "") ? "cup" : (m[2] ?? "").toLowerCase(); item = m[3]; }
   // "15 ounce can pumpkin": the size came first, so the container is still on the name.
   if (unit) item = item.replace(/^(?:cans?|jars?|packages?|pkgs?|bags?|boxes|box|containers?|bottles?|cartons?)\s+(?:of\s+)?/i, "");
   // What's bought, not how it's cut: "onion, diced" → onion; "garlic (minced)" → garlic; "salt to taste" → salt.
-  item = item.replace(/\([^)]*\)/g, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
+  item = item.replace(/\([^)]*\)/g, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided|of choice)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
   return { line: raw.trim(), quantity, unit, item: item || line.toLowerCase(), section: known(item)?.section ?? "fresh" };
 }
