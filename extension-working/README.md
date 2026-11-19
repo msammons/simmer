@@ -18,6 +18,7 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
   the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **A plain description (26.11.18).** Chrome shows "Finds groceries and fills your Safeway cart for Simmer."
 - **Opens the sign-in page when signed out (26.11.17.1).** When Safeway says Sam is signed out, the Safeway tab goes to
   Safeway's sign-in page and waits there; jobs leave it alone until he has signed in. It never types or presses anything.
 - **Opens its own window (26.11.17).** With Chrome running but every window closed, a job opens a Safeway window
