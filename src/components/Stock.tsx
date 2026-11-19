@@ -79,7 +79,7 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         if (!here.length) return null;
         return (
           <Group key={id} header={name}>
-            {linesOf(here).flatMap((l) => {
+            {linesOf(here).flatMap((l, i, all) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
               const isOpen = showAll || open.has(key);
@@ -90,10 +90,13 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               // Nothing to show or hide (everything in it already shows): the header stays, without its hide/show (Sam, Nov 16).
               const toggles = !l.rows.every(wanted);
               const flip = () => { if (toggles && !showAll) toggle(key); };
+              // Right under another group: one line between them, not two.
+              const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 19, Sam): its header row tinted, the name in the usual colour (coloured words are a dinner's
-              // things), and an arrow; tapping it switches between all its items and only cart items, and its ⋯ has both.
+              // things), an arrow, and the faint coloured line around its cells; tapping it switches between all its items and only
+              // cart items (Nov 19: not in its ⋯, which only renames or removes the group).
               return [
-                <div key={key} data-group={l.name} className="divide-y divide-line">
+                <div key={key} data-group={l.name} className="relative divide-y divide-line">
                   <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
                     <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={flip}
                       className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-4 pr-2 text-left">
@@ -104,16 +107,15 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                       <span aria-hidden>⋯</span>
                       <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-                        onChange={(e) => { const v = e.target.value; if ((v === "all" && !isOpen) || (v === "cart" && isOpen)) flip(); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
+                        onChange={(e) => { const v = e.target.value; if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
-                        {toggles && <option value="all" disabled={showAll}>{`${isOpen ? "✓ " : ""}Show all items`}</option>}
-                        {toggles && <option value="cart" disabled={showAll}>{`${isOpen ? "" : "✓ "}Show cart items only`}</option>}
                         <option value="rename">Rename group</option>
                         <option value="remove">Remove group</option>
                       </select>
                     </label>
                   </div>
                   {(toggles ? shown : l.rows).map((r) => item(r))}
+                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border !border-accent/20 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
             })}
