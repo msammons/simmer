@@ -1,23 +1,33 @@
 # Simmer (the Chrome helper)
 
-Simmer's Shop tab (List · Find · Cart) searches Safeway and changes the Safeway cart, but Safeway can only be reached
-from a real browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does
-Simmer's small Safeway jobs on safeway.com and reports back. It never signs in and never checks out.
+Simmer's Shop tab searches Safeway (Find) and changes the Safeway cart, but Safeway can only be reached from a real
+browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does Simmer's small
+Safeway jobs on safeway.com and reports back. It never signs in, and never types a card detail. It goes through checkout
+only when Simmer's Check out asks (docs/CHECKOUT.md), and its one press that orders, Place Order, is made only for an
+order Face ID approved, once, when the page says exactly what was approved.
 
-## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push)
+## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push; since 26.11.12 checkout)
 
 - **Jobs.** Simmer queues a job (`/api/safeway/jobs`): `search` (a search's products with picture, name, price and
   whether each is in the cart), `setQty` (press Add / + / − on a product until the cart holds that many; 0 takes it
   out), `cart` (1.2: show Safeway's cart page in the Safeway tab, and read it), and `sample` / `snapshot` (a short
-  account of a page, to learn how Safeway builds it; `on: "cart"` for the cart page). From Cart, `setQty` is done on
-  Safeway's cart page first (where the product is listed), then by searching Simmer's words, other words, and the
-  product's name. Long names Safeway shortens on screen ("…") are read whole from the product's buttons. A change from
-  Find is made on the search page the Safeway tab is already showing when it's that search (1.2.5), with no reload.
+  account of a page, to learn how Safeway builds it; `on: "cart"` for the cart page). A `setQty` for something already in the
+  cart is done on Safeway's cart page first (where the product is listed), then by searching Simmer's words, other words,
+  and the product's name; Simmer asks for that from Shop's rows and from Find alike (Simmer, Nov 19: a − from the search page
+  found nothing). A new Add is made on the search page the Safeway tab is already showing when it's that search (1.2.5),
+  with no reload. Long names Safeway shortens on screen ("…") are read whole from the product's buttons.
   Safeway loads pictures as they're scrolled to, so a picture further down is read from its `data-src`; Safeway can
   say "No search results" for a moment while its page builds, so that only counts once it has held for a few seconds. The background
   (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
   the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **Places the order (26.11.14.7; waits for Place Order to turn on, 26.11.16; reads the confirmation once it fills in, 26.11.18.1).**
+  A `checkoutPlace` job, only for an order Face ID approved: it reads Safeway's cart page first (exactly the approved
+  products and counts), goes through checkout to exactly the approved time, waits (watching the page, 15 s at most) for
+  Place Order to turn on, and presses it once, only when the page, read again right there, shows the approved total, item
+  count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
+  minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
+  tab moved to) for Simmer to judge. It never presses again, whatever comes back.
 - **Tighter checkout fingerprint (26.11.18.2).** The cart read placing uses is no longer marked, page.js's marked actions come after every checkout action, and placing reports the address the tab moved to (`landed`).
 - **A test run only when checkout changes (26.11.18.1).** Parts checkout never uses are marked `not-checkout`; a change anywhere else changes the checkout fingerprint and Simmer asks for a test run before ordering (docs/CHECKOUT.md).
 - **Faster + and a full confirmation read (26.11.18.1).** A + from one no longer waits 3 s for a remove question; after Place Order the confirmation page is read once its words fill in.
@@ -38,10 +48,10 @@ Simmer's small Safeway jobs on safeway.com and reports back. It never signs in a
   Chrome 121 or later and the `notifications` permission (Chrome requires it for push in an extension; nothing is ever
   shown). The push is how the helper hears of a job: without the keys, jobs wait until Chrome starts or the panel opens.
 - **Not answering.** Simmer doesn't guess from when the helper last checked in. A job the helper doesn't pick up within
-  20 seconds is given up, says so, and Lists turns the Safeway rows into a checklist for the rest of that visit.
+  20 seconds is given up, says so, and Shop turns the Safeway rows into a checklist for the rest of that visit.
 - **Gets ready and test runs (26.11.13).** Asked for by Simmer's Check out: Checkout, Continue, Order info's Continue
   when it's there, the earliest free regular pickup time (or exactly the approved one, in a test run), the pickup step's
-  Continue, then the final page read. Nothing presses Place Order; there's no code for it.
+  Continue, then the final page read. Nothing in those presses Place Order (only placing does, above).
 - **…and one pickup day (26.11.12.7).** On the checkout page, the look presses the first day not chosen yet, to see its
   windows, and reads them; never a time window. Order info's Continue is skipped when it's already done.
 - **Notes the button's words before pressing (26.11.12.6).** Safeway's Continue turns into "Processing" once pressed.
@@ -87,7 +97,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.13.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.18.2.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
@@ -105,14 +115,10 @@ YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as ev
 - `../scripts/extension-test.mjs`: the whole thing against a real local Simmer and a stand-in Safeway
   (`node scripts/extension-test.mjs`). It can't tell whether the real Safeway pages still match.
 
-## Not yet tried on the real safeway.com
+## What's been seen on the real safeway.com, and what hasn't
 
-Whether Safeway's search fills in a tab nobody's looking at; whether − at one removes the product without a
-confirmation step; the − / + buttons' labels on the real page (read from Safeway's code, not pressed); and anything
-about the cart page (1.2): its address (`PAGE.cartPath`), whether its products read like search tiles, and its
-buttons. If they don't, cart changes fall back to searching, and a `sample` job with `on: "cart"` shows what to put in
-`PAGE.cartItems`. Also unseen: whether the whole name of a shortened title is in the product's button labels, and (1.3) what an order
-looks like on the Purchases page's Online tab: `PAGE.orders.entry` is a guess, and the first real order's words (in the
-cart job's result) show what to put there. When
-something doesn't match, a `sample` or `snapshot` job's text (kept in the Sheet's "Safeway jobs" tab) shows what
-Safeway sent, to fix `PAGE` in Simmer.
+Seen and working: searching, the cart page, pressing Add / + / −, checkout and its pickup times, test runs (Nov 14), and a
+first real order (Nov 18). Not confirmed: what an order looks like on the Purchases page's Online tab (`PAGE.orders.entry`
+is a guess, and the cart job's result keeps the page's words to fix it from), and whether the whole name of a shortened
+title is always in the product's button labels. When something doesn't match, a `sample` or `snapshot` job's text (kept
+with Simmer's "Safeway jobs" rows) shows what Safeway sent, to fix `PAGE` in Simmer.

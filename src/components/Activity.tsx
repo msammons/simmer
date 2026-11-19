@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Activity } from "@/lib/client";
 import { BrandBar, Button, EmptyState, Group, Row } from "./ui";
 
-/** How long the panel must sit untouched before the phone's work takes it over, and how often it checks. */
+/** How long the panel must sit untouched before the phone's work takes it over (it checks on open, return and the helper's word). */
 const IDLE = 120_000;
 
 const live = (j: Activity) => j.status === "waiting" || j.status === "working";
@@ -61,9 +61,13 @@ export function usePanelActivity(on: boolean) {
   useEffect(() => {
     if (!on) return;
     const ctl = new AbortController();
+    // Numbered (Nov 19): a slow earlier look that answers after a newer one never puts the older log back.
+    let asked = 0;
     const check = async () => {
+      const n = ++asked;
       try {
         const r = await api.activity(ctl.signal);
+        if (n !== asked) return;
         setJobs(r.jobs);
         const phone = r.jobs.some((j) => j.from === "app" && live(j) && j.created > since.current);
         if (phone && Date.now() - touched.current >= IDLE) setLog(true);
@@ -75,7 +79,8 @@ export function usePanelActivity(on: boolean) {
     const done = (e: MessageEvent) => { if (e.source === window.parent && e.data?.type === "simmer:jobs-changed") check(); };
     document.addEventListener("visibilitychange", back);
     window.addEventListener("message", done);
-    return () => { ctl.abort(); document.removeEventListener("visibilitychange", back); window.removeEventListener("message", done); };
+    // Turned off, the log closes, so it doesn't come back by itself when the panel is next turned on.
+    return () => { ctl.abort(); setLog(false); document.removeEventListener("visibilitychange", back); window.removeEventListener("message", done); };
   }, [on]);
 
   const dismiss = useCallback(() => {

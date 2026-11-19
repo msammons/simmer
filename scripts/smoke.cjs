@@ -404,16 +404,19 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: and still closes, to its name alone", (await cheese.getAttribute("aria-expanded")) === "false" && (await page.locator('[data-group="Smoke cheese"] [role=group]').count()) === 0);
       await cheese.tap(); await page.waitForTimeout(300);
       ok("stock: and opens again", (await startsOpen()) && (await page.locator('[data-group="Smoke cheese"] [role=group]').count()) === 2);
+      // A group keeps the state she left it in when a thing in it changes (Nov 19: it used to pop shut).
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
-      ok("stock: one answered Have: the group closes and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false"
-        && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      ok("stock: a group stays open when a thing in it changes (one answered Have stays in view)", (await cheese.getAttribute("aria-expanded")) === "true"
+        && (await answerOf("smoke swiss")) === "have");
       ok("stock: the group's ⋯ only renames or removes it", JSON.stringify(await groupMenu().locator("option:not([disabled])").evaluateAll((os) => os.map((o) => o.value))) === '["rename","remove"]');
       const outline = await page.locator('[data-group="Smoke cheese"] > span[aria-hidden]').last().evaluate((el) => getComputedStyle(el).borderTopWidth);
       ok("stock: a group has its faint line around it", outline !== "0px", outline);
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: tapping the group's name shows all its items", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: tapping the group's name goes back to cart items only", (await cheese.getAttribute("aria-expanded")) === "false" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0
+        && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
       await cheese.tap(); await page.waitForTimeout(300);
-      ok("stock: and again goes back to cart items only", (await cheese.getAttribute("aria-expanded")) === "false" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      ok("stock: and again shows all its items", (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      await cheese.tap(); await page.waitForTimeout(300);
       // The list's own ⋯ by Add: Show all shows every kept thing and opens every group; checked while on.
       const listMenu = page.getByLabel("More for the list");
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
@@ -644,6 +647,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await page.getByRole("dialog", { name: "Edit Tacos" }).getByRole("button", { name: "Delete recipe" }).tap();
       const del = page.getByRole("dialog", { name: "Delete Tacos?" });
       ok("recipe: Delete on the Edit sheet asks first", await seen(del, 1000));
+      // Escape on a confirm over a sheet closes the confirm only (Nov 19: it closed both).
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      ok("recipe: Escape on the confirm closes it and leaves the Edit sheet open", (await del.count()) === 0 && (await page.getByRole("dialog", { name: "Edit Tacos" }).isVisible()));
+      await page.getByRole("dialog", { name: "Edit Tacos" }).getByRole("button", { name: "Delete recipe" }).tap();
+      await seen(del, 1000);
       await del.getByRole("button", { name: "Cancel" }).tap(); await page.waitForTimeout(300);
       await page.keyboard.press("Escape"); await page.waitForTimeout(400);
       ok("recipe: Cancel keeps it", await page.getByRole("heading", { name: "Tacos" }).isVisible());

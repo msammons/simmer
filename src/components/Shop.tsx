@@ -4,7 +4,7 @@ import { store, type CartLine, type Item, type ListState, type Store } from "@/l
 import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
 import { CartPlus, FindView, Stepper, useSafeway, type Safeway } from "./Safeway";
-import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, Segmented, Sheet, AddField } from "./ui";
+import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, type MoreOption } from "./ui";
 import { Icon } from "./icons";
 
 /**
@@ -43,17 +43,9 @@ export type ShopActions = {
 };
 
 /** ⋯ as the phone's own menu: what can be done with one row. Its space stays when there's nothing, so rows line up. */
-function More({ name, options, onPick }: { name: string; options: { value: string; label: string; off?: boolean }[]; onPick: (v: string) => void }) {
+function More({ name, options, onPick }: { name: string; options: MoreOption[]; onPick: (v: string) => void }) {
   if (!options.some((o) => !o.off)) return <span aria-hidden className="size-9 shrink-0" />;
-  return (
-    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-      <span aria-hidden>⋯</span>
-      <select value="" aria-label={`More for ${name}`} onChange={(e) => { if (e.target.value) onPick(e.target.value); }} className="absolute -inset-1 cursor-pointer opacity-0 text-base">
-        <option value="" disabled>{name}</option>
-        {options.map((o) => <option key={o.value} value={o.value} disabled={o.off}>{o.label}</option>)}
-      </select>
-    </label>
-  );
+  return <MoreMenu label={`More for ${name}`} title={name} options={options} onPick={onPick} />;
 }
 
 /** The ⋯ choices for a list item: pick another Safeway product (when there's one to change), or get it somewhere else. */
@@ -222,16 +214,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (
         <>
           <TopLine menu={(
-          <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-            <span aria-hidden>⋯</span>
-            <select value="" aria-label="More for Shop" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-              onChange={(e) => { const v = e.target.value; if (v === "checked") setShowGot(!showGot); else if (v === "bought") setOrdering(true); }}>
-              <option value="" disabled>Shop</option>
-              <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
-              {/* For when Simmer can't tell by itself that the order went through (Sam, Nov 17: into this ⋯, from a link under Safeway). */}
-              {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
-            </select>
-          </label>
+          <MoreMenu label="More for Shop" title="Shop" onPick={(v) => { if (v === "checked") setShowGot(!showGot); else if (v === "bought") setOrdering(true); }}>
+            <option value="checked">{showGot ? "✓ Show checked" : "Show checked"}</option>
+            {/* For when Simmer can't tell by itself that the order went through (Sam, Nov 17: into this ⋯, from a link under Safeway). */}
+            {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
+          </MoreMenu>
           )}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }

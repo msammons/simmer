@@ -14,15 +14,15 @@ export function vapid(): { publicKey: string; privateKey: string; subject: strin
 /** The public key the helper subscribes with (it's public: it's in every subscription). */
 export const pushKey = () => vapid()?.publicKey ?? "";
 
-let last = 0;
-
-/** Sends the wake-up, at most once a second. A subscription the push service says is gone is taken off. */
+/**
+ * Sends the wake-up. A subscription the push service says is gone is taken off. (Nov 19: no more once-a-second limit;
+ * it was per server instance anyway, and could drop the wake-up for a job queued right after another.)
+ */
 export async function wakeHelper(): Promise<void> {
   const keys = vapid();
-  if (!keys || Date.now() - last < 1000) return;
+  if (!keys) return;
   const push = await helperPush();
   if (!push || push.key !== keys.publicKey) return;
-  last = Date.now();
   try {
     await webpush.sendNotification(push.sub, null, { vapidDetails: keys, TTL: 60, urgency: "high", timeout: 5000 });
   } catch (e) {

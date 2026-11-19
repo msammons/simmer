@@ -4,7 +4,7 @@ import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
-import { BrandBar, ConfirmSheet, Group, Held, Row, Sheet } from "./ui";
+import { BrandBar, ConfirmSheet, Group, Held, MoreMenu, Row, Sheet } from "./ui";
 import { Icon } from "./icons";
 
 // The Meals tab is a list of days from today, each with its meals, picked from her recipes (Nov 16, from Robin's run;
@@ -20,9 +20,10 @@ export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r
 const KIND_ORDER: Kind[] = ["quick", "regular", "kids", "breakfast", "lunchmeal", "dessert", "side"];
 const KIND_HEADERS: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids' dinners", breakfast: "Breakfast", lunchmeal: "Lunch", dessert: "Desserts", side: "Sides" };
 
-/** "Wed, Nov 18": every day by its date (Sam, Nov 16: dates, not Today and Tomorrow). */
+/** "Wed, Nov 18": every day by its date (Sam, Nov 16: dates, not Today and Tomorrow). One formatter, made once. */
+const DAY = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 function dayName(day: string): string {
-  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+  return DAY.format(new Date(`${day}T12:00:00Z`));
 }
 
 
@@ -39,7 +40,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   dinnerGroceries: number;
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind | null, day: string) => void; onNewPlan: () => void;
 }) {
-  const dishes = plan?.dishes ?? [];
+  const dishes = useMemo(() => plan?.dishes ?? [], [plan]);
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
@@ -48,24 +49,24 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
   const undated = dishes.filter((d) => !d.day);
   const later = dishes.filter((d) => d.day && d.day > days[days.length - 1]);
+  // Looked up once per change, not once per meal (Nov 19).
+  const byId = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
+  const byDay = useMemo(() => {
+    const m = new Map<string, Dish[]>();
+    for (const d of dishes) if (d.day) m.set(d.day, [...(m.get(d.day) ?? []), d]);
+    return m;
+  }, [dishes]);
   const meal = (d: Dish) => {
-    const r = recipes.find((x) => x.id === d.recipe);
-    const name = mealName(d.recipe, recipes);
+    const r = byId.get(d.recipe);
+    const name = r?.name ?? d.recipe;
     return (
       <div key={d.id} className="flex items-center gap-1 pr-3">
         <div className="min-w-0 flex-1">
           <Row title={name} value={d.kind === "quick" || d.kind === "regular" ? undefined : KIND_NAMES[d.kind]} onClick={r ? () => onOpen(d) : undefined} />
         </div>
         {/* The dinner's ⋯ (Sam, Nov 17: row actions behind ⋯, as on every screen). */}
-        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-          <span aria-hidden>⋯</span>
-          <select value="" aria-label={`More for ${name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}>
-            <option value="" disabled>{name}</option>
-            <option value="move">Move to another day</option>
-            <option value="take">Take off the plan</option>
-          </select>
-        </label>
+        <MoreMenu label={`More for ${name}`} title={name} onPick={(v) => { if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}
+          options={[{ value: "move", label: "Move to another day" }, { value: "take", label: "Take off the plan" }]} />
       </div>
     );
   };
@@ -73,7 +74,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
     <div className="space-y-6">
       {/* New plan, the one fresh start for the whole app, in the pinned top bar beside Settings (Sam, Nov 11). */}
       <BrandBar trailing={plan && (dishes.length > 0 || dinnerGroceries > 0) && (
-        <button onClick={() => setStarting(true)} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>
+        <button type="button" onClick={() => setStarting(true)} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>
       )} />
       <h1 className="sr-only">Meals</h1>
       {!plan && <Held groups={[2, 2, 2]} />}
@@ -81,21 +82,19 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         <>
           {days.map((day) => {
             // Every day ends with its own Add row, after its meals (Sam, Nov 18: back from the first meal's ⋯).
-            const mine = dishes.filter((d) => d.day === day);
+            const name = dayName(day);
             return (
-              <Group key={day} header={dayName(day)}>
-                {mine.map((d) => meal(d))}
-                {(
-                  // As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
-                  // One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first).
-                  <button type="button" aria-label={`Add meal to ${dayName(day)}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
-                    <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
-                  </button>
-                )}
+              <Group key={day} header={name}>
+                {(byDay.get(day) ?? []).map((d) => meal(d))}
+                {/* As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
+                    One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first). */}
+                <button type="button" aria-label={`Add meal to ${name}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
+                  <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
+                </button>
               </Group>
             );
           })}
-          <button onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>
+          <button type="button" onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>
           {later.length > 0 && <Group header="Later">{later.map((d) => meal(d))}</Group>}
           {undated.length > 0 && <Group header="Not on a day">{undated.map((d) => meal(d))}</Group>}
         </>
@@ -123,9 +122,6 @@ function Nothing({ children }: { children: string }) {
   return <Row title={<span className="text-muted">{children}</span>} />;
 }
 
-/** Snacks, drinks and sauces are never planned (`kindOf`), so they're not offered. */
-const plannable = (r: Recipe) => kindOf(r) !== null;
-
 /**
  * Add one of a kind to this week: her recipes of that kind, A–Z, to pick from (no suggestions: Simmer doesn't pick
  * meals, Nov 10); the search box finds any recipe, which goes in under its own kind. Recipes only. One already planned
@@ -138,9 +134,12 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
   // Already on this day: "Planned" (the same recipe can go on another day).
   const planned = useMemo(() => new Set(plan.dishes.filter((d) => d.day === day).map((d) => d.recipe)), [plan.dishes, day]);
   const term = q.trim();
-  const all = useMemo(() => recipes.filter(plannable).sort((a, b) => a.name.localeCompare(b.name)), [recipes]);
-  const mine = only ? all.filter((r) => kindOf(r) === only) : all;
-  const found = useMemo(() => (term ? searchRecipes(recipes, term).filter((r) => plannable(r) && (!only || kindOf(r) === only)) : []), [recipes, term, only]);
+  // Each recipe's kind worked out once (Nov 19); snacks, drinks and sauces (no kind) are never planned.
+  const kinds = useMemo(() => new Map(recipes.map((r) => [r, kindOf(r)])), [recipes]);
+  const all = useMemo(() => recipes.filter((r) => kinds.get(r) !== null).sort((a, b) => a.name.localeCompare(b.name)), [recipes, kinds]);
+  const mine = useMemo(() => (only ? all.filter((r) => kinds.get(r) === only) : all), [all, kinds, only]);
+  const found = useMemo(() => (term ? searchRecipes(recipes, term).filter((r) => kinds.get(r) != null && (!only || kinds.get(r) === only)) : []), [recipes, kinds, term, only]);
+  const byKind = useMemo(() => KIND_ORDER.map((k) => [k, mine.filter((r) => kinds.get(r) === k)] as const).filter(([, rs]) => rs.length), [mine, kinds]);
   // Closes at once (Sam, Nov 10: no "Saving…"): the dinner shows on Meals straight away and saves behind it.
   function add(dish: NewDish) {
     onAdd(dish);
@@ -150,7 +149,7 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
   const row = (r: Recipe) => {
     const here = planned.has(r.id);
     return <Row key={r.id} title={r.name} value={here ? "Planned" : undefined} disabled={here}
-      onClick={here ? undefined : () => add({ kind: kindOf(r) ?? "regular", recipe: r.id, pinned: true, day })} />;
+      onClick={here ? undefined : () => add({ kind: kinds.get(r) ?? "regular", recipe: r.id, pinned: true, day })} />;
   };
   return (
     <Sheet label="Add a meal" title={dayName(day)} onClose={onClose} tall>
@@ -173,17 +172,14 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
           </Group>
         ) : mine.length ? (
           // Every kind, each under its own heading, in the order she plans them.
-          KIND_ORDER.filter((k) => mine.some((r) => kindOf(r) === k)).map((k) => (
-            <Group key={k} header={KIND_HEADERS[k]}>{mine.filter((r) => kindOf(r) === k).map((r) => row(r))}</Group>
-          ))
+          byKind.map(([k, rs]) => <Group key={k} header={KIND_HEADERS[k]}>{rs.map((r) => row(r))}</Group>)
         ) : <Group><Nothing>No recipes</Nothing></Group>}
       </div>
     </Sheet>
   );
 }
 
-/** Which day, for a recipe added from its own page (Nov 16): the next 14 days, tap one. */
-/** Which day, each showing what's already on it (Sam, Nov 17), as Meals marks what's planned. */
+/** Which day, for a recipe added from its own page (Nov 16): the next 14 days, tap one, each showing what's already on it (Sam, Nov 17), as Meals marks what's planned. */
 export function PickDaySheet({ name, dishes, recipes, onPick, onClose }: { name: string; dishes: Dish[]; recipes: Recipe[]; onPick: (day: string) => void; onClose: () => void }) {
   const today = todayIn();
   const on = (day: string) => dishes.filter((d) => d.day === day).map((d) => mealName(d.recipe, recipes)).join(", ") || undefined;

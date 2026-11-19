@@ -8,6 +8,15 @@ Simmer is for **Robin first**. She does almost all of the planning and ordering 
 question: does this take less of her time and attention than what she does now? Sam is the second user (he adds to the
 list, cooks some nights, and looks at the week).
 
+
+> **Status, Nov 19.** This is the October plan, kept for why things are the way they are. Much of it was built, then
+> changed in Robin's rounds; where it disagrees with the app, the app and `docs/DESIGN.md` / `docs/ARCHITECTURE.md` win.
+> What changed most: Simmer no longer picks or suggests meals (Nov 10-14); she adds each dinner to a day from her recipes
+> (no Quick/Regular counts, no plan sheet, no lunches screen); the data is in Upstash Redis, not the Google Sheet (Nov 11);
+> the tabs are Recipes · Meals · List · Shop (the old Stock is the List, Groceries became Shop, Search is gone);
+> Safeway ordering became the helper plus checkout from the phone (`docs/CHECKOUT.md`), and the first real order went
+> through Nov 18. Notes below mark what is stale.
+
 ---
 
 ## 1. What the conversation told us
@@ -66,6 +75,10 @@ Delivery from the other stores (through a service like Instacart) costs extra an
 
 ## 2. Principles for Simmer
 
+
+> Status Nov 19: principles 1 and 2 (the week's shape as input, suggestions) are retired: Simmer never picks meals.
+> The rest still hold.
+
 1. **The week's shape is the input; meals are the output.** Quick and regular nights, plus any pinned meals. Everything
    else is a suggestion she can take, swap or ignore.
 2. **Suggest, never decide.** Nothing is "planned" until she says so. Suggestions come in small sets (three per night),
@@ -88,6 +101,11 @@ Delivery from the other stores (through a service like Instacart) costs extra an
 ---
 
 ## 3. The data (Sheet tabs)
+
+
+> Status Nov 19: the same tabs, but kept as rows in Upstash Redis (the Sheet is an export only). What's planned now lives
+> in Planned and Made; the Plan, Lunches, Lunch plan and Plan counts tabs are left over from the week-plan design and no
+> screen uses them.
 
 The Sheet stays the place where data is managed: Robin or Sam can fix anything by hand, and the app reads it
 forgivingly (headers in any order, a bad row skipped and reported, never fatal). New tabs, added to `TABS` in
@@ -213,6 +231,11 @@ code (a number of minutes is read from the recipe text, never invented).
 
 ### 4.2 Planning the week
 
+
+> Status Nov 19: replaced. Meals is a list of days from today; each day has her dinners and one Add meal row (a sheet of
+> her recipes with kind pills). No suggestions, shapes, seasons, scoring or "Who's eating" (the suggestion rules were
+> removed Nov 14). `lib/week.ts` keeps only the kinds and the freezer match.
+
 **Changed Nov 3: planned by number, not by day.** Planning asks how many: quick, regular and kids' dinners, desserts,
 sides, breakfasts, and lunches for each boy (starting from last time's numbers), plus the Trader Joe's and Costco
 trips. Simmer picks that many by the rules below (variety is with everything planned, not the night before), each with
@@ -270,6 +293,10 @@ chili last night?"* with *Yes* / *No, we had something else*. This keeps "last m
 background reminders: it's asked while she's using the app.)
 
 ### 4.3 The shared grocery list
+
+
+> Status Nov 19: built as the List (Have or Need on every thing, groups) and Shop (by store). A dinner's things wait on
+> the List until she says Need; list names have no sizes or cuts. No "Check you have these" or "Running low?" rows.
 
 **What it does.** One list for the house: what the plan needs, what's run low, and what's needed for lunches and
 breakfast, sorted by store and by fresh or pantry.
@@ -350,6 +377,9 @@ it's open (where the browser allows). *Made it* at the bottom marks it made and 
 
 ### 4.9 The boys' lunches
 
+
+> Status Nov 19: no lunch planning screen; Lunch is only a kind of meal she can put on a day (Nov 16).
+
 **Changed Nov 3:** lunches are a number per boy ("Theo 5, Leo 5"), not school days; each is ticked when packed.
 
 **What it does.** Plans each boy's packed lunch for the school days, from that boy's own options, and puts what's
@@ -378,6 +408,10 @@ needed on the list.
 ---
 
 ## 5. Safeway ordering, without leaving Simmer
+
+
+> Status Nov 19: built differently from the options here: a Chrome helper on a computer does the Safeway jobs
+> (`extension-working/`), and ordering from the phone follows `docs/CHECKOUT.md` (Face ID, a limit, test runs, Place order).
 
 Sam's action item from the meeting, with two decisions made after it: **Robin shouldn't have to jump between apps
 to build the order**, and **checkout stays in the Safeway app.** So the goal is Simmer filling her Safeway cart itself
@@ -461,6 +495,11 @@ services that add fees.
 ---
 
 ## 6. Screens
+
+
+> Status Nov 19: stale. Current screens are in `docs/ARCHITECTURE.md` ("The screens", "Shop and Safeway") and
+> `docs/DESIGN.md`; the test list is `docs/ui-test-plan.md`. Gone: Plan the week, the Search button, Groceries (now Shop),
+> the Safeway order review screen, Tonight and Today's lunches. Settings holds the look, Ordering and the release.
 
 Built only from `components/ui.tsx`, in the style the studio's other apps share (the Simmer lockup top left, one action
 top right, one large title, inset grouped lists, one sheet style).
@@ -546,6 +585,10 @@ underneath, and no device names.
 
 ## 7. How it's built (the parts that are new)
 
+
+> Status Nov 19: the list no longer refetches every 30 seconds; nothing runs on a timer (it loads on open, on return and
+> after a change). Data is in Redis. Planning is no longer scored code.
+
 - **Writes to the Sheet.** Head Out mostly reads; Simmer writes a lot (the list, the plan, made, freezer). Writes go
   through one small module that appends or updates rows by `id`, with the same forgiving reading. Two people editing the
   list at once is the main concurrency case: each change is a single-row write (add a row, set `checked` on a row), never
@@ -569,6 +612,10 @@ underneath, and no device names.
 ---
 
 ## 8. Build order
+
+
+> Status Nov 19: phases 1, 2, 4 and 5 are built (as changed above); phase 3 became "she adds each dinner"; phase 6's
+> freezer is a List section and the Recipes' From the freezer group; phase 7 is open.
 
 Each phase ends with something Robin uses for a real week, then a revision with her before the next.
 
@@ -617,6 +664,10 @@ options, with *Swap the meal* (which opens that night) beside moving it to anoth
 ---
 
 ## 9. Decided
+
+
+> Status Nov 19: items 1-3, 8 and 9 were overtaken (no suggestions, no seven-night plan, no "who's eating"); 5 and 6
+> became the helper and the checkout rules.
 
 Answered by Sam on Oct 26, 2026:
 

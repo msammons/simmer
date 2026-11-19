@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type Ref } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
@@ -29,7 +29,6 @@ export function Button({ children, onClick, href, disabled, type = "button", var
     : <button type={type} onClick={onClick} disabled={disabled} className={cls}>{inner}</button>;
 }
 
-/** Add, as a round + beside an add field (Nov 17): submits its form; named "Add" for screen readers. */
 /**
  * The add field: a text box with a plain grey + inside its right end, as the other adds (Sam, Nov 17: a big filled + beside it was overkill).
  * The + is always at full colour; an empty field's tap does nothing. Put it in a form whose submit adds.
@@ -77,7 +76,7 @@ export function IconButton({ icon, label, onClick, href, tone = "ink" }: { icon:
   const cls = `glass flex size-11 shrink-0 items-center justify-center rounded-full ${tone === "accent" ? "text-accent" : "text-ink"} ${PRESS}`;
   return href
     ? <a href={href} aria-label={label} className={cls}><Icon name={icon} strokeWidth={2} /></a>
-    : <button onClick={onClick} aria-label={label} className={cls}><Icon name={icon} strokeWidth={2} /></button>;
+    : <button type="button" onClick={onClick} aria-label={label} className={cls}><Icon name={icon} strokeWidth={2} /></button>;
 }
 
 /**
@@ -108,7 +107,7 @@ export function TopBar({ title, subtitle, onBack, backLabel = "", trailing }: {
 /** The round back button at the start of a screen's title; its label names the screen it goes back to. */
 function BackButton({ onBack, label, className = "" }: { onBack: () => void; label: string; className?: string }) {
   return (
-    <button onClick={onBack} aria-label={label} className={`glass relative before:absolute before:-inset-1.5 before:content-[''] -ml-1 flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition active:scale-90 ${className}`}>
+    <button type="button" onClick={onBack} aria-label={label} className={`glass relative before:absolute before:-inset-1.5 before:content-[''] -ml-1 flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition active:scale-90 ${className}`}>
       <Icon name="left" className="size-[18px]" strokeWidth={2.4} />
     </button>
   );
@@ -118,15 +117,10 @@ function BackButton({ onBack, label, className = "" }: { onBack: () => void; lab
 export const OpenSettings = createContext<(() => void) | null>(null);
 
 /**
- * The bar at the top of every screen: the Simmer lockup at the left; at the right, at most one action, then Settings.
- * `below` (Shop's List / Find / Cart switch) is pinned inside the same bar, under one blurred backing (two stacked
- * blurred layers shudder on the iPad).
- */
-/**
  * Where the top bar sits: held still at the top of the screen while the list under it scrolls and stretches on a pull
  * (Sam, Nov 9), with a space its height left in the page so the content starts below it.
  */
-function PinnedBar({ children, className = "", space = "", barRef }: { children: ReactNode; className?: string; space?: string; barRef?: Ref<HTMLDivElement> }) {
+function PinnedBar({ children, className = "", space = "" }: { children: ReactNode; className?: string; space?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(44);
   useLayoutEffect(() => {
@@ -141,12 +135,17 @@ function PinnedBar({ children, className = "", space = "", barRef }: { children:
   return (
     <div style={{ height }} className={space}>
       <div ref={box} className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-10 mx-auto w-full max-w-md px-4">
-        <div ref={barRef} className={`relative ${className}`}>{children}</div>
+        <div className={`relative ${className}`}>{children}</div>
       </div>
     </div>
   );
 }
 
+/**
+ * The bar at the top of every screen: the Simmer lockup at the left; at the right, at most one action, then Settings.
+ * `below` (Shop's List / Find / Cart switch) is pinned inside the same bar, under one blurred backing (two stacked
+ * blurred layers shudder on the iPad).
+ */
 export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: ReactNode }) {
   const settings = useContext(OpenSettings);
   return (
@@ -228,8 +227,8 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
   );
   const cls = "flex w-full items-center gap-3 px-4 py-3 text-left";
   if (href) return <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer" className={`${cls} active:bg-sunk`}>{inner}</a>;
-  if (disabled) return <button disabled className={`${cls} opacity-55`}>{inner}</button>;
-  if (onClick) return <button onClick={onClick} role={role} aria-checked={role ? Boolean(checked) : undefined} className={`${cls} active:bg-sunk`}>{inner}</button>;
+  if (disabled) return <button type="button" disabled className={`${cls} opacity-55`}>{inner}</button>;
+  if (onClick) return <button type="button" onClick={onClick} role={role} aria-checked={role ? Boolean(checked) : undefined} className={`${cls} active:bg-sunk`}>{inner}</button>;
   return <div className={cls}>{inner}</div>;
 }
 
@@ -239,18 +238,18 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
 function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
-  const box = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; });
   useEffect(() => {
     // No focus moved here: in Chrome on iPhone that drew the browser's blue ring around Cancel (Nov 17).
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss.current(); };
+    // Escape closes this pop-up only (Nov 19): a sheet under it listens on window, which this keeps the key from reaching.
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); dismiss.current(); } };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, []);
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px] sm-dialog-dim" onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
-      <div ref={box} role="dialog" aria-modal="true" aria-label={title}
+      <div role="dialog" aria-modal="true" aria-label={title}
         className="sm-dialog w-full max-w-[20rem] space-y-4 rounded-[1.5rem] bg-card p-5 text-center shadow-2xl">
         <div className="space-y-1.5">
           <h2 className="t-headline">{title}</h2>
@@ -351,13 +350,15 @@ export function TabBar<T extends string>({ tabs, active, onTab }: { tabs: TabDef
         {tabs.map(({ id, label, icon, dot }) => (
           <button
             key={id}
+            type="button"
             onClick={() => onTab(id)}
             aria-current={active === id ? "page" : undefined}
+            aria-label={dot ? `${label}, new` : undefined}
             className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 t-cap font-medium transition active:scale-95 ${active === id ? "bg-accent/12 text-accent" : "text-muted"}`}
           >
             <Icon name={icon} className="size-6" />
             {label}
-            {dot && <span className="absolute right-[calc(50%-18px)] top-1.5 size-2 rounded-full bg-alert ring-2 ring-card" aria-label="new" />}
+            {dot && <span className="absolute right-[calc(50%-18px)] top-1.5 size-2 rounded-full bg-alert ring-2 ring-card" aria-hidden />}
           </button>
         ))}
       </div>
@@ -380,7 +381,9 @@ function useTypingView(own: RefObject<HTMLElement | null>) {
       const el = document.activeElement;
       const typing = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && Boolean(own.current?.contains(el));
       const gap = Math.round(window.innerHeight - vv.height - vv.offsetTop);
-      setView(typing && gap > KEYBOARD_PX ? { top: Math.round(vv.offsetTop), height: Math.round(vv.height) } : null);
+      const next = typing && gap > KEYBOARD_PX ? { top: Math.round(vv.offsetTop), height: Math.round(vv.height) } : null;
+      // The same box again (scrolling fires often) keeps the old one, so the sheet doesn't redraw for nothing.
+      setView((v) => (v?.top === next?.top && v?.height === next?.height ? v : next));
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -402,13 +405,13 @@ const CLOSE_PX = 110; // how far a sheet must be pulled down to close
 const ownsTouch = (el: EventTarget | null) => el instanceof Element && Boolean(el.closest("[data-noswipe], input, textarea, select"));
 
 /**
- * Sideways swipes on the whole screen: the content follows the finger, and a long enough swipe calls
- * onRight (usually "back") or onLeft. Vertical scrolling is untouched.
+ * Sideways swipes on the whole screen: the content follows the finger, and a long enough swipe right calls onRight
+ * ("back"). Vertical scrolling is untouched.
  */
-export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: { onLeft?: () => void; onRight?: () => void }) {
+export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: { onRight?: () => void }) {
   const h = useRef(handlers);
   useEffect(() => { h.current = handlers; });
-  const enabled = Boolean(handlers.onLeft || handlers.onRight);
+  const enabled = Boolean(handlers.onRight);
   useEffect(() => {
     if (!enabled) return;
     let g: Gesture | null = null;
@@ -430,7 +433,7 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
       const t = ev.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
       if (!g.axis && Math.hypot(dx, dy) > 10) g.axis = Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y";
       if (g.axis !== "x") return;
-      const allowed = (dx > 0 && h.current.onRight) || (dx < 0 && h.current.onLeft);
+      const allowed = dx > 0 && h.current.onRight;
       const e = el();
       if (e) { e.style.transition = ""; e.style.transform = `translateX(${allowed ? dx * 0.6 : dx * 0.1}px)`; }
     };
@@ -441,7 +444,6 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
       g = null;
       reset(true);
       if (dx > SWIPE_PX || (fast && dx > 0)) h.current.onRight?.();
-      else if (dx < -SWIPE_PX || (fast && dx < 0)) h.current.onLeft?.();
     };
     window.addEventListener("touchstart", start, { passive: true });
     window.addEventListener("touchmove", move, { passive: true });
@@ -460,21 +462,17 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
 /**
  * A sheet that slides up over the current screen, like an iOS sheet: one grabber, no close button. Close it by pulling it down
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
- * With onPrev/onNext, swiping sideways moves between items, and page dots under the grabber show where you are.
  */
 let openSheets = 0; // sheets open right now (see Sheet: the page behind stays still while any is)
-export function Sheet({ children, onClose, label, title, footer, onPrev, onNext, page, pager, wide, tall }: {
-  children: ReactNode; onClose: () => void; label: string; footer?: ReactNode; onPrev?: () => void; onNext?: () => void;
+export function Sheet({ children, onClose, label, title, footer, wide, tall }: {
+  children: ReactNode; onClose: () => void; label: string; footer?: ReactNode;
   wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
   tall?: boolean; // full height whatever it holds: a search keeps its box in one place while the results change
   title?: ReactNode; // a centered heading under the grabber, for picker sheets
-  page?: string; // changes when the sheet shows a different item: scroll back to its top
-  pager?: { index: number; total: number };
 }) {
   // Once per open: re-running on every new onClose would save "hidden" as the value to restore.
   const close = useRef(onClose);
-  const nav = useRef({ onPrev, onNext });
-  useEffect(() => { close.current = onClose; nav.current = { onPrev, onNext }; });
+  useEffect(() => { close.current = onClose; });
   const panel = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   // A sheet with a text field rides above the keyboard, like the tab bar; only the sheet being typed in, so one open on
@@ -489,7 +487,6 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
     r.addEventListener("touchmove", stop, { passive: false });
     return () => r.removeEventListener("touchmove", stop);
   }, []);
-  useEffect(() => { body.current?.scrollTo(0, 0); }, [page]);
   useEffect(() => {
     // The list behind shouldn't scroll while any sheet is open; counted, so sheets that close in another order than they
     // opened (an alert over the picker) never leave the page locked (Nov 11: Stock and Lists stopped scrolling).
@@ -503,9 +500,17 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
     const p = panel.current;
     if (!p) return;
     let g: (Gesture & { fromTop: boolean }) | null = null;
+    let closing = false;
     const set = (tf: string, animate: boolean) => { p.style.transition = animate ? "transform .22s cubic-bezier(.2,.8,.2,1)" : ""; p.style.transform = tf; };
+    // Pulled far enough: it slides off, and closes once it's gone (Nov 19: on the slide's own end, not a guessed timer).
+    const gone = (ev: TransitionEvent) => {
+      if (ev.target !== p || ev.propertyName !== "transform") return;
+      p.removeEventListener("transitionend", gone);
+      p.removeEventListener("transitioncancel", gone);
+      close.current();
+    };
     const start = (ev: TouchEvent) => {
-      if (ev.touches.length !== 1) return;
+      if (ev.touches.length !== 1 || closing) return;
       const t = ev.touches[0];
       // A pull only counts as "close" when the content can't scroll up any further.
       // Never while typing: with the keyboard up a pull moved the whole sheet about (Nov 10); close it with the button.
@@ -521,52 +526,50 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
       if (g.axis === "y" && g.fromTop && dy > 0) {
         ev.preventDefault(); // pull the sheet, not the page
         set(`translateY(${dy}px)`, false);
-      } else if (g.axis === "x" && (nav.current.onPrev || nav.current.onNext)) {
-        ev.preventDefault();
-        const allowed = (dx > 0 && nav.current.onPrev) || (dx < 0 && nav.current.onNext);
-        set(`translateX(${allowed ? dx * 0.5 : dx * 0.1}px)`, false);
       }
     };
     const end = (ev: TouchEvent) => {
       if (!g) return;
-      const t = ev.changedTouches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+      const dy = ev.changedTouches[0].clientY - g.y;
       const fast = Date.now() - g.t < 250;
       const gesture = g;
       g = null;
       if (gesture.axis === "y" && gesture.fromTop && (dy > CLOSE_PX || (fast && dy > 50))) {
+        closing = true;
+        p.addEventListener("transitionend", gone);
+        p.addEventListener("transitioncancel", gone);
         set("translateY(100%)", true);
-        setTimeout(() => close.current(), 180);
         return;
       }
       set("", true);
-      if (gesture.axis === "x") {
-        if ((dx > SWIPE_PX || (fast && dx > 40)) && nav.current.onPrev) nav.current.onPrev();
-        else if ((dx < -SWIPE_PX || (fast && dx < -40)) && nav.current.onNext) nav.current.onNext();
-      }
     };
+    // A touch the browser takes over (a scroll, a system gesture) puts the sheet back; it never closes it.
+    const cancel = () => { g = null; if (!closing) set("", true); };
     p.addEventListener("touchstart", start, { passive: true });
     p.addEventListener("touchmove", move, { passive: false });
     p.addEventListener("touchend", end);
-    p.addEventListener("touchcancel", end);
+    p.addEventListener("touchcancel", cancel);
     return () => {
       p.removeEventListener("touchstart", start);
       p.removeEventListener("touchmove", move);
       p.removeEventListener("touchend", end);
-      p.removeEventListener("touchcancel", end);
+      p.removeEventListener("touchcancel", cancel);
+      p.removeEventListener("transitionend", gone);
+      p.removeEventListener("transitioncancel", gone);
     };
   }, []);
   return (
     <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
-      <button aria-label="Close" onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
+      {/* The dimmed area closes it by touch; the × below is the Close a screen reader or keyboard finds. */}
+      <button type="button" aria-hidden tabIndex={-1} onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}
       <div ref={panel} style={view ? { marginBottom: 8, maxHeight: view.height - 16, ...(tall && { height: view.height - 16 }) } : undefined} className={`relative mx-auto mb-[max(0.5rem,env(safe-area-inset-bottom))] flex max-h-[90dvh] ${tall ? "h-[90dvh] " : ""}w-[calc(100%-1rem)] max-w-md ${wide ? "min-[640px]:max-w-[min(calc(100vw-3rem),72rem)] " : ""}animate-[rise_.35s_cubic-bezier(.2,.9,.25,1)] flex-col overflow-hidden rounded-[2.25rem] border-[0.5px] border-white/40 bg-bg/90 shadow-2xl backdrop-blur-2xl will-change-transform dark:border-white/10`}>
         <div data-handle className="relative flex cursor-grab flex-col items-center gap-2 pb-3 pt-2">
           <span className="h-[5px] w-9 rounded-full bg-muted/40" />
           {/* A close you can see (Nov 9): the strip above a tall sheet is thin, and a pull down isn't obvious. */}
-          <button aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-muted transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
+          <button type="button" aria-label="Close" onClick={onClose} className="glass absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-muted transition active:scale-90 before:absolute before:-inset-1.5 before:content-['']">
             <Icon name="close" className="size-[18px]" strokeWidth={2.2} />
           </button>
-          {pager && pager.total > 1 && <Dots {...pager} />}
           {title && <h2 className="t-headline px-12 text-center text-balance">{title}</h2>}
         </div>
         <div ref={body} className="overflow-y-auto overscroll-contain px-4 pb-4">{children}</div>
@@ -576,14 +579,22 @@ export function Sheet({ children, onClose, label, title, footer, onPrev, onNext,
   );
 }
 
-/** Page dots, iOS-style. Past 9 items they'd crowd, so it says "4 of 12" instead. */
-function Dots({ index, total }: { index: number; total: number }) {
-  if (total > 9) return <span className="text-[11px] tabular-nums text-muted" aria-label={`${index + 1} of ${total}`}>{index + 1} of {total}</span>;
+/**
+ * ⋯ as the phone's own menu (one look on every screen, Nov 19): a hidden picker over the dots, its first line the
+ * thing's name (not pickable), then what can be done. `label` names it for screen readers.
+ */
+export type MoreOption = { value: string; label: string; off?: boolean };
+export function MoreMenu({ label, title, options, children, onPick }: {
+  label: string; title: string; options?: MoreOption[]; children?: ReactNode; onPick: (value: string) => void;
+}) {
   return (
-    <span className="flex gap-1.5" aria-label={`${index + 1} of ${total}`}>
-      {Array.from({ length: total }, (_, i) => (
-        <span key={i} className={`size-1.5 rounded-full transition-colors ${i === index ? "bg-ink" : "bg-muted/35"}`} />
-      ))}
-    </span>
+    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
+      <span aria-hidden>⋯</span>
+      <select value="" aria-label={label} onChange={(e) => { if (e.target.value) onPick(e.target.value); }} className="absolute -inset-1 cursor-pointer opacity-0 text-base">
+        <option value="" disabled>{title}</option>
+        {options?.map((o) => <option key={o.value} value={o.value} disabled={o.off}>{o.label}</option>)}
+        {children}
+      </select>
+    </label>
   );
 }

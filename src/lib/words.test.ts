@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bothOf, isSpice, listName } from "./words";
+import { bothOf, FRACTIONS, isSpice, listName, norm, parseEntry, UNIT_NAMES } from "./words";
 import { known } from "./groceries";
 import { parseIngredient } from "./recipes";
 
@@ -76,5 +76,53 @@ describe("one name for one thing (Nov 18)", () => {
     expect(listName("ground black pepper")).toBe("ground black pepper");
     expect(listName("ground turkey")).toBe("ground turkey");
     expect(listName("garlic cloves")).toBe("garlic");
+  });
+});
+
+describe("text parsing fixes (Nov 19)", () => {
+  it("takes the second choice without its amount and unit", () => {
+    expect(parseIngredient("1/4 cup tahini or 2 tbsp peanut butter").item).toBe("peanut butter");
+    expect(parseIngredient("tahini or 2 cans chickpeas").item).toBe("chickpeas");
+  });
+  it("gives a thing and its plural one name, and drops accents", () => {
+    for (const [a, b] of [["cookies", "cookie"], ["brownies", "brownie"], ["smoothies", "smoothie"], ["veggies", "veggie"], ["berries", "berry"],
+      ["tomatoes", "tomato"], ["peaches", "peach"], ["lemons", "lemon"], ["pies", "pie"], ["cheeses", "cheese"], ["Jalapeños", "jalapeno"]])
+      expect(norm(a), a).toBe(norm(b));
+    expect(norm("jalapeño")).toBe("jalapeno");
+    expect(norm("crème fraîche")).toBe("creme fraiche");
+    expect(norm("Trader Joe's")).toBe(norm("trader joes"));
+  });
+  it("files broth, soup, canned things and bottled juice with the pantry, whatever's in them", () => {
+    for (const s of ["chicken broth", "chicken stock", "tomato soup", "cream of mushroom soup", "canned tomatoes", "lemon juice", "curry paste", "cocoa powder", "dried cranberries"])
+      expect(known(s)?.section, s).toBe("pantry");
+    expect(known("frozen chicken")?.section).toBe("freezer");
+    expect(known("orange juice")?.section).toBe("fresh");
+    expect(known("chicken thighs")?.section).toBe("fresh");
+    expect(known("constructor")).toBeNull();
+    expect(known("toString")).toBeNull();
+  });
+  it("splits a line only when both halves are plain things, and never a dish", () => {
+    expect(bothOf("macaroni and cheese")).toEqual(["macaroni and cheese"]);
+    expect(bothOf("salt and vinegar chips")).toEqual(["salt and vinegar chips"]);
+    expect(bothOf("bread and butter pickles")).toEqual(["bread and butter pickles"]);
+    expect(bothOf("salt and pepper")).toEqual(["salt", "pepper"]);
+    expect(bothOf("lemons and limes")).toEqual(["lemons", "limes"]);
+    expect(bothOf("kosher salt and black pepper")).toEqual(["kosher salt", "black pepper"]);
+  });
+  it("reads ranges with a dash and every fraction glyph", () => {
+    expect(parseIngredient("2–3 cloves garlic")).toMatchObject({ quantity: "2–3", unit: "cloves", item: "garlic" });
+    expect(parseIngredient("2—3 cups flour")).toMatchObject({ quantity: "2—3", unit: "cups", item: "flour" });
+    expect(parseIngredient("⅜ cup sugar")).toMatchObject({ quantity: "3/8", unit: "cup", item: "sugar" });
+    expect(parseIngredient("1⅝ cups milk")).toMatchObject({ quantity: "1 5/8", unit: "cups", item: "milk" });
+    for (const g of ["⅞", "⅕", "⅙"]) expect(parseIngredient(`${g} tsp salt`).quantity, g).toBe(FRACTIONS[g]);
+  });
+  it("reads every unit on a typed item", () => {
+    expect(parseEntry("2 cans black beans")).toEqual({ quantity: "2 cans", item: "black beans" });
+    expect(parseEntry("1 bag spinach")).toEqual({ quantity: "1 bag", item: "spinach" });
+    expect(parseEntry("3 heads lettuce")).toEqual({ quantity: "3 heads", item: "lettuce" });
+    expect(parseEntry("½ gallon milk")).toEqual({ quantity: "1/2 gallon", item: "milk" });
+    expect(parseEntry("2 tomatoes")).toEqual({ quantity: "2", item: "tomatoes" });
+    expect(parseEntry("2 t-shirts")).toEqual({ quantity: "2", item: "t-shirts" });
+    expect(UNIT_NAMES.cans).toBe("can");
   });
 });

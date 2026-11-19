@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, putBack, removeItems, removeStaple, renameGroup } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, removeItems, removeStaple, renameGroup } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -96,8 +96,8 @@ describe("groups on List (Nov 16)", () => {
   });
 });
 
-describe("Stock and Clear", () => {
-  it("adds, moves and removes a kept thing, and Clear takes items off with Undo putting them back", async () => {
+describe("Stock, and several off at once", () => {
+  it("adds, moves and removes a kept thing, and several items come off at once", async () => {
     await addStaple("frozen waffles");
     expect((await loadList()).staples.find((s) => s.item === "frozen waffles")).toMatchObject({ section: "freezer" });
     await moveStaple("Frozen Waffles", "pantry");
@@ -107,9 +107,7 @@ describe("Stock and Clear", () => {
     const a = await addItem("paper towels", "Robin"), b = await addItem("2 lemons", "Robin");
     const gone = await removeItems([a.id, b.id]);
     expect(gone.map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
-    expect((await loadList()).items.some((x) => x.id === a.id)).toBe(false);
-    await putBack(gone);
-    expect((await loadList()).items.find((x) => x.id === b.id)).toMatchObject({ item: "lemons", quantity: "2" });
+    expect((await loadList()).items.some((x) => x.id === a.id || x.id === b.id)).toBe(false);
   });
 });
 

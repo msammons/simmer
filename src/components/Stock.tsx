@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Item, type Kitchen, type ListState, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
 import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
-import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet, AddField } from "./ui";
+import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
@@ -41,35 +41,31 @@ export type StockActions = {
 export function StockScreen({ list, kitchen, act }: { list: ListState | null; kitchen: Kitchen | null; act: StockActions }) {
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
-  const [open, setOpen] = useState<Set<string>>(new Set()); // the groups opened
+  // Groups she opened or closed by hand (Nov 19): kept as she left them, so a group never pops open or shut when its
+  // things change. One she hasn't touched starts open when everything in it shows anyway, closed otherwise.
+  const [opened, setOpened] = useState<Map<string, boolean>>(() => new Map());
   const [renaming, setRenaming] = useState<string | null>(null); // "Rename group" open for this group
   const [ungrouping, setUngrouping] = useState<string | null>(null); // waiting on "Remove the … group?"
   const [added, setAdded] = useState(""); // the thing just added: brought into view and lit for a moment
   // Show everything on the list (Sam, Nov 17: a hide/show with a checkmark; each says what it shows): every kept thing
   // (specialty too) and every group, opened.
   const [showAll, setShowAll] = useState(false);
-  const rows = rowsOf(list, kitchen, { all: showAll });
-  const groups = [...new Map((list?.staples ?? []).filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
-  const toggle = (key: string) => setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const rows = useMemo(() => rowsOf(list, kitchen, { all: showAll }), [list, kitchen, showAll]);
+  const staples = useMemo(() => list?.staples ?? [], [list]);
+  const groups = useMemo(() => groupsOf(staples), [staples]);
+  const shownNames = useMemo(() => new Set(rows.map((r) => norm(r.name))), [rows]);
   const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={() => setAdded("")} />;
   return (
     <div className="space-y-5">
       <BrandBar />
       <h1 className="sr-only">List</h1>
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={list?.staples ?? []} shown={new Set(rows.map((r) => norm(r.name)))} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(list?.staples ?? [], t, act, more); setAdded(t); }}
- />
+      <AddFields staples={staples} groups={groups} shown={shownNames} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(staples, t, act, more); setAdded(t); }} />
       {/* The list's own ⋯, above the list on the right (Sam, Nov 17: not beside Add), the same as a row's. */}
       {list && rows.length > 0 && (
         <div className="-mb-3 flex justify-end pr-2">
-          <label className="relative flex size-9 items-center justify-center text-[22px] leading-none text-muted">
-            <span aria-hidden>⋯</span>
-            <select value="" aria-label="More for the list" className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-              onChange={(e) => { if (e.target.value === "all") setShowAll((v) => !v); }}>
-              <option value="" disabled>List</option>
-              <option value="all">{showAll ? "✓ Show all groups" : "Show all groups"}</option>
-            </select>
-          </label>
+          <MoreMenu label="More for the list" title="List" onPick={(v) => { if (v === "all") setShowAll((s) => !s); }}
+            options={[{ value: "all", label: showAll ? "✓ Show all groups" : "Show all groups" }]} />
         </div>
       )}
       {!list && <Held />}
@@ -87,9 +83,9 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               // category can't be collapsed"): one whose things all show anyway starts open and closes to its name alone.
               const wanted = (r: StockRow) => r.answer === "need" || r.meal;
               const allWanted = l.rows.every(wanted);
-              const isOpen = showAll || (allWanted ? !open.has(key) : open.has(key));
+              const isOpen = showAll || (opened.get(key) ?? allWanted);
               const shown = isOpen ? l.rows : allWanted ? [] : l.rows.filter(wanted);
-              const flip = () => { if (!showAll) toggle(key); };
+              const flip = () => { if (!showAll) setOpened((o) => new Map(o).set(key, !isOpen)); };
               // Right under another group: one line between them, not two.
               const afterGroup = all[i - 1]?.kind === "group";
               // A group (Nov 19, Sam): its header row tinted, the name in the usual colour (coloured words are a dinner's
@@ -104,15 +100,9 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
                       <Icon name="down" className={`size-4 shrink-0 text-muted transition-transform ${isOpen ? "" : "-rotate-90"}`} strokeWidth={2.2} />
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
-                    <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-                      <span aria-hidden>⋯</span>
-                      <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-                        onChange={(e) => { const v = e.target.value; if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
-                        <option value="" disabled>{cap(l.name)}</option>
-                        <option value="rename">Rename group</option>
-                        <option value="remove">Remove group</option>
-                      </select>
-                    </label>
+                    <MoreMenu label={`More for the ${l.name} group`} title={cap(l.name)}
+                      onPick={(v) => { if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}
+                      options={[{ value: "rename", label: "Rename group" }, { value: "remove", label: "Remove group" }]} />
                   </div>
                   {shown.map((r) => item(r))}
                   <span aria-hidden className={`pointer-events-none absolute inset-0 !border !border-accent/20 ${afterGroup ? "!border-t-0" : ""}`} />
@@ -158,6 +148,9 @@ export function addNeed(staples: Staple[], text: string, act: Pick<StockActions,
   act.keepAdd(had?.item ?? text, had ? undefined : with_?.section, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
 }
 
+/** The groups already used, A to Z, each once whatever its capitals. */
+const groupsOf = (staples: Staple[]) => [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
+
 const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 text-base font-semibold text-ink outline-none ring-accent focus:ring-2";
 
 /**
@@ -165,8 +158,8 @@ const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-
  * specialty, without a crowded sheet): Specialty or Common, and a group, each the phone's own picker; New group… turns
  * the group into a small box. Something already kept shows as she types; tapping it marks it Need.
  */
-function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = false, trailing }: {
-  staples: Staple[]; shown: Set<string>; label: string; placeholder: string; autoFocus?: boolean; trailing?: React.ReactNode;
+function AddFields({ staples, groups, shown, label, placeholder, onAdd }: {
+  staples: Staple[]; groups: string[]; shown: Set<string>; label: string; placeholder: string;
   onAdd: (text: string, more: { kind: StapleKind; group: string }) => void;
 }) {
   const [text, setText] = useState("");
@@ -174,7 +167,6 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
   const [group, setGroup] = useState("");
   const [newGroup, setNewGroup] = useState(false);
   const [made, setMade] = useState<string[]>([]); // new group names typed for this thing, to pick between
-  const groups = [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
   const q = norm(text);
   const kept = staples.some((s) => norm(s.item) === q);
   // Only what's kept but not showing (Nov 16, Sam: why show what's already on the list?): a specialty thing that left
@@ -187,8 +179,7 @@ function AddFields({ staples, shown, label, placeholder, onAdd, autoFocus = fals
     <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) add(text.trim()); }} className="space-y-2.5"
       onKeyDown={(e) => { if (e.key === "Enter" && e.target instanceof HTMLInputElement) { e.preventDefault(); e.target.blur(); } }}>
       <div className="flex gap-2">
-        <AddField value={text} onChange={setText} placeholder={placeholder} label={label} autoFocus={autoFocus} />
-        {trailing}
+        <AddField value={text} onChange={setText} placeholder={placeholder} label={label} />
       </div>
       {/* Once she types something new (Nov 16, Sam: they "don't need to appear until you add"). It shows under the field
           as she types, so nothing she's about to tap moves; something already kept needs neither. */}
@@ -259,7 +250,14 @@ function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; group
 function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void; fresh?: boolean; onSeen?: () => void }) {
   // Just added (Nov 16): brought into view and lit for a moment, so she sees where it went (no note, nothing moves).
   const own = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (fresh) own.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [fresh]);
+  const seen = useRef(onSeen);
+  useEffect(() => { seen.current = onSeen; });
+  useEffect(() => {
+    if (!fresh) return;
+    own.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // With motion turned down the light never plays, so its end never comes (Nov 19): done once it's in view.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) seen.current?.();
+  }, [fresh]);
   const side = (a: "have" | "need", label: string) => {
     const on = r.answer === a;
     return (
@@ -286,27 +284,22 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
         {side("need", "Need")}
       </span>
       {menu ? (
-        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-          <span aria-hidden>⋯</span>
-          <select value="" aria-label={`More for ${r.name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "remove" && r.staple) onRemove(r.staple);
-              else if (v === "keep") act.keepAdd(r.name, r.section);
-              else if (v === "group" && r.staple) onGroup(r.staple);
-              else if ((v === "common" || v === "specialty") && r.staple) act.keepSet(r.staple.item, { kind: v });
-              else if (v && r.staple) act.keepMove(r.name, v as Section);
-              else if (v && r.item) act.mealMove(r.item, v as Section);
-            }}>
-            <option value="" disabled>{cap(r.name)}</option>
-            {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
-            {r.staple && <option value="group">{r.staple.group ? "Change group" : "Put in a group"}</option>}
-            {r.staple && (r.staple.kind === "specialty"
-              ? <option value="common">Make common (always shows)</option>
-              : <option value="specialty">Make specialty (shows until bought)</option>)}
-            {r.staple ? <option value="remove">Remove from the list</option> : <option value="keep">Always keep on the list</option>}
-          </select>
-        </label>
+        <MoreMenu label={`More for ${r.name}`} title={cap(r.name)}
+          onPick={(v) => {
+            if (v === "remove" && r.staple) onRemove(r.staple);
+            else if (v === "keep") act.keepAdd(r.name, r.section);
+            else if (v === "group" && r.staple) onGroup(r.staple);
+            else if ((v === "common" || v === "specialty") && r.staple) act.keepSet(r.staple.item, { kind: v });
+            else if (r.staple) act.keepMove(r.name, v as Section);
+            else if (r.item) act.mealMove(r.item, v as Section);
+          }}>
+          {SECTIONS.map((s) => <option key={s.id} value={s.id} disabled={s.id === r.section}>Move to {s.name}</option>)}
+          {r.staple && <option value="group">{r.staple.group ? "Change group" : "Put in a group"}</option>}
+          {r.staple && (r.staple.kind === "specialty"
+            ? <option value="common">Make common (always shows)</option>
+            : <option value="specialty">Make specialty (shows until bought)</option>)}
+          {r.staple ? <option value="remove">Remove from the list</option> : <option value="keep">Always keep on the list</option>}
+        </MoreMenu>
       ) : <span aria-hidden className="size-9 shrink-0" />}
     </div>
   );

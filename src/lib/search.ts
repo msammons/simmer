@@ -12,15 +12,19 @@ const FILLER = new Set(["something", "with", "a", "an", "the", "and", "or", "for
 export function searchRecipes(all: Recipe[], q: string): Recipe[] {
   let text = ` ${q.toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9 ]/g, " ")} `;
   const filters: ((r: Recipe) => boolean)[] = [];
-  const take = (re: RegExp, f: (r: Recipe) => boolean) => { if (re.test(text)) { filters.push(f); text = text.replace(re, " "); } };
-  take(/ (quick|fast|easy) /, (r) => r.effort === "quick");
-  take(/ regular /, (r) => r.effort === "regular");
-  take(/ (trader joes|trader joe|tjs) /, (r) => r.store === "trader-joes");
-  take(/ costco /, (r) => r.store === "costco");
-  take(/ (kids|kid|boys) /, (r) => r.for === "kids" || r.kidOk === "yes");
-  take(/ make ahead /, (r) => r.makeAhead);
-  take(/ (favorites|favourites|favorite|favourite) /, (r) => (r.rating ?? 0) >= 3);
-  take(/ not suggested /, (r) => !r.active);
+  // Each filter takes every time its words are typed (Nov 19: only the first went, so "quick easy" searched for "easy").
+  const take = (words: string, f: (r: Recipe) => boolean) => {
+    const re = new RegExp(`(?<= )(?:${words})(?= )`, "g");
+    if (re.test(text)) { filters.push(f); text = text.replace(re, " "); }
+  };
+  take("quick|fast|easy", (r) => r.effort === "quick");
+  take("regular", (r) => r.effort === "regular");
+  take("trader joes|trader joe|tjs", (r) => r.store === "trader-joes");
+  take("costco", (r) => r.store === "costco");
+  take("kids|kid|boys", (r) => r.for === "kids" || r.kidOk === "yes");
+  take("make ahead", (r) => r.makeAhead);
+  take("favorites|favourites|favorite|favourite", (r) => (r.rating ?? 0) >= 3);
+  take("not suggested", (r) => !r.active);
   const terms = text.split(" ").filter((w) => w && !FILLER.has(w)).map(norm).filter(Boolean);
   const scored = all.flatMap((r) => {
     if (!filters.every((f) => f(r))) return [];
