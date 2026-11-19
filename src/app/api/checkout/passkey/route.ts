@@ -1,7 +1,7 @@
 import { AppError } from "@/lib/errors";
 import { authorized, unauthorized } from "@/lib/auth";
 import { friendly } from "@/lib/friendly";
-import { answerOf, approveOptions, askToAdd, checkOptions, passkeyCount, registrationOptions, verifyApprove, verifyCheck, verifyRegistration } from "@/lib/passkeys";
+import { addStatus, answerOf, approveOptions, askToAdd, checkOptions, passkeyCount, registrationOptions, verifyApprove, verifyCheck, verifyRegistration } from "@/lib/passkeys";
 
 const noStore = { headers: { "cache-control": "no-store" } };
 
@@ -32,6 +32,8 @@ export async function POST(req: Request) {
       }
       case "add":
         return Response.json(await askToAdd(), noStore);
+      case "add-status":
+        return Response.json({ status: await addStatus(typeof b?.token === "string" ? b.token : "") }, noStore);
       case "approve-options":
         return Response.json(await approveOptions(req), noStore);
       case "approve": {

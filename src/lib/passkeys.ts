@@ -139,6 +139,13 @@ export async function askToAdd(): Promise<{ token: string; code: string }> {
   return { token: add.token, code: add.code };
 }
 
+/** The new phone: whether its own request (by token) is still waiting, approved, or gone (Nov 18). */
+export async function addStatus(token: string): Promise<"waiting" | "approved" | "gone"> {
+  const a = await currentAdd();
+  if (!a || a.token !== token) return "gone";
+  return (await isApproved(token)) ? "approved" : "waiting";
+}
+
 /** A phone with Face ID: the code of the request waiting for approval, if there is one. */
 export async function addWaiting(): Promise<{ code: string } | null> {
   const a = await currentAdd();
