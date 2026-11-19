@@ -39,6 +39,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
               <Row icon="cart" title="In the cart" value={`${count} thing${count === 1 ? "" : "s"}`} />
               <Row icon="bag" title="Estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
             </Group>
+            {o.hereRow && <Group>{o.hereRow}</Group>}
             {ready ? <TestRun /> : <p className="px-4 t-sub text-muted">Set up ordering in Settings → Ordering: Face ID, a limit per order, then turn it on.</p>}
           </>
         )}
