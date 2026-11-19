@@ -13,7 +13,7 @@ vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
-import { approve, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
+import { approve, confirmationNumberIn, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
 import { cartChanging, queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
@@ -168,7 +168,7 @@ describe("getting ready", () => {
     expect(v.highlights).toEqual([]);
     expect(v.feesCents).toBe(395);
     does = () => ({ ...READY, final: page((t) => t.replace("Estimated total $6.94", "Estimated total $9.94")) });
-    expect((await ready()).highlights).toEqual([expect.stringMatching(/more than Simmer expected/)]);
+    expect((await ready()).highlights).toEqual([expect.stringMatching(/more than expected/)]);
   });
 
   it("asks for the bags she picked, shows Safeway's, and stops when they aren't the ones picked (Nov 16)", async () => {
@@ -447,6 +447,11 @@ describe("placing the order (phase 3, Nov 14)", () => {
 
     expect(confirmed({ url: "https://x/erums/cart", text: "Thank you for your order" })).toBe(true);
     expect(confirmed({ url: "https://x/erums/checkout", text: "Something went wrong" })).toBe(false);
+    // Safeway's own confirmation address with its order number counts, before the page's words fill in (Nov 18).
+    expect(confirmed({ url: "https://www.safeway.com/erums/order/confirmation/198111519?summary=savingsApplied&", text: "Skip to search Grocery" })).toBe(true);
+    expect(confirmationNumberIn("https://www.safeway.com/erums/order/confirmation/198111519?summary=x")).toBe("198111519");
+    expect(confirmed({ url: "https://www.safeway.com/erums/order/confirmation/", text: "" })).toBe(false);
+    expect(confirmed({ url: "https://evil.example/www.safeway.com/order/confirmation/198111519", text: "" })).toBe(false);
   });
 
   it("counts a confirmation shown in place, without the page moving", async () => {

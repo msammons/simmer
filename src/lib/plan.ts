@@ -14,7 +14,7 @@ import { loadCart } from "./safeway";
 import { parseCsv, records } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
-import { norm } from "./words";
+import { bothOf, norm } from "./words";
 import { firstCounts, freezerMatch, kindOf, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
 const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer", PLANNED = "Planned", COUNTS = "Plan counts";
@@ -269,7 +269,11 @@ export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewa
 
 /** What a recipe needs from the store: everything but tap water and what's in the freezer (used from there instead). */
 const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
-  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).map((i) => ({ item: i.item, quantity: [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: true }));
+  r.ingredients.filter((i) => !fromTheTap(i.item) && !freezer.some((f) => freezerMatch(f.item, i.item))).flatMap((i) => {
+    // "salt and black pepper": two things, each without the amount (Nov 18).
+    const both = bothOf(i.item);
+    return both.map((item) => ({ item, quantity: both.length > 1 ? "" : [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: true }));
+  });
 
 /**
  * These dinners are off the plan: what only they needed comes off the list (see takeOffFor). `still`: recipes still

@@ -355,7 +355,7 @@ export async function readRecipeFile(f: { name: string; mimeType: string; data: 
   // A picture is "Photo": its file name is the camera's (IMG_0045), not where the recipe came from (Nov 18).
   const src = f.mimeType.startsWith("image/") ? "Photo" : f.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || "File";
   if (/^text\//.test(f.mimeType)) return readText(Buffer.from(f.data, "base64").toString("utf8"), src);
-  if (!READABLE.test(f.mimeType)) throw new AppError("Simmer can read pictures, PDFs and text files.");
+  if (!READABLE.test(f.mimeType)) throw new AppError("Use a picture, a PDF or a text file.");
   const schema = structuredClone(DRAFT_SCHEMA) as typeof DRAFT_SCHEMA & { properties: { recipes: { items: { properties: Record<string, unknown>; required: string[] } } } };
   schema.properties.recipes.items.properties.text = { type: "STRING" };
   schema.properties.recipes.items.required.push("text");

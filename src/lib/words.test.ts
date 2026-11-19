@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSpice } from "./words";
+import { bothOf, isSpice } from "./words";
 import { known } from "./groceries";
 import { parseIngredient } from "./recipes";
 
@@ -42,5 +42,25 @@ describe("lines typed the way people write cards (Nov 18)", () => {
     expect(p("1 cup yellow cornmeal")[3]).toBe("pantry");
     expect(p("1/2 T tumeric")[3]).toBe("pantry");
     expect(p("2 eggs")).toEqual(["2", "", "eggs", "fresh"]);
+  });
+});
+
+describe("what goes on the list (Nov 18)", () => {
+  const item = (s: string) => bothOf(parseIngredient(s).item);
+  it("leaves off sizes and cuts, so a large onion and an onion are one thing", () => {
+    expect(item("1 large Sweet potato")).toEqual(["sweet potato"]);
+    expect(item("1 chopped onion")).toEqual(["onion"]);
+    expect(item("1 large onion, diced")).toEqual(["onion"]);
+    expect(item("8 skinless, boneless chicken thighs")).toEqual(["chicken thighs"]);
+    expect(item("2 cups whole milk")).toEqual(["whole milk"]);
+  });
+  it("takes one choice of two, and puts two things on two lines", () => {
+    expect(item("1 teaspoon red wine vinegar or balsamic vinegar")).toEqual(["red wine vinegar"]);
+    expect(item("2 teaspoons chopped fresh rosemary or 1 teaspoon dried rosemary")).toEqual(["fresh rosemary"]);
+    expect(item("1 (8- to 9-ounce) package refrigerated or frozen cheese tortellini")).toEqual(["frozen cheese tortellini"]);
+    expect(item("Rice or quinoa")).toEqual(["rice"]);
+    expect(item("Kosher salt (such as Diamond Crystal) and black pepper")).toEqual(["kosher salt", "black pepper"]);
+    expect(item("1 cup half and half")).toEqual(["half and half"]);
+    expect(item("1 box mac and cheese")).toEqual(["mac and cheese"]);
   });
 });
