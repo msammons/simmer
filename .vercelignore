@@ -6,5 +6,6 @@ service-account.json
 .claude/
 scripts/*
 !scripts/zip-helper.mjs
+!scripts/checkout-print.mjs
 node_modules/
 .next/
