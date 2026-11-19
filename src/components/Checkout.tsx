@@ -5,7 +5,8 @@
 // Once set up: the cart and Simmer's estimate (as Shop's Safeway heading shows them), ordering's switch, limit, store
 // and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): Get ready lists Safeway's free pickup times this week, one
 // is picked (Sam, Nov 14) and Safeway's checkout read with it, then "Test run · $X" approves those figures with Face ID and goes through Safeway's
-// checkout again, stopping one press short, and says what it would have placed. Nothing here orders.
+// checkout again, stopping one press short, and says what it would have placed. Place order (phase 3) asks first, then
+// Face ID approves exactly the reading shown (its preparedId, Nov 19), and the helper places it once.
 import { useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
@@ -68,7 +69,7 @@ function TestRun() {
   /** Ready to approve: Face ID's check is fetched now, so it shows straight from the tap (Safari). */
   function showReady(view: ReadyView) {
     setRun({ stage: "ready", view });
-    if (!view.stops.length && view.totalCents !== null) check.prepare(() => api.faceIdCheckOptions().then((r) => r.options));
+    if (!view.stops.length && view.totalCents !== null && view.preparedId) check.prepare(() => api.faceIdCheckOptions().then((r) => r.options));
   }
 
   /**
@@ -122,7 +123,7 @@ function TestRun() {
     let approved = false;
     try {
       const answer = await faceIdAnswer(await check.take());
-      const a = await api.checkoutApprove(answer);
+      const a = await api.checkoutApprove(answer, view.preparedId);
       approved = true;
       if (!a.ok) { setRun({ stage: "done", view, result: a }); return; }
       let r = await api.checkoutTestRun({ approvalId: a.approvalId }, ac.signal);
@@ -153,10 +154,16 @@ function TestRun() {
     let approved = false;
     try {
       const answer = await faceIdAnswer(await check.take());
-      const a = await api.checkoutApprove(answer);
+      const a = await api.checkoutApprove(answer, view.preparedId);
       approved = true;
       if (!a.ok) { setRun({ stage: "ordered", view, result: a }); return; }
-      let r = await api.checkoutPlace({ approvalId: a.approvalId }, ac.signal);
+      // Only what this phone showed (Nov 19): a different total or time approved stops here, and the server checks again.
+      if (a.totalCents !== view.totalCents || a.window !== view.window) {
+        setRun({ stage: "ordered", view, result: { ok: false, reasons: ["What Face ID approved isn't what this phone showed. Nothing was ordered. Get ready again."] } });
+        return;
+      }
+      const shown = { approvalId: a.approvalId, totalCents: view.totalCents, window: view.window };
+      let r = await api.checkoutPlace(shown, ac.signal);
       while ("waiting" in r) r = await api.checkoutPlace({ jobId: r.waiting }, ac.signal);
       setRun({ stage: "ordered", view, result: r });
     } catch (e) {
@@ -202,10 +209,10 @@ function TestRun() {
         </div>
       )}
       {run.stage === "ready" && run.view.canOrder && (
-        <Button className="w-full" disabled={view!.stops.length > 0 || view!.totalCents === null} onClick={() => setConfirming(true)}>Place order · {cents(run.view.totalCents)}</Button>
+        <Button className="w-full" disabled={view!.stops.length > 0 || view!.totalCents === null || !view!.preparedId} onClick={() => setConfirming(true)}>Place order · {cents(run.view.totalCents)}</Button>
       )}
       {run.stage === "ready" && (
-        <Button className="w-full" variant={run.view.canOrder ? "secondary" : "primary"} disabled={view!.stops.length > 0 || view!.totalCents === null} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
+        <Button className="w-full" variant={run.view.canOrder ? "secondary" : "primary"} disabled={view!.stops.length > 0 || view!.totalCents === null || !view!.preparedId} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}
       {run.stage === "ready" && !run.view.canOrder && run.view.orderWhy && <p className="px-4 t-sub text-muted">{run.view.orderWhy}</p>}
       {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" />}

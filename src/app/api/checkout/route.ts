@@ -56,19 +56,21 @@ const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.tes
 
 /**
  * Test runs (docs/CHECKOUT.md phase 2, Nov 13). prepare { jobId? }: get ready (or follow it) → the figures and what
- * stops them, or { waiting: jobId }. approve { faceId }: Face ID approves those figures → { ok, approvalId } or
+ * stops them (with its preparedId), or { waiting: jobId }. approve { faceId, preparedId }: Face ID approves exactly that
+ * reading's figures → { ok, approvalId } or
  * { ok: false, reasons }. test-run { approvalId } or { jobId } (following): → { ok, would } or { ok: false, reasons }, or
  * { waiting: jobId }. look { jobId? }: the store and card Safeway's checkout shows, to pick (Nov 14) → { store, card } or
- * { waiting: jobId }. Nothing here places an order.
+ * { waiting: jobId }. place { approvalId, totalCents, window } (what the phone showed, Nov 19) or { jobId } (following):
+ * placing for real, only as approved.
  */
 async function run(req: Request, b: Record<string, unknown>) {
   try {
     const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
       : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined)
       : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined, undefined, typeof b.bagsOwn === "boolean" ? b.bagsOwn : undefined)
-      : b.op === "approve" ? await approve(req, answerOf(b.faceId))
+      : b.op === "approve" ? await approve(req, answerOf(b.faceId), id(b.preparedId))
       // Placing for real (phase 3): only with an approval made with Face ID, or following the one started.
-      : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId)) : await placeOrder(id(b.approvalId)))
+      : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId)) : await placeOrder(id(b.approvalId), { totalCents: Number.isInteger(b.totalCents) ? b.totalCents as number : null, window: text(b.window, 80) }))
       : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
     return Response.json(out, noStore);
   } catch (e) {

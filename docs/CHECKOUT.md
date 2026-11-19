@@ -9,9 +9,10 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 ## The flow
 
-1. Shop → Safeway heading → **Check out** (only with something in the cart and the helper reachable, and only when
-   ordering is turned on in Settings).
-2. A sheet: what Simmer knows at once (how many things; anything on the list not in the cart, tap to go back), then
+1. Shop → **Check out**, on the line above the list (only with something in the Safeway cart; greyed while a cart change
+   is on its way or the cart is being read, and "Signed out" when Safeway was last seen signed out). Until ordering is
+   set up and on in Settings → Ordering, the sheet says so and offers nothing else.
+2. A sheet: what Simmer knows at once (how many things in the cart and Simmer's estimate), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a
    day first": reading every day was slow); tapping another day has the helper press that one tile and read it. Only
    free times, plus Flash shown with its price (Sam, Nov 16: "offer flash but show it", his yes to this change); never
@@ -29,49 +30,53 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    checkout page, only a button reading exactly "More times", only one, once per day read. It shows more times only. With one picked, what
    the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Getting ready takes
    only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
-3. **Place order · $128.40** → Face ID → the confirm sheet (store, window, card, total; unusual items highlighted) →
-   the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's change/cancel cutoff and a link.
-   The cart comes off the list as bought.
+3. **Place order · $128.40** → the confirm sheet (store, time, card, bags, total; unusual items highlighted) → Face ID
+   approves exactly the reading shown → the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's
+   order number when its page shows one. The cart comes off the list as bought.
 4. Checking in on arrival stays in Safeway's own app.
 
 ## Protections (all required)
 
 **Turning it on**
-- Off by default: a switch (Settings → Ordering, and in the Check out sheet), plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
-- A spending limit per order, set in the Check out sheet (Shop → Safeway → Check out). Over it: refused before the helper touches Safeway. It starts at $0
+- Off by default: a switch (Settings → Ordering), plus a server switch (`CHECKOUT_ENABLED`) that can stop it with no release.
+- A spending limit per order, set in Settings → Ordering. Over it: refused before the helper touches Safeway. It starts at $0
   (Sam, Nov 12), so no order can go through until someone in the household raises it; a missing or unreadable limit
   counts as $0.
 - The pickup store and the card's last 4 digits come from Safeway's checkout the first time (Sam, Nov 14: picking them
   in Simmer only confirmed what Safeway had): shown on the sheet, checked to be readable, and remembered once that
   first approval is made with Face ID. After that, Safeway showing a different store or card: stop. They can also be
-  picked in the Check out sheet from what Safeway shows (Face ID). To pick up elsewhere, the store is changed on
+  picked in Settings → Ordering from what Safeway shows (Face ID). To pick up elsewhere, the store is changed on
   Safeway first, then picked again in Simmer.
 
 **Each order**
 - Face ID (a passkey) on the phone to place it.
-- Turning ordering on, raising the limit, or changing the store or card needs Face ID too (Sam, Nov 13: ordering lives
-  in Check out, a few settings stay in Settings); turning off and lowering the limit don't. With no phone set up, those
+- Turning ordering on, raising the limit, or changing the store or card needs Face ID too (Sam, Nov 13; all of them in
+  Settings → Ordering since Nov 14); turning off and lowering the limit don't. With no phone set up, those
   changes are refused.
 - The approval is fixed at the tap: every product and count, the store, the window, the card's last 4, the total. The
   helper checks Safeway's final page against all of it; any difference (a cent, an item) stops it, and Simmer shows the
-  new figures to approve again.
+  new figures to approve again. Face ID approves only the reading the phone showed (each Get ready has its own id, Nov
+  19), and placing is refused, by the phone and the server, unless the approved total and time are the ones shown.
 - Weighed items (Sam, Nov 12): the charge after picking may come in up to 10% over the approved total, and never more
   than $5 over. Simmer reads the charge from Safeway's order history and flags anything beyond that.
 - The cart freezes at the tap: any cart change after it cancels the approval.
 - The approval expires after 2 minutes.
 - Single use, never retried. If the helper loses track after the click, it reads Safeway's order history to find out;
-  it never clicks again. Worst case: "Simmer isn't sure; check Safeway". Never a double order.
+  it never clicks again. Worst case: "Not sure the order went through. Check Safeway before trying again." Never a
+  double order.
 - Safeway asking for a security code or any card detail on the final page: stop. Simmer and the helper never type one.
 - The helper presses only Safeway's Place order button, found by its exact words on the final page; nothing else. Not
   where expected: stop.
 - Unusual things are highlighted on the confirm sheet: a count of 5 or more, one item over $30, a total more than 15%
   above Simmer's estimate (tunable).
-- Only a helper version that has passed a dry run on this account can place orders (an update needs a new dry run).
+- Only a helper whose checkout fingerprint (phase 3 below) has passed a dry run on this account, run by the helper
+  Simmer ships, can place orders (an update that changes anything checkout runs needs a new dry run).
 - No checking out while the cart is changing (Nov 16, Sam): Check out is greyed while a change is on its way to
   Safeway or the cart is being read, and every checkout step on the server refuses while a quantity change is waiting
   or being made.
 - A record of every attempt (what was approved, what Safeway showed, what was pressed, the order number), kept even
-  when it fails.
+  when it fails. Since Nov 19 each entry is added on its own in one step (a Redis list; the newest 5,000 kept, with Copy
+  to Google Sheet exporting them), so two at once can't lose one.
 
 **Testing**
 - Automated tests never touch Safeway: they run against saved copies of Safeway's checkout pages, including broken ones
@@ -142,8 +147,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    phone sets up with the passcode; after that a new phone asks, both show a 6-digit code, an existing phone approves
    with Face ID (bound to that request), and the new phone sets up within 5 minutes, once. Removing phones isn't built;
    when it is, removing needs Face ID too, and the last phone can't be removed by passcode alone (outside review: else
-   removing all and starting over skips the approval). Still to build: the helper's prepare and dry-run jobs, the Check out
-   sheet, the approval, and dry runs on the account. No code presses Place Order.
+   removing all and starting over skips the approval). The helper's prepare and dry-run jobs, the Check out sheet, the
+   approval and dry runs on the account followed (Nov 13–14, below); Place Order is pressed only by placing (phase 3).
 
    First test run that matched (Nov 14, helper 26.11.14.2): Get ready chose Sat 6–7 PM (free, REGULAR), read the store,
    card, 4 items and $30.96; Face ID approved those; the test run went through Safeway's checkout again (reopening the
@@ -179,8 +184,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
      when, read again right there, it shows the approved total once, the item count, the card's last 4 and no other
      card, the store, the pickup day and time, no card detail asked for, and exactly one enabled "Place Order".
    - Pressed at most once. A placing job is never handed out twice: one the helper had taken when it reloaded, or hands
-     back, is marked unsure instead. Pressed with no clear answer, or lost: "Simmer isn't sure the order went through.
-     Check Safeway before trying again." Never retried.
+     back, is marked unsure instead. Pressed with no clear answer, or lost: "Not sure the order went through. Check
+     Safeway before trying again." Never retried.
    - Ordered: Safeway's order number when the page shows it, the cart comes off the Safeway list as bought, every step
      recorded.
    - Outside review (Codex, Nov 14), all six fixed: the helper checks the 2-minute deadline itself right before the
@@ -196,5 +201,24 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
      the button off a moment after the pickup time is set). Helper 26.11.16 waits for it to turn on (15 s at most, else
      stops); and a step that finds the tab already on Safeway's checkout page reloads it there instead of starting over
      from the cart (placing still reads the cart page first).
+   - Nov 19 (helper 26.11.19, outside review): right before the press the helper asks Simmer "may I press?"; only a
+     placing job it's still working on, within the approval's deadline by Simmer's clock, moves to pressing, in one step,
+     and nothing marks a pressing job failed or not answering after that (no yes, no press). The helper holds to the
+     earlier of the approval's deadline and the time Simmer said was left when it handed the job over. A placing job it
+     took but hasn't pressed counts as stuck only a minute after the approval ran out. What an order came to is worked out
+     and kept when the helper reports (recorded first, then the cart off the list, then the next order allowed), whether
+     or not a phone is following; a late report replaces "not sure". The helper keeps a report it couldn't send and sends
+     it again. Jobs are one Redis key each, every status change made only from the status read; taking a job is one step
+     only one helper can win, for every kind. Every helper wait now watches the page or Chrome's events, with one limit.
+     Stopped because Safeway's cart wasn't the approved one: "Safeway's cart isn't what you approved. Nothing was ordered."
+   - Review, Nov 19: once Simmer has said yes to "may I press?", the time is kept with the job, and the order is "nothing
+     was ordered" only when Safeway's page gave the helper a reason not to press, read before any click; a press whose
+     answer was lost (the click can end the helper's script as Safeway's next page starts) is reported as unknown, and
+     any other answer is "not sure". A press reported for a job that was never let press is never taken as an order.
+     Test runs and placing are handed only to the helper Simmer ships. "May I press?" gives up after 10 s (no press). An
+     order's report is tried three times within a few seconds before it waits for the next check. Every way a placing
+     job ends (reported, handed back, lost in a reload, given up) has its outcome worked out and recorded at once, and
+     following a job Simmer no longer has says "not sure" and records it. A report that arrives twice at once is acted
+     on once. Each record entry's detail is kept to 4,000 characters, and Copy to Google Sheet reads the record in pages.
    - Not built yet: reading Safeway's order history after an unsure answer, and the weighed-items charge check (10%,
      $5) against what's charged. Removing phones isn't built, so there's no way around the Face ID approval.

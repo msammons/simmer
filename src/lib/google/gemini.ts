@@ -1,58 +1,64 @@
-// Gemini with structured JSON output. Free tier sheds load with 503/429, so: retry once, then a lighter model.
+// Gemini with structured JSON output. Free tier sheds load with 503/429, so: retry, then a lighter model.
 // Measured 2026-10-23: gemini-2.5-flash retired for new keys; 3.8-flash ~73s per call; 3.5-flash ~1.5s.
 const MODEL = () => process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const FALLBACK = () => process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+/** Too little time left to be worth another attempt. */
+const LAST_MS = 1_500;
 
-// search: Gemini may look things up with Google Search first. Search plus a JSON schema is newer API ground; if the API
-// refuses the combination, the request is repeated without the schema and the JSON is read out of the text.
-// files: pictures or PDFs sent along with the prompt (base64), for reading recipes out of them.
-// urls: Gemini may open links named in the prompt (its URL context tool), for pages that refuse our own server.
-// sources: with search on, the web hosts Gemini's answer drew on (from its grounding metadata).
-// patient: for work that runs after the response (event search, top-up), wait out a rate limit as long as Google asks, up to 40 s.
-export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; search?: boolean; urls?: boolean; files?: { mimeType: string; data: string }[]; timeoutMs?: number; patient?: boolean } = {}): Promise<{ data: T; model: string; sources: string[] }> {
+/**
+ * One answer as JSON matching `schema`. `timeoutMs` is the whole budget, every attempt included (Nov 19: 30-55 s per
+ * attempt, three attempts, ran past the route's 60 s), so a caller can count on it. An attempt that fails fast (busy,
+ * a server error, a cut-off or unreadable answer) is tried again, the last time on the other model.
+ * light: the lighter model first. files: pictures or PDFs sent with the prompt (base64). urls: Gemini may open links
+ * named in the prompt (its URL context tool), for pages that refuse our own server; if the API refuses that tool with a
+ * schema, it's asked again without the schema and the JSON read out of the text.
+ */
+export async function generateJson<T>(prompt: string, schema: object, opts: { light?: boolean; urls?: boolean; files?: { mimeType: string; data: string }[]; timeoutMs?: number } = {}): Promise<{ data: T; model: string }> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Gemini isn't set up (no GEMINI_API_KEY)");
+  const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
   let schemaInText = false;
   const body = () => JSON.stringify({
     contents: [{ parts: [...(opts.files ?? []).map((f) => ({ inline_data: { mime_type: f.mimeType, data: f.data } })), { text: schemaInText ? `${prompt}\n\nReply with only JSON matching this schema:\n${JSON.stringify(schema)}` : prompt }] }],
-    ...((opts.search || opts.urls) && { tools: [...(opts.search ? [{ google_search: {} }] : []), ...(opts.urls ? [{ url_context: {} }] : [])] }),
+    ...(opts.urls && { tools: [{ url_context: {} }] }),
     generationConfig: schemaInText ? {} : { responseMimeType: "application/json", responseSchema: schema },
   });
   const attempts = opts.light ? [FALLBACK(), FALLBACK(), MODEL()] : [MODEL(), MODEL(), FALLBACK()];
   let last = "";
   for (const [i, model] of attempts.entries()) {
+    const left = deadline - Date.now();
+    if (left < LAST_MS) break;
+    const wait = async (ms: number) => { if (i < attempts.length - 1) await new Promise((res) => setTimeout(res, Math.min(ms, Math.max(0, deadline - Date.now() - LAST_MS)))); };
     let r: Response;
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
-        body: body(),
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+        method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": key }, body: body(), signal: AbortSignal.timeout(left),
       });
     } catch (e) {
       last = `${model}: ${(e as Error).message}`;
-      continue; // timeout: try the next attempt
+      continue; // a dropped connection, or the deadline (the loop then stops)
     }
     if (r.status === 503 || r.status === 429) {
       const why = await busyReason(r);
       last = `${model}: ${why.text}`;
-      if (why.daily) continue; // waiting won't help; the other model has its own quota
-      const wait = opts.patient ? Math.min(why.retryMs ?? 5_000, 40_000) : 1_500;
-      if (i < attempts.length - 1) await new Promise((res) => setTimeout(res, wait));
+      if (!why.daily) await wait(1_500); // a daily quota won't come back; the other model has its own
       continue;
     }
-    if (r.status === 400 && (opts.search || opts.urls) && !schemaInText) {
-      schemaInText = true;
-      last = `${model}: search with a schema refused`;
-      continue;
-    }
+    if (r.status >= 500) { last = `${model}: server error ${r.status}`; await r.body?.cancel(); await wait(500); continue; }
+    if (r.status === 400 && opts.urls && !schemaInText) { schemaInText = true; last = `${model}: links with a schema refused`; await r.body?.cancel(); continue; }
     if (!r.ok) throw new Error(`Gemini error ${r.status}: ${(await r.text()).replace(/\s+/g, " ").slice(0, 200)}`);
-    const j = await r.json();
-    const parts: { text?: string; thought?: boolean }[] = j.candidates?.[0]?.content?.parts ?? [];
-    const text = parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("");
-    const chunks: { web?: { uri?: string; title?: string } }[] = j.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
-    const sources = [...new Set(chunks.flatMap((c) => [c.web?.title, hostOf(c.web?.uri)]).filter((h): h is string => Boolean(h)).map((h) => h.toLowerCase().replace(/^www\./, "")))];
-    return { data: (schemaInText ? JSON.parse(jsonIn(text)) : JSON.parse(text)) as T, model, sources };
+    const j = await r.json().catch(() => null);
+    const c = j?.candidates?.[0];
+    const text = ((c?.content?.parts ?? []) as { text?: string; thought?: boolean }[]).filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
+    // Blocked (safety, a recitation): asking the same again won't help.
+    if (!text) throw new Error(`Gemini gave no answer (${j?.promptFeedback?.blockReason ?? c?.finishReason ?? "empty"})`);
+    try {
+      return { data: JSON.parse(schemaInText ? jsonIn(text) : text) as T, model };
+    } catch {
+      last = `${model}: unreadable answer (${c?.finishReason ?? "?"})`; // cut off at its length limit, most often
+    }
   }
-  throw new Error(`Gemini is busy right now. Try again in a minute. (${last})`);
+  throw new Error(`Gemini is busy right now. Try again in a minute. (${last || "out of time"})`);
 }
 
 /** The outermost JSON object in a reply that may wrap it in prose or a code fence. */
@@ -62,17 +68,10 @@ export function jsonIn(text: string): string {
   return text.slice(a, b + 1);
 }
 
-export const hostOf = (url?: string) => {
-  try { return url ? new URL(url).hostname.replace(/^www\./, "") : ""; } catch { return ""; }
-};
-
-/** What Google said about a 429/503: which quota, whether it's a daily one, and how long it asks us to wait. */
-async function busyReason(r: Response): Promise<{ text: string; daily: boolean; retryMs?: number }> {
+/** What Google said about a 429/503: which quota, and whether it's a daily one. */
+async function busyReason(r: Response): Promise<{ text: string; daily: boolean }> {
   const body = await r.json().catch(() => null);
-  const details: { "@type"?: string; retryDelay?: string; violations?: { quotaId?: string }[] }[] = body?.error?.details ?? [];
+  const details: { violations?: { quotaId?: string }[] }[] = body?.error?.details ?? [];
   const quota = details.flatMap((d) => d.violations ?? []).map((v) => v.quotaId).filter(Boolean)[0];
-  const delay = details.find((d) => d.retryDelay)?.retryDelay;
-  const retryMs = delay ? Math.ceil(parseFloat(delay) * 1000) : undefined;
-  const daily = /PerDay/i.test(quota ?? "");
-  return { text: r.status === 429 ? `rate limited${quota ? ` (${quota})` : ""}` : "busy (503)", daily, retryMs };
+  return { text: r.status === 429 ? `rate limited${quota ? ` (${quota})` : ""}` : "busy (503)", daily: /PerDay/i.test(quota ?? "") };
 }

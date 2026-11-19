@@ -1,17 +1,23 @@
 // The recipe collection: one row per recipe in the Recipes tab (docs/PLAN.md, section 3). Reading is forgiving (headers
 // in any order, a row without a name skipped); saving writes only that recipe's row. Without the Sheet (local dev, tests)
 // the collection lives in memory, seeded from data/recipes.csv.
+import { lookup } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
+import { pipeline, Readable } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
 import { appendRows, atomically, readTab, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
-import { savedSections, type Section, type Store } from "./groceries";
-import { FRACTIONS, norm, parseIngredient } from "./words";
+import { savedSections, storeOf, type Section, type Store } from "./groceries";
+import { norm, parseIngredient, plainFractions, UNIT_NAMES } from "./words";
+import { col, newId, parseCsv, records, rowIds, yes } from "./parse";
 
 export { parseIngredient };
-import { parseCsv, records } from "./parse";
 
 export type Effort = "quick" | "regular";
 export type For = "everyone" | "kids" | "adults";
@@ -27,30 +33,32 @@ export type Draft = Omit<Recipe, "id" | "ingredients" | "addedAt" | "active"> & 
 const TAB = "Recipes";
 const HEADERS = ["id", "name", "effort", "minutes", "serves", "protein", "ingredients", "steps", "store", "season", "for", "kid_ok", "make_ahead", "tags", "source", "rating", "notes", "active", "added_at"];
 
-const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 const num = (s: string) => { const n = parseFloat(s); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
 const words = (s: string) => s.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
-const lines = (s: string) => s.split(/\n/).map((x) => x.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, "").trim()).filter(Boolean);
+/** A list marker ("- ", "2. ", "3) ") before a line; only with a space after, so "1.5 lb" keeps its amount (Nov 19). */
+const MARKER = /^\s*(?:[-•*]|\d+[.)])\s+/;
+const lines = (s: string) => s.split(/\n/).map((x) => x.replace(MARKER, "").trim()).filter(Boolean);
+/** Quick is about half an hour (35 minutes, with the time a page gives); without minutes, the guess given. */
+const effortFor = (minutes: number | null | undefined, guess?: string): Effort => (minutes ? (minutes <= 35 ? "quick" : "regular") : guess === "quick" ? "quick" : "regular");
 const asEffort = (s: string): Effort => (/quick|fast|easy/i.test(s) ? "quick" : "regular");
 const asFor = (s: string): For => (/kid|boy/i.test(s) ? "kids" : /adult|grown/i.test(s) ? "adults" : "everyone");
 const asKidOk = (s: string): Recipe["kidOk"] => (/^(yes|y)$/i.test(s) ? "yes" : /some|one/i.test(s) ? "some" : /^(no|n)$/i.test(s) ? "no" : "");
-const asStore = (s: string): Store | "" => {
-  const k = s.toLowerCase().replace(/[^a-z]/g, "");
-  return !k ? "" : k.startsWith("trader") || k === "tj" || k === "tjs" ? "trader-joes" : k.startsWith("costco") ? "costco" : k.startsWith("safeway") ? "safeway" : "";
-};
-
 
 // ---- reading
 
 let memory: Recipe[] | null = null;
 
+/** Each row's id: its own, or one made from its name for a row without (parse.ts rowIds), the same on every read. */
+const idsOf = (rows: string[][]) => rowIds(records(rows), (get) => get("name"));
+
 function toRecipes(rows: string[][]): Recipe[] {
-  return records(rows).flatMap((r) => {
+  const ids = idsOf(rows);
+  return records(rows).flatMap((r, i) => {
     const name = r.get("name");
     if (!name) return [];
     return [{
-      id: r.get("id") || `row-${r.rowNumber}`, name, effort: asEffort(r.get("effort")), minutes: num(r.get("minutes")), serves: num(r.get("serves")),
-      protein: r.get("protein"), ingredients: lines(r.get("ingredients")).map(parseIngredient), steps: lines(r.get("steps")), store: asStore(r.get("store")),
+      id: ids[i], name, effort: asEffort(r.get("effort")), minutes: num(r.get("minutes")), serves: num(r.get("serves")),
+      protein: r.get("protein"), ingredients: lines(r.get("ingredients")).map(parseIngredient), steps: lines(r.get("steps")), store: storeOf(r.get("store")),
       season: words(r.get("season")).map((s) => s.toLowerCase()), for: asFor(r.get("for")), kidOk: asKidOk(r.get("kid_ok")), makeAhead: yes(r.get("make_ahead")),
       tags: words(r.get("tags")).map((s) => s.toLowerCase()), source: r.get("source"), rating: num(r.get("rating")), notes: r.get("notes"),
       active: !/^(no|n|false|0)$/i.test(r.get("active")), addedAt: r.get("added_at"),
@@ -72,8 +80,7 @@ export { searchRecipes } from "./search";
 
 // ---- saving
 
-const newId = (name: string) => `${norm(name).replace(/ /g, "-").slice(0, 24) || "recipe"}-${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 4)}`;
-const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
+const recipeId = (name: string) => newId(`${norm(name).replace(/ /g, "-").slice(0, 24) || "recipe"}-`);
 
 function cells(r: Recipe): Record<string, string> {
   return {
@@ -94,10 +101,10 @@ export function fromDraft(d: Draft, existing?: Recipe): Recipe {
   if (!name) throw new AppError("Give the recipe a name.");
   const minutes = positive(d.minutes), serves = positive(d.serves), rating = positive(d.rating);
   return {
-    id: existing?.id ?? (str(d.id).slice(0, 40) || newId(name)), name, effort: d.effort === "quick" ? "quick" : "regular",
+    id: existing?.id ?? (str(d.id).slice(0, 40) || recipeId(name)), name, effort: d.effort === "quick" ? "quick" : "regular",
     minutes: minutes && Math.round(minutes), serves: serves && Math.round(serves),
     protein: str(d.protein).trim().toLowerCase(), ingredients: strs(d.ingredients).map((l) => l.trim()).filter(Boolean).slice(0, 80).map(parseIngredient),
-    steps: strs(d.steps).map((s) => s.trim()).filter(Boolean).slice(0, 60), store: asStore(str(d.store)), season: strs(d.season), for: d.for === "kids" || d.for === "adults" ? d.for : "everyone",
+    steps: strs(d.steps).map((s) => s.trim()).filter(Boolean).slice(0, 60), store: storeOf(str(d.store)), season: strs(d.season), for: d.for === "kids" || d.for === "adults" ? d.for : "everyone",
     kidOk: asKidOk(str(d.kidOk)), makeAhead: Boolean(d.makeAhead), tags: strs(d.tags).map((t) => t.trim().toLowerCase()).filter(Boolean), source: str(d.source),
     rating: rating && rating >= 1 ? Math.min(3, Math.round(rating)) : null, notes: str(d.notes).trim(), active: d.active ?? existing?.active ?? true,
     addedAt: existing?.addedAt ?? new Date().toISOString(),
@@ -126,12 +133,13 @@ export const saveRecipes = atomically(async (rs: Recipe[]): Promise<Recipe[]> =>
     return rs;
   }
   const headers = rows[0].map((h) => h.trim().toLowerCase());
+  // By the id each row is shown with, so a row that had none is changed in place (and keeps that id from then on).
   const at = new Map<string, number>();
-  for (const x of records(rows)) if (!at.has(x.get("id"))) at.set(x.get("id"), x.rowNumber);
+  idsOf(rows).forEach((id, i) => { if (!at.has(id)) at.set(id, i + 2); });
   const fresh = [...byId.values()].filter((r) => !at.has(r.id));
-  // A column the tab doesn't have yet is added at the end when a new recipe comes in, so nothing's lost.
+  // A column the tab doesn't have yet is added at the end, so nothing saved is lost (Nov 19: only a new recipe added it).
   const width = headers.length;
-  const missing = fresh.length ? HEADERS.filter((h) => !headers.includes(h)) : [];
+  const missing = HEADERS.filter((h) => !headers.includes(h));
   headers.push(...missing);
   const data: { range: string; values: string[][] }[] = missing.length ? [{ range: `${TAB}!${col(width)}1:${col(width + missing.length - 1)}1`, values: [missing] }] : [];
   for (const r of byId.values()) {
@@ -154,7 +162,8 @@ export const deleteRecipe = atomically(async (id: string): Promise<boolean> => {
     return i >= 0;
   }
   const rows = await readTab(TAB);
-  const keep = records(rows).filter((x) => x.get("id") !== id);
+  const ids = idsOf(rows);
+  const keep = records(rows).filter((_, i) => ids[i] !== id);
   if (keep.length === Math.max(0, rows.length - 1)) return false;
   await replaceTab(TAB, [rows[0], ...keep.map((x) => rows[x.rowNumber - 1])], rows);
   return true;
@@ -179,11 +188,19 @@ export function isoMinutes(s: unknown): number | null {
   return total > 0 ? total : null;
 }
 
-const decode = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;|&apos;|&rsquo;|&#8217;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/\s+/g, " ").trim();
+const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", quot: '"', apos: "'", rsquo: "'", lsquo: "'", ldquo: '"', rdquo: '"', lt: "<", gt: ">", ndash: "–", mdash: "—", frac12: "½", frac14: "¼", frac34: "¾", deg: "°" };
+/** A page's characters for its entities, in one pass (Nov 19: "&amp;lt;" became "<"), numbered ones in hex too. */
+const entities = (s: string) => s.replace(/&(#x[\da-f]+|#\d+|[a-z]\w*);/gi, (m, e: string) => {
+  const n = e[0] !== "#" ? NaN : e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+  return e[0] === "#" ? (n > 0 && n <= 0x10ffff ? (n === 0xa0 ? " " : String.fromCodePoint(n)) : m) : ENTITIES[e.toLowerCase()] ?? m;
+});
+/** Text without tags, on one line. A tag ends at the next "<" too, so a page of unclosed tags is read in one pass. */
+const decode = (s: string) => entities(s.replace(/<[^<>]*>?/g, " ")).replace(/\s+/g, " ").trim();
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap(strings) : typeof v === "string" ? [decode(v)] : typeof v === "number" ? [String(v)] : []);
 
 function steps(v: unknown): string[] {
-  if (typeof v === "string") return lines(decode(v.replace(/<\/(p|li)>|<br\s*\/?>/gi, "\n")).replace(/ (?=\d+\. )/g, "\n"));
+  // Each step decoded on its own line (Nov 19: decoding the whole put every <li> on one line).
+  if (typeof v === "string") return lines(v.replace(/<\/(p|li)>|<(li|br)\b[^<>]*>/gi, "\n").split("\n").map((l) => decode(l).replace(/ (?=\d+\. )/g, "\n")).join("\n"));
   if (Array.isArray(v)) return v.flatMap(steps);
   if (v && typeof v === "object") {
     const o = v as Record<string, unknown>;
@@ -204,8 +221,9 @@ export function recipeInPage(html: string, url: string): Draft | null {
     if (type.some((t) => typeof t === "string" && /recipe$/i.test(t))) found.push(o);
     if (o["@graph"]) walk(o["@graph"]);
   };
-  for (const m of html.matchAll(/<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi)) {
-    try { walk(JSON.parse(m[1].trim())); } catch { /* a page's broken block: try the next */ }
+  for (const block of blocks(html, "script")) {
+    if (!/type=["']?application\/ld\+json/i.test(block.open)) continue;
+    try { walk(JSON.parse(block.body.trim())); } catch { /* a page's broken block: try the next */ }
   }
   const r = found[0];
   if (!r) return null;
@@ -217,39 +235,176 @@ export function recipeInPage(html: string, url: string): Draft | null {
   const tags = [...strings(r.recipeCategory), ...strings(r.recipeCuisine), ...strings(r.keywords).flatMap((k) => k.split(","))]
     .map((t) => t.trim().toLowerCase()).filter((t) => t && t.length < 24);
   return {
-    name, effort: minutes && minutes <= 35 ? "quick" : "regular", minutes, serves, protein: "", ingredients, steps: steps(r.recipeInstructions),
+    name, effort: effortFor(minutes), minutes, serves, protein: "", ingredients, steps: steps(r.recipeInstructions),
     store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [...new Set(tags)].slice(0, 6), source: url, rating: null, notes: "",
   };
 }
 
-/** Only ordinary public pages: never the server's own network. */
-function checkLink(raw: string): URL {
+/**
+ * Each `<tag …>…</tag>` in a page, found with indexOf so it's one pass however the page is written (Nov 19: a regex
+ * took seconds on unclosed tags). One left open runs to the end.
+ */
+function blocks(html: string, tag: string): { open: string; body: string; start: number; end: number }[] {
+  const out: { open: string; body: string; start: number; end: number }[] = [];
+  const lower = html.toLowerCase(), close = `</${tag}`;
+  for (let at = lower.indexOf(`<${tag}`); at >= 0; at = lower.indexOf(`<${tag}`, at)) {
+    const gt = lower.indexOf(">", at), bodyAt = gt < 0 ? html.length : gt + 1;
+    const c = lower.indexOf(close, bodyAt), end = c < 0 ? html.length : (lower.indexOf(">", c) + 1 || html.length);
+    out.push({ open: html.slice(at, bodyAt), body: html.slice(bodyAt, c < 0 ? html.length : c), start: at, end });
+    at = end;
+  }
+  return out;
+}
+/** A page's words without its scripts, styles and site furniture. */
+export function pageText(html: string): string {
+  let s = html;
+  for (const tag of ["script", "style", "nav", "header", "footer"]) {
+    let out = "", from = 0;
+    for (const b of blocks(s, tag)) { out += `${s.slice(from, b.start)} `; from = b.end; }
+    s = out + s.slice(from);
+  }
+  return decode(s);
+}
+
+/** An IPv4 address that isn't an ordinary public one. */
+function private4(v4: string): boolean {
+  const [a, b, c] = v4.split(".").map(Number);
+  return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b < 128) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168)
+    || (a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 198 && (b === 18 || b === 19)) || (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113) || a >= 224;
+}
+/** An IPv6 address as its 16 bytes (a trailing IPv4 part included), or null. */
+function bytes6(ip: string): number[] | null {
+  let h = ip.toLowerCase().replace(/%.*$/, "");
+  const v4 = h.match(/(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (v4) { const n = v4.split(".").map(Number); h = `${h.slice(0, -v4.length)}${((n[0] << 8) | n[1]).toString(16)}:${((n[2] << 8) | n[3]).toString(16)}`; }
+  const [head, tail, more] = h.split("::");
+  if (more !== undefined) return null;
+  const left = head ? head.split(":") : [], right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  return groups.flatMap((g) => { const n = parseInt(g, 16); return [n >> 8, n & 255]; });
+}
+/**
+ * An address on the server's own network or the machine itself: IPv4, and IPv6 including the forms that carry an IPv4
+ * address (mapped, ::/96, NAT64 64:ff9b::/96, 6to4 2002::/16, checked by the address they carry; Nov 19, review).
+ * Exported for tests.
+ */
+export function privateAddress(ip: string): boolean {
+  if (isIP(ip) === 4) return private4(ip);
+  const b = isIP(ip) === 6 ? bytes6(ip) : null;
+  if (!b) return true;
+  const v4 = (i: number) => b.slice(i, i + 4).join(".");
+  const zero = (from: number, to: number) => b.slice(from, to).every((x) => x === 0);
+  if (zero(0, 10) && b[10] === 255 && b[11] === 255) return private4(v4(12)); // ::ffff:0:0/96
+  if (zero(0, 12)) return true; // ::/96: unspecified, loopback, IPv4-compatible
+  if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) return zero(4, 12) ? private4(v4(12)) : true; // NAT64, and its local-use 64:ff9b:1::/48
+  if (b[0] === 0x20 && b[1] === 0x02) return private4(v4(2)); // 6to4
+  if (b[0] === 0x20 && b[1] === 0x01 && (zero(2, 4) || (b[2] === 0x0d && b[3] === 0xb8))) return true; // Teredo, documentation
+  if (b[0] === 1 && zero(1, 8)) return true; // discard-only 100::/64
+  return (b[0] & 0xfe) === 0xfc || (b[0] === 0xfe && (b[1] & 0x80) === 0x80) || b[0] === 0xff; // unique local, link and site local, multicast
+}
+
+const NOT_A_PAGE = "That doesn't look like a link to a recipe page.";
+/**
+ * The address a page is opened at, looked up as the connection is made and refused when any address the name leads to is
+ * private (Nov 19, review: the name was checked, then looked up again by the fetch, and could lead somewhere else the
+ * second time). The connection goes to an address checked here. Exported for tests.
+ */
+export const publicOnly: LookupFunction = (host, options, callback) => {
+  const cb = callback as (e: Error | null, address: string | { address: string; family: number }[], family?: number) => void;
+  lookup(host, { all: true }).then((found) => {
+    if (!found.length || found.some((a) => privateAddress(a.address))) return cb(new AppError(NOT_A_PAGE), options.all ? [] : "", 4);
+    if (options.all) cb(null, found.map((a) => ({ address: a.address, family: a.family })));
+    else cb(null, found[0].address, found[0].family);
+  }, (e) => cb(e, options.all ? [] : "", 4));
+};
+
+/**
+ * One request for a page, connected only to an address `publicOnly` checked (fetch can't be given its own lookup on
+ * Vercel's Node runtime without another package). Redirects aren't followed here; openPage follows them itself. Answers
+ * a web Response, its body unpacked (gzip, deflate, br). On an object, so tests can stand in for it.
+ */
+export const opener = {
+  open(u: URL, headers: Record<string, string>, signal: AbortSignal): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      const req = (u.protocol === "https:" ? httpsRequest : httpRequest)(u, { method: "GET", headers: { ...headers, "accept-encoding": "gzip, deflate, br" }, lookup: publicOnly, signal }, (res) => {
+        const status = res.statusCode ?? 0;
+        const h = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) if (v != null) h.set(k, Array.isArray(v) ? v.join(", ") : v);
+        if (status < 200 || status > 599 || (status >= 300 && status < 400) || status === 204 || status === 205) {
+          res.resume();
+          resolve(new Response(null, { status: status >= 200 && status <= 599 ? status : 502, headers: h }));
+          return;
+        }
+        const enc = String(res.headers["content-encoding"] ?? "").toLowerCase().trim();
+        const unpack = enc === "gzip" ? createGunzip() : enc === "br" ? createBrotliDecompress() : enc === "deflate" ? createInflate() : null;
+        const body = unpack ? pipeline(res, unpack, () => {}) : res;
+        h.delete("content-encoding"); h.delete("content-length");
+        resolve(new Response(Readable.toWeb(body) as unknown as ReadableStream<Uint8Array>, { status, headers: h }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+  },
+};
+
+/** Only ordinary public pages: never the server's own network, by name or by what the name leads to. */
+async function checkLink(raw: string | URL): Promise<URL> {
   let u: URL;
-  try { u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`); } catch { throw new AppError("That doesn't look like a link."); }
+  try { u = new URL(typeof raw !== "string" || /^https?:\/\//i.test(raw) ? raw : `https://${raw}`); } catch { throw new AppError("That doesn't look like a link."); }
   const h = u.hostname.toLowerCase();
-  if (!/^https?:$/.test(u.protocol) || !h.includes(".") || /^[\d.]+$|:|^localhost$|\.(local|internal|localhost)$/.test(h)) throw new AppError("That doesn't look like a link to a recipe page.");
+  const bad = () => new AppError(NOT_A_PAGE);
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password || !h.includes(".") || /^[\d.]+$|:|^\[|^localhost$|\.(local|internal|localhost)$/.test(h)) throw bad();
+  // A name that can't be looked up is left to the fetch, which fails as any unreachable page does.
+  const found = await lookup(h, { all: true }).catch(() => []);
+  if (found.some((a) => privateAddress(a.address))) throw bad();
   return u;
+}
+
+const PAGE_MAX = 3_000_000;
+/** A page's text: redirects followed one at a time, each checked as the link was (Nov 19), and at most PAGE_MAX read. */
+async function openPage(first: URL): Promise<{ html: string; url: URL }> {
+  const signal = AbortSignal.timeout(10_000); // the whole of it: every hop and the body
+  let u = first;
+  for (let hop = 0; ; hop++) {
+    const r = await opener.open(u, { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", accept: "text/html", "accept-language": "en-US,en;q=0.9" }, signal);
+    const to = r.status >= 300 && r.status < 400 ? r.headers.get("location") : null;
+    if (to) {
+      await r.body?.cancel();
+      if (hop >= 5) throw new Error("too many redirects");
+      u = await checkLink(new URL(to, u)); // an AppError here is the answer: it isn't read elsewhere either
+      continue;
+    }
+    if (!r.ok || !r.body) throw new Error(`page ${r.status}`);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let html = "";
+    while (html.length < PAGE_MAX) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += dec.decode(value, { stream: true });
+    }
+    await reader.cancel().catch(() => {});
+    return { html: html.slice(0, PAGE_MAX), url: u };
+  }
 }
 
 /** Reads the recipe at a link: the page's own recipe data first, the model only when a page doesn't have it. */
 export async function readLink(raw: string): Promise<Draft[]> {
-  const u = checkLink(raw);
-  let html = "";
+  const u = await checkLink(raw);
+  let page: { html: string; url: URL };
   try {
-    const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", accept: "text/html", "accept-language": "en-US,en;q=0.9" }, signal: AbortSignal.timeout(12_000), redirect: "follow" });
-    if (!r.ok) throw new Error(`page ${r.status}`);
-    html = (await r.text()).slice(0, 3_000_000);
+    page = await openPage(u);
   } catch (e) {
+    if (e instanceof AppError) throw e;
     // Some big recipe sites turn away servers like ours; the model can still open the page from its side.
     console.error("couldn't open", u.hostname, e);
     const read = await readElsewhere(u.toString()).catch((err) => { console.error("couldn't read elsewhere", err); return []; });
     if (read.length) return read;
     throw new AppError("Couldn't open that page. Copy the recipe from it and use Type it in.");
   }
-  const own = recipeInPage(html, u.toString());
+  const own = recipeInPage(page.html, u.toString());
   if (own) return [await withGuesses(own, own.minutes ? "" : own.steps.join(" "))];
-  const text = decode(html.replace(/<(script|style|nav|header|footer)[\s\S]*?<\/\1>/gi, " ")).slice(0, 14_000);
-  const read = await readText(text, u.toString());
+  const read = await readText(pageText(page.html).slice(0, 14_000), u.toString());
   if (!read.length) throw new AppError("Couldn't find a recipe on that page. Try typing it in.");
   return read;
 }
@@ -258,10 +413,10 @@ export async function readLink(raw: string): Promise<Draft[]> {
 async function readElsewhere(url: string): Promise<Draft[]> {
   const { data } = await generateJson<{ recipes: ModelRecipe[] }>(
     `Open this recipe page and read its recipe into structured form: ${url}\nCopy ingredient lines exactly as the page writes them (amount, unit, item) and the steps in order. Only include minutes or servings the page states. effort: "quick" if it's about 30 minutes or less on a weeknight, else "regular". make_ahead: true if it can be made earlier in the day or the night before. protein: the main protein in a few words. tags: up to 4 short words to find it by. If the page has no recipe, return an empty list.`,
-    DRAFT_SCHEMA, { urls: true, timeoutMs: 45_000 },
+    DRAFT_SCHEMA, { urls: true, timeoutMs: 40_000 }, // with the 10 s the page had: inside the route's 60 s
   );
   return (data.recipes ?? []).filter((r) => r.name?.trim() && r.ingredients?.length).slice(0, 1).map((r) => ({
-    name: r.name.trim(), effort: r.minutes ? (r.minutes <= 35 ? "quick" : "regular") : r.effort === "quick" ? "quick" : "regular", minutes: r.minutes || null, serves: r.serves || null,
+    name: r.name.trim(), effort: effortFor(r.minutes, r.effort), minutes: r.minutes || null, serves: r.serves || null,
     protein: (r.protein ?? "").toLowerCase(), ingredients: r.ingredients.map((l) => l.trim()).filter(Boolean), steps: (r.steps ?? []).map((x) => x.trim()).filter(Boolean),
     store: "", season: [], for: asFor(r.for ?? ""), kidOk: "", makeAhead: Boolean(r.make_ahead), tags: (r.tags ?? []).map((t) => t.toLowerCase()).slice(0, 6), source: url, rating: null, notes: "",
   }));
@@ -269,7 +424,7 @@ async function readElsewhere(url: string): Promise<Draft[]> {
 
 /** Many short lines with no amounts or steps: a list of meal ideas ("Tacos", "Salmon and broccoli"), one recipe each. */
 export function looksLikeIdeas(text: string): string[] | null {
-  const ls = text.split(/\n/).map((l) => l.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, "").trim()).filter(Boolean);
+  const ls = lines(text);
   // One or two short names are ideas too ("Chicken stir fry" alone read as a recipe and failed, Nov 3).
   if (!ls.length || ls.length > 300) return null;
   const idea = (l: string) => l.length <= 50 && !/^[\d½¼¾⅓⅔]/.test(l) && !/:\s*$|\b(cups?|tbsp|tsp|teaspoons?|tablespoons?|oz|lbs?|minutes|preheat|stir(?![ -]?fr(?:y|ied))|bake|heat)\b/i.test(l); // "stir fry" is a dish, "stir" a step
@@ -309,20 +464,24 @@ async function privately(text: string): Promise<{ text: string; restore: (s: str
   return { text: t, restore: (s) => back.reduce((acc, [p, n]) => acc.replaceAll(p, n), s) };
 }
 
+/** Every number in a text, fractions written as glyphs included ("1½" → 1, 1/2). */
+const numbersIn = (s: string) => plainFractions(s).match(/\d+(?:[./]\d+)?/g) ?? [];
+/** A leading amount, then its unit only if it is one ("3 chicken breasts" keeps its chicken), and "of". */
+const AMOUNT = new RegExp(String.raw`^(?:\(?[\d\s./-]+\)?\s*)+(?:(?:${Object.keys(UNIT_NAMES).filter((w) => w.length > 1).sort((a, b) => b.length - a.length).join("|")})\.?\s+)?(?:of\s+)?`, "i");
+
 /**
- * Checked by code: a number of minutes, servings or an amount must appear in the source text (never invented), so an
- * amount the model added is dropped and the ingredient kept; empty lines go.
+ * Checked by code: a number of minutes, servings or an amount must appear in the source text (never invented; Nov 19:
+ * fractions were let through whatever the text said), so an amount the model added is dropped, with its unit, and the
+ * ingredient kept; empty lines go.
  */
 export function checkAgainst(source: string, r: ModelRecipe, src: string): Draft {
-  const nums = new Set((source.match(/\d+(?:[./]\d+)?/g) ?? ([] as string[])).concat(Object.values(FRACTIONS)));
+  const nums = new Set(numbersIn(source));
   const has = (n: number | undefined) => (n && nums.has(String(n)) ? n : null);
-  const ingredients = r.ingredients.map((l) => l.trim()).filter(Boolean).map((l) => {
-    const amounts = l.match(/\d+(?:[./]\d+)?/g) ?? [];
-    return amounts.every((a) => nums.has(a)) ? l : l.replace(/^[\d\s./-]+(?:\w+\s+)?/, "").trim() || l;
-  });
+  const ingredients = r.ingredients.map((l) => l.trim()).filter(Boolean).map((l) =>
+    numbersIn(l).every((a) => nums.has(a)) ? l : plainFractions(l).replace(AMOUNT, "").trim() || l);
   const minutes = has(r.minutes);
   return {
-    name: r.name.trim(), effort: minutes ? (minutes <= 35 ? "quick" : "regular") : r.effort === "quick" ? "quick" : "regular", minutes, serves: has(r.serves),
+    name: r.name.trim(), effort: effortFor(minutes, r.effort), minutes, serves: has(r.serves),
     protein: (r.protein ?? "").toLowerCase(), ingredients, steps: r.steps.map((s) => s.trim()).filter(Boolean), store: "", season: [],
     for: asFor(r.for ?? ""), kidOk: "", makeAhead: Boolean(r.make_ahead), tags: (r.tags ?? []).map((t) => t.toLowerCase()).slice(0, 6), source: src, rating: null, notes: "",
   };
@@ -344,13 +503,16 @@ export async function readText(raw: string, src = "Typed in"): Promise<Draft[]> 
 }
 
 const READABLE = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
+/** The type as Gemini knows it: some phones and browsers say image/jpg. */
+const typeOf = (t: string) => (t === "image/jpg" || t === "image/pjpeg" ? "image/jpeg" : t);
 
 /**
  * Reads the recipes in a picture (a screenshot, a photo of a card or a cookbook page) or a PDF. The model writes out
  * each recipe's text as it appears, and the amounts and times it reports are checked against that text, as with typed
  * recipes; anything it couldn't read stays blank for her.
  */
-export async function readRecipeFile(f: { name: string; mimeType: string; data: string }): Promise<Draft[]> {
+export async function readRecipeFile(file: { name: string; mimeType: string; data: string }): Promise<Draft[]> {
+  const f = { ...file, mimeType: typeOf(file.mimeType) };
   // A picture is "Photo": its file name is the camera's (IMG_0045), not where the recipe came from (Nov 18).
   const src = f.mimeType.startsWith("image/") ? "Photo" : f.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || "File";
   if (/^text\//.test(f.mimeType)) return readText(Buffer.from(f.data, "base64").toString("utf8"), src);
@@ -360,7 +522,7 @@ export async function readRecipeFile(f: { name: string; mimeType: string; data: 
   schema.properties.recipes.items.required.push("text");
   const { data } = await generateJson<{ recipes: (ModelRecipe & { text: string })[] }>(
     `Read every recipe in this ${f.mimeType === "application/pdf" ? "document" : "picture"} into structured form. For each: text is the recipe's own words as they appear (the title, ingredient lines and steps), copied exactly; then the same recipe in fields. Copy ingredient lines as written; only include minutes or servings it states. If a part is unreadable, leave it out rather than guess. effort: "quick" if it's about 30 minutes or less on a weeknight, else "regular". make_ahead: true if it can be made earlier in the day or the night before. for: "kids" for a children's dinner, else "everyone". protein: the main protein in a few words. tags: up to 4 short words. If there's no recipe, return an empty list.`,
-    schema, { files: [{ mimeType: f.mimeType, data: f.data }], timeoutMs: 55_000 },
+    schema, { files: [{ mimeType: f.mimeType, data: f.data }], timeoutMs: 50_000 },
   );
   return (data.recipes ?? []).filter((r) => r.name?.trim()).slice(0, 60).map((r) => checkAgainst(r.text ?? "", r, src));
 }

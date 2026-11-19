@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadBought, loadList, moveStaple, norm, parseEntry, removeItems, removeStaple, renameGroup } from "./groceries";
+import { describe, expect, it, vi } from "vitest";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadList, moveStaple, norm, parseEntry, removeItems, removeStaple, renameGroup } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -130,11 +130,7 @@ describe("bought history", () => {
   it("writes down what comes off the list when a trip is done", async () => {
     const a = await addItem("bought-test pears", "Robin", "Friday's salad", { store: "costco", section: "fresh" });
     await checkItem(a.id, true);
-    const before = (await loadBought()).length;
-    expect(await doneShopping("costco")).toBe(1);
-    const rows = await loadBought();
-    expect(rows.length).toBe(before + 1);
-    expect(rows.at(-1)).toEqual(["bought-test pears", "", "costco", new Date().toISOString().slice(0, 10), "Friday's salad"]);
+    expect(await doneShopping("costco")).toBe(1); // written down as bought: rows-redis.test.ts
     expect((await loadList()).items.some((x) => x.id === a.id)).toBe(false);
   });
 
@@ -227,21 +223,6 @@ describe("taking away from a combined amount (Nov 10)", () => {
 });
 
 
-describe("a new plan's emptying (Nov 14)", () => {
-  it("writes down what was ticked as got as bought, then empties the lists", async () => {
-    const { emptyLists } = await import("./groceries");
-    const got = await addItem("bought-test pears", "Robin");
-    await addItem("bought-test figs", "Robin");
-    await checkItem(got.id, true);
-    const before = (await loadBought()).length;
-    await emptyLists();
-    const bought = await loadBought();
-    const mine = bought.slice(before).map((r) => r[0]).filter((n) => n.startsWith("bought-test"));
-    expect(mine).toEqual(["bought-test pears"]); // the figs weren't got
-    expect((await loadList()).items.filter((x) => x.item.startsWith("bought-test"))).toEqual([]);
-  });
-});
-
 describe("leftovers on Stock (Nov 14)", () => {
   it("drops a dinner's waiting rows for a dinner no longer planned, never a kept thing's answer or a hand-added row", async () => {
     await addItems([{ item: "stuck-test cheese", quantity: "1 cup", for: "chicken tacos", check: true }], "Robin");
@@ -254,5 +235,80 @@ describe("leftovers on Stock (Nov 14)", () => {
     expect(after).toContain("stuck-test bread");
     expect(have.for).toBe("chicken tacos");
     await removeItems([hand.id]);
+  });
+});
+
+describe("amounts in every unit a recipe uses (review, Nov 19)", () => {
+  it("adds into the part with the same unit, or adds a part", () => {
+    expect(addUp("1 dozen + 1", "1")).toBe("1 dozen + 2");
+    expect(addUp("1 dozen + 1", "8 oz")).toBe("1 dozen + 1 + 8 oz");
+    expect(addUp("1 lb + 8 oz", "8 oz")).toBe("1 lb + 16 oz");
+  });
+  it("knows every unit an ingredient line can have", () => {
+    expect(addUp("100 g", "50 g")).toBe("150 g");
+    expect(addUp("2 slices", "1 slice")).toBe("3 slices");
+    expect(addUp("1 qt", "1 quart")).toBe("2 quarts");
+    expect(addUp("1 pinch", "1 pinch")).toBe("2 pinches");
+    expect(addUp("1 container", "1 containers")).toBe("2 containers");
+    expect(addUp("1 T", "1 tbsp")).toBe("2 tbsp");
+    expect(addUp("250 ml", "250 ml")).toBe("500 ml");
+    expect(takeAway("3 sprigs", "1 sprig")).toBe("2 sprigs");
+  });
+  it("takes off what a dinner added to a line that was there already, and only that", async () => {
+    await addItem("3 sym-test lemons", "Robin");
+    await addItems([{ item: "sym-test lemons", quantity: "2", for: "sym-fish", check: true }], "Robin");
+    let lemons = (await loadList()).items.find((x) => x.item === "sym-test lemons")!;
+    expect(lemons).toMatchObject({ quantity: "5", for: "added by hand, sym-fish" });
+    await takeOffFor([{ item: "sym-test lemons", quantity: "2", for: "sym-fish" }]);
+    lemons = (await loadList()).items.find((x) => x.item === "sym-test lemons")!;
+    expect(lemons).toMatchObject({ quantity: "3", for: "added by hand" });
+    await removeItems([lemons.id]);
+  });
+  it("takes off every helping of a dinner planned more than once", async () => {
+    await addItems([{ item: "twice-test beef", quantity: "1 lb", for: "twice-a" }, { item: "twice-test beef", quantity: "1 lb", for: "twice-a" }, { item: "twice-test beef", quantity: "1 lb", for: "twice-b" }], "Robin");
+    expect((await loadList()).items.find((x) => x.item === "twice-test beef")!.quantity).toBe("3 lb");
+    await takeOffFor([{ item: "twice-test beef", quantity: "1 lb", for: "twice-a" }, { item: "twice-test beef", quantity: "1 lb", for: "twice-a" }]);
+    const beef = (await loadList()).items.find((x) => x.item === "twice-test beef")!;
+    expect(beef).toMatchObject({ quantity: "1 lb", for: "twice-b" });
+    await removeItems([beef.id]);
+  });
+});
+
+describe("what a line is for (review, Nov 19)", () => {
+  it("keeps every dinner's name whole, however many", async () => {
+    const dinners = Array.from({ length: 8 }, (_, i) => `a rather long dinner name number ${i}`);
+    await addItems(dinners.map((d) => ({ item: "for-test rice", quantity: "1 cup", for: d })), "Robin");
+    await takeOffFor(dinners.slice(0, 7).map((d) => ({ item: "for-test rice", quantity: "1 cup", for: d })));
+    const rice = (await loadList()).items.find((x) => x.item === "for-test rice")!;
+    expect(rice).toMatchObject({ quantity: "1 cup", for: dinners[7] });
+    await removeItems([rice.id]);
+  });
+  it("a dinner's waiting rows stay only for a dinner of that very name", async () => {
+    await addItems([{ item: "name-test stock", quantity: "1", for: "chicken soup", check: true }], "Robin");
+    await dropHighlightsNotFor(["soup"]);
+    expect((await loadList()).items.some((x) => x.item === "name-test stock")).toBe(false);
+  });
+});
+
+describe("filing new things (review, Nov 19)", () => {
+  it("asks once for everything the rules don't know, and never again", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    const gemini = await import("./google/gemini");
+    const spy = vi.spyOn(gemini, "generateJson").mockImplementation((async () => ({
+      data: { items: [{ name: "zzq widget", store: "costco", section: "household" }, { name: "zzq gadget", store: "safeway", section: "pantry" }] }, model: "m", sources: [],
+    })) as never);
+    await addItems([{ item: "zzq widget", quantity: "", for: "" }, { item: "zzq gadget", quantity: "", for: "" }, { item: "bananas", quantity: "", for: "" }], "Robin");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(String(spy.mock.calls[0][0])).toContain("zzq widget");
+    expect(String(spy.mock.calls[0][0])).not.toContain("bananas");
+    const items = (await loadList()).items;
+    expect(items.find((x) => x.item === "zzq widget")).toMatchObject({ store: "costco", section: "household" });
+    expect(items.find((x) => x.item === "zzq gadget")).toMatchObject({ store: "safeway", section: "pantry" });
+    await removeItems(items.filter((x) => x.item.startsWith("zzq") || x.item === "bananas").map((x) => x.id));
+    await addItem("zzq widget", "Robin");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(await file("zzq gadget")).toEqual({ store: "safeway", section: "pantry" });
+    spy.mockRestore();
+    delete process.env.GEMINI_API_KEY;
   });
 });

@@ -8,12 +8,12 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyRegistrationResponse: vi.fn(),
   verifyAuthenticationResponse: vi.fn(),
 }));
-vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), cartChanging: vi.fn(async () => false), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ answering: true, seen: "", away: false, outdated: false })) }));
+vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), cartChanging: vi.fn(async () => false), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ seen: "", away: false, outdated: false })) }));
 vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
-import { approve, confirmationNumberIn, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, placeOrder, prepare, testRun, type ReadyView } from "./checkout-run";
+import { approve as approveWith, settleOrder, followOrder, placeOrder as placeWith, confirmationNumberIn, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, prepare, testRun, type ReadyView } from "./checkout-run";
 import { cartChanging, queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
@@ -68,10 +68,15 @@ beforeEach(async () => {
   });
   vi.mocked(waitForJob).mockImplementation(async (id) => {
     const j = jobs.get(id);
-    if (!j) return { job: null, answering: true };
+    if (!j) return null;
     // Taken by the helper Simmer ships unless a test says otherwise (`by`).
-    if (j.status === "waiting" && !going) Object.assign(j, { status: "done", args: { by: helperBy, ...j.args }, result: does(j.kind, j.args), updated: new Date().toISOString() });
-    return { job: { ...j }, answering: true };
+    if (j.status === "waiting" && !going) {
+      const result = does(j.kind, j.args) as unknown as Record<string, unknown>;
+      // A placing job that got as far as Place Order was let press first ("may I press?", Nov 19).
+      const asked = j.kind === "checkoutPlace" && ["placed", "pressed", "not pressed"].includes(String(result.stopped)) && !["simmer said no", "place order stayed off"].includes(String(result.why ?? ""));
+      Object.assign(j, { status: "done", args: { by: helperBy, ...j.args }, result, updated: new Date().toISOString(), ...(asked && { pressedAt: new Date().toISOString() }) });
+    }
+    return { ...j };
   });
   await saveSettings({ on: true, limitCents: 2000, store: "100 Main St", card: "4242" });
   await setCartLine({ productId: "184420001", qty: 1, name: "Lucerne milk", price: "$2.99" });
@@ -82,13 +87,19 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
+/** Approving the last reading shown (its preparedId, Nov 19), as the phone does. */
+let shown: ReadyView | null = null;
+const approve = (r: Request, f: unknown, id = shown?.preparedId ?? "") => approveWith(r, f, id);
+/** Placing, with what the phone showed. */
+const placeOrder = (id: string, s = { totalCents: shown?.totalCents ?? null, window: shown?.window ?? "" }) => placeWith(id, s);
 /** Get ready: the free times offered, then FRI6 picked. */
 const ready = async () => {
   const listing = does;
   does = (k, a) => (a.list ? helper(k, a) : listing(k, a));
   await pickupTimes();
   does = listing;
-  return (await prepare(undefined, FRI6.id)) as ReadyView;
+  shown = (await prepare(undefined, FRI6.id)) as ReadyView;
+  return shown;
 };
 const approved = async () => {
   await ready();
@@ -480,6 +491,83 @@ describe("placing the order (phase 3, Nov 14)", () => {
     const asked = vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace").length;
     expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/already on its way|isn't sure/)] });
     expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(asked);
+  });
+
+  it("approves only the reading the phone showed: another Get ready meanwhile can't swap the figures (Nov 19)", async () => {
+    const first = await ready();
+    does = () => ({ ...READY, final: page((t) => t.replace("Estimated total $6.94", "Estimated total $7.94")) });
+    await ready(); // someone else gets ready with other figures
+    const a = await approve(req(), await faceId(), first.preparedId);
+    expect(a).toMatchObject({ ok: true, totalCents: 694 });
+    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["Get ready again first."]) });
+  });
+
+  it("refuses to place what the phone didn't show, before asking the helper (Nov 19)", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    const id = await approved();
+    expect(await placeOrder(id, { totalCents: 794, window: "Fri 6–7 AM" })).toMatchObject({ ok: false, reasons: [expect.stringMatching(/isn't what this phone showed/)] });
+    expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(0);
+  });
+
+  it("works out the order when the helper reports, with no phone following, and a late report replaces not sure (Nov 19)", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    const approval = await approved();
+    going = true;
+    const w = await placeOrder(approval);
+    expect(w).toHaveProperty("waiting");
+    const job = jobs.get((w as { waiting: string }).waiting)!;
+    // Lost by the helper (it reloaded): not sure, and the next order waits.
+    Object.assign(job, { status: "failed", result: { error: "unsure" } });
+    expect(await settleOrder({ ...job })).toMatchObject({ ok: false, unsure: true });
+    // Then its own report arrives: ordered, the cart comes off, and the next order may start.
+    Object.assign(job, { status: "done", pressedAt: new Date().toISOString(), result: { stopped: "pressed", pressed: true, after: { url: "https://x/erums/checkout", text: "Thank you for your order! Order number: 55512345" } } });
+    expect(await settleOrder({ ...job })).toMatchObject({ ok: true, number: "55512345" });
+    expect(await followOrder(job.id)).toMatchObject({ ok: true, number: "55512345" });
+    expect(recorded("order").map((r) => r.ok)).toEqual([false, true]);
+    going = false;
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "not pressed", pressed: false, why: "total" } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/didn't match/), "Nothing was ordered."] });
+  });
+
+  it("is never sure nothing was ordered once the helper was let press, unless Safeway's page gave a reason (review, Nov 19)", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    // The press's answer was lost (the click started a navigation): not sure, and the next order waits.
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: "unknown", after: null } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, unsure: true });
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/already on its way/)] });
+  });
+
+  it("an older helper's lost press (\"no answer\") is not sure either", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "not pressed", pressed: false, why: "no answer" } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, unsure: true });
+  });
+
+  it("a press reported for a job that was never let press isn't an order (review, Nov 19)", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    const approval = await approved();
+    going = true;
+    const w = await placeOrder(approval);
+    const job = jobs.get((w as { waiting: string }).waiting)!;
+    Object.assign(job, { status: "done", result: { stopped: "pressed", pressed: true, after: { url: "https://x/erums/checkout", text: "Thank you for your order! Order number: 55512345" } } });
+    expect(await settleOrder({ ...job })).toMatchObject({ ok: false, unsure: true });
+  });
+
+  it("following a job Simmer doesn't have says not sure and records it, never \"already reported\" (review, Nov 19)", async () => {
+    expect(await followOrder("nosuchjob")).toMatchObject({ ok: false, unsure: true, reasons: [expect.stringMatching(/Not sure/)] });
+    expect(recorded("order").at(-1)).toMatchObject({ unsure: true, jobId: "nosuchjob", why: "job not found" });
+  });
+
+  it("says plainly when Safeway's cart isn't what was approved", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "cart changed", pressed: false } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: ["Safeway's cart isn't what you approved. Nothing was ordered."] });
   });
 
   it("reads Safeway's order number when the page shows one", () => {

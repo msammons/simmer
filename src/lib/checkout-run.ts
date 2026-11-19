@@ -2,7 +2,8 @@
 // 13). Get ready: the helper goes through Safeway's checkout, chooses the earliest free pickup time and reads the final
 // page; Simmer checks it against every rule. Test run: Face ID approves exactly those figures, then the helper goes the
 // same way again with that one pickup time, reads the final page, and Simmer checks it against the approval as it would
-// before a real press. Nothing here, and nothing in the helper, presses Place Order or asks for it.
+// before a real press. Placing for real (phase 3, Nov 14) is at the end: the one press is the helper's, made only on
+// what Face ID approved.
 //
 // In its own file rather than checkout.ts because it needs Face ID (passkeys.ts, which itself records through
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
@@ -16,11 +17,10 @@ import {
 import { AppError } from "./errors";
 import { HELPER_VERSION, cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
 import { doneShopping } from "./groceries";
-import { clearCart } from "./safeway";
-import { json, kv, secs } from "./kv";
+import { clearCart, loadCart, type CartLine } from "./safeway";
+import { json, kv, secs, swap } from "./kv";
 import { passkeyCount, verifyCheck } from "./passkeys";
 import { wakeHelper } from "./push";
-import { loadCart } from "./safeway";
 import { cartTotal, priceOf } from "./shop";
 
 /** What the helper sends back from getting ready or a test run (jobs.ts trims it). */
@@ -42,6 +42,11 @@ export type ReadyView = {
   feesCents?: number | null;
   /** Placing for real is open (phase 3): the server allows it and this helper has passed a test run; else why not. */
   canOrder: boolean; orderWhy: string;
+  /**
+   * This reading's own id (Nov 19), sent back with the Face ID approval: it approves exactly these figures, never another
+   * reading made meanwhile. Empty when there's nothing to approve.
+   */
+  preparedId: string;
 };
 /** What placing came to: ordered (with Safeway's order number when it shows one), refused before any press, or unsure. */
 export type OrderResult = { ok: true; ordered: string; number: string } | { ok: false; reasons: string[]; unsure?: boolean };
@@ -53,12 +58,19 @@ export type Waiting = { waiting: string };
 export type TimesView = { days: { key: string; label: string }[]; day: string; times: { id: string; time: string; price: string; flash: boolean }[] };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
-const PREPARED_KEY = "simmer:checkout-prepared";
-const TIMES_KEY = "simmer:checkout-times";
+/** Each reading under its own id (Nov 19: one shared key let a second Get ready swap the figures Face ID approved). */
+const PREPARED_KEY = "simmer:checkout-prepared:";
+/** The pickup times just offered: a set, each added in one step, kept 10 minutes from the last listing. */
+const TIMES_KEY = "simmer:checkout-times-offered";
 const TIMES_MS = 10 * 60_000;
 const APPROVAL_KEY = "simmer:checkout-approval:";
 const RUN_KEY = "simmer:checkout-run:";
+/** An order started, by its approval's id: what was approved, kept for working out what happened (Nov 19). */
 const ORDER_KEY = "simmer:checkout-order:";
+/** What an order came to, by its approval's id, worked out once when the helper reports (Nov 19). */
+const OUTCOME_KEY = "simmer:checkout-outcome:";
+/** A placing job pressing for this long with no report: the phone stops following and says to check Safeway. */
+const PRESS_FOLLOW_MS = 3 * 60_000;
 /** An order on its way and not reported yet: while it's there, no other order starts (outside review, Nov 14). */
 const GOING_KEY = "simmer:checkout-order-going";
 const GOING_MS = 30 * 60_000;
@@ -107,6 +119,7 @@ async function stillGoing(job: Job): Promise<Waiting> {
 }
 
 const cartNow = async () => cartKey(await loadCart());
+const ID = /^[A-Za-z0-9_-]{16}$/;
 const readingOf = (j: Job): Reading => {
   const r = (j.result ?? {}) as Partial<Reading>;
   return { stopped: typeof r.stopped === "string" ? r.stopped : "", chosen: r.chosen ?? null, final: r.final ?? null, bagsOwn: typeof r.bagsOwn === "boolean" ? r.bagsOwn : null };
@@ -128,14 +141,13 @@ function finalOf(r: Reading): { final: Final; why: string[] } {
 /** stops(), less the line a clearer one already says ("No pickup time is chosen" beside "couldn't be read"). */
 const allStops = (why: string[], more: string[]) => [...why, ...more.filter((m) => !(why.length && m === "No pickup time is chosen."))];
 
-/** The highlights for the confirm sheet, from Simmer's cart (docs/CHECKOUT.md: 5 or more, over $30, 15% above the estimate). */
 /**
- * The highlights. The total is compared with Simmer's estimate without Safeway's taxes and fees (Sam, Nov 14: a $3.95
+ * The highlights for the confirm sheet, from Simmer's cart (docs/CHECKOUT.md: 5 or more, over $30, 15% above the
+ * estimate). The total is compared with Simmer's estimate without Safeway's taxes and fees (Sam, Nov 14: a $3.95
  * small-order fee on a $10.99 cart was flagged as "more than Simmer expected"); the fees show as their own row.
  */
-async function highlights(totalCents: number | null, feesCents: number | null): Promise<string[]> {
+function highlights(lines: CartLine[], totalCents: number | null, feesCents: number | null): string[] {
   if (totalCents === null) return [];
-  const lines = await loadCart();
   const { total } = cartTotal(lines);
   const goods = feesCents !== null && feesCents <= totalCents ? totalCents - feesCents : totalCents;
   return unusual(lines.map((l) => ({ name: l.name, qty: l.qty, priceCents: priceOf(l.price) === null ? null : Math.round(priceOf(l.price)! * 100) })), total ? Math.round(total * 100) : null, goods);
@@ -164,7 +176,7 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
   await ready();
   if (!jobId && (await cartChanging())) throw new AppError(CHANGING);
   const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true, ...(day && isDayTile(day) && { day }) })).id;
-  const { job } = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
@@ -172,9 +184,7 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
   if (r.stopped && r.stopped !== "times") throw new AppError(stoppedWords(r.stopped));
   // Free times, and Flash with its price (Nov 16); other paid times aren't offered.
   const free = (Array.isArray(r.times) ? r.times : []).map((t, i) => windowOf(t.id, t.words, i)).filter((w) => w.date && (w.priceCents === 0 || (w.kind === "FLASH" && w.priceCents !== null)));
-  const before = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
-  const ids = [...new Set([...(before && Date.now() - before.at < TIMES_MS ? before.ids : []), ...free.map((w) => w.id)])];
-  await kv().set(TIMES_KEY, JSON.stringify({ at: Date.now(), ids }), { ex: secs(TIMES_MS) });
+  if (free.length) { await kv().sadd(TIMES_KEY, ...free.map((w) => w.id)); await kv().expire(TIMES_KEY, secs(TIMES_MS)); }
   await record("test times", { jobId: job.id, day: r.day ?? "", times: free.map((w) => w.id) });
   return {
     days: (r.days ?? []).filter((d) => isDayTile(d.label)).map((d) => ({ key: d.label, label: dayLabel(d.label) })),
@@ -197,13 +207,12 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   const s = await ready();
   let id = jobId;
   if (!id) {
-    const offered = json<{ at: number; ids: string[] }>(await kv().get(TIMES_KEY));
-    if (!windowId || !offered || !offered.ids.includes(windowId)) throw new AppError("Pick a pickup time again.");
+    if (!windowId || !Number(await kv().sismember(TIMES_KEY, windowId))) throw new AppError("Pick a pickup time again.");
     if (await cartChanging()) throw new AppError(CHANGING);
     // The bags she picked for this order (Nov 16): the helper sets Safeway's switch to match before reading the total.
     id = (await queueAndWake("checkoutPrepare", { windowId, ...(typeof bagsOwn === "boolean" && { bagsOwn }) })).id;
   }
-  const { job } = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
@@ -213,15 +222,19 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   if (r.stopped === "ready" && (!picked || r.chosen?.id !== picked)) why.push("Safeway's pickup time isn't the one picked.");
   const bagsPicked = typeof job.args?.bagsOwn === "boolean" ? job.args.bagsOwn : null;
   if (r.stopped === "ready" && bagsPicked !== null && r.bagsOwn !== bagsPicked) why.push("Safeway's bags aren't the ones picked.");
-  const cart = await cartNow();
+  // The cart read once, for its key and the highlights (Nov 19: it was read twice), beside whether ordering's open.
+  const [lines, open] = await Promise.all([loadCart(), orderOpen()]);
+  const cart = cartKey(lines);
   const reasons = allStops(why, r.stopped === "ready" ? stops(expected(s, final), final, null, Date.now(), cart, true) : []);
+  let preparedId = "";
   if (r.chosen && r.stopped === "ready") {
-    await kv().set(PREPARED_KEY, JSON.stringify({ at: Date.now(), final, chosen: r.chosen, cartKey: cart, why: reasons, bagsOwn: r.bagsOwn } satisfies Prepared), { ex: secs(APPROVAL_MS) });
-  } else await kv().del(PREPARED_KEY);
+    preparedId = randomBytes(12).toString("base64url");
+    await kv().set(PREPARED_KEY + preparedId, JSON.stringify({ at: Date.now(), final, chosen: r.chosen, cartKey: cart, why: reasons, bagsOwn: r.bagsOwn } satisfies Prepared), { ex: secs(APPROVAL_MS) });
+  }
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
-    stops: reasons, highlights: await highlights(final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents, bagsOwn: r.bagsOwn,
-    ...(await orderOpen()),
+    stops: reasons, highlights: highlights(lines, final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents, bagsOwn: r.bagsOwn,
+    ...open, preparedId,
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });
   return view;
@@ -232,12 +245,13 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
 /**
  * Face ID approves what getting ready read: fixed at the tap (docs/CHECKOUT.md). The Face ID check is used first, so
  * it's used up whatever follows, and so is what getting ready read (one approval from each). Refused when anything
- * stops it, when getting ready was more than 2 minutes ago, or when the cart changed since.
+ * stops it, when getting ready was more than 2 minutes ago, or when the cart changed since. `preparedId` names the
+ * reading the phone showed (Nov 19): only that one is approved, and it's taken out in one step.
  */
-export async function approve(req: Request, faceId: unknown): Promise<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }> {
+export async function approve(req: Request, faceId: unknown, preparedId: string): Promise<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }> {
   const s = await ready();
   const check = await verifyCheck(req, faceId);
-  const p = json<Prepared>(await kv().getdel(PREPARED_KEY));
+  const p = ID.test(preparedId) ? json<Prepared>(await kv().getdel(PREPARED_KEY + preparedId)) : null;
   const now = Date.now();
   const reasons: string[] = [];
   if (!check.ok) reasons.push(check.why ?? "Face ID didn't match.");
@@ -285,7 +299,7 @@ export async function approve(req: Request, faceId: unknown): Promise<{ ok: true
  * read the final page. It never presses Place Order. Then it's followed with `followTestRun`.
  */
 export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResult | Waiting> {
-  const a = /^[A-Za-z0-9_-]{16}$/.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
+  const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("test run", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
   if (!a) return refuse(["That approval was already used or ran out. Get ready again."]);
   if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Get ready again."]);
@@ -304,7 +318,7 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
 export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunResult | Waiting> {
   const pending = json<Approved>(await kv().get(RUN_KEY + jobId));
   if (!pending) throw new AppError("That test run was already reported. Get ready again for another.");
-  const { job } = await waitForJob(jobId, ms);
+  const job = await waitForJob(jobId, ms);
   if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(RUN_KEY + jobId));
   if (!a) throw new AppError("That test run was already reported. Get ready again for another.");
@@ -353,8 +367,9 @@ async function passedDryRun(version: string) {
  */
 export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string }> {
   if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now." };
-  if ((await helperStatus()).outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first." };
-  if (!(await passedVersions()).includes(CHECKOUT_PRINT)) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed." };
+  const [helper, passed] = await Promise.all([helperStatus(), passedVersions()]);
+  if (helper.outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first." };
+  if (!passed.includes(CHECKOUT_PRINT)) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed." };
   return { canOrder: true, orderWhy: "" };
 }
 
@@ -363,25 +378,30 @@ export const orderNumberIn = (text: string) => text.replace(/\s+/g, " ").match(/
 /** Safeway's own confirmation address, which carries the order number: /order/confirmation/198111519 (Nov 18). */
 export const confirmationNumberIn = (url: string) => (/^https:\/\/www\.safeway\.com\/[a-z/]*order\/confirmation\/(\d{6,})(?:[?#/]|$)/i.exec(url)?.[1] ?? "");
 
+/** What the phone showed when Face ID approved it: the total and the pickup time (Nov 19). */
+export type Shown = { totalCents: number | null; window: string };
+
 /**
  * Places the approved order, once (docs/CHECKOUT.md "Each order"): the approval is taken out first, in one step, so two
- * taps can't both use it; it must be within its 2 minutes, with the cart as it was. The helper then reads Safeway's
- * cart (exactly those products and counts), goes to the final page with exactly the approved time, and presses Place
- * Order only when that page says exactly what was approved. Never tried again. Followed with `followOrder`.
+ * taps can't both use it; it must be within its 2 minutes, with the cart as it was, and its total and pickup time must be
+ * the ones the phone showed (Nov 19). The helper then reads Safeway's cart (exactly those products and counts), goes to
+ * the final page with exactly the approved time, asks Simmer once more right before pressing, and presses Place Order
+ * only when that page says exactly what was approved. Never tried again. Followed with `followOrder`.
  */
-export async function placeOrder(approvalId: string, ms = WAIT_MS): Promise<OrderResult | Waiting> {
-  const a = /^[A-Za-z0-9_-]{16}$/.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
+export async function placeOrder(approvalId: string, shown: Shown, ms = WAIT_MS): Promise<OrderResult | Waiting> {
+  const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("order", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
   if (!a) return refuse(["That approval was already used or ran out. Get ready again."]);
   if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Get ready again."]);
-  const open = await orderOpen();
+  if (shown.totalCents !== a.totalCents || shown.window !== a.windowWords) return refuse(["What Face ID approved isn't what this phone showed. Get ready again."]);
+  // Read together (Nov 19: these were one after another); the going mark is still set last, in one step.
+  const [open, going, s, lines, changing] = await Promise.all([orderOpen(), kv().get(GOING_KEY), loadSettings(), loadCart(), cartChanging()]);
   if (!open.canOrder) return refuse([open.orderWhy]);
-  if (await kv().get(GOING_KEY)) return refuse(["An order is already on its way, or the last one may not have gone through. Check Safeway."]);
-  const s = await loadSettings();
-  const now = Date.now(), cart = await cartNow();
+  if (going) return refuse(["An order is already on its way, or the last one may not have gone through. Check Safeway."]);
+  const now = Date.now(), cart = cartKey(lines);
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
   if (cart !== a.cartKey) why.push("The cart changed after the approval.");
-  if (await cartChanging()) why.push(CHANGING);
+  if (changing) why.push(CHANGING);
   if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Get ready again.");
   if (why.length) return refuse(why);
   if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Get ready again."]);
@@ -389,8 +409,9 @@ export async function placeOrder(approvalId: string, ms = WAIT_MS): Promise<Orde
   // Marked going before the helper is asked (outside review): if anything is lost after this, no second order can start
   // until the last one is reported or half an hour has passed.
   if ((await kv().set(GOING_KEY, a.id, { ex: secs(GOING_MS), nx: true })) !== "OK") return refuse(["An order is already on its way. Check Safeway."]);
+  // What was approved is kept before the helper is asked, so its report can always be worked out (Nov 19).
+  await kv().set(ORDER_KEY + a.id, JSON.stringify({ ...a, used: true }), { ex: 24 * 3600 });
   const job = await queueAndWake("checkoutPlace", { approvalId: a.id, windowId: a.windowId, expect });
-  await kv().set(ORDER_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(GOING_MS) });
   await record("order started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId, expect });
   return followOrder(job.id, ms);
 }
@@ -428,41 +449,97 @@ export function expectFor(a: Approved) {
 export const confirmed = (after: { url: string; text: string } | null | undefined, landed = "") =>
   Boolean(after) && (Boolean(orderNumberIn(after!.text)) || (Boolean(landed) && landed === after!.url && Boolean(confirmationNumberIn(after!.url))) || /thank you for your order|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after!.text));
 
+const UNSURE = "Not sure the order went through. Check Safeway before trying again.";
+const isUnsure = (r: OrderResult) => !r.ok && r.unsure === true;
+type PlaceReport = { stopped?: string; pressed?: boolean | "unknown"; why?: string; error?: string; landed?: string; after?: { url: string; text: string } | null };
+
 /**
- * How placing stands: still going, or what happened (reported once). Ordered: the cart comes off the Safeway list as
- * bought and the cart starts empty. Pressed but no answer, or the helper lost: "Simmer isn't sure", never tried again.
+ * Why page.js didn't press, read on Safeway's final page before any click (extension-working/page.js placeOrder): only
+ * these let a job that was allowed to press be "nothing was ordered" (Nov 19, review).
+ */
+const PAGE_REASONS = /^(?:not the checkout page|total|items|items subtotal|card|another card|store|pickup time|paid pickup time|bags|asks for card details|place order buttons: \d+|place order turned off|approval ran out)$/;
+
+/** What a placing job came to, from the helper's report (or its lack). */
+function outcomeOf(job: Job | null, a: Approved): OrderResult {
+  const r = (job?.result ?? {}) as PlaceReport;
+  const unsure: OrderResult = { ok: false, unsure: true, reasons: [UNSURE] };
+  if (!job || job.kind !== "checkoutPlace" || job.status !== "done") {
+    // Not taken in time: almost surely nothing happened, but the helper may have taken it in the same moment, so it's never
+    // "nothing was ordered" (that would invite a second try); always check Safeway first.
+    return job?.status === "failed" && r.error === "not-answering" ? { ok: false, unsure: true, reasons: [failedWords(job), "Check Safeway before trying again."] } : unsure;
+  }
+  // Ordered only when Safeway's page says so (outside review): a move to some other page isn't proof. Whether or not the
+  // page moved (Safeway may confirm in place), as long as it says so.
+  // Only for a job Simmer let press (Nov 19, review): a press reported without that is never taken as an order.
+  if (r.pressed && job.pressedAt && confirmed(r.after, r.stopped === "placed" ? r.landed ?? "" : "")) {
+    const number = orderNumberIn(r.after?.text ?? "") || confirmationNumberIn(r.after?.url ?? "");
+    return { ok: true, ordered: `Ordered · pickup ${a.windowWords} · $${(a.totalCents / 100).toFixed(2)}`, number };
+  }
+  if (r.pressed !== false) return unsure;
+  // Allowed to press, and not pressed: "nothing was ordered" only when Safeway's page gave page.js a reason not to,
+  // before any click (Nov 19, review: a press whose answer was lost came back "no answer", and read as nothing ordered).
+  if (job.pressedAt && !(r.stopped === "not pressed" && PAGE_REASONS.test(r.why ?? ""))) return unsure;
+  const said = r.stopped === "not pressed" ? `Safeway's page didn't match what you approved (${r.why || "unknown"}).` : stoppedWords(r.stopped ?? "");
+  return { ok: false, reasons: said.endsWith("Nothing was ordered.") ? [said] : [said, "Nothing was ordered."] };
+}
+
+/**
+ * Works out what a placing job came to and keeps it (Nov 19: this happened only while a phone was following, so an
+ * order placed with the phone closed never came off the list and blocked the next one for half an hour). Called when the
+ * helper reports, hands a job back, and when the phone follows. The first answer is kept, except that an unsure one gives
+ * way to the helper's own later report (what happened on Safeway). Whoever keeps an answer records it first, then does
+ * what it means, each part on its own: an order's cart comes off the list as bought, and another order may start unless
+ * Simmer isn't sure. `gaveUp`: the phone stopped following a press with no report (unsure, kept as such).
+ */
+export async function settleOrder(job: Job | null, gaveUp = false): Promise<OrderResult | null> {
+  const approvalId = typeof job?.args.approvalId === "string" && ID.test(job.args.approvalId) ? job.args.approvalId : "";
+  if (!job || job.kind !== "checkoutPlace" || !approvalId) return null;
+  if (!gaveUp && (job.status === "waiting" || job.status === "working" || job.status === "pressing")) return null;
+  const [pending, before] = await Promise.all([kv().get(ORDER_KEY + approvalId), kv().get(OUTCOME_KEY + approvalId)]);
+  const prev = json<OrderResult>(before);
+  const a = json<Approved>(pending);
+  if (!a) return prev;
+  const result = gaveUp ? { ok: false as const, unsure: true, reasons: [UNSURE] } : outcomeOf(job, a);
+  if (prev && !(isUnsure(prev) && !isUnsure(result))) return prev;
+  const text = JSON.stringify(result), keep = 24 * 3600;
+  const kept = before === null ? (await kv().set(OUTCOME_KEY + approvalId, text, { ex: keep, nx: true })) === "OK" : await swap(OUTCOME_KEY + approvalId, before, text, keep);
+  if (!kept) return json<OrderResult>(await kv().get(OUTCOME_KEY + approvalId)) ?? result;
+  const r = (job.result ?? {}) as PlaceReport;
+  await record("order", { ...result, approvalId, jobId: job.id, faceId: a.faceId, stopped: r.stopped ?? "", pressed: r.pressed === true, why: r.why ?? r.error ?? "", url: r.after?.url ?? "", ...(prev && { before: prev }) });
+  const tryTo = async (what: string, f: () => Promise<unknown>) => { try { await f(); } catch (e) { console.error(`couldn't ${what}`, e); } };
+  if (result.ok) {
+    let lines: CartLine[] = [];
+    await tryTo("read the cart", async () => { lines = await loadCart(); });
+    await tryTo("take the cart off the list", () => doneShopping("safeway", new Set(lines.map((l) => l.itemId).filter(Boolean))));
+    await tryTo("empty the cart", () => clearCart());
+    await tryTo("record the trip", () => recordTrip("safeway")); // as an emptied cart does (Nov 18)
+  }
+  // Reported: another order may start (only if the going mark is still this order's), unless Simmer isn't sure (then the
+  // half hour runs out, or someone checks Safeway).
+  if (!isUnsure(result)) await tryTo("free the next order", () => swap(GOING_KEY, a.id, "", 60));
+  return result;
+}
+
+/**
+ * How placing stands: still going, or what it came to (worked out when the helper reported; see settleOrder). Ordered:
+ * the cart comes off the Safeway list as bought and the cart starts empty. Pressed but no answer, or the helper lost:
+ * "Simmer isn't sure", never tried again.
  */
 export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderResult | Waiting> {
-  if (!(await kv().get(ORDER_KEY + jobId))) throw new AppError("That order was already reported. Check Safeway.");
-  const { job } = await waitForJob(jobId, ms);
-  if (job && job.kind === "checkoutPlace" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
-  const a = json<Approved>(await kv().getdel(ORDER_KEY + jobId));
-  if (!a) throw new AppError("That order was already reported. Check Safeway.");
-  const r = (job?.result ?? {}) as { stopped?: string; pressed?: boolean; why?: string; error?: string; landed?: string; after?: { url: string; text: string } | null };
-  const unsure: OrderResult = { ok: false, unsure: true, reasons: ["Not sure the order went through. Check Safeway before trying again."] };
-  let result: OrderResult;
-  if (!job || job.kind !== "checkoutPlace") result = unsure;
-  // Not taken in time: almost surely nothing happened, but the helper may have taken it in the same moment, so it's never
-  // "nothing was ordered" (that would invite a second try); always check Safeway first.
-  else if (job.status !== "done") result = r.error === "not-answering" ? { ok: false, unsure: true, reasons: [failedWords(job), "Check Safeway before trying again."] } : unsure;
-  // Ordered only when Safeway's page says so (outside review): a move to some other page isn't proof.
-  // Whether or not the page moved (Safeway may confirm in place), as long as it says so.
-  else if (r.pressed && confirmed(r.after, r.stopped === "placed" ? r.landed ?? "" : "")) {
-    const number = orderNumberIn(r.after?.text ?? "") || confirmationNumberIn(r.after?.url ?? "");
-    result = { ok: true, ordered: `Ordered · pickup ${a.windowWords} · $${(a.totalCents / 100).toFixed(2)}`, number };
-    const lines = await loadCart();
-    await doneShopping("safeway", new Set(lines.map((l) => l.itemId).filter(Boolean)));
-    await clearCart();
-    await recordTrip("safeway").catch((e) => console.error("couldn't record the trip", e)); // as an emptied cart does (Nov 18)
-  } else if (r.pressed) result = unsure;
-  else {
-    const said = r.stopped === "not pressed" ? `Safeway's page didn't match what you approved (${r.why || "unknown"}).` : stoppedWords(r.stopped ?? "");
-    result = { ok: false, reasons: [said, "Nothing was ordered."] };
-  }
-  // Reported: another order may start, unless Simmer isn't sure (then the half hour runs out, or someone checks Safeway).
-  if (!("unsure" in result && result.unsure)) await kv().del(GOING_KEY);
-  await record("order", { ...result, approvalId: a.id, jobId, faceId: a.faceId, stopped: r.stopped ?? "", pressed: r.pressed === true, why: r.why ?? r.error ?? "", url: r.after?.url ?? "" });
-  return result;
+  const job = await waitForJob(jobId, ms);
+  // A job Simmer no longer has (gone after a day, or kept the old way before Nov 19): never "already reported", which
+  // isn't known; not sure, and recorded as such (Nov 19, review).
+  const lost = async (why: string) => {
+    await record("order", { ok: false, unsure: true, jobId, why });
+    return { ok: false as const, unsure: true, reasons: [UNSURE] };
+  };
+  if (!job || job.kind !== "checkoutPlace") return lost("job not found");
+  const approvalId = String(job.args.approvalId ?? "");
+  const kept = json<OrderResult>(await kv().get(OUTCOME_KEY + approvalId));
+  if (kept && !(isUnsure(kept) && job.status === "done")) return kept;
+  if (job.status === "pressing" && Date.now() - Date.parse(job.updated) > PRESS_FOLLOW_MS) return (await settleOrder(job, true)) ?? { ok: false, unsure: true, reasons: [UNSURE] };
+  if (job.status === "waiting" || job.status === "working" || job.status === "pressing") return stillGoing(job);
+  return (await settleOrder(job)) ?? lost("order not found");
 }
 
 // ---- picking the store and card (Nov 14)
@@ -488,7 +565,7 @@ export function choicesOf(pages: { text?: unknown; buttons?: unknown }[]): Choic
  */
 export async function lookUp(jobId?: string, ms = WAIT_MS): Promise<Choices | Waiting> {
   const id = jobId ?? (await queueAndWake("checkoutLook", {})).id;
-  const { job } = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms);
   if (!job || job.kind !== "checkoutLook") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));

@@ -29,6 +29,29 @@ export function records(rows: string[][]) {
   }));
 }
 
+/** A yes cell ("yes", "y", "true", "1", "x"). */
+export const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
+/** A column's letters from its index (0 → A, 26 → AA). */
+export const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
+/** A new row id: 72 random bits (Nov 19: a few base-36 letters could repeat), after `prefix` when given. */
+export const newId = (prefix = "") => `${prefix}${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+
+/**
+ * Each record's id: its own, or for a row without one (typed in by hand long ago) one made from what's in it (`base`),
+ * so it's the same on every read wherever the row sits, and writing it into the row keeps it. Same rows count up.
+ */
+export function rowIds(recs: ReturnType<typeof records>, base: (get: (k: string) => string) => string): string[] {
+  const taken = new Set(recs.map((r) => r.get("id")).filter(Boolean));
+  return recs.map((r) => {
+    if (r.get("id")) return r.get("id");
+    const b = `row-${base(r.get).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "x"}`;
+    let id = b;
+    for (let n = 2; taken.has(id); n++) id = `${b}-${n}`;
+    taken.add(id);
+    return id;
+  });
+}
+
 const PERSON_TYPES = { role: "role", like: "likes", dislike: "dislikes", allergy: "allergies", note: "notes", rule: "rules" } as const;
 
 /**

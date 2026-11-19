@@ -1,7 +1,9 @@
 // Ordering from Simmer (Safeway pickup): the rules, as plain code with tests. docs/CHECKOUT.md is the agreement; nothing
 // here may be loosened without Sam's yes. Phase 2 (Nov 12): settings, reading Safeway's final page, and checking it
-// against an approval. Nothing in Simmer or the helper presses Place Order yet; dry runs stop one press short.
-import { readTabIfAny, replaceTab, appendRows, sheetsConfigured } from "./google/sheets";
+// against an approval. Placing for real (phase 3, Nov 14) is in checkout-run.ts; test runs stop one press short.
+import { readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
+import { redis } from "./google/redis-tabs";
+import { kv } from "./kv";
 import type { CheckoutSettings } from "./checkout-rules";
 export { needsFaceId } from "./checkout-rules";
 
@@ -151,13 +153,44 @@ export async function saveSettings(s: CheckoutSettings, noted: Record<string, un
   return clean;
 }
 
-/** The record of every attempt and every settings change, kept even when it fails (docs/CHECKOUT.md). */
+/**
+ * The record of every attempt and every settings change, kept even when it fails (docs/CHECKOUT.md). An append-only
+ * Redis list since Nov 19: it was a tab read and written back whole for every entry, so two entries at once could lose
+ * one, and it grew without end. Each entry is pushed on in one step, and the newest RECORD_KEEP are kept (thousands of
+ * attempts' worth; Copy to Google Sheet keeps a copy of them).
+ */
 const LOG = "Checkout record";
+const RECORD_KEY = "simmer:checkout-record";
+export const RECORD_KEEP = 5000;
+/**
+ * Each entry's detail at most this long (Nov 19, review: 5,000 at 20,000 characters was far past what one Upstash
+ * request may carry), and the record read back this many at a time, each read well under a megabyte.
+ */
+export const RECORD_DETAIL = 4000;
+const RECORD_PAGE = 100;
 const memoryLog: string[][] = [];
 export async function record(what: string, detail: Record<string, unknown>): Promise<void> {
-  const row = [new Date().toISOString(), what, JSON.stringify(detail).slice(0, 20_000)];
-  if (!sheetsConfigured()) { memoryLog.push(row); return; }
-  await appendRows(LOG, [row]);
+  const row = [new Date().toISOString(), what, JSON.stringify(detail).slice(0, RECORD_DETAIL)];
+  if (!redis()) { memoryLog.push(row); return; }
+  await kv().rpush(RECORD_KEY, JSON.stringify(row));
+  await kv().ltrim(RECORD_KEY, -RECORD_KEEP, -1);
+}
+/**
+ * The record as rows for Copy to Google Sheet's "Checkout record" tab: when, what, detail. The tab the record was kept in
+ * until Nov 19 comes first (it's left as it was), then the list.
+ */
+export async function checkoutRecordRows(): Promise<string[][]> {
+  if (!redis()) return [["when", "what", "detail"], ...memoryLog];
+  const before = await readTabIfAny(LOG).catch(() => [] as string[][]);
+  const list: string[] = [];
+  for (let i = 0; i < RECORD_KEEP + RECORD_PAGE; i += RECORD_PAGE) {
+    const page = await kv().lrange(RECORD_KEY, i, i + RECORD_PAGE - 1);
+    list.push(...page);
+    if (page.length < RECORD_PAGE) break;
+  }
+  // An entry kept before the cap is cut to it here.
+  const rows = list.flatMap((x) => { try { const r = JSON.parse(x); return Array.isArray(r) ? [r.map((c, i) => (i === 2 ? String(c).slice(0, RECORD_DETAIL) : String(c)))] : []; } catch { return []; } });
+  return [["when", "what", "detail"], ...before.filter((r) => r[0] !== "when"), ...rows];
 }
 export const resetCheckout = () => { memory = NO_ORDERING; memoryLog.length = 0; };
 export const recordedForTests = () => memoryLog;
@@ -180,15 +213,6 @@ export function windowOf(id: string, words: string, order: number): PickupWindow
     notFlash: /\d{8}[A-Z]+DUG/.test(id) && !/FLASH/i.test(`${id} ${w}`),
     priceCents: price === undefined ? null : /^free$/i.test(price) ? 0 : cents(price),
   };
-}
-
-/**
- * The window ordering takes (Sam, Nov 12): the earliest free REGULAR window, by date and then as Safeway lists it. Never
- * FLASH, never one with a price, never one whose price can't be read. None: null, and the order stops.
- */
-export function pickWindow(windows: PickupWindow[]): PickupWindow | null {
-  return windows.filter((w) => w.notFlash && w.priceCents === 0 && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)[0] ?? null;
 }
 
 // ---- test runs (phase 2, Nov 13): what Safeway's page says once the helper has chosen a free window
@@ -261,5 +285,7 @@ const STOPPED: Record<string, string> = {
   "no window": "No pickup time could be chosen.",
   "couldn't set the bags": "Safeway's bags couldn't be set. Try again.",
   "total didn't settle": "Safeway's total kept changing after the bags were set. Try again.",
+  // Placing read Safeway's cart first and it wasn't what was approved (Nov 19: this had no words of its own).
+  "cart changed": "Safeway's cart isn't what you approved. Nothing was ordered.",
 };
 export const stoppedWords = (stopped: string) => STOPPED[stopped] ?? "Safeway's checkout didn't go as expected.";

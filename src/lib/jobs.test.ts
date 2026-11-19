@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetKv } from "./kv";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, parseTab, queueJob, recentJobs, resetJobs, safewaySignedOut, cartChanging, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, pressJob, queueJob, recentJobs, resetJobs, safewaySignedOut, cartChanging, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -35,9 +35,23 @@ describe("jobs for the Safeway helper", () => {
   });
 
   it("never guesses the helper's away from when it last checked in (Nov 11: no timer keeps that fresh)", async () => {
-    expect(await helperStatus()).toMatchObject({ answering: true, away: false });
+    expect(await helperStatus()).toMatchObject({ away: false });
     expect(await takeJob("1.0.0", false)).toBeNull();
-    expect((await helperStatus()).answering).toBe(true);
+    expect((await helperStatus()).away).toBe(false);
+  });
+
+  it("says it's away once a job wasn't taken, until a job is next done (Nov 19)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const a = await queueJob("search", { query: "milk" });
+      vi.setSystemTime(Date.now() + 30_000);
+      expect(await jobStatus(a.id)).toMatchObject({ status: "failed", result: { error: "not-answering" } });
+      expect((await helperStatus()).away).toBe(true);
+      const b = await queueJob("search", { query: "eggs" });
+      await takeJob("1.0.0", false);
+      await finishJob(b.id, true, { products: [], signedIn: true });
+      expect((await helperStatus()).away).toBe(false);
+    } finally { vi.useRealTimers(); }
   });
 
   it("goes from Simmer to the helper and back, oldest first", async () => {
@@ -46,7 +60,7 @@ describe("jobs for the Safeway helper", () => {
     const took = await takeJob("1.0.0", true);
     expect(took).toMatchObject({ id: a.id, status: "working" });
     await finishJob(a.id, true, { products: [{ id: "1", name: "Milk", price: "$3", image: "https://x/y.jpg", inCart: false, qty: 0 }, { id: "bad", name: "x" }, { id: "2", name: "Oat milk", price: "$4", image: "", inCart: false, qty: 0 }], signedIn: true });
-    const done = (await jobStatus(a.id)).job;
+    const done = (await jobStatus(a.id));
     expect(done?.status).toBe("done");
     const products = done?.result?.products as { id: string; image: string }[];
     expect(products.map((p) => p.id)).toEqual(["1", "2"]); // only real products come back
@@ -61,14 +75,14 @@ describe("jobs for the Safeway helper", () => {
     expect((await takeJob("1.0.0", false))?.id).toBe(j.id);
     expect(await takeJob("1.0.0", false)).toBeNull(); // same version: still the old one's
     expect((await takeJob("2.0.0", false))?.id).toBe(j.id);
-    expect((await jobStatus(j.id)).job?.status).toBe("working");
+    expect((await jobStatus(j.id))?.status).toBe("working");
   });
 
   it("takes back a job the helper hands back as it reloads, for the reloaded helper to take", async () => {
     const j = await queueJob("checkoutLook", {});
     expect((await takeJob("1.0.0", false))?.id).toBe(j.id);
     await returnJob(j.id);
-    expect((await jobStatus(j.id)).job?.status).toBe("waiting");
+    expect((await jobStatus(j.id))?.status).toBe("waiting");
     expect((await takeJob("2.0.0", false))?.id).toBe(j.id);
     await returnJob("nope"); // nothing to hand back: nothing changes
   });
@@ -96,7 +110,7 @@ describe("jobs for the Safeway helper", () => {
     const a = await queueJob("setQty", { ...milk, qty: 1 });
     await takeJob("1.0.0", false);
     await finishJob(a.id, false, { error: "signed-out" });
-    expect((await jobStatus(a.id)).job).toMatchObject({ status: "failed", result: { error: "signed-out" } });
+    expect((await jobStatus(a.id))).toMatchObject({ status: "failed", result: { error: "signed-out" } });
     expect(await loadCart()).toEqual([]);
     const c = await queueJob("search", { query: "eggs" });
     await cancelJob(c.id);
@@ -110,19 +124,6 @@ describe("jobs for the Safeway helper", () => {
     await takeJob("1.0.0", false);
     await finishJob(s.id, true, { products: [{ id: "960001", name: milk.name, inCart: true, qty: 3 }, { id: "5", name: "Bread", inCart: false }], signedIn: true });
     expect((await loadCart()).map((l) => [l.productId, l.qty])).toEqual([["960001", 3], ["5", 1]]);
-  });
-});
-
-describe("the jobs tab", () => {
-  const H = ["id", "kind", "status", "args", "result", "created", "updated"];
-  const check = (seen: string) => ["helper", "check-in", "", "", '{"version":"1.1.0","panel":true}', "", seen];
-  it("reads the latest check-in when stray copies were added, and counts the strays to clear", () => {
-    const t = parseTab([H, check("2026-10-31T20:16:42.415Z"), ["a1", "search", "done", '{"query":"milk"}', "", "2026-10-31T20:00:00Z", "2026-10-31T20:00:01Z"], H, check("2026-10-31T20:13:39.170Z"), H, check("2026-10-31T20:17:00.000Z")]);
-    expect(t.helper?.seen).toBe("2026-10-31T20:17:00.000Z");
-    expect(t.helperRow).toBe(7);
-    expect(t.jobs.map((j) => j.id)).toEqual(["a1"]);
-    expect(t.junk).toBe(4);
-    expect(parseTab([H, check("2026-10-31T20:16:42.415Z")]).junk).toBe(0);
   });
 });
 
@@ -241,12 +242,6 @@ describe("whether Safeway can be reached", () => {
     await savePush(null);
     expect(await helperPush()).toBeNull();
   });
-  it("a check-in row with a subscription reads back", () => {
-    const H = ["id", "kind", "status", "args", "result", "created", "updated"];
-    const t = parseTab([H, ["helper", "check-in", "", "", '{"version":"1.3.0","panel":false,"push":{"key":"K","sub":{"endpoint":"https://fcm.googleapis.com/x","keys":{"p256dh":"p","auth":"a"}}}}', "", "2026-11-03T20:00:00Z"]]);
-    expect(t.helper).toMatchObject({ version: "1.3.0", push: { key: "K" } });
-    expect(t.junk).toBe(0);
-  });
 });
 
 describe("helperOutdated", () => {
@@ -310,29 +305,116 @@ describe("a placing job is never handed out twice (phase 3, Nov 14)", () => {
   beforeEach(() => resetJobs());
   it("isn't put back when the helper reloads, or handed back: it's marked unsure", async () => {
     const j = await queueJob("checkoutPlace", { windowId: "w" });
-    await takeJob("26.11.14.6", false);
-    await takeJob("26.11.14.7", false); // the helper reloaded as a new version
-    expect((await jobStatus(j.id)).job).toMatchObject({ status: "failed", result: { error: "unsure" } });
-    expect(await takeJob("26.11.14.7", false)).toBeNull();
+    await takeJob(HELPER_VERSION, false);
+    await takeJob("99.0.0", false); // the helper reloaded as a new version
+    expect((await jobStatus(j.id))).toMatchObject({ status: "failed", result: { error: "unsure" } });
+    expect(await takeJob("99.0.0", false)).toBeNull();
     const k = await queueJob("checkoutPlace", { windowId: "w" });
-    await takeJob("26.11.14.7", false);
+    await takeJob(HELPER_VERSION, false);
     await returnJob(k.id);
-    expect((await jobStatus(k.id)).job).toMatchObject({ status: "failed", result: { error: "unsure" } });
-    expect(await takeJob("26.11.14.7", false)).toBeNull();
+    expect((await jobStatus(k.id))).toMatchObject({ status: "failed", result: { error: "unsure" } });
+    expect(await takeJob(HELPER_VERSION, false)).toBeNull();
   });
 
   it("is claimed by only one of two helpers asking at once", async () => {
     resetKv();
     const j = await queueJob("checkoutPlace", { windowId: "w" });
-    const [a, b] = await Promise.all([takeJob("26.11.14.7", false), takeJob("26.11.14.7", false)]);
+    const [a, b] = await Promise.all([takeJob(HELPER_VERSION, false), takeJob(HELPER_VERSION, false)]);
     expect([a, b].filter((x) => x?.id === j.id)).toHaveLength(1);
+  });
+
+  it("lets the helper press only a placing job it's working on, within its deadline, and never gives up on one pressing (Nov 19)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const j = await queueJob("checkoutPlace", { windowId: "w", expect: { deadline: Date.now() + 60_000 } });
+      expect(await pressJob(j.id)).toBe(false); // not taken yet
+      await takeJob(HELPER_VERSION, false);
+      expect(await pressJob(j.id)).toBe(true);
+      expect(await pressJob(j.id)).toBe(false); // once
+      vi.setSystemTime(Date.now() + 60 * 60_000);
+      expect(await jobStatus(j.id)).toMatchObject({ status: "pressing" });
+      const late = await queueJob("checkoutPlace", { windowId: "w", expect: { deadline: Date.now() + 1000 } });
+      await takeJob(HELPER_VERSION, false);
+      vi.setSystemTime(Date.now() + 2000);
+      expect(await pressJob(late.id)).toBe(false); // past the deadline by Simmer's clock
+      // Taken, not pressed: stuck only a minute after the deadline (and two after it was taken).
+      vi.setSystemTime(Date.now() + 119_000);
+      expect(await jobStatus(late.id)).toMatchObject({ status: "failed", result: { error: "stuck" } });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("counts a report sent twice once (Nov 19)", async () => {
+    const j = await queueJob("setQty", { ...milk, qty: 2 });
+    await takeJob("26.11.19", false);
+    await finishJob(j.id, true, { ok: true, qty: 2 });
+    await setCartLine({ ...milk, qty: 5 });
+    expect(await finishJob(j.id, true, { ok: true, qty: 2 })).toMatchObject({ status: "done" });
+    expect((await loadCart())[0].qty).toBe(5);
   });
 
   it("keeps what the helper reported, even after it was marked unsure", async () => {
     const j = await queueJob("checkoutPlace", { windowId: "w" });
-    await takeJob("26.11.14.7", false);
+    await takeJob(HELPER_VERSION, false);
     await returnJob(j.id);
     const done = await finishJob(j.id, true, { stopped: "placed", pressed: true, after: { url: "u", text: "Order number 12345678" } });
     expect(done).toMatchObject({ status: "done", result: { stopped: "placed", pressed: true } });
+  });
+});
+
+describe("review, Nov 19", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); resetKv(); });
+
+  it("hands test runs and placing only to the helper Simmer ships (an older one never asks to press)", async () => {
+    const dry = await queueJob("checkoutDry", { windowId: "w" });
+    const place = await queueJob("checkoutPlace", { windowId: "w" });
+    expect(await takeJob("26.11.18", false)).toBeNull();
+    expect((await takeJob(HELPER_VERSION, false))?.id).toBe(dry.id);
+    expect((await takeJob(HELPER_VERSION, false))?.id).toBe(place.id);
+  });
+
+  it("keeps when the helper was let press, through its report", async () => {
+    const j = await queueJob("checkoutPlace", { windowId: "w", expect: { deadline: Date.now() + 60_000 } });
+    await takeJob(HELPER_VERSION, false);
+    expect(await pressJob(j.id)).toBe(true);
+    const done = await finishJob(j.id, true, { stopped: "not pressed", pressed: "unknown", why: "no answer" });
+    expect(done).toMatchObject({ status: "done", result: { pressed: "unknown" } });
+    expect(done?.pressedAt).toBeTruthy();
+  });
+
+  it("does what a report means once, however many copies arrive at the same moment", async () => {
+    const safeway = await import("./safeway");
+    const spy = vi.spyOn(safeway, "setCartLine");
+    try {
+      const j = await queueJob("setQty", { ...milk, qty: 2 });
+      await takeJob(HELPER_VERSION, false);
+      const outs = await Promise.all([1, 2, 3].map(() => finishJob(j.id, true, { ok: true, qty: 2 })));
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect((await jobStatus(j.id))?.status).toBe("done");
+      expect(outs.some((o) => o?.status === "done")).toBe(true);
+    } finally { spy.mockRestore(); }
+  });
+
+  it("works out what a placing job came to however it finishes: lost in a reload, or given up", async () => {
+    const { kv } = await import("./kv");
+    const order = (id: string) => kv().set(`simmer:checkout-order:${id}`, JSON.stringify({ id, totalCents: 500, windowWords: "Fri 6–7 AM", faceId: "f" }), { ex: 3600 });
+    await order("approval00000001");
+    await queueJob("checkoutPlace", { approvalId: "approval00000001", windowId: "w" });
+    await takeJob(HELPER_VERSION, false);
+    await takeJob("99.0.0", false); // reloaded
+    expect(JSON.parse((await kv().get("simmer:checkout-outcome:approval00000001"))!)).toMatchObject({ ok: false, unsure: true });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await order("approval00000002");
+      const late = await queueJob("checkoutPlace", { approvalId: "approval00000002", windowId: "w" });
+      vi.setSystemTime(Date.now() + 120_000);
+      expect(await jobStatus(late.id)).toMatchObject({ status: "failed", result: { error: "not-answering" } });
+      expect(JSON.parse((await kv().get("simmer:checkout-outcome:approval00000002"))!)).toMatchObject({ ok: false, unsure: true });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("the panel's log reaches back 15 minutes, past 80 other jobs", async () => {
+    await queueJob("search", { query: "bananas", from: "app" });
+    for (let i = 0; i < 90; i++) await queueJob("snapshot", { query: "x", productId: "1" });
+    expect((await recentJobs()).map((j) => j.what)).toEqual(["bananas"]);
   });
 });

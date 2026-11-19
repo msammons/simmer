@@ -1,7 +1,7 @@
 // Waking the Safeway helper (Nov 3): when a job is queued, Simmer sends the helper's Chrome a push (Web Push, signed
-// with Simmer's VAPID keys), and the helper checks for jobs at once instead of at its next half-minute check. The push
-// carries nothing: it only says "look now". Without the keys (local dev, tests) nothing is sent, and the half-minute
-// check is the backstop either way.
+// with Simmer's VAPID keys), and the helper checks for jobs at once. The push carries nothing: it only says "look now".
+// The helper has no timers (26.11.11): without the keys (local dev, tests) nothing is sent, and it looks only when Chrome
+// starts or its panel opens.
 import webpush from "web-push";
 import { helperPush, savePush } from "./jobs";
 

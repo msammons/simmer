@@ -8,7 +8,6 @@ const VERSION = chrome.runtime.getManifest().version;
 /** Whether version `a` is newer than `b`, every part compared (26.11.10.1 is newer than 26.11.10). */
 const newer = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-chrome.alarms.clear("jobs").catch(() => {}); // the half-minute alarm of 1.x
 chrome.runtime.onStartup.addListener(() => check());
 chrome.runtime.onInstalled.addListener(() => check());
 // A push from Simmer (1.3, Nov 3): a job was just queued. It carries nothing; it only says to look now.
@@ -22,10 +21,37 @@ const panelWindow = async () => (await chrome.storage.session.get("panelWindow")
 let running = false, subscribing = 0;
 let pace = { pause: 1500 };
 
+/**
+ * A job's report, kept until Simmer has it (Nov 19: one lost to a dropped connection was gone, and a placed order could
+ * then read "not sure"). Sent at once, and whatever is still kept is sent again at the start of the next check; Simmer
+ * counts a report sent twice once. One kept for a day is dropped.
+ */
+const PENDING = "pendingReports";
+/** `urgent` (an order's report, Nov 19, review): tried twice more at once, a second and then three apart, before it waits for the next check. */
+async function report(body, urgent = false) {
+  const kept = (await store.get(PENDING, [])).filter((r) => r.id !== body.id);
+  await store.set(PENDING, [...kept, { ...body, keptAt: Date.now() }]);
+  for (const wait of urgent ? [1000, 3000, null] : [null]) {
+    await sendReports();
+    if (wait === null || !(await store.get(PENDING, [])).some((r) => r.id === body.id)) return;
+    await sleep(wait);
+  }
+}
+async function sendReports() {
+  for (const r of await store.get(PENDING, [])) {
+    const { keptAt, ...body } = r;
+    let sent = false;
+    try { await simmer("POST", body, "/api/safeway/jobs"); sent = true; }
+    catch (e) { if (e instanceof WrongPasscode) throw e; }
+    if (sent || Date.now() - keptAt > 24 * 3600_000) await store.set(PENDING, (await store.get(PENDING, [])).filter((x) => x.id !== r.id));
+  }
+}
+
 async function check() {
   if (running || !(await store.get("address", "")) || !(await store.get("passcode", ""))) return;
   running = true;
   try {
+    await sendReports();
     for (;;) {
       const r = await simmer("POST", { op: "next", version: VERSION, panel: Boolean(await panelWindow()) }, "/api/safeway/jobs");
       const job = r?.job;
@@ -44,10 +70,12 @@ async function check() {
       if (r?.push?.key && (!r.push.have || (await self.registration.pushManager.getSubscription())?.endpoint !== r.push.at)) subscribe(r.push.key);
       if (!job) break; // nothing left: stop until the next push, Chrome starting, or the panel opening
       pace = { ...pace, ...job.settings };
+      job.got = Date.now(); // when it arrived, on this computer's clock (placing counts Simmer's time left from it)
       const out = await runJob(job, await panelWindow()).catch((e) => ({ ok: false, error: "failed", why: String(e) }));
-      await simmer("POST", out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error, ...(out.why && { why: String(out.why).slice(0, 300) }) }, "/api/safeway/jobs").catch(() => {});
+      await report(out.ok ? { op: "done", id: job.id, result: out.result } : { op: "failed", id: job.id, error: out.error, ...(out.why && { why: String(out.why).slice(0, 300) }) }, job.kind === "checkoutPlace");
       chrome.runtime.sendMessage({ type: "simmer:done" }).catch(() => {}); // an open panel shows it at once
-      await sleep(pace.pause);
+      // A person's pace between searches and cart changes; checkout's steps wait on Safeway's page themselves (Nov 19).
+      if (!String(job.kind).startsWith("checkout")) await sleep(pace.pause);
     }
   } catch (e) {
     if (!(e instanceof WrongPasscode)) console.error("Safeway jobs", e);
@@ -79,5 +107,5 @@ async function subscribe(key) {
   }
 }
 
-// For the end-to-end check (scripts/extension-test.mjs), which can't wait for the alarm.
+// For the end-to-end check (scripts/extension-test.mjs), which can't wait for a push.
 self.simmerCheck = check;

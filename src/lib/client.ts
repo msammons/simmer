@@ -3,7 +3,7 @@
 import { startAuthentication, startRegistration, WebAuthnError } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 
-const KEYS = { passcode: "sm.passcode", people: "sm.people", theme: "sm.theme", list: "sm.list", me: "sm.me", recipes: "sm.recipes", plan: "sm.plan", showGot: "sm.showGot" };
+const KEYS = { passcode: "sm.passcode", theme: "sm.theme", list: "sm.list", recipes: "sm.recipes", plan: "sm.plan", showGot: "sm.showGot" };
 
 function get<T>(k: string): T | null {
   try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
@@ -30,9 +30,6 @@ export const store = {
     if (framed()) { framedPasscode = p; return; }
     if (p === null) { try { localStorage.removeItem(KEYS.passcode); } catch {} } else set(KEYS.passcode, p);
   },
-  /** The household from last time, so the app works when it opens offline. */
-  people: () => get<Person[]>(KEYS.people),
-  setPeople: (p: Person[]) => set(KEYS.people, p),
   /** The list from last time, for opening offline. */
   list: () => get<ListState>(KEYS.list),
   setList: (l: ListState) => set(KEYS.list, l),
@@ -42,15 +39,11 @@ export const store = {
   /** What's planned, from last time, for opening offline. */
   plan: () => get<PlanData>(KEYS.plan),
   setPlan: (p: PlanData) => set(KEYS.plan, p),
-  /** Who's using the app here, for "added by". */
-  me: () => get<string>(KEYS.me) ?? "",
-  setMe: (name: string) => set(KEYS.me, name),
   theme: (): Theme => {
     const t = get<string>(KEYS.theme);
     return THEMES.some((x) => x.id === t) ? (t as Theme) : "simmer";
   },
   setTheme: (t: Theme) => { set(KEYS.theme, t); applyTheme(t); },
-
 };
 
 /** Themes (defined in globals.css): Simmer's own looks (Simmer, tomato, is the default and matches the icon), then plain iOS accent colors. swatch is CSS for the picker. */
@@ -99,8 +92,6 @@ export type { Item, Section, Staple, StapleKind, Store };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
 import type { NewDish, NewLunch, PlanData } from "./plan";
-import type { Order, OrderAnswer } from "./order";
-export type { Order, OrderAnswer };
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
 import type { Activity, Job, JobKind } from "./jobs";
@@ -109,14 +100,13 @@ export type { Choices, OrderResult, ReadyView, RunResult, TimesView };
 export type { Activity, Job, JobKind };
 import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
 export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
-export type Kitchen = { freezer: Frozen[]; trips: PlanData["trips"] };
+export type Kitchen = { freezer: Frozen[] };
 /** A change to one planned thing: another recipe, another part of a lunch, made (or packed), or off. */
 export type PlanChange = { op: "change"; id: string; recipe: string; pinned?: boolean } | { op: "change"; id: string; day: string } | { op: "change"; id: string; part: LunchPart; item: string } | { op: "made"; id: string } | { op: "remove"; id: string } | { op: "clear" } | { op: "count"; recipe: string; kind: Kind; count: number };
 export type ListState = { items: Item[]; staples: Staple[] };
-type Change = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: "haveIt"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section; amount?: string; have?: boolean } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
-  | { op: "clear"; ids: string[] } | { op: "putBack"; items: Item[] } | { op: "keepAdd"; text: string; section?: Section; kind?: StapleKind; group?: string; need?: boolean; by?: string } | { op: "keepSet"; item: string; kind?: StapleKind; group?: string } | { op: "keepGroup"; from: string; to: string } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
+export type ListChange = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: "haveIt"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section; amount?: string; have?: boolean } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
+  | { op: "keepAdd"; text: string; section?: Section; kind?: StapleKind; group?: string; need?: boolean; by?: string } | { op: "keepSet"; item: string; kind?: StapleKind; group?: string } | { op: "keepGroup"; from: string; to: string } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
 
-/** Every request takes an optional AbortSignal, so it can be stopped. */
 /** Ordering's settings, as /api/checkout keeps them (src/lib/checkout.ts). */
 export type CheckoutSettings = { on: boolean; limitCents: number; store: string; card: string };
 
@@ -124,7 +114,7 @@ const passkey = <T>(body: Record<string, unknown>) => call<T>("/api/checkout/pas
 
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
-  change: (c: Change) => call<ListState & { cleared?: Item[] }>("/api/list", { method: "POST", body: JSON.stringify(c) }),
+  change: (c: ListChange) => call<ListState>("/api/list", { method: "POST", body: JSON.stringify(c) }),
   recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }),
   saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
   recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean } | { op: "delete"; id: string } | { op: "section"; id: string; item: string; section: RecipeSection }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
@@ -158,23 +148,19 @@ export const api = {
   checkoutLook: (jobId?: string, signal?: AbortSignal) => call<Choices | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "look", jobId }), signal }),
   checkoutTimes: (jobId: string | undefined, day: string | undefined, signal?: AbortSignal) => call<TimesView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "times", jobId, day }), signal }),
   checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal, bagsOwn?: boolean) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId, bagsOwn }), signal }),
-  checkoutApprove: (faceId: unknown) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId }) }),
-  checkoutPlace: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<OrderResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
+  // The approval names the reading it approves (Nov 19: another phone getting ready can't swap the figures).
+  checkoutApprove: (faceId: unknown, preparedId: string) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId, preparedId }) }),
+  checkoutPlace: (by: { approvalId: string; totalCents: number | null; window: string } | { jobId: string }, signal?: AbortSignal) => call<OrderResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
   checkoutTestRun: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<RunResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),
   /** Turning on, raising the limit, or changing the store or card needs `faceId`, a Face ID answer (Nov 13). */
   saveCheckout: (s: CheckoutSettings, faceId?: unknown) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify({ ...s, faceId }) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
-  /** The exact Safeway product picked for each item before (by the Safeway helper). */
-  picks: (signal?: AbortSignal) => call<{ picks: Pick[] }>("/api/safeway", { signal }),
-  /** The Safeway order filled by the helper on a computer: start it, follow it, answer it, stop it. */
-  order: (signal?: AbortSignal) => call<{ order: Order | null }>("/api/safeway/order", { signal }),
-  orderChange: (c: { op: "start" } | { op: "answer"; id: string; answer: OrderAnswer } | { op: "stop"; id: string }) => call<{ order: Order | null }>("/api/safeway/order", { method: "POST", body: JSON.stringify(c) }),
   /**
-   * The Safeway cart as Simmer knows it, the picks, whether the computer is answering (and when it last checked in, and
-   * whether that's long enough ago to grey the cart), and whether its Simmer needs an update.
+   * The Safeway cart as Simmer knows it, the exact product picked before for each item, whether a job went unanswered
+   * (`away`), and whether Safeway is signed out on the computer.
    */
-  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; answering: boolean; away?: boolean; seen?: string; outdated?: boolean; signedOut?: boolean }>("/api/safeway/cart", { signal }),
+  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; away?: boolean; signedOut?: boolean }>("/api/safeway/cart", { signal }),
   /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
   // Queued from the helper's panel: the panel is told too, so the helper looks at once (Nov 12: it doesn't wait on the push).
   queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) })
@@ -186,11 +172,6 @@ export const api = {
   cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };
 
-/**
- * Face ID on this phone (Nov 12). Safari only shows Face ID straight from a tap, so the options are fetched before the
- * tap (`faceIdSetUpOptions` and the like) and these are called at the tap with them; the server's answer comes after. Cancelling Face ID,
- * or anything else going wrong, comes back as an Error in plain words.
- */
 /**
  * Whether this phone approves with its own Face ID (Nov 18: Robin approved each checkout step by scanning a code with
  * Sam's phone, the same approval): "here" once it has, "elsewhere" after an approval made on another phone, so the app
@@ -206,6 +187,11 @@ function noteWhere(response: { authenticatorAttachment?: string | null }) {
   if (v) window.dispatchEvent(new Event(WHERE)); // the Check out sheet showing hears it at once
 }
 
+/**
+ * Face ID on this phone (Nov 12). Safari only shows Face ID straight from a tap, so the options are fetched before the
+ * tap (`faceIdSetUpOptions` and the like) and these are called at the tap with them; the server's answer comes after.
+ * Cancelling Face ID, or anything else going wrong, comes back as an Error in plain words.
+ */
 export async function setUpFaceId(options: PublicKeyCredentialCreationOptionsJSON, onAnswer?: () => void): Promise<number> {
   const response = await faceId(() => startRegistration({ optionsJSON: options }));
   noteWhere({ authenticatorAttachment: "platform" });
