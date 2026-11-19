@@ -11,7 +11,7 @@ import {
 import { randomBytes, randomInt } from "node:crypto";
 import { cleanSettings, loadSettings, needsFaceId, record, saveSettings, type CheckoutSettings } from "./checkout";
 import { AppError } from "./errors";
-import { appendRows, readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
+import { atomically, readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
 import { json, kv, resetKv, secs } from "./kv";
 import { TZ } from "./time";
 
@@ -96,18 +96,32 @@ export async function loadPasskeys(): Promise<Passkey[]> {
 }
 export const passkeyCount = async () => (await loadPasskeys()).length;
 
-async function addPasskey(p: Passkey) {
-  if (!sheetsConfigured()) { memoryKeys.push({ ...p }); return; }
+/**
+ * Adds a phone's passkey, unless it's there already; one transaction (Nov 19: read and written back separately, two
+ * set-ups at once could drop one). Answers whether it was added.
+ */
+const addPasskey = atomically(async (p: Passkey): Promise<boolean> => {
+  if (!sheetsConfigured()) { if (memoryKeys.some((k) => k.id === p.id)) return false; memoryKeys.push({ ...p }); return true; }
   const rows = await readTabIfAny(TAB);
-  if (!rows.length) await replaceTab(TAB, [HEADERS, rowOf(p)]);
-  else await appendRows(TAB, [rowOf(p)]);
-}
+  if (rows.slice(1).some((r) => r[0] === p.id)) return false;
+  await replaceTab(TAB, [...(rows.length ? rows : [HEADERS]), rowOf(p)]);
+  return true;
+});
 
-async function saveCounter(id: string, counter: number) {
-  if (!sheetsConfigured()) { memoryKeys = memoryKeys.map((p) => (p.id === id ? { ...p, counter } : p)); return; }
+/**
+ * Moves a passkey's count up to `counter`, only if that's still up from what's kept, in one transaction (Nov 19): two
+ * checks at once with the same count can't both pass. Answers whether it moved (or didn't need to: phones that don't count).
+ */
+const moveCounter = atomically(async (id: string, from: number, counter: number): Promise<boolean> => {
+  const keys = await loadPasskeys();
+  const now = keys.find((k) => k.id === id)?.counter;
+  if (now === undefined || now !== from) return false;
+  if (counter === from) return true;
+  if (!sheetsConfigured()) { memoryKeys = memoryKeys.map((p) => (p.id === id ? { ...p, counter } : p)); return true; }
   const rows = await readTabIfAny(TAB);
   await replaceTab(TAB, rows.map((r, i) => (i > 0 && r[0] === id ? [r[0], r[1], String(counter), ...r.slice(3)] : r)));
-}
+  return true;
+});
 
 /** "Face ID on this phone, Nov 12", by the household's calendar. */
 const nameNow = (at: Date) => `Face ID on this phone, ${at.toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })}`;
@@ -243,10 +257,11 @@ async function registering(req: Request, response: unknown): Promise<Inner> {
     await kv().del(ADD_KEY);
   }
   const now = new Date();
-  await addPasskey({
+  const added = await addPasskey({
     id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter,
     name: nameNow(now), created: now.toISOString(),
   });
+  if (!added) return { ok: false, credentialId: credential.id, why: "Face ID is already set up here." };
   if (have.length) await record("face id phone added", { credentialId: credential.id, phones: have.length + 1 });
   return { ok: true, credentialId: credential.id };
 }
@@ -297,7 +312,7 @@ async function checking(req: Request, response: unknown, purpose: "check" | "app
   if (!Number.isInteger(info.newCounter) || info.newCounter < 0 || ((info.newCounter > 0 || key.counter > 0) && info.newCounter <= key.counter)) {
     return { ok: false, credentialId: key.id, why: "Face ID here answered out of order. Try again." };
   }
-  if (info.newCounter !== key.counter) await saveCounter(key.id, info.newCounter);
+  if (!(await moveCounter(key.id, key.counter, info.newCounter))) return { ok: false, credentialId: key.id, why: "Face ID here answered out of order. Try again." };
   return { ok: true, credentialId: key.id, token: good.token };
 }
 

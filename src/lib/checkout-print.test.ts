@@ -31,20 +31,20 @@ describe("the helper's checkout fingerprint", () => {
     }
   });
 
-  it("keeps only add, quantities, snapshots, the Purchases page and samples out, in page.js, after every checkout action", () => {
+  it("keeps only quantities, snapshots, the Purchases page and samples out, in page.js, after every checkout action", () => {
     const file = covered().find(([n]) => n === "extension-working/page.js")![1];
     const ps = parts("extension-working/page.js");
     expect(ps).toHaveLength(2);
-    const allowed = ["add", "setQty", "snapshot", "orders", "sample"];
+    const allowed = ["setQty", "snapshot", "orders", "sample"];
     expect(ps.flatMap((p) => [...p.matchAll(/action === "(\w+)"/g)].map((m) => m[1]))).toEqual(allowed);
     for (const p of ps) {
       expect(braces(p)).toBe(0);
       // At the action level (two spaces) only comments, the allowed actions and their closing braces.
-      for (const line of p.split("\n").filter((l) => /^ {2}\S/.test(l))) expect(line).toMatch(/^ {2}(\/\/|if \(action === "(add|setQty|snapshot|orders|sample)"\)|\})/);
+      for (const line of p.split("\n").filter((l) => /^ {2}\S/.test(l))) expect(line).toMatch(/^ {2}(\/\/|if \(action === "(setQty|snapshot|orders|sample)"\)|\})/);
     }
     // Every checkout action comes before the first marked part, so nothing marked runs on the way to one.
     const first = file.indexOf("// not-checkout:start");
-    for (const a of ["read", "look", "pressCheckout", "pressDay", "pressPickupEdit", "placeOrder", "bagsState", "setBags", "readBags", "pressMoreTimes", "waitFor", "readWindows", "chooseWindow"])
+    for (const a of ["read", "look", "pressCheckout", "pressDay", "pressPickupEdit", "placeOrder", "bagsState", "setBags", "pressMoreTimes", "waitFor", "readWindows", "chooseWindow"])
       expect(file.indexOf(`action === "${a}"`), a).toBeLessThan(first);
   });
 });

@@ -28,6 +28,13 @@ order Face ID approved, once, when the page says exactly what was approved.
   count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
   minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
   tab moved to) for Simmer to judge. It never presses again, whatever comes back.
+- **Asks before pressing, keeps its reports, no pauses left (26.11.19).** Right before Place Order it asks Simmer
+  "may I press?" (`press`), and presses only on a yes; Simmer then never calls that order failed. It holds to the earlier
+  of the approval's deadline and the time Simmer said was left when it handed the job over. A report that can't be sent
+  is kept and sent again at the next check. Every wait that looked again and again (products, the cart, the Purchases
+  page, a quantity change, the bags switch, the total settling, the checkout look) now watches the page, its shadow layers
+  too, at most every 50 ms, with one limit each; the checkout look follows the same events as Get ready. No pause between
+  checkout jobs. Gone: the bags read-out, the unused Add action, and the "alarms" permission.
 - **Tighter checkout fingerprint (26.11.18.2).** The cart read placing uses is no longer marked, page.js's marked actions come after every checkout action, and placing reports the address the tab moved to (`landed`).
 - **A test run only when checkout changes (26.11.18.1).** Parts checkout never uses are marked `not-checkout`; a change anywhere else changes the checkout fingerprint and Simmer asks for a test run before ordering (docs/CHECKOUT.md).
 - **Faster + and a full confirmation read (26.11.18.1).** A + from one no longer waits 3 s for a remove question; after Place Order the confirmation page is read once its words fill in.

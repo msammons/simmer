@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { addItem, addItems, addStaple, loadList, removeItem } from "./groceries";
-import { addFrozen, changePlanned, removeRecipeFromPlan, clearPlanned, setCount, fromTheTap, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
+import { addFrozen, changePlanned, removeRecipeFromPlan, clearPlanned, setCount, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
 import { todayIn } from "./time";
 import type { LunchOption } from "./week";
 
@@ -13,11 +13,13 @@ const lunchesFor = (kid: string, count: number, options: LunchOption[]) => Array
 const counts = { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: { Theo: 2, Leo: 0 } };
 
 describe("planning by number", () => {
-  it("never puts tap water on a list", () => {
-    expect(fromTheTap("water")).toBe(true);
-    expect(fromTheTap("warm  water")).toBe(true);
-    expect(fromTheTap("sparkling water")).toBe(false);
-    expect(fromTheTap("coconut water")).toBe(false);
+  it("never puts tap water on a list", async () => {
+    const { fromDraft, saveRecipe } = await import("./recipes");
+    const r = await saveRecipe(fromDraft({ name: "water-test punch", effort: "quick", minutes: null, serves: null, protein: "", ingredients: ["1 cup water", "1/2 cup warm  water", "1 cup sparkling water", "1 cup coconut water"], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" }));
+    await setCount(r.id, "quick", 1, "Sam");
+    const names = (await loadList()).items.filter((i) => i.for === "water-test punch").map((i) => i.item).sort();
+    expect(names).toEqual(["coconut water", "sparkling water"]);
+    await setCount(r.id, "quick", 0, "Sam");
   });
 
   it("saves what's planned, puts everything it needs on the list at once, and remembers the numbers", async () => {
@@ -188,5 +190,38 @@ describe("meals by day (Nov 16)", () => {
     await clearPlanned();
     await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: "2026-11-20" }], [], null, "Robin");
     expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day: "2026-11-20" });
+  });
+});
+
+describe("review fixes (Nov 19)", () => {
+  it("Something else on one of two helpings keeps the other helping's groceries", async () => {
+    await clearPlanned();
+    await setCount("turkey-chili-1", "regular", 1, "Sam");
+    const turkey = () => loadList().then((l) => l.items.find((i) => i.item === "ground turkey" && !i.checked));
+    const once = (await turkey())!.quantity;
+    await setCount("turkey-chili-1", "regular", 2, "Sam");
+    const [one] = (await loadPlan()).dishes.filter((d) => d.recipe === "turkey-chili-1");
+    await changePlanned(one.id, { recipe: "salmon-1", pinned: false }, "Sam");
+    expect(await turkey()).toMatchObject({ quantity: once, for: "turkey chili" });
+  });
+
+  it("a cart that can't be read stops a New plan, a removal or a swap rather than taking cart things off the list", async () => {
+    await clearPlanned();
+    await setCount("turkey-chili-1", "regular", 1, "Sam");
+    const safeway = await import("./safeway");
+    const spy = vi.spyOn(safeway, "loadCart").mockRejectedValue(new Error("redis down"));
+    const before = (await loadList()).items.length;
+    await expect(clearPlanned()).rejects.toThrow();
+    await expect(setCount("turkey-chili-1", "regular", 0, "Sam")).rejects.toThrow();
+    expect((await loadList()).items.length).toBe(before);
+    spy.mockRestore();
+  });
+
+  it("a deleted recipe planned twice takes off both helpings' amounts of what it shared", async () => {
+    await clearPlanned();
+    await setCount("turkey-chili-1", "regular", 2, "Sam");
+    await addItems([{ item: "ground turkey", quantity: "1 lb", for: "share-test burgers", check: false }], "Sam");
+    await removeRecipeFromPlan("turkey-chili-1");
+    expect((await loadList()).items.find((i) => i.item === "ground turkey" && !i.checked)).toMatchObject({ quantity: "1 lb", for: "share-test burgers" });
   });
 });

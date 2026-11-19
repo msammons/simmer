@@ -1,9 +1,11 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
-import { type RecipeSection, api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListState, type Section, type Store, type NewDish, type Person, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { type RecipeSection, api, applyTheme, AuthError, errorText, framed, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Ingredient, type Item, type Kind, type ListChange, type ListState, type Section, type Store, type NewDish, type Kitchen, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
+import { Synced, useSynced } from "@/lib/synced";
 import { PasscodeScreen } from "./PasscodeScreen";
 import { SettingsSheet } from "./Settings";
+import { useSafeway } from "./Safeway";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
@@ -41,25 +43,9 @@ function takeResume(): { tab: Tab; asked: boolean } {
 const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest])')
   && ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].some((el) => el.value);
 
-/**
- * A reload that doesn't ask again within a few seconds (Nov 11: tab visits, coming back to the app and polls asked for
- * the same things over and over): one already on its way, or one that just answered, is enough. Changes reload directly.
- */
-function useSettled(fn: () => Promise<unknown>, ms = 5_000) {
-  const last = useRef(0);
-  const busy = useRef<Promise<unknown> | null>(null);
-  return useCallback(() => {
-    if (busy.current) return busy.current;
-    if (Date.now() - last.current < ms) return Promise.resolve();
-    const p = fn().finally(() => { last.current = Date.now(); busy.current = null; });
-    busy.current = p;
-    return p;
-  }, [fn, ms]);
-}
-
 /** Stand-in rows and recipes are told apart by their ids until the server's answer replaces them. */
 let standIns = 0;
-const standInId = (kind: "new" | "saving") => `${kind}-${Date.now()}-${++standIns}`;
+const standInId = (kind: "new" | "saving" | "adding") => `${kind}-${Date.now()}-${++standIns}`;
 const isStandIn = (id: string) => id.startsWith("new-") || id.startsWith("saving-");
 /** A list row shown at once for something just added, filed where Simmer would file it, until the server's list comes back. */
 function standInItem(name: string, quantity: string, more: Partial<Item> = {}, store?: Store, section?: Section): Item {
@@ -80,28 +66,18 @@ export default function App() {
   const [visit, setVisit] = useState(0); // a new one each tab tap, so the tab's screen opens fresh
   // Browser-only state read on the first client render; the server renders only the splash, so nothing mismatches.
   const browser = typeof window !== "undefined";
-  const [, setPeople] = useState<Person[]>(() => (browser ? store.people() ?? [] : [])); // last time's; only Settings read it, until "Who's using this?" went (Nov 3)
   const [passError, setPassError] = useState<string | null>(null); // the passcode screen's problem: a wrong passcode
   // One problem at a time, shown over the page as the shared alert until OK (Nov 11: no bars that move the page).
   const [problem, setProblem] = useState<{ title: string; message: string } | null>(null);
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
-  const [list, setList] = useState<ListState | null>(() => (browser ? store.list() : null)); // last time's, for opening offline
-  const [kitchen, setKitchen] = useState<Kitchen | null>(null);
-  const me = ""; // "Who's using this?" is gone (Nov 3); added-by stays blank
-  const [recipes, setRecipes] = useState<Recipe[] | null>(() => (browser ? store.recipes() : null)); // last time's, for opening offline
   const [sheet, setSheet] = useState<"add" | "edit" | null>(null);
   // What was entered in a sheet whose save failed, so it opens again as it was: Edit's draft, or Add recipes' step.
   const [retry, setRetry] = useState<{ edit?: Draft; add?: AddStep } | null>(null);
-  // What's still to make and pack: last time's at first, for opening offline.
-  const [plan, setPlan] = useState<PlanData | null>(() => (browser ? store.plan() : null));
   // The dinner sheet names its dinner rather than holding a copy, so it shows the plan as it is now.
   const [addingOne, setAddingOne] = useState<{ kind: Kind | null; day: string } | null>(null); // the kind and day being added to, from Meals
   const [pickingDay, setPickingDay] = useState<Recipe | null>(null); // a recipe's Add to the plan, asking which day (Nov 16)
   const loaded = useRef(false); // the household has loaded from the server this session
-  // Whether each is showing something (last time's copy or fresh): a failed read then says nothing.
-  const listShowing = useRef(false), recipesShowing = useRef(false), planShowing = useRef(false);
-  useEffect(() => { listShowing.current = list !== null; recipesShowing.current = recipes !== null; planShowing.current = plan !== null; }, [list, recipes, plan]);
 
   // The passcode was turned down (changed, or typed wrong): close everything and ask for it again. Any request can find
   // out, including ones running in the background, so the client announces it and this listens.
@@ -116,86 +92,63 @@ export default function App() {
     window.addEventListener(SIGNED_OUT, signOut);
     return () => window.removeEventListener(SIGNED_OUT, signOut);
   }, [signOut]);
-  /** A change that didn't save: the alert says why. A turned-down passcode has already gone back to the passcode screen. */
-  const didntSave = (message: string | null) => { if (message) setProblem({ title: "That didn't go through", message }); };
-  const failed = (e: unknown) => { if (!(e instanceof AuthError)) didntSave(errorText(e)); };
-  /**
-   * A read that failed. With last time's copy showing, nothing is said (Nov 11: open with the last copy, and offline keep
-   * showing it); with nothing to show, the alert says why.
-   */
-  const notLoaded = (showing: boolean) => (e: unknown) => {
-    if (!(e instanceof AuthError) && !showing) setProblem({ title: "Something went wrong", message: errorText(e) });
-  };
+
+  // The shared data, each kept in step with the server (lib/synced.ts): every change shows at once and is saved behind
+  // it, in order; a change that didn't save comes off the screen, the alert says why, and the newest copy is read.
+  // A read that fails says nothing with last time's copy showing (Nov 11: offline, keep showing it); with nothing to
+  // show, the alert says why. A turned-down passcode has already gone back to the passcode screen.
+  const [{ failed, notLoaded }] = useState(() => ({
+    failed: (e: unknown) => { if (!(e instanceof AuthError)) setProblem({ title: "That didn't go through", message: errorText(e) }); },
+    notLoaded: (e: unknown, showing: boolean) => { if (!(e instanceof AuthError) && !showing) setProblem({ title: "Something went wrong", message: errorText(e) }); },
+  }));
+  // The shared list (last time's at first, for opening offline): read when Shop or List opens and when the app comes back.
+  const [list, lists] = useSynced(() => new Synced(browser ? store.list() : null, { read: () => api.list(), keep: store.setList, failed, readFailed: notLoaded }));
+  // The collection: read when Recipes, a recipe or Meals opens (Meals shows meal names).
+  const [recipes, recipeList] = useSynced(() => new Synced(browser ? store.recipes() : null, { read: () => api.recipes().then((r) => r.recipes), keep: store.setRecipes, failed, readFailed: notLoaded }));
+  // What's planned: read when Meals or a recipe opens (a recipe offers Add to the plan only when it isn't planned).
+  const [plan, plans] = useSynced(() => new Synced(browser ? store.plan() : null, { read: () => api.plan(), keep: store.setPlan, failed, readFailed: notLoaded }));
+  // The freezer: only List shows it.
+  const [kitchen, kitchens] = useSynced(() => new Synced<Kitchen>(null, { read: () => api.kitchen(), failed }));
+  // The Safeway cart, kept across tab taps so Shop's Add, Find and − n + stay put.
+  const sw = useSafeway();
+  const { look } = sw;
 
   const loadHousehold = useCallback(async () => {
     try {
-      const h = await api.household();
+      await api.household();
       loaded.current = true;
-      setPeople(h.people);
-      store.setPeople(h.people);
       return true;
     } catch (e) {
-      if (e instanceof AuthError) return false;
       // Offline or unreachable: the app opens with what's saved here, and each screen says so only if it has nothing.
-      setPeople(store.people() ?? []);
-      return true;
+      return !(e instanceof AuthError);
     }
   }, []);
 
-  // The shared list: loaded when Shop or Stock opens, whenever the app comes back to
-  // the front, so both phones see the same list. No background work: only while someone's looking.
-  // Each change counts up; a refresh that started before the latest change is older than what's showing, so it's dropped
-  // (otherwise a read answering just after a tap would undo the tap on screen until the change's own answer came).
-  // A read that answers while a change is still on its way is dropped too: it doesn't have the change yet, and would take
-  // a stand-in row away until the change's answer came.
-  const listChanges = useRef(0);
-  const listSaving = useRef(0);
-  const refreshList = useCallback(async () => {
-    const at = listChanges.current;
-    try {
-      const l = await api.list();
-      if (at !== listChanges.current || listSaving.current) return;
-      setList(l);
-      store.setList(l);
-    } catch (e) {
-      notLoaded(listShowing.current)(e);
-    }
-  }, []);
-  const listNow = useSettled(refreshList);
-  const kitchenNow = useSettled(useCallback(() => api.kitchen().then(setKitchen, () => {}), []), 30_000);
-  const onShop = phase === "app" && (top.kind === "shop" || top.kind === "stock");
+  // No timers (Nov 11): each screen's data is read when it opens and when the app comes back to the front (an iPhone
+  // keeps the app open for days), and changes answer with the newest copy. Only while someone's looking.
+  const on = phase === "app" ? top.kind : null;
   useEffect(() => {
-    if (!onShop) return;
-    queueMicrotask(listNow);
-    if (top.kind === "stock") kitchenNow(); // the freezer: only Stock shows it
-    const visible = () => document.visibilityState === "visible";
-    // No timer (Nov 11): the list loads when Shop or Stock opens, when the app comes back, and after changes.
-    const back = () => { if (visible()) listNow(); };
+    if (!on) return;
+    const read = (opening: boolean) => {
+      if (on === "shop" || on === "stock") void lists.settled(5_000);
+      else void recipeList.settled(15_000);
+      if (on === "week" || on === "recipe") void plans.settled(5_000);
+      if (on === "stock" && opening) void kitchens.settled(30_000);
+      if (on === "shop") look();
+    };
+    queueMicrotask(() => read(true));
+    const back = () => { if (document.visibilityState === "visible") read(false); };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- top.kind only decides the one kitchen read; onShop and visit restart it
-  }, [onShop, visit, listNow, kitchenNow]);
-
-  // The collection: loaded when Recipes, a recipe or the week opens (the week shows meal names), and after every change,
-  // from the server's answer.
-  const gotRecipes = useCallback((r: Recipe[]) => { setRecipes(r); store.setRecipes(r); }, []);
-  const refreshRecipes = useCallback(async () => {
-    try { gotRecipes((await api.recipes()).recipes); }
-    catch (e) { notLoaded(recipesShowing.current)(e); }
-  }, [gotRecipes]);
-  const inRecipes = phase === "app" && top.kind !== "shop" && top.kind !== "stock";
-  const recipesNow = useSettled(refreshRecipes, 15_000);
-  useEffect(() => { if (inRecipes) queueMicrotask(recipesNow); }, [inRecipes, visit, recipesNow]);
+  }, [on, visit, lists, recipeList, plans, kitchens, look]);
   const recipeOf = (id: string) => recipes?.find((r) => r.id === id) ?? null;
   const open = top.kind === "recipe" ? recipeOf(top.id) : null;
 
   /** An ingredient moved between Fresh and Pantry (Nov 16): every recipe with it shows the move at once; the list follows. */
   function moveIngredient(r: Recipe, item: string, section: RecipeSection) {
     const same = (i: Ingredient) => i.item.trim().toLowerCase() === item.trim().toLowerCase();
-    setRecipes((rs) => rs && rs.map((x) => (x.ingredients.some(same) ? { ...x, ingredients: x.ingredients.map((i) => (same(i) ? { ...i, section } : i)) } : x)));
-    api.recipeChange({ op: "section", id: r.id, item, section })
-      .then((a) => { gotRecipes(a.recipes); refreshList(); })
-      .catch((e) => { failed(e); refreshRecipes(); });
+    recipeList.change(() => api.recipeChange({ op: "section", id: r.id, item, section }).then((a) => { void lists.refresh(); return a.recipes; }),
+      (rs) => rs.map((x) => (x.ingredients.some(same) ? { ...x, ingredients: x.ingredients.map((i) => (same(i) ? { ...i, section } : i)) } : x)));
   }
   /**
    * Delete, from Edit (asked there first): the sheet closes, the recipe page goes back and the recipe is gone at once;
@@ -205,12 +158,9 @@ export default function App() {
     setSheet(null);
     if (isStandIn(r.id)) return;
     back();
-    setRecipes((rs) => rs && rs.filter((x) => x.id !== r.id));
-    api.recipeChange({ op: "delete", id: r.id })
-      .then((a) => { gotRecipes(a.recipes); planNow(); refreshList(); })
-      .catch((e) => { failed(e); refreshRecipes(); });
+    recipeList.change(() => api.recipeChange({ op: "delete", id: r.id }).then((a) => { void plans.refresh(); void lists.refresh(); return a.recipes; }),
+      (rs) => rs.filter((x) => x.id !== r.id));
   }
-  const problemOf = (e: unknown) => (e instanceof AuthError ? null : errorText(e));
   /**
    * Edit's Save: the sheet closes at once and the recipe shows the change (Nov 11: no "Saving…"); the ingredients follow
    * from the answer. A save that fails puts the recipe back and opens Edit again with what was typed, under the alert.
@@ -218,14 +168,8 @@ export default function App() {
   function saveEdit(r: Recipe, d: Draft) {
     setSheet(null);
     if (isStandIn(r.id)) return;
-    setRecipes((rs) => rs && rs.map((x) => (x.id === r.id ? draftRecipe(d, r.id, x) : x)));
-    api.saveRecipes([d]).then((res) => gotRecipes(res.recipes), (e) => {
-      if (e instanceof AuthError) return;
-      setRecipes((rs) => rs && rs.map((x) => (x.id === r.id ? r : x)));
-      didntSave(errorText(e));
-      setRetry({ edit: d });
-      setSheet("edit");
-    });
+    recipeList.change(() => api.saveRecipes([d]).then((res) => res.recipes), (rs) => rs.map((x) => (x.id === r.id ? draftRecipe(d, r.id, x) : x)))
+      .then((no) => { if (no && !(no.error instanceof AuthError)) { setRetry({ edit: d }); setSheet("edit"); } });
   }
 
   /**
@@ -235,129 +179,63 @@ export default function App() {
    */
   function saveNew(ds: Draft[], duplicates: "skip" | "replace" | undefined, step: AddStep) {
     setSheet(null);
-    const all = recipes ?? [];
-    const twin = (d: Draft) => all.find((r) => norm(r.name) === norm(d.name));
+    const twin = (d: Draft) => (recipes ?? []).find((r) => norm(r.name) === norm(d.name));
     const shown = ds.flatMap((d) => {
       const t = twin(d);
       if (t && duplicates === "skip") return [];
       return [t && duplicates === "replace" ? { replaces: t, r: draftRecipe(d, t.id, t) } : { replaces: null, r: draftRecipe(d, standInId("saving")) }];
     });
-    setRecipes((rs) => {
-      const now = (rs ?? []).map((x) => shown.find((s) => s.replaces?.id === x.id)?.r ?? x);
-      return [...now, ...shown.filter((s) => !s.replaces).map((s) => s.r)];
-    });
     const one = ds.length === 1 ? shown[0]?.r.id : undefined;
     if (one) { scrollAppTo(0); setStack((st) => [...(st[st.length - 1].kind === "recipe" ? st.slice(0, -1) : st), { kind: "recipe", id: one }]); }
     else onTab("recipes"); // several (her meal ideas): the whole collection, where they now are
-    api.saveRecipes(ds, duplicates).then((res) => {
-      gotRecipes(res.recipes);
-      // The page open on a stand-in becomes the saved recipe's.
-      if (one && res.saved[0] && one !== res.saved[0]) setStack((st) => st.map((x) => (x.kind === "recipe" && x.id === one ? { kind: "recipe", id: res.saved[0] } : x)));
-    }, (e) => {
-      if (e instanceof AuthError) return;
-      setRecipes(all);
+    // The page open on a stand-in becomes the saved recipe's before the answer shows (Nov 19: switched after it, the page
+    // saw its stand-in gone for a moment and closed).
+    const follow = (saved: string[]) => { if (one && saved[0] && one !== saved[0]) setStack((st) => st.map((x) => (x.kind === "recipe" && x.id === one ? { kind: "recipe", id: saved[0] } : x))); };
+    recipeList.change(() => api.saveRecipes(ds, duplicates).then((res) => { follow(res.saved); return res.recipes; }), (rs) => [
+      ...rs.map((x) => shown.find((s) => s.replaces?.id === x.id)?.r ?? x),
+      ...shown.filter((s) => !s.replaces).map((s) => s.r),
+    ]).then((no) => {
+      if (!no) return;
+      if (no.error instanceof AuthError) return;
       if (one) setStack((st) => { const rest = st.filter((x) => !(x.kind === "recipe" && x.id === one)); return rest.length ? rest : [{ kind: "recipes" }]; });
-      didntSave(errorText(e));
       setRetry({ add: step });
       setSheet("add");
     });
   }
 
-  // What's planned: loaded when Meals opens and whenever the app comes back to the front. Each change counts up, so an
-  // answer that started before one of them doesn't put the old plan back.
-  const planChanges = useRef(0);
-  const planSaving = useRef(0); // changes still on their way: a read answering meanwhile doesn't have them yet
-  const refreshPlan = useCallback(async () => {
-    const at = ++planChanges.current;
-    try {
-      const p = await api.plan();
-      if (at !== planChanges.current || planSaving.current) return;
-      setPlan(p); store.setPlan(p);
-    } catch (e) {
-      notLoaded(planShowing.current)(e);
-    }
-  }, []);
-  // A recipe's page reads it too: it offers "Add to this week" only when the recipe isn't planned.
-  const onWeek = phase === "app" && (top.kind === "week" || top.kind === "recipe");
-  const planNow = useSettled(refreshPlan);
-  useEffect(() => {
-    if (!onWeek) return;
-    queueMicrotask(planNow);
-    // Brought back to the front (an iPhone keeps the app open for days): the plan as it is now.
-    const back = () => { if (document.visibilityState === "visible") planNow(); };
-    document.addEventListener("visibilitychange", back);
-    return () => document.removeEventListener("visibilitychange", back);
-  }, [onWeek, visit, planNow]);
-  /** The plan as the server answered it; when the grocery list changed with it, the list is read again for Shop and Stock. */
-  function gotPlan(p: PlanData & { added: number; removed?: number }) {
-    setPlan(p); store.setPlan(p);
-    if (p.added || p.removed) refreshList();
-  }
-  // Count changes go one at a time, in order, so two never cross in the Sheet.
-  const counting = useRef<Promise<unknown>>(Promise.resolve());
-
-  /**
-   * A dinner picked on Meals: shown at once, saved behind it, in turn with count changes (Nov 10: no "Saving…"). A save
-   * that fails takes it back off and says so on Meals.
-   */
+  /** The plan as the server answered it; when the grocery list changed with it, the list is read again for Shop and List. */
+  const planned = (p: PlanData & { added: number; removed?: number }) => { if (p.added || p.removed) void lists.refresh(); return p; };
+  /** A dinner picked on Meals: shown at once, saved behind it (Nov 10: no "Saving…"). One that fails comes back off. */
   function quickAdd(d: NewDish) {
-    const temp = { ...d, id: `adding-${Date.now()}`, added: "" };
-    setPlan((p) => (p ? { ...p, dishes: [...p.dishes, temp] } : p));
-    ++planSaving.current;
-    const run = counting.current.then(async () => {
-      ++planChanges.current;
-      try { gotPlan(await api.savePlan([d], [], null, me)); }
-      catch (e) { didntSave(problemOf(e)); setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((x) => x.id !== temp.id) } : p)); refreshPlan(); }
-      finally { --planSaving.current; }
-    });
-    counting.current = run;
+    const temp = { ...d, id: standInId("adding"), added: "" };
+    plans.change(() => api.savePlan([d], [], null, "").then(planned), (p) => ({ ...p, dishes: [...p.dishes, temp] }));
   }
-  /** One planned thing changed (swapped or taken off). Taking off shows at once, before the answer. */
-  async function changePlan(c: PlanChange): Promise<string | null> {
-    // A new plan empties the list too (what's in the Safeway cart comes back with the server's list).
-    const clearing = c.op === "clear";
-    if (clearing) { setPlan((p) => (p ? { ...p, dishes: [] } : p)); ++listChanges.current; ++listSaving.current; setList((l) => l && { ...l, items: [] }); }
-    if (c.op === "made" || c.op === "remove") setPlan((p) => (p ? { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) } : p));
-    if (c.op === "change" && "day" in c) setPlan((p) => (p ? { ...p, dishes: p.dishes.map((d) => (d.id === c.id ? { ...d, day: c.day } : d)) } : p));
-    ++planSaving.current;
-    try {
-      ++planChanges.current;
-      gotPlan(await api.planChange(c, me));
-      return null;
-    } catch (e) { refreshPlan(); if (clearing) refreshList(); return problemOf(e); }
-    finally { --planSaving.current; if (clearing) --listSaving.current; }
+  /** One planned thing changed (moved to another day, or taken off), or a new plan: shown at once, before the answer. */
+  function changePlan(c: PlanChange) {
+    const done = plans.change(() => api.planChange(c, "").then(planned), (p) => {
+      if (c.op === "clear") return { ...p, dishes: [] };
+      if (c.op === "made" || c.op === "remove") return { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) };
+      if (c.op === "change" && "day" in c) return { ...p, dishes: p.dishes.map((d) => (d.id === c.id ? { ...d, day: c.day } : d)) };
+      return p;
+    });
+    // A new plan empties the list too (what's in the Safeway cart comes back with the server's list), read in turn
+    // once the plan's answer is in.
+    if (c.op === "clear") lists.change(() => done.then(() => api.list()), (l) => ({ ...l, items: [] }));
   }
 
   /** A change to the list: shown at once, then sent; the answer is the list as it is now (anyone else's changes too). */
-  async function change(c: Parameters<typeof api.change>[0], show?: (l: ListState) => ListState): Promise<string | null> {
-    const mine = ++listChanges.current;
-    if (show) setList((l) => (l ? show(l) : l));
-    ++listSaving.current;
-    try {
-      const l = await api.change(c);
-      if (mine !== listChanges.current) return null; // a later change's answer is newer
-      setList(l);
-      store.setList(l);
-      return null;
-    } catch (e) {
-      if (e instanceof AuthError) return null;
-      didntSave(errorText(e));
-      refreshList();
-      return errorText(e);
-    } finally { --listSaving.current; }
-  }
+  const change = (c: ListChange, show?: (l: ListState) => ListState) => lists.change(() => api.change(c), show);
   const shop: ShopActions = {
     // Shown at once as a stand-in row (Nov 11: always responsive); one already on the list adds up there, on the server.
     add: (text, store) => {
-      const e = parseEntry(text);
-      return change({ op: "add", text, by: me, ...(store && { store }) }, (l) => (l.items.some((x) => !x.checked && !x.check && norm(x.item) === norm(e.item) && (!store || x.store === store))
-        ? l : { ...l, items: [...l.items, standInItem(e.item, e.quantity, {}, store)] }));
+      const e = parseEntry(text), temp = standInItem(e.item, e.quantity, {}, store);
+      return change({ op: "add", text, by: "", ...(store && { store }) }, (l) => (l.items.some((x) => !x.checked && !x.check && norm(x.item) === norm(e.item) && (!store || x.store === store))
+        ? l : { ...l, items: [...l.items, temp] }));
     },
-    check: (it, checked) => isStandIn(it.id) ? undefined : change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
-    move: (it, to) => isStandIn(it.id) ? undefined : change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
+    check: (it, checked) => isStandIn(it.id) ? undefined : void change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
+    move: (it, to) => isStandIn(it.id) ? undefined : void change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),
     // `cart`: the ids in the Safeway cart, which come off as bought too.
     done: (s, cart) => change({ op: "done", store: s, cart: Boolean(cart) }, (l) => ({ ...l, items: l.items.filter((x) => !(x.store === s && x.checked) && !cart?.includes(x.id)) })),
-    // Done shopping: every ticked thing off at once; each store's change goes after the one before, so they never cross.
   };
   const stock: StockActions = {
     // Have | Need on any row (Nov 11). Its List row, if it has one, changes in place; a thing with none gets one: on the
@@ -367,40 +245,41 @@ export default function App() {
       const it = r.item;
       if (it && isStandIn(it.id)) return; // its save is on the way; the row answers again once it's back
       const mark = (check: boolean, have: boolean) => (l: ListState) => ({ ...l, items: l.items.map((x) => (x.id === it!.id ? { ...x, check, have } : x)) });
-      if (it && ans === "need") return change({ op: "need", id: it.id }, mark(false, false));
-      if (it && ans === "have") return change({ op: "haveIt", id: it.id }, mark(true, true));
-      if (it && r.meal) return change({ op: "unneed", id: it.id }, mark(true, false));
-      if (it) return change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }));
+      if (it && ans === "need") return void change({ op: "need", id: it.id }, mark(false, false));
+      if (it && ans === "have") return void change({ op: "haveIt", id: it.id }, mark(true, true));
+      if (it && r.meal) return void change({ op: "unneed", id: it.id }, mark(true, false));
+      if (it) return void change({ op: "remove", id: it.id }, (l) => ({ ...l, items: l.items.filter((x) => x.id !== it.id) }));
       if (ans === "check") return;
       // Shown at once (Nov 11, Sam: "a long lag tapping Have Need"): a stand-in row until the server's list comes back.
       const temp = standInItem(r.name, r.staple?.quantity ?? "", { check: ans === "have", have: ans === "have" }, r.store, r.section);
-      const showNew = (l: ListState) => ({ ...l, items: [...l.items, temp] });
       if (ans === "need" && r.frozen) {
         const f = r.frozen;
-        setKitchen((k) => k && { ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) });
-        api.freezer({ op: "use", id: f.id }).then(setKitchen, failed);
+        kitchens.change(() => api.freezer({ op: "use", id: f.id }), (k) => ({ ...k, freezer: k.freezer.flatMap((x) => (x.id !== f.id ? [x] : Number(x.amount) > 1 ? [{ ...x, amount: String(Number(x.amount) - 1) }] : [])) }));
       }
-      change({ op: "add", text: r.name, by: me, store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) }, showNew);
+      void change({ op: "add", text: r.name, by: "", store: r.store, section: r.section, ...(r.staple?.quantity && { amount: r.staple.quantity }), ...(ans === "have" && { have: true }) }, (l) => ({ ...l, items: [...l.items, temp] }));
     },
     // Shown at once (Nov 11): the new thing's row, filed where Simmer would file it, until the server's list comes back.
     // Quick add (Nov 16): common or specialty, maybe in a group, and with need, a stand-in Need row at once.
-    keepAdd: (text, section, more = {}) => change({ op: "keepAdd", text, ...(section && { section }), ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }), ...(more.need && { need: true, by: me }) }, (l) => {
-      const had = l.staples.find((x) => norm(x.item) === norm(text));
+    keepAdd: (text, section, more = {}) => {
       const f = known(text);
-      const s = had
-        ? { ...had, ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }) }
-        : { item: text, store: f?.store ?? "safeway", section: section ?? f?.section ?? "pantry", quantity: "", product: "", kind: more.kind ?? "common" as const, group: more.group ?? "" };
-      const staples = had ? l.staples.map((x) => (x === had ? s : x)) : [...l.staples, s];
-      if (!more.need) return { ...l, staples };
-      const row = l.items.find((x) => !x.checked && norm(x.item) === norm(text));
-      const items = row ? l.items.map((x) => (x === row ? { ...x, check: false, have: false } : x)) : [...l.items, standInItem(s.item, s.quantity, { check: false }, s.store, s.section)];
-      return { ...l, staples, items };
-    }),
-    keepGroup: (from, to) => change({ op: "keepGroup", from, to }, (l) => ({ ...l, staples: l.staples.map((x) => (x.group && norm(x.group) === norm(from) ? { ...x, group: to } : x)) })),
-    keepSet: (item, c) => change({ op: "keepSet", item, ...c }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)) })),
-    keepMove: (item, section) => change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
-    mealMove: (it, section) => change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
-    keepRemove: (st) => change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
+      const temp = standInItem(text, "", { check: false }, f?.store ?? "safeway", section ?? f?.section ?? "pantry");
+      void change({ op: "keepAdd", text, ...(section && { section }), ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }), ...(more.need && { need: true, by: "" }) }, (l) => {
+        const had = l.staples.find((x) => norm(x.item) === norm(text));
+        const s = had
+          ? { ...had, ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }) }
+          : { item: text, store: temp.store, section: temp.section, quantity: "", product: "", kind: more.kind ?? "common" as const, group: more.group ?? "" };
+        const staples = had ? l.staples.map((x) => (x === had ? s : x)) : [...l.staples, s];
+        if (!more.need) return { ...l, staples };
+        const row = l.items.find((x) => !x.checked && norm(x.item) === norm(text));
+        const items = row ? l.items.map((x) => (x === row ? { ...x, check: false, have: false } : x)) : [...l.items, { ...temp, item: s.item, quantity: s.quantity, store: s.store, section: s.section }];
+        return { ...l, staples, items };
+      });
+    },
+    keepGroup: (from, to) => void change({ op: "keepGroup", from, to }, (l) => ({ ...l, staples: l.staples.map((x) => (x.group && norm(x.group) === norm(from) ? { ...x, group: to } : x)) })),
+    keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)) })),
+    keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
+    mealMove: (it, section) => void change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
+    keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
   };
 
   // Boot reads browser-only state (localStorage), which only exists after mount.
@@ -454,7 +333,6 @@ export default function App() {
     setVisit((v) => v + 1);
     setStack([{ kind: t }]);
   }
-  /** From Meals, a recipe that isn't there yet: the Recipes tab, with Add recipes open (Nov 10). */
   function back() {
     scrollAppTo(0);
     setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
@@ -486,12 +364,12 @@ export default function App() {
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []} dinnerGroceries={(list?.items ?? []).length}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
-          onNewPlan={() => { changePlan({ op: "clear" }).then(didntSave); }}
-          onRemove={(d) => { changePlan({ op: "remove", id: d.id }).then(didntSave); }}
-          onMove={(d, day) => { changePlan({ op: "change", id: d.id, day }).then(didntSave); }} />
+          onNewPlan={() => changePlan({ op: "clear" })}
+          onRemove={(d) => changePlan({ op: "remove", id: d.id })}
+          onMove={(d, day) => changePlan({ op: "change", id: d.id, day })} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} list={list} kitchen={kitchen} act={stock} />}
-      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} act={shop} />}
+      {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} list={list} act={shop} sw={sw} />}
       {phase === "app" && top.kind === "recipes" && (
         <RecipesScreen key={visit} freezer={kitchen?.freezer ?? plan?.freezer ?? []} recipes={recipes}
           onOpen={(r) => openRecipe(r.id)} onAdd={() => setSheet("add")} />

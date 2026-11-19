@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkAgainst, deleteRecipe, guessIdeas, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, parseIngredient, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
+// Names resolve without the network: "intranet.example" is a private address, everything else public.
+vi.mock("node:dns/promises", () => {
+  const lookup = async (host: string) => [{ address: host === "intranet.example" ? "10.0.0.5" : "93.184.216.34", family: 4 }];
+  return { lookup, default: { lookup } };
+});
+import { checkAgainst, deleteRecipe, guessIdeas, fromDraft, isoMinutes, loadRecipes, looksLikeIdeas, opener, parseIngredient, privateAddress, publicOnly, readLink, readRecipeFile, recipeInPage, saveRecipe, searchRecipes } from "./recipes";
 
 describe("the recipe collection", () => {
   it("reads ingredient lines", () => {
@@ -104,5 +109,83 @@ describe("an ingredient's section, as she set it (Nov 16)", () => {
     expect(after.ingredients.find((i) => i.item === "cashews")?.section).toBe("pantry");
     await fileSection("cashews", "fresh");
     expect((await loadRecipes()).find((x) => x.id === r.id)!.ingredients.find((i) => i.item === "cashews")?.section).toBe("fresh");
+  });
+});
+
+describe("review fixes (Nov 19)", () => {
+  it("keeps decimals and puts each listed step on its own line", () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({ "@type": "Recipe", name: "Fish &amp;lt;3 &#x27;n chips", recipeIngredient: ["1.5 lb cod"],
+      recipeInstructions: "<ol><li>Heat the oven.</li><li>Add 1.5 cups stock.</li></ol>" })}</script>`;
+    const d = recipeInPage(html, "https://example.com/fish")!;
+    expect(d.name).toBe("Fish &lt;3 'n chips");
+    expect(d.steps).toEqual(["Heat the oven.", "Add 1.5 cups stock."]);
+    expect(looksLikeIdeas("1.5 lb chicken")).toBeNull();
+  });
+
+  it("drops only invented amounts, and only the unit with them", () => {
+    const d = checkAgainst("½ cup milk, chicken breasts, 2 carrots", { name: "x", ingredients: ["1/2 cup milk", "3 chicken breasts", "1/4 cup butter", "2 carrots", "1½ cups flour"], steps: [], effort: "regular" }, "Typed in");
+    expect(d.ingredients).toEqual(["1/2 cup milk", "chicken breasts", "butter", "2 carrots", "flour"]);
+  });
+
+  it("reads a .jpg picture", async () => {
+    const gemini = await import("./google/gemini");
+    const spy = vi.spyOn(gemini, "generateJson").mockResolvedValue({ data: { recipes: [] }, model: "m", sources: [] } as never);
+    await readRecipeFile({ name: "card.jpg", mimeType: "image/jpg", data: "AAAA" });
+    expect((spy.mock.calls[0][2] as { files: { mimeType: string }[] }).files[0].mimeType).toBe("image/jpeg");
+    spy.mockRestore();
+  });
+
+  it("is quick on a page with unclosed tags", () => {
+    const t = Date.now();
+    recipeInPage(`<script type="application/ld+json">${"<script ".repeat(40_000)}${"<".repeat(200_000)}`, "x");
+    expect(Date.now() - t).toBeLessThan(500);
+  });
+});
+
+describe("opening a link (review, Nov 19)", () => {
+  it("follows redirects itself and stops at one to the server's own network", async () => {
+    const f = vi.spyOn(opener, "open").mockResolvedValue(new Response(null, { status: 302, headers: { location: "http://127.0.0.1/admin" } }));
+    await expect(readLink("https://example.com/r")).rejects.toThrow("doesn't look like a link");
+    expect(f).toHaveBeenCalledTimes(1);
+    f.mockRestore();
+  });
+  it("won't open a name that leads to a private address", async () => {
+    const f = vi.spyOn(opener, "open");
+    await expect(readLink("https://intranet.example/x")).rejects.toThrow("doesn't look like a link");
+    expect(f).not.toHaveBeenCalled();
+    f.mockRestore();
+  });
+  it("reads a page past a redirect, without its scripts and styles", async () => {
+    const page = `<html><style>.a{}</style><script>var x</script><p>Soup: 2 cups carrots</p><script>unclosed ${"<script ".repeat(20_000)}`;
+    const f = vi.spyOn(opener, "open")
+      .mockResolvedValueOnce(new Response(null, { status: 301, headers: { location: "/soup" } }))
+      .mockResolvedValueOnce(new Response(page, { status: 200 }));
+    const gemini = await import("./google/gemini");
+    const spy = vi.spyOn(gemini, "generateJson").mockResolvedValue({ data: { recipes: [{ name: "Soup", ingredients: ["2 cups carrots"], steps: [], effort: "quick" }] }, model: "m", sources: [] } as never);
+    const t = Date.now();
+    const got = await readLink("https://example.com/r");
+    expect(Date.now() - t).toBeLessThan(1000);
+    expect(String(f.mock.calls[1][0])).toBe("https://example.com/soup");
+    expect(got[0].ingredients).toEqual(["2 cups carrots"]);
+    const prompt = String(spy.mock.calls[0][0]);
+    expect(prompt).toContain("Soup: 2 cups carrots");
+    expect(prompt).not.toContain("var x");
+    f.mockRestore(); spy.mockRestore();
+  });
+  it("connects only to an address checked as the connection is made (review, Nov 19)", async () => {
+    const ask = (host: string, all: boolean) => new Promise<unknown>((ok, bad) => publicOnly(host, { all } as never, ((e: Error | null, a: unknown) => (e ? bad(e) : ok(a))) as never));
+    await expect(ask("intranet.example", false)).rejects.toThrow("doesn't look like a link");
+    await expect(ask("intranet.example", true)).rejects.toThrow("doesn't look like a link");
+    await expect(ask("example.com", false)).resolves.toBe("93.184.216.34");
+    await expect(ask("example.com", true)).resolves.toEqual([{ address: "93.184.216.34", family: 4 }]);
+  });
+  it("knows the private addresses, IPv6 forms that carry an IPv4 one included", () => {
+    for (const ip of ["10.1.2.3", "127.0.0.1", "169.254.169.254", "::1", "::", "::ffff:127.0.0.1", "::ffff:7f00:1", "::127.0.0.1", "::a00:1",
+      "64:ff9b::a9fe:a9fe", "64:ff9b::10.0.0.1", "64:ff9b:1::1", "2002:7f00:1::", "2002:a00:1::1", "fc00::1", "fd12::1", "fe80::1", "ff02::1", "2001::1", "2001:db8::1", "100::1", "nonsense"]) {
+      expect([ip, privateAddress(ip)]).toEqual([ip, true]);
+    }
+    for (const ip of ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946", "::ffff:93.184.216.34", "64:ff9b::5db8:d822", "2002:5db8:d822::1"]) {
+      expect([ip, privateAddress(ip)]).toEqual([ip, false]);
+    }
   });
 });

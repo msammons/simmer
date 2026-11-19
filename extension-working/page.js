@@ -1,8 +1,8 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
-// time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue and the checkout
-// page's Order info Continue, its pickup step's Edit and one pickup day, nothing further (never Place Order); past them, it only
-// reads ("look") (docs/CHECKOUT.md).
+// time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue, the checkout
+// page's Order info Continue, its pickup step's Edit, a pickup day, More times, the one time picked, the bags switch,
+// and Place Order only in `placeOrder`, only on what Face ID approved (docs/CHECKOUT.md).
 //
 // How Safeway's pages are built (which parts hold a product, its title, price and buttons, and what those buttons say)
 // comes from Simmer as `P` (`PAGE` in Simmer's src/lib/safeway-helper.mjs), so when Safeway changes its pages, Simmer is
@@ -11,10 +11,10 @@
 /**
  * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }] }
  *   tiles: { [id]: what that product's Add button says now ("" when there's none), for every product on the page }
- * safewayPage("add", { id, times }) → { ok, qty, sure, snapshot? }
  * safewayPage("setQty", { id, qty, wait }) → { ok, qty, name, price, image }
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
- * safewayPage("orders", { pressed }) → Safeway's Purchases page, Online tab: { signedIn, online, pressed, none, entries, text }
+ * safewayPage("orders", { wait, hold }) → Safeway's Purchases page, Online tab (pressed once if another shows), watched up to
+ *   `wait` for an order or a held "no orders": { signedIn, online, pressed, none, entries, text }
  * safewayPage("look") → { url, title, text, links: [{ text, href }], buttons: [label] } — reads only, presses nothing
  * safewayPage("pressCheckout", { path, words }) → { pressed, found, label } — on that page only: presses its one
  *   Checkout or Continue button made only of `words`, and nothing else
@@ -29,15 +29,15 @@
  * safewayPage("placeOrder", { path, expect }) → { pressed, why, label } — on the checkout page only, the one press that
  *   orders (phase 3, Nov 14): the page read again first and checked against what was approved (`expect`); any
  *   difference, a card detail asked for, or not exactly one "Place Order": nothing is pressed
- * safewayPage("waitFor", { until, label?, dd?, count?, ms }) → { ok } — reads only: answers as soon as the page shows what's
- *   named (watching the page change), or after `ms` at most with whether it does then
+ * safewayPage("waitFor", { until, label?, dd?, count?, id?, qty?, own?, onlyInCart?, hold?, ms }) → { ok, held? } — reads
+ *   only: answers as soon as the page shows what's named (watching the page change), or after `ms` at most with whether
+ *   it does then
  *
  * "In the cart" is read two ways, because Safeway's own sign of it has changed before: the product's Add button turns
  * into a quantity (+ / - / a number), or the cart count at the top of the page goes up.
  */
 export async function safewayPage(action, arg, P) {
   const re = (pattern) => new RegExp(pattern, "i");
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const label = (el) => `${el.getAttribute("aria-label") ?? ""} ${el.innerText ?? el.textContent ?? ""}`.replace(/\s+/g, " ").trim();
   const wordsOf = (el) => (el ? (el.innerText ?? el.textContent ?? "") : "").replace(/\s+/g, " ").trim();
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
@@ -55,6 +55,40 @@ export async function safewayPage(action, arg, P) {
     walk(root);
     if (root.shadowRoot) { out.push(...root.shadowRoot.querySelectorAll(sel)); walk(root.shadowRoot); }
     return out;
+  }
+  /** Every shadow layer on the page, to watch them too (a change inside one isn't seen from the document). */
+  function shadowRoots(root = document, out = []) {
+    for (const el of root.querySelectorAll("*")) if (el.shadowRoot) { out.push(el.shadowRoot); shadowRoots(el.shadowRoot, out); }
+    return out;
+  }
+  /**
+   * Watching the page (Sam, Nov 14: guessed pauses are fragile): `check` runs as the page changes, its shadow layers
+   * too, and the first truthy answer is the answer; after `ms` at most, whatever it says then. A busy page changes many
+   * times a second, so it runs at most every 50 ms, and once after the last change (Nov 19: it walked the whole page on
+   * every change; not per animation frame, as a tab in the background gets none). `check(soon)` may ask to be run again
+   * after a moment with nothing changing (a total that must hold still, "no results" that must last).
+   */
+  function watch(check, ms) {
+    return new Promise((resolve) => {
+      const roots = new Set();
+      let last = 0, later = null, again = null, done = false;
+      const finish = (v) => { if (done) return; done = true; seen.disconnect(); clearTimeout(later); clearTimeout(again); clearTimeout(limit); resolve(v); };
+      const soon = (wait) => { clearTimeout(again); again = setTimeout(run, wait); };
+      const seen = new MutationObserver(() => run());
+      const observe = (r) => { if (!roots.has(r)) { roots.add(r); seen.observe(r, { subtree: true, childList: true, attributes: true, characterData: true }); } };
+      function run() {
+        if (done) return;
+        const wait = 50 - (Date.now() - last);
+        if (wait > 0) { if (!later) later = setTimeout(() => { later = null; run(); }, wait); return; }
+        last = Date.now();
+        shadowRoots().forEach(observe);
+        const v = check(soon);
+        if (v) finish(v);
+      }
+      observe(document);
+      const limit = setTimeout(() => finish(check(() => {}) || null), Math.min(Number(ms) || 15000, 30000));
+      run();
+    });
   }
   const parentOf = (el) => el.parentElement ?? (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
   const buttons = (root) => deepAll(root, "button, [role=button]").filter(visible);
@@ -189,7 +223,7 @@ export async function safewayPage(action, arg, P) {
 
   const strip = (p) => ({ id: p.id, name: p.name, price: p.price, image: p.image, inCart: p.inCart, qty: p.qty });
 
-  if (action === "read") {
+  function readPage() {
     const header = document.querySelector("header") ?? document.body;
     const signInShown = buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
     const text = document.body.innerText;
@@ -203,6 +237,7 @@ export async function safewayPage(action, arg, P) {
       products: list.slice(0, 40).map(strip),
     };
   }
+  if (action === "read") return readPage();
 
 
   // Checkout, read-only (Nov 12, docs/CHECKOUT.md phase 1): what the page says, its links (with where they go) and its
@@ -317,19 +352,6 @@ export async function safewayPage(action, arg, P) {
     return { pressed: true, own: isOn(found[0]) };
   }
 
-  // Safeway's bags choice, read only (Nov 16): the controls near "bags", so Simmer can learn how to set it.
-  if (action === "readBags") {
-    const near = deepAll(document, "*").filter((e) => e.children.length < 8 && /\bbags?\b/i.test(e.textContent || "")).slice(-1)[0];
-    const box = near?.closest("section") ?? near?.parentElement?.parentElement ?? null;
-    if (!box) return null;
-    return {
-      text: wordsOf(box).slice(0, 400),
-      controls: deepAll(box, "button, [role=button], input, [role=radio], [role=switch], [role=checkbox], select").slice(0, 12).map((e) => ({
-        tag: e.tagName, type: e.getAttribute("type") ?? "", role: e.getAttribute("role") ?? "", label: label(e).slice(0, 80), checked: Boolean(e.checked) || e.getAttribute("aria-checked") === "true", name: e.getAttribute("name") ?? "",
-      })),
-    };
-  }
-
   // The day's times past the first five (Sam, Nov 14: "the times offered are not the same as on the site"): only on
   // the checkout page, only a button that reads exactly "More times" (Safeway adds "collapsed" while it's closed), only
   // when there's exactly one, pressed once. It shows more times and chooses none. Anything else: nothing is pressed.
@@ -353,6 +375,9 @@ export async function safewayPage(action, arg, P) {
     const radios = () => deepAll(document, "input[type=radio][name=slot]");
     const pickupEdit = () => said(/^pickup date & time edit$/i).length > 0;
     const text = () => document.body?.innerText ?? document.body?.textContent ?? "";
+    const totalNow = () => (text().replace(/\s+/g, " ").match(/Estimated total \$[\d,]+\.\d\d/) ?? [""])[0];
+    // `products` and `settled` keep a little state between runs: since when "no results", and the total last seen.
+    let noneSince = 0, total = null, totalSince = 0;
     const checks = {
       cart: () => said(/check\s*out/i).length > 0 || /sign back in|sign in to continue|cart is empty/i.test(text()),
       suggestions: () => said(/continue/i).length > 0,
@@ -363,18 +388,41 @@ export async function safewayPage(action, arg, P) {
       continueOn: () => all().filter((b) => on(b) && label(b).toLowerCase() === "continue").length === 1,
       picked: () => pickupEdit(),
       more: () => radios().length > (Number(arg?.count) || 0),
-      // The one Place Order, turned on (Nov 15: Safeway keeps it off for a moment after the pickup time is set).
       // Safeway's order confirmation, once its words fill in (Nov 18).
       confirmed: () => /thank you|order (?:number|no\.?|#)|order (?:is |has been )?(?:placed|confirmed|received)/i.test(text()),
+      // The one Place Order, turned on (Nov 15: Safeway keeps it off for a moment after the pickup time is set).
       placeOn: () => all().filter((b) => label(b).trim() === "Place Order").length === 1 && all().some((b) => label(b).trim() === "Place Order" && on(b)),
+      // The one bags switch showing as asked (Nov 19: was read again every 250 ms).
+      bags: () => { const b = bagSwitches(); return b.length === 1 && isOn(b[0]) === (arg?.own === true); },
+      // Safeway's total, held the same for 2 s, counted again from each change (a bag fee coming or going, Nov 16).
+      // With no total showing, only the page changing runs it again (Nov 19, review: it re-read the page every 50 ms).
+      settled: (soon) => {
+        const t = totalNow();
+        if (t !== total) { total = t; totalSince = Date.now(); }
+        if (!t) return false;
+        const held = Date.now() - totalSince;
+        if (held >= 2000) return true;
+        soon(Math.max(50, 2000 - held));
+        return false;
+      },
+      // A page's products (on the cart page only what's in the cart), Safeway signed out, or "no results" for the whole
+      // hold, which it says for a moment while building (Oct 31).
+      products: (soon) => {
+        const r = readPage();
+        if (r.signedIn === false || (arg?.onlyInCart ? r.products.some((x) => x.inCart) : r.products.length)) return { ok: true };
+        if (!r.noResults) { noneSince = 0; return false; }
+        noneSince ||= Date.now();
+        const hold = Number(arg?.hold) || 4000;
+        if (Date.now() - noneSince >= hold) return { ok: true, held: true };
+        soon(Math.max(50, hold - (Date.now() - noneSince))); // once, when the hold is up; else only a change runs it
+        return false;
+      },
+      // One product's count as asked (0: not in the cart).
+      qty: () => { const p = products().find((x) => x.id === arg?.id); return Boolean(p) && (p.inCart ? p.qty || 1 : 0) === Number(arg?.qty); },
     };
     const ok = checks[arg?.until] ?? (() => false);
-    return new Promise((resolve) => {
-      if (ok()) return resolve({ ok: true });
-      const watch = new MutationObserver(() => { if (ok()) { watch.disconnect(); clearTimeout(limit); resolve({ ok: true }); } });
-      watch.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-      const limit = setTimeout(() => { watch.disconnect(); resolve({ ok: ok() }); }, Math.min(Number(arg?.ms) || 15000, 30000));
-    });
+    const v = await watch((soon) => ok(soon), arg?.ms);
+    return v && typeof v === "object" ? v : { ok: Boolean(v) };
   }
 
   // The pickup windows on the checkout page, read only (Nov 12): each window's radio id and words, and the day tiles.
@@ -403,43 +451,6 @@ export async function safewayPage(action, arg, P) {
   }
 
   // not-checkout:start (add, quantities, snapshots: never used by checkout; changes here need no test run, docs/CHECKOUT.md)
-  if (action === "add") {
-    const { id, times } = arg;
-    const find = () => products().find((p) => p.id === id);
-    let p = find();
-    if (!p) return { ok: false, why: "gone" };
-    p.card.scrollIntoView({ block: "center" });
-    await sleep(600);
-    if (!p.inCart) {
-      const add = addButton(p.card);
-      if (!add) return { ok: false, why: "no-add", snapshot: snapshot(id) };
-      const before = { count: cartCount(), add: label(add) };
-      add.click();
-      // Wait for Safeway to show it's in the cart: the Add button turns into a quantity, or the cart count goes up.
-      let counted = false, changed = false;
-      for (let i = 0; i < 20; i++) {
-        await sleep(400);
-        p = find();
-        const now = cartCount();
-        counted = before.count !== null && now !== null && now > before.count;
-        changed = (tiles()[id] ?? "") !== before.add;
-        if (p?.inCart || counted) break;
-      }
-      // With no cart count to read, a changed Add button is the only sign left; trust it, but say so.
-      if (!p?.inCart && !counted && !(before.count === null && changed)) return { ok: false, why: "not-added", snapshot: snapshot(id) };
-      if (!p?.inCart) return { ok: true, qty: 1, sure: counted, snapshot: snapshot(id) };
-    }
-    for (let n = p.qty || 1; n < times; n++) {
-      const plus = plusButton(p.card);
-      if (!plus) break;
-      plus.click();
-      await sleep(1200);
-      p = find() ?? p;
-    }
-    p = find() ?? p;
-    return { ok: true, qty: p.qty || 1, sure: true };
-  }
-
   // Sets how many of a product are in the cart (0 takes it out), pressing Add, + or − one at a time and waiting for
   // Safeway to show each change. Answers { ok, qty, name, price, image }, qty being what the page shows at the end.
   if (action === "setQty") {
@@ -448,8 +459,8 @@ export async function safewayPage(action, arg, P) {
     let p = find();
     if (!p) return { ok: false, why: "not-found" };
     p.card.scrollIntoView({ block: "center" });
-    await sleep(500);
-    const settle = async (changed) => { for (let t = 0; t < wait; t += 400) { await sleep(400); p = find(); if (changed(p)) return true; } return false; };
+    // Each change waited for by watching the page (Nov 19: it looked again every 400 ms), up to `wait`.
+    const settle = async (changed) => Boolean(await watch(() => { p = find(); return changed(p); }, wait));
     const now = () => (p?.inCart ? p.qty || 1 : 0);
     const about = { name: p.name, price: p.price, image: p.image };
     if (!p.inCart && want > 0) {
@@ -468,12 +479,11 @@ export async function safewayPage(action, arg, P) {
       // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
       // Only on −: a + from 1 waited 3 s for a question that never comes (Nov 18: every change after Add took ~16 s).
       if (before === 1 && before > want && P.confirmRemove) {
-        for (let t = 0; t < 3000; t += 250) {
-          await sleep(250);
+        await watch(() => {
           const yes = buttons(document).find((b) => re(P.confirmRemove).test(label(b)));
-          if (yes) { yes.click(); break; }
-          if (!find()) break;
-        }
+          if (yes) { yes.click(); return true; }
+          return !find();
+        }, 3000);
       }
       if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
     }
@@ -489,19 +499,36 @@ export async function safewayPage(action, arg, P) {
   // of each order listed with a date), text (the page's words, to learn from) }. It only reads and presses that tab.
   if (action === "orders") {
     const O = P.orders;
-    const header = document.querySelector("header") ?? document.body;
-    const signedIn = !buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
-    const tabs = deepAll(document, "[role=tab], button, a").filter((el) => visible(el) && re(O.tab).test((el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim()));
-    const tab = tabs[0] ?? null;
-    const showing = !!tab && (tab.getAttribute("aria-selected") === "true" || tab.getAttribute("aria-current") === "page" || tab.getAttribute("aria-current") === "true" || /\b(active|selected)\b/i.test(tab.className ?? ""));
     let pressed = false;
-    if (tab && !showing && !arg?.pressed) { tab.click(); pressed = true; }
-    const text = (document.querySelector("main") ?? document.body).innerText.replace(/\s+/g, " ").trim();
-    const dated = (el) => re(O.date).test((el.innerText ?? "").replace(/\s+/g, " "));
-    const found = deepAll(document, O.entry).filter((el) => visible(el) && dated(el) && (el.innerText ?? "").length < 1500);
-    // The smallest part holding each order: a part holding another dated part is the list, not an order.
-    const entries = found.filter((el) => !found.some((x) => x !== el && el.contains(x))).slice(0, 10).map((el) => el.innerText.replace(/\s+/g, " ").trim().slice(0, 400));
-    return { signedIn, online: !!tab && (showing || (pressed || !!arg?.pressed)), pressed, none: re(O.none).test(text), entries, text: text.slice(0, 2000) };
+    const readOrders = () => {
+      const header = document.querySelector("header") ?? document.body;
+      const signedIn = !buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
+      const tabs = deepAll(document, "[role=tab], button, a").filter((el) => visible(el) && re(O.tab).test((el.innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim()));
+      const tab = tabs[0] ?? null;
+      const showing = !!tab && (tab.getAttribute("aria-selected") === "true" || tab.getAttribute("aria-current") === "page" || tab.getAttribute("aria-current") === "true" || /\b(active|selected)\b/i.test(tab.className ?? ""));
+      // The Online tab pressed once, only when another is showing.
+      if (tab && !showing && !pressed) { tab.click(); pressed = true; }
+      const text = (document.querySelector("main") ?? document.body).innerText.replace(/\s+/g, " ").trim();
+      const dated = (el) => re(O.date).test((el.innerText ?? "").replace(/\s+/g, " "));
+      const found = deepAll(document, O.entry).filter((el) => visible(el) && dated(el) && (el.innerText ?? "").length < 1500);
+      // The smallest part holding each order: a part holding another dated part is the list, not an order.
+      const entries = found.filter((el) => !found.some((x) => x !== el && el.contains(x))).slice(0, 10).map((el) => el.innerText.replace(/\s+/g, " ").trim().slice(0, 400));
+      return { signedIn, online: !!tab && (showing || pressed), pressed, none: re(O.none).test(text), entries, text: text.slice(0, 2000) };
+    };
+    // Watched (Nov 19: it was read again every 800 ms) until an order with a date shows, or "no orders" has held for
+    // `hold` (it may show for a moment while the page builds), or Safeway is signed out.
+    let noneSince = 0, last = null;
+    await watch((soon) => {
+      const r = (last = readOrders());
+      if (r.signedIn === false || (r.online && !r.none && r.entries.length)) return true;
+      if (!(r.online && r.none)) { noneSince = 0; return false; }
+      noneSince ||= Date.now();
+      const hold = Number(arg?.hold) || 4000;
+      if (Date.now() - noneSince >= hold) return true;
+      soon(hold - (Date.now() - noneSince));
+      return false;
+    }, arg?.wait ?? 12000);
+    return last ?? readOrders();
   }
 
   // A short account of the page when no products could be read: its Add buttons, product links and cart, and the

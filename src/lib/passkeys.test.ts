@@ -238,6 +238,9 @@ describe("Face ID for ordering", () => {
       keys: async () => [...kv.keys()],
       getdel: async (k) => { const v = kv.get(k) ?? null; kv.delete(k); return v; },
       del: async (k) => { kv.delete(k); },
+      // The checkout record's list (Nov 19).
+      rpush: async (k: string, ...v: string[]) => { kv.set(k, JSON.stringify([...JSON.parse(kv.get(k) ?? "[]"), ...v])); },
+      ltrim: async () => {},
     } as TabStore & { getdel(k: string): Promise<string | null>; del(k: string): Promise<void> };
     useTabStore(store);
     try {
@@ -361,6 +364,7 @@ describe("Face ID for ordering", () => {
         keys: async () => [...kv.keys()],
         getdel: async (k: string) => { const v = kv.get(k) ?? null; kv.delete(k); return v; },
         del: async (k: string) => { kv.delete(k); },
+        rpush: async () => {}, ltrim: async () => {}, // the checkout record's list (Nov 19)
       } as TabStore);
       try {
         await setUp("cred-1");

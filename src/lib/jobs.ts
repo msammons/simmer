@@ -1,140 +1,160 @@
 // Small jobs for the Safeway helper (extension-working/), queued by Simmer and done by the helper in Chrome on a computer:
-// search Safeway, set a product's quantity in the cart, or read a page to learn how Safeway builds it. Simmer queues a
-// job; the helper's background checks for jobs (every half minute, every couple of seconds once there's activity),
-// does the oldest, and reports back. The phone and the panel at the computer use the same path, so they behave the
-// same. Kept in the "Safeway jobs" tab (in memory without the Sheet), pruned as it goes. The helper's last check-in is a
-// row of the same tab (id "helper"), so Simmer can say plainly when the computer isn't answering.
-import { ensureTab, appendRows, readTabIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
-import { records } from "./parse";
+// search Safeway, set a product's quantity in the cart, read the cart, or go through checkout. Simmer queues a job and
+// pushes the helper a wake-up (push.ts); the helper asks for the oldest waiting job, does it, and reports back, until
+// none are left. The phone and the panel at the computer use the same path, so they behave the same.
+//
+// Kept in Redis, one key per job (Nov 19): they were one value read and written back whole, addressed by row numbers
+// from a copy a couple of seconds old, so two changes at once could undo each other. Now each job is its own key
+// (simmer:job:<id>, dropped by Redis a day after its last change), every status change is made only from the status
+// read, in one step (kv.ts swap), and two sorted sets index them: every job by when it was queued (the panel's log),
+// and the ones still open (the queue).
 import manifest from "../../extension-working/manifest.json";
 import { clearCart, loadCart, matchCart, savePick, setCartLine, setCartLines } from "./safeway";
 import { imageFor, orderSince } from "./safeway-helper.mjs";
 import { doneShopping } from "./groceries";
 import { recordTrip } from "./plan";
 import { todayIn } from "./time";
-import { json as kvJson, kv } from "./kv";
+import { json, kv, resetKv, swap } from "./kv";
 
 /** `cart`: show Safeway's cart page in the Safeway tab (and read it), for Cart in the panel (helper 1.2 on). */
 export const JOB_KINDS = ["search", "setQty", "cart", "sample", "snapshot", "checkoutLook", "checkoutPrepare", "checkoutDry", "checkoutPlace"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
-export type JobStatus = "waiting" | "working" | "done" | "failed";
-export type Job = { id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string };
+/** `pressing` (Nov 19): a placing job whose helper Simmer has just let press Place Order; it's never given up on. */
+export type JobStatus = "waiting" | "working" | "pressing" | "done" | "failed";
+export type Job = {
+  id: string; kind: JobKind; status: JobStatus; args: Record<string, unknown>; result: Record<string, unknown> | null; created: string; updated: string;
+  /** When Simmer let the helper press Place Order (Nov 19, review): kept after the report, so a lost press is never "nothing ordered". */
+  pressedAt?: string;
+  /** When a report started being worked through (Nov 19, review): a second copy arriving meanwhile does nothing. */
+  reporting?: string;
+};
 /** A browser push subscription (its JSON), and the public key it was made with. */
 export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
-export type Helper = { seen: string; version: string; panel: boolean; push?: { key: string; sub: PushSub } | null };
+export type Helper = { seen: string; version: string; panel: boolean };
 /** Where a job was asked for: Simmer in the helper's panel, or anywhere else (the phone, mostly). */
 export type JobFrom = "panel" | "app";
 /** A job as the panel's activity log tells it. */
 export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatus; from: JobFrom; what: string; qty: number | null; error: string; signedIn: boolean; created: string; updated: string };
 
 /**
- * How long things take. `alive`: the helper counts as answering if it checked in this recently (its slowest check is
- * every half minute, so two missed checks). `pickup`: a job nobody's taken by then is given up. `stuck`: a job taken but not reported by then
- * failed. `keep`: finished jobs are kept this long. `seenEvery`: how often a check-in is written down (so `alive` survives
- * a lost write or two). `cache`: how long one read of the tab answers everyone's checks. `stale`: when the Sheet can't
- * be read (it allows 60 reads a minute), the last copy answers for this long instead of the tab looking empty. `away`:
- * no check-in for this long and Shop drops its Safeway controls and makes its rows a checklist (Nov 3). The helper's
- * half-minute alarm checks in whenever Chrome runs, even with nothing to do, so that's four missed checks.
+ * How long things take. `pickup`: a job nobody's taken by then is given up (a minute for checkout's, Nov 14: a wake-up
+ * came late, and the phone wakes it again as it follows). `stuck`: a job taken but not reported by then failed (a
+ * placing job counts from its approval's deadline instead, below). `seenEvery`: how often the helper's check-in is
+ * written down. `keep`: how long Redis keeps a job after its last change.
  */
-export const JOB_TIMES = { alive: 90_000, away: 120_000, pickup: 20_000, stuck: 120_000, keep: 15 * 60_000, seenEvery: 20_000, cache: 2_000, stale: 60_000 };
+export const JOB_TIMES = { pickup: 20_000, checkoutPickup: 60_000, stuck: 120_000, seenEvery: 20_000, keep: 24 * 3600_000 };
+/**
+ * A placing job taken by the helper is stuck only a minute after its approval ran out (Nov 19): the press may come right
+ * at the deadline, and Safeway's confirmation can take ~45 s after it. Once the helper has asked to press (`pressing`)
+ * it's never stuck: only its own report, or Safeway, says what happened.
+ */
+const PLACE_AFTER_DEADLINE = 60_000;
 
-const TAB = "Safeway jobs";
-const HEADERS = ["id", "kind", "status", "args", "result", "created", "updated"];
-const HELPER = "helper";
+const JOB = (id: string) => `simmer:job:${id}`;
+/** Every job by when it was queued, for the panel's log; trimmed to a day as jobs are queued. */
+const INDEX = "simmer:jobs";
+/** The jobs still waiting or being done (the queue); one that finished leaves it. */
+const OPEN = "simmer:jobs-open";
+const HELPER_KEY = "simmer:helper";
+const KEEP_S = JOB_TIMES.keep / 1000;
 
-type Row = Job & { row: number };
-type Tab = { at: number; jobs: Row[]; helper: Helper | null; helperRow: number; rows: number; junk: number };
-let memory: { jobs: Job[]; helper: Helper | null } = { jobs: [], helper: null };
-// A copy of the tab for a moment, so the helper's and the app's frequent checks don't each read the Sheet; and the last
-// copy read, for when a read fails.
-let cache: Tab | null = null;
-let lastGood: Tab | null = null;
-
-const json = <T>(s: string, fallback: T): T => { try { return s ? (JSON.parse(s) as T) : fallback; } catch { return fallback; } };
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+// An id sorts as it was made: the time, then a count within this server (two jobs queued in the same millisecond keep
+// their order), then a little randomness.
+let made = 0;
+const newId = () => `${Date.now().toString(36)}${(made++ % 1296).toString(36).padStart(2, "0")}${Math.random().toString(36).slice(2, 4)}`;
 const now = () => new Date().toISOString();
 const age = (iso: string) => Date.now() - Date.parse(iso || "1970-01-01");
-/** What the helper's row keeps besides when it was seen. */
-const helperCell = (h: Omit<Helper, "seen">) => JSON.stringify({ version: h.version, panel: h.panel, ...(h.push && { push: h.push }) });
-const cells = (j: Job) => [j.id, j.kind, j.status, JSON.stringify(j.args), j.result ? JSON.stringify(j.result) : "", j.created, j.updated];
+const str = (v: unknown, max = 200) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+const going = (s: JobStatus) => s === "waiting" || s === "working" || s === "pressing";
 
-/**
- * The tab, read at most every couple of seconds. A failed read is never taken for an empty tab (that once made every
- * check-in add another header and check-in row, and the helper looked gone while it was answering): the last copy
- * answers for a minute, then it throws.
- */
-async function read(): Promise<Tab> {
-  if (!sheetsConfigured()) return { at: Date.now(), jobs: memory.jobs.map((j, i) => ({ ...j, row: i })), helper: memory.helper, helperRow: 0, rows: memory.jobs.length, junk: 0 };
-  if (cache && Date.now() - cache.at < JOB_TIMES.cache) return cache;
-  let rows: string[][];
-  try { rows = await readTabIfAny(TAB); }
-  catch (e) { if (lastGood && Date.now() - lastGood.at < JOB_TIMES.stale) return lastGood; throw e; }
-  cache = lastGood = parseTab(rows);
-  return cache;
+/** A job as kept, or null (never kept, or dropped after a day). */
+export const getJob = async (id: string): Promise<Job | null> => (/^[a-z0-9]{1,40}$/.test(id) ? json<Job>(await kv().get(JOB(id))) : null);
+
+/** Several jobs in one read, with what each was read as (for changing it only from that). */
+async function readJobs(ids: string[]): Promise<{ job: Job; raw: string }[]> {
+  if (!ids.length) return [];
+  const raws = await kv().mget(...ids.map(JOB));
+  return raws.flatMap((raw) => { const job = json<Job>(raw); return job && raw ? [{ job, raw }] : []; });
 }
 
-/** The tab's rows as jobs and the helper's check-in (the latest, if there's more than one), and how many rows are junk. */
-export function parseTab(rows: string[][]): Tab {
-  let helper: Helper | null = null, helperRow = 0, junk = 0;
-  const jobs: Row[] = [];
-  for (const r of records(rows)) {
-    if (r.get("id") === HELPER) {
-      const h: Helper = { seen: r.get("updated"), ...json<Omit<Helper, "seen">>(r.get("result"), { version: "", panel: false }) };
-      if (helper) junk++;
-      if (!helper || h.seen > helper.seen) { helper = h; helperRow = r.rowNumber; }
-      continue;
-    }
-    if (!r.get("id") || !(JOB_KINDS as readonly string[]).includes(r.get("kind"))) { junk++; continue; }
-    jobs.push({ id: r.get("id"), kind: r.get("kind") as JobKind, status: (r.get("status") || "waiting") as JobStatus, args: json(r.get("args"), {}), result: json(r.get("result"), null), created: r.get("created"), updated: r.get("updated"), row: r.rowNumber });
-  }
-  return { at: Date.now(), jobs, helper, helperRow, rows: rows.length, junk };
+/** The open jobs, oldest first; ids whose job finished or is gone are taken out of the queue as they're seen. */
+async function openJobs(): Promise<{ job: Job; raw: string }[]> {
+  const ids = await kv().zrange(OPEN, 0, -1);
+  const found = await readJobs(ids);
+  const stale = ids.filter((id) => !found.some((f) => f.job.id === id && going(f.job.status)));
+  if (stale.length) await kv().zrem(OPEN, ...stale);
+  return found.filter((f) => going(f.job.status));
 }
 
-/** Writes one job (new or changed), and keeps the moment's copy in step. */
-async function write(j: Job, row?: number): Promise<Job> {
-  j = { ...j, updated: now() };
-  if (!sheetsConfigured()) {
-    const i = memory.jobs.findIndex((x) => x.id === j.id);
-    if (i >= 0) memory.jobs[i] = j; else memory.jobs.push(j);
-    return j;
-  }
-  if (row) {
-    await updateRange(`${TAB}!A${row}:G${row}`, [cells(j)]);
-    if (cache) cache.jobs = cache.jobs.map((x) => (x.id === j.id ? { ...j, row } : x));
-  } else {
-    const { rows } = await read();
-    if (!rows) { await ensureTab(TAB); await appendRows(TAB, [HEADERS, cells(j)]); }
-    else await appendRows(TAB, [cells(j)]);
-    cache = null;
-    if (lastGood) lastGood = { ...lastGood, jobs: [...lastGood.jobs, { ...j, row: lastGood.rows + 1 }], rows: lastGood.rows + 1 };
-  }
+/** A new job, kept and queued. */
+async function add(j: Job): Promise<Job> {
+  const at = Date.parse(j.created) || Date.now();
+  await kv().set(JOB(j.id), JSON.stringify(j), { ex: KEEP_S });
+  await Promise.all([kv().zadd(INDEX, { score: at, member: j.id }), kv().zadd(OPEN, { score: at, member: j.id })]);
   return j;
 }
 
-/** Drops finished jobs older than a few minutes, and junk rows (stray headers, extra check-ins). */
-async function prune({ jobs, junk }: Tab) {
-  // Waiting or working ones nobody finished count too (six searches sat "waiting" for days, Nov 3).
-  const old = (j: Job) => (j.status === "done" || j.status === "failed" || overdue(j)) && age(j.updated) > JOB_TIMES.keep;
-  if (jobs.filter(old).length < 10 && !junk) return;
-  const keep = jobs.filter((j) => !old(j));
-  if (!sheetsConfigured()) { memory.jobs = keep; return; }
-  const h = (await read()).helper;
-  await replaceTab(TAB, [HEADERS, ...(h ? [[HELPER, "check-in", "", "", helperCell(h), "", h.seen]] : []), ...keep.map(cells)]);
-  cache = lastGood = null;
+/**
+ * Changes a job only from what it was when read, in one step: `next` says what it becomes (null: leave it). If it changed
+ * meanwhile, it's read again and `next` asked again, so a change is always made from the job as it really is.
+ * Answers the job as it ends up (null when there's none).
+ */
+async function change(id: string, next: (j: Job) => Job | null, read?: { job: Job; raw: string }): Promise<Job | null> {
+  for (let i = 0; i < 8; i++) {
+    let cur = read;
+    read = undefined;
+    if (!cur) { const raw = await kv().get(JOB(id)); const job = json<Job>(raw); if (!job || !raw) return null; cur = { job, raw }; }
+    const n = next(cur.job);
+    if (!n) return cur.job;
+    const after: Job = { ...n, updated: now() };
+    if (await swap(JOB(id), cur.raw, JSON.stringify(after), KEEP_S)) {
+      if (!going(after.status)) await kv().zrem(OPEN, id);
+      else if (!going(cur.job.status)) await kv().zadd(OPEN, { score: Date.parse(after.created) || Date.now(), member: id });
+      if (after.kind === "checkoutPlace" && !going(after.status)) await settlePlacing(after);
+      return after;
+    }
+  }
+  throw new Error("A Safeway job kept changing.");
 }
 
-/** Jobs left too long: waiting with nobody taking them, or taken and never reported. */
-/** How long a job may wait to be taken: a minute for checkout's (Nov 14: a wake-up came late; the phone wakes it again as it follows). */
-const pickupFor = (j: Job) => (j.kind.startsWith("checkout") ? 60_000 : JOB_TIMES.pickup);
-const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > pickupFor(j)) || (j.status === "working" && age(j.updated) > JOB_TIMES.stuck);
+/**
+ * Every way a placing job finishes (reported, handed back, given up, lost in a reload) has what it came to worked out and
+ * recorded at once (Nov 19, review: a reload or a give-up left no outcome in the record). Imported when needed:
+ * checkout-run.ts imports this file.
+ */
+async function settlePlacing(j: Job): Promise<void> {
+  try { await (await import("./checkout-run")).settleOrder(j); } catch (e) { console.error("couldn't settle the order", e); }
+}
+
+/** How long a job may wait to be taken. */
+const pickupFor = (j: Job) => (j.kind.startsWith("checkout") ? JOB_TIMES.checkoutPickup : JOB_TIMES.pickup);
+/** When a taken job counts as stuck: two minutes after it was taken, and for placing not before a minute past the approval's deadline. */
+const stuckAt = (j: Job) => {
+  const taken = Date.parse(j.updated || "1970-01-01") + JOB_TIMES.stuck;
+  const deadline = Number((j.args.expect as { deadline?: unknown } | undefined)?.deadline);
+  return j.kind === "checkoutPlace" && Number.isFinite(deadline) ? Math.max(taken, deadline + PLACE_AFTER_DEADLINE) : taken;
+};
+/** Jobs left too long: waiting with nobody taking them, or taken and never reported. Never one that's pressing. */
+const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > pickupFor(j)) || (j.status === "working" && Date.now() > stuckAt(j));
+const lateError = (j: Job) => (j.status === "waiting" ? "not-answering" : "stuck");
+/**
+ * Whether the computer looks away (Nov 19, for Shop's plain checklist): set when a job is given up as not answering or
+ * stuck, and cleared when a job is next done, so it says the latest job failed that way and none has worked since.
+ */
+const AWAY_KEY = "simmer:helper-away";
+/** An overdue job, given up: failed, with why (only if it's still as it was read). */
+async function giveUp(id: string, read?: { job: Job; raw: string }): Promise<Job | null> {
+  const j = await change(id, (x) => (overdue(x) ? { ...x, status: "failed", result: { error: lateError(x) } } : null), read);
+  if (j?.status === "failed" && (j.result?.error === "not-answering" || j.result?.error === "stuck")) await kv().set(AWAY_KEY, now(), { ex: 30 * 24 * 3600 });
+  return j;
+}
 
 /**
  * Whether a cart change is still on its way to Safeway (Nov 16, Sam: no checking out while things are in progress):
  * a quantity change waiting for the helper or being made. One left too long doesn't count.
  */
 export async function cartChanging(): Promise<boolean> {
-  const { jobs } = await read();
-  return jobs.some((j) => j.kind === "setQty" && (j.status === "waiting" || j.status === "working") && !overdue(j));
+  return (await openJobs()).some(({ job: j }) => j.kind === "setQty" && !overdue(j));
 }
 
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
@@ -161,11 +181,14 @@ async function noteSignedIn(signedIn: boolean): Promise<void> {
 }
 export const safewaySignedOut = async (): Promise<boolean> => Boolean(await kv().get(SIGNED_OUT_KEY));
 
-export async function helperStatus(): Promise<{ answering: boolean; seen: string; away: boolean; outdated: boolean }> {
-  const { helper } = await read();
-  // No timer keeps a check-in fresh any more (Nov 11): the helper only checks in when there's work. So Simmer doesn't
-  // guess from the last check-in; a job the helper doesn't pick up says so (and Shop turns Safeway into a checklist).
-  return { answering: true, seen: helper?.seen ?? "", away: false, outdated: helperOutdated(helper) };
+const loadHelper = async (): Promise<Helper | null> => json<Helper>(await kv().get(HELPER_KEY));
+/**
+ * When the helper last checked in and whether it needs updating. No timer keeps a check-in fresh (Nov 11), so Simmer
+ * never guesses from it whether the computer is answering: a job nobody takes says so.
+ */
+export async function helperStatus(): Promise<{ seen: string; outdated: boolean; away: boolean }> {
+  const [helper, away] = await Promise.all([loadHelper(), kv().get(AWAY_KEY)]);
+  return { seen: helper?.seen ?? "", outdated: helperOutdated(helper), away: Boolean(away) };
 }
 
 /**
@@ -173,149 +196,173 @@ export async function helperStatus(): Promise<{ answering: boolean; seen: string
  * taps on + become one trip to Safeway.
  */
 export async function queueJob(kind: JobKind, args: Record<string, unknown>): Promise<Job> {
-  const tab = await read();
-  const { jobs } = tab;
-  if (kind === "setQty") {
-    const same = jobs.find((j) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j));
-    if (same) return write({ ...same, args: { ...same.args, ...args } }, same.row);
+  if (kind === "setQty" || kind === "cart") {
+    const open = await openJobs();
+    if (kind === "setQty") {
+      const same = open.find(({ job: j }) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j));
+      // Only while it's still waiting: one taken meanwhile stays as it is, and this one is queued after it.
+      const merged = same && (await change(same.job.id, (j) => (j.status === "waiting" ? { ...j, args: { ...j.args, ...args } } : null), same));
+      if (merged && merged.status === "waiting" && merged.args.qty === args.qty) return merged;
+    }
+    // Showing the cart: one waiting is enough. While Simmer's copy has something in it, an empty Safeway cart also means
+    // reading the Purchases page, to see whether the order went through (Nov 3).
+    if (kind === "cart") {
+      const same = open.find(({ job: j }) => j.kind === "cart" && j.status === "waiting" && !overdue(j));
+      if (same) return same.job;
+      args = { ...args, orders: (await loadCart()).length > 0 };
+    }
   }
-  // Showing the cart: one waiting is enough. While Simmer's copy has something in it, an empty Safeway cart also means
-  // reading the Purchases page, to see whether the order went through (Nov 3).
-  if (kind === "cart") {
-    const same = jobs.find((j) => j.kind === "cart" && j.status === "waiting" && !overdue(j));
-    if (same) return same;
-    args = { ...args, orders: (await loadCart()).length > 0 };
-  }
-  await prune(tab).catch((e) => console.error("couldn't prune the jobs", e));
-  return write({ id: newId(), kind, status: "waiting", args, result: null, created: now(), updated: now() });
+  await kv().zremrangebyscore(INDEX, 0, Date.now() - JOB_TIMES.keep);
+  return add({ id: newId(), kind, status: "waiting", args, result: null, created: now(), updated: now() });
 }
 
-/** Simmer: how a job stands. One left waiting too long is given up, so the app can say so instead of waiting on. */
-export async function jobStatus(id: string): Promise<{ job: Job | null; answering: boolean }> {
-  const { jobs } = await read();
-  const j = jobs.find((x) => x.id === id) ?? null;
-  if (j && overdue(j)) return { job: await write({ ...j, status: "failed", result: { error: j.status === "waiting" ? "not-answering" : "stuck" } }, j.row), answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
-  return { job: j, answering: true /* no timer keeps check-ins fresh (Nov 11) */ };
+/** Simmer: how a job stands (one read). One left waiting too long is given up, so the app can say so instead of waiting on. */
+export async function jobStatus(id: string): Promise<Job | null> {
+  const raw = /^[a-z0-9]{1,40}$/.test(id) ? await kv().get(JOB(id)) : null;
+  const j = json<Job>(raw);
+  if (j && raw && overdue(j)) return giveUp(id, { job: j, raw });
+  return j;
 }
 
 /**
  * Simmer: how a job stands, answered once it's finished or after `ms` (Nov 11: the app has no timers, so it doesn't keep
- * asking; the server waits here, between reads, and the app asks again only when an answer says it's still going).
+ * asking; the server waits here, and the app asks again only when an answer says it's still going). Redis over Upstash's
+ * web API has no way to wait for a key to change (no blocking reads, no notifications), so this is one bounded loop of
+ * single-key reads, a second apart (Nov 19: it used to read every job each time).
  */
-export async function waitForJob(id: string, ms = 20_000): Promise<{ job: Job | null; answering: boolean }> {
+export async function waitForJob(id: string, ms = 20_000): Promise<Job | null> {
   const end = Date.now() + ms;
   for (;;) {
-    const s = await jobStatus(id);
-    if (!s.job || (s.job.status !== "waiting" && s.job.status !== "working") || Date.now() >= end) return s;
-    await new Promise((r) => setTimeout(r, 1000));
+    const j = await jobStatus(id);
+    if (!j || !going(j.status) || Date.now() >= end) return j;
+    await new Promise((r) => setTimeout(r, Math.min(1000, Math.max(0, end - Date.now()))));
   }
 }
 
 /** Simmer: a job no longer wanted (only while nobody's taken it). */
 export async function cancelJob(id: string): Promise<void> {
-  const { jobs } = await read();
-  const j = jobs.find((x) => x.id === id);
-  if (j?.status === "waiting") await write({ ...j, status: "failed", result: { error: "cancelled" } }, j.row);
+  if (await getJob(id)) await change(id, (j) => (j.status === "waiting" ? { ...j, status: "failed", result: { error: "cancelled" } } : null));
 }
+
+/** A placing job the helper had taken: never handed out again (it may have pressed), so it's marked unsure. */
+const unsure = (j: Job): Job => ({ ...j, status: "failed", result: { error: "unsure" } });
 
 /**
  * The helper handing back a job it took just as it reloads for a newer version (Nov 12: the checkout look was lost that
  * way): waiting again, its pickup time starting over, for the reloaded helper to take.
  */
-export async function returnJob(id: string): Promise<void> {
-  const { jobs } = await read();
-  const j = jobs.find((x) => x.id === id);
-  // A placing job is never handed out again (it may have pressed): unsure instead.
-  if (j?.status === "working" && j.kind === "checkoutPlace") await write({ ...j, status: "failed", result: { error: "unsure" }, updated: now() }, j.row);
-  else if (j?.status === "working") await write({ ...j, status: "waiting", created: now(), updated: now() }, j.row);
+export async function returnJob(id: string): Promise<Job | null> {
+  if (!(await getJob(id))) return null;
+  return change(id, (j) => {
+    if (j.kind === "checkoutPlace" && (j.status === "working" || j.status === "pressing")) return unsure(j);
+    return j.status === "working" ? { ...j, status: "waiting", created: now() } : null;
+  });
 }
 
 /**
- * The helper's check-in to write down, or null when there's nothing new: it's written at most every 20 seconds (so
- * `alive` stays true), or when the panel opens or closes or the version changes.
+ * "May I press?" (Nov 19): the helper asks right before pressing Place Order. Only a placing job it's working on, within
+ * its approval's deadline by Simmer's own clock, moves to `pressing`, in one step; from then on nothing marks it failed
+ * or not answering, so Simmer can never say "nothing was ordered" about an order that may have been placed. Anything else:
+ * no, and the helper doesn't press.
  */
-const checkInDue = (helper: Helper | null, version: string, panel: boolean): Helper | null =>
-  helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version ? null : { seen: now(), version, panel, push: helper?.push ?? null };
-
-const helperRowCells = (h: Helper) => [HELPER, "check-in", "", "", helperCell(h), "", h.seen];
-
-/** The helper's row, written where it's read from (the latest, when there are several), so what's written is what's read. */
-async function writeHelper(h: Helper) {
-  if (!sheetsConfigured()) { memory.helper = h; return; }
-  const { helperRow, rows } = await read();
-  const row = helperRowCells(h);
-  if (helperRow) await updateRange(`${TAB}!A${helperRow}:G${helperRow}`, [row]);
-  else { if (!rows) await ensureTab(TAB); await appendRows(TAB, [...(rows ? [] : [HEADERS]), row]); cache = lastGood = null; return; }
-  for (const t of [cache, lastGood]) if (t) t.helper = h;
+export async function pressJob(id: string): Promise<boolean> {
+  if (!(await getJob(id))) return false;
+  let allowed = false;
+  await change(id, (j) => {
+    const deadline = Number((j.args.expect as { deadline?: unknown } | undefined)?.deadline);
+    allowed = j.kind === "checkoutPlace" && j.status === "working" && Number.isFinite(deadline) && Date.now() < deadline;
+    // When, kept with the job (Nov 19, review): once it got here, only Safeway's page saying it didn't press is "nothing ordered".
+    return allowed ? { ...j, status: "pressing", pressedAt: now() } : null;
+  });
+  return allowed;
 }
 
 /**
- * Waking the helper (Nov 3): its push subscription, kept on its row with the public key it was made with (a new key
- * needs a new subscription). Null takes it off, when the push service says it's gone.
+ * The helper's check-in, written at most every 20 seconds, or when the panel opens or closes or the version changes.
+ * Kept under its own key, as the wake-up subscription is.
  */
+async function checkIn(version: string, panel: boolean): Promise<Helper | null> {
+  const helper = await loadHelper();
+  if (!(helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version)) {
+    await kv().set(HELPER_KEY, JSON.stringify({ seen: now(), version, panel } satisfies Helper), { ex: 400 * 24 * 3600 });
+  }
+  return helper;
+}
+
 /**
  * The helper's wake-up subscription, kept under its own key (Nov 14): kept in the helper's row, a check-in written from
  * a copy read a moment before put the old subscription back over a new one, the push service said the old one was
- * gone, and nothing could wake the helper. Its own key is written only when the helper subscribes.
+ * gone, and nothing could wake the helper. Its own key is written only when the helper subscribes. Null takes it off,
+ * when the push service says it's gone.
  */
 const PUSH_KEY = "simmer:helper-push";
 export async function savePush(push: { key: string; sub: PushSub } | null): Promise<void> {
   if (push) await kv().set(PUSH_KEY, JSON.stringify(push), { ex: 400 * 24 * 3600 });
   else await kv().del(PUSH_KEY);
 }
-export const helperPush = async (): Promise<{ key: string; sub: PushSub } | null> => kvJson<{ key: string; sub: PushSub }>(await kv().get(PUSH_KEY));
+export const helperPush = async (): Promise<{ key: string; sub: PushSub } | null> => json<{ key: string; sub: PushSub }>(await kv().get(PUSH_KEY));
 
 /**
- * The helper: check in, and take the oldest waiting job (null when there's none). The helper asks every few seconds, so
- * this is at most one write (Nov 10): none when there's nothing new to note and no job, and the check-in and the job
- * taken together when there's both.
+ * The helper: check in, and take the oldest waiting job (null when there's none). Taking it is one step only one asker
+ * can win (Nov 19, for every kind; outside review, Nov 14, for placing): it moves from waiting to working only if it's
+ * still waiting, so two helpers asking at once can't both have it.
  */
 export async function takeJob(version: string, panel: boolean): Promise<Job | null> {
-  const tab = await read();
-  const h = checkInDue(tab.helper, version, panel);
+  const [before, open] = await Promise.all([checkIn(version, panel), openJobs()]);
   // A helper checking in as a new version has just reloaded, so a job the old one was in the middle of was dropped: it
   // goes back to waiting for this one (Nov 13: the hand-back the old helper sends as it reloads didn't always arrive).
-  const dropping = tab.helper?.version && version && tab.helper.version !== version ? tab.jobs.filter((x) => x.status === "working" && !overdue(x)) : [];
   // Never an order (phase 3): a placing job the old helper had taken may already have pressed, so it's never handed out
   // again; it's marked unsure, and Simmer says to check Safeway.
-  for (const d of dropping.filter((x) => x.kind === "checkoutPlace")) await write({ ...d, status: "failed", result: { error: "unsure" }, updated: now() }, d.row);
-  const dropped = dropping.filter((x) => x.kind !== "checkoutPlace");
-  for (const d of dropped) await write({ ...d, status: "waiting", created: now(), updated: now() }, d.row);
-  const jobs = tab.jobs.map((x) => (dropped.some((d) => d.id === x.id) ? { ...x, status: "waiting" as const, created: now() } : dropping.some((d) => d.id === x.id) ? { ...x, status: "failed" as const } : x));
-  let j: (typeof jobs)[number] | undefined = jobs.filter((x) => x.status === "waiting" && !overdue(x)).sort((a, b) => a.created.localeCompare(b.created))[0];
-  // A placing job is claimed in one step that only one asker can win (outside review, Nov 14: two helpers polling at the
-  // same moment could both have read it as waiting). The loser gets nothing this time.
-  if (j?.kind === "checkoutPlace" && (await kv().set(`simmer:claimed:${j.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") j = undefined;
-  if (h && j && tab.helperRow && sheetsConfigured()) {
-    // Which helper took it (outside review, Nov 18): a test run counts only for the helper Simmer ships.
-    const job: Row = { ...j, status: "working", args: { ...j.args, by: str(version, 40) }, updated: now() };
-    await updateRanges([{ range: `${TAB}!A${tab.helperRow}:G${tab.helperRow}`, values: [helperRowCells(h)] }, { range: `${TAB}!A${j.row}:G${j.row}`, values: [cells(job)] }]);
-    for (const t of [cache, lastGood]) if (t) t.helper = h;
-    if (cache) cache.jobs = cache.jobs.map((x) => (x.id === job.id ? job : x));
-    return job;
+  const reloaded = Boolean(before?.version && version && before.version !== version);
+  const waiting: { job: Job; raw: string }[] = [];
+  for (const o of open) {
+    const j = o.job;
+    if (overdue(j)) { await giveUp(j.id, o); continue; }
+    if (reloaded && (j.status === "working" || j.status === "pressing")) {
+      const back = await change(j.id, (x) => (x.status !== "working" && x.status !== "pressing" ? null : x.kind === "checkoutPlace" ? unsure(x) : { ...x, status: "waiting", created: now() }), o);
+      if (back?.status === "waiting") waiting.push({ job: back, raw: JSON.stringify(back) });
+      continue;
+    }
+    if (j.status === "waiting") waiting.push(o);
   }
-  if (h) await writeHelper(h).catch((e) => console.error("couldn't note the helper", e));
-  if (!j) return null;
-  return write({ ...j, status: "working", args: { ...j.args, by: str(version, 40) } }, j.row);
+  waiting.sort((a, b) => a.job.created.localeCompare(b.job.created) || a.job.id.localeCompare(b.job.id));
+  for (const w of waiting) {
+    // Test runs and placing only by the helper Simmer ships (Nov 19, review): an older one never asks "may I press?".
+    if ((w.job.kind === "checkoutPlace" || w.job.kind === "checkoutDry") && version !== HELPER_VERSION) continue;
+    // A placing job is also claimed under its own key first (outside review, Nov 14), which stays even if it's handed back.
+    if (w.job.kind === "checkoutPlace" && (await kv().set(`simmer:claimed:${w.job.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") continue;
+    let took = false;
+    // Which helper took it (outside review, Nov 18): a test run counts only for the helper Simmer ships.
+    const job = await change(w.job.id, (j) => { took = j.status === "waiting"; return took ? { ...j, status: "working", args: { ...j.args, by: str(version, 40) } } : null; });
+    if (job && took) return job;
+  }
+  return null;
 }
 
-const str = (v: unknown, max = 200) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 const productsOf = (r: Record<string, unknown>) => (Array.isArray(r.products) ? r.products : []).slice(0, 40).flatMap((p) => {
   const id = str(p?.id, 20);
   // A picture Safeway hadn't loaded yet (further down its page) is Safeway's picture for that product number.
   return /^\d+$/.test(id) && str(p?.name) ? [{ id, name: str(p.name, 160), price: str(p.price, 40), image: imageFor(id, str(p.image, 500)), inCart: p.inCart === true, qty: Math.max(0, Math.min(99, Math.round(Number(p.qty) || 0))) }] : [];
 });
 
+/** Whether a report counts: not for a job already finished, except a placing job's own report (it's what happened on Safeway). */
+const takesReport = (j: Job, reported: boolean) => !(j.status === "done" || (j.status === "failed" && !(j.kind === "checkoutPlace" && reported)));
+
+/** How long a report being worked through holds off a second copy of it (one whose server stopped midway is taken after). */
+const REPORT_HOLD = 60_000;
+
 /**
  * The helper: a job's outcome. A quantity set on Safeway goes into Simmer's cart, and a product added for an item
- * becomes that item's pick. What a search shows about products already in Simmer's cart keeps the cart in step.
+ * becomes that item's pick. What a search shows about products already in Simmer's cart keeps the cart in step. A report
+ * sent twice (the helper keeps one until Simmer has it, Nov 19) counts once: it's claimed on the job in one step first
+ * (Nov 19, review: two copies at once both changed the cart), and only the copy that claimed it does anything.
  */
 export async function finishJob(id: string, reported: boolean, reportedRaw: Record<string, unknown>): Promise<Job | null> {
-  const { jobs } = await read();
-  const j = jobs.find((x) => x.id === id);
-  // A placing job's own report always counts, even after it was marked unsure (it's what happened on Safeway).
-  const late = j?.kind === "checkoutPlace" && j.status === "failed" && reported;
-  if (!j || j.status === "done" || (j.status === "failed" && !late)) return j ?? null;
+  if (!(await getJob(id))) return null;
+  const at = now();
+  let mine = false;
+  const j = await change(id, (x) => { mine = takesReport(x, reported) && !(x.reporting && age(x.reporting) < REPORT_HOLD); return mine ? { ...x, reporting: at } : null; });
+  if (!j || !mine) return j;
   // Taking out a product Safeway no longer has is done: a second tap on the trash, or it was taken out on Safeway
   // already (Oct 31: the eggs went, a second removal a second later came back "not found").
   const gone = !reported && j.kind === "setQty" && Number(j.args.qty) === 0 && reportedRaw.error === "not-found";
@@ -365,11 +412,14 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   }
   // Getting ready on Safeway and test runs (docs/CHECKOUT.md, Nov 13): where it stopped, the window it chose, and the
   // final page's words and buttons, which Simmer reads itself (src/lib/checkout.ts readFinal); nothing else is kept.
-  // Placing (phase 3): whether Place Order was pressed, why not, and the page Safeway landed on (for the order number).
+  // Placing (phase 3): whether Place Order was pressed, why not, the page Safeway landed on (for the order number), and
+  // the address Chrome said the tab moved to after the press.
   if (j.kind === "checkoutPlace") {
     const a = raw.after && typeof raw.after === "object" ? raw.after as Record<string, unknown> : null;
     result = ok
-      ? { stopped: str(raw.stopped, 60), pressed: raw.pressed === true, why: str(raw.why, 80), after: a ? { url: str(a.url, 300), text: typeof a.text === "string" ? a.text.slice(0, 4000) : "" } : null }
+      // `pressed` "unknown" (Nov 19, review): Simmer said yes, and the press's own answer never came back (the click
+      // may have started Safeway's next page). Never read as not pressed.
+      ? { stopped: str(raw.stopped, 60), pressed: raw.pressed === true ? true : raw.pressed === "unknown" ? "unknown" : false, why: str(raw.why, 80), landed: str(raw.landed, 300), after: a ? { url: str(a.url, 300), text: typeof a.text === "string" ? a.text.slice(0, 4000) : "" } : null }
       : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   }
   if (ok && j.kind.startsWith("checkout") && raw.stopped === "signed out") await noteSignedIn(false);
@@ -385,17 +435,13 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       // The free times read for picking (Nov 14), each a window's id and words; only from the listing.
       ...(Array.isArray(raw.days) ? { days: (raw.days as Record<string, unknown>[]).slice(0, 14).map((d) => ({ label: str(d?.label, 80) })).filter((d) => d.label), day: str(raw.day, 80) } : {}),
       ...(Array.isArray(raw.times) ? { times: (raw.times as Record<string, unknown>[]).slice(0, 120).map((t) => ({ id: str(t?.id, 120), words: str(t?.words, 160) })).filter((t) => t.id) } : {}),
-      // How Safeway builds its bags choice (Nov 16), to learn from.
-      ...(raw.bags && typeof raw.bags === "object" ? { bags: {
-        text: str((raw.bags as Record<string, unknown>).text, 400),
-        controls: (Array.isArray((raw.bags as Record<string, unknown>).controls) ? (raw.bags as { controls: Record<string, unknown>[] }).controls : []).slice(0, 12)
-          .map((c) => ({ tag: str(c?.tag, 20), type: str(c?.type, 20), role: str(c?.role, 20), label: str(c?.label, 80), checked: c?.checked === true, name: str(c?.name, 40) })),
-      } } : {}),
       // What a stop saw (Nov 14: why the pickup times couldn't be reopened), kept with the job to read back.
       ...(raw.detail && typeof raw.detail === "object" ? { detail: { found: Number((raw.detail as Record<string, unknown>).found) || 0, why: str((raw.detail as Record<string, unknown>).why, 60) } } : {}),
     };
   }
-  return write({ ...j, status: ok ? "done" : "failed", result }, (j as Row).row);
+  const out = await change(id, (x) => (takesReport(x, reported) && x.reporting === at ? { ...x, status: ok ? "done" : "failed", result, reporting: undefined } : null));
+  if (out?.status === "done") await kv().del(AWAY_KEY);
+  return out;
 }
 
 /** What the helper read on Safeway's Purchases page, checked and trimmed (the page's words kept, to learn from). */
@@ -428,20 +474,26 @@ async function emptied(read: unknown): Promise<{ ordered: boolean; orders?: Retu
   return { ordered, ...(orders && { orders }) };
 }
 
+/** How far back the panel's log reaches: every search and cart change this recent, or at least the last `limit`. */
+const RECENT_MS = 15 * 60_000;
 /** The panel's activity log: recent searches and cart changes, newest first, with where each was asked for. */
 export async function recentJobs(limit = 20): Promise<Activity[]> {
-  const { jobs } = await read();
+  // The last 15 minutes of the index, every kind (Nov 19, review: the last 80 jobs could be all checkout steps and cart
+  // reads), with the last 80 when that's more; read in one go, 400 at most.
+  const [lately, last] = await Promise.all([kv().zrange(INDEX, Date.now() - RECENT_MS, "+inf", { byScore: true }), kv().zrange(INDEX, -80, -1)]);
+  const ids = (lately.length > last.length ? lately : last).slice(-400);
+  const jobs = (await readJobs(ids)).map((f) => f.job);
   return jobs.flatMap((j): Activity[] => {
     if (j.kind !== "search" && j.kind !== "setQty") return [];
     const late = overdue(j), r = j.result ?? {};
     return [{
       id: j.id, kind: j.kind, status: late ? "failed" : j.status, from: j.args.from === "panel" ? "panel" : "app",
       what: str(j.args.name, 160) || str(j.args.query, 120), qty: j.kind === "setQty" ? Number(r.qty ?? j.args.qty) || 0 : null,
-      error: late ? (j.status === "waiting" ? "not-answering" : "stuck") : str(r.error, 40), signedIn: r.signedIn !== false,
+      error: late ? lateError(j) : str(r.error, 40), signedIn: r.signedIn !== false,
       created: j.created, updated: j.updated,
     }];
-  }).sort((a, b) => b.created.localeCompare(a.created)).slice(0, limit);
+  }).sort((a, b) => b.created.localeCompare(a.created)).filter((a, i) => i < limit || age(a.created) < RECENT_MS);
 }
 
 /** For tests. */
-export const resetJobs = () => { memory = { jobs: [], helper: null }; cache = lastGood = null; };
+export const resetJobs = () => { for (const p of ["simmer:job", "simmer:helper", "simmer:claimed:"]) resetKv(p); };

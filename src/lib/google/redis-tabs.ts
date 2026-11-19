@@ -64,6 +64,12 @@ export async function transact<T>(s: TabStore, change: () => Promise<T>): Promis
   throw new AppError("Someone changed that at the same moment. Try again.");
 }
 
+/**
+ * Runs `fn` outside any transaction (Nov 19, review): next/server's after() keeps the request's async context, so work
+ * left for after the answer would otherwise join a transaction that has already been written, and its writes be lost.
+ */
+export const outside = <T>(fn: () => T): T => current.exit(fn);
+
 /** Something worked out once per change, kept if the change runs again (a Gemini guess). */
 export const memo = (): Map<string, unknown> => current.getStore()?.memo ?? new Map();
 

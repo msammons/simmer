@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
-import { cartFor, cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
+import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { CheckoutSheet } from "./Checkout";
-import { CartPlus, FindView, Stepper, useSafeway, type Safeway } from "./Safeway";
+import { CartPlus, FindView, Stepper, type Safeway } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, type MoreOption } from "./ui";
 import { Icon } from "./icons";
 
@@ -39,7 +39,6 @@ export type ShopActions = {
   move: (it: Item, store: Store) => void;
   /** The order went through: `cart` (the list ids in the Safeway cart) comes off the Safeway list as bought. */
   done: (store: Store, cart?: string[]) => Promise<unknown>;
-  /** Done shopping: these ticked things come off, whatever their store. */
 };
 
 /** ⋯ as the phone's own menu: what can be done with one row. Its space stays when there's nothing, so rows line up. */
@@ -106,8 +105,8 @@ function ShopRow({ title, sub, checked, onTick, control, more }: {
 
 const pill = "flex h-8 shrink-0 items-center rounded-full px-3.5 t-sub font-semibold transition active:scale-95";
 
-export function ShopScreen({ list, act }: { list: ListState | null; act: ShopActions }) {
-  const sw = useSafeway();
+/** `sw`: the Safeway cart and its jobs, kept by App across tab taps; App reads the cart as Shop opens and comes back. */
+export function ShopScreen({ list, act, sw }: { list: ListState | null; act: ShopActions; sw: Safeway }) {
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   // Show got (Nov 14): on, ticked things stay, struck through; off, they're hidden. Only the toggle decides; remembered
@@ -117,51 +116,41 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
   const tickIt = (it: Item, on: boolean) => act.check(it, on);
   const [ordering, setOrdering] = useState(false); // "Ordered?" waiting on its confirm
   const [checkingOut, setCheckingOut] = useState(false); // the Check out sheet (Nov 13)
-  const [reading, setReading] = useState(true); // Safeway's cart being read as Shop opens
   const [where, setWhere] = useState<Where>("all");
-  const items = (list?.items ?? []).filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on the list yet
-  // What Find goes through: the Safeway things not got yet.
-  const toFind = findItems(list?.items ?? [], list?.staples ?? [], sw.picks);
-  const findOf = (id: string) => toFind.find((f) => f.id === id);
-  // Every Safeway row's product (ticked ones too, so a ticked row still says what was bought).
-  const infos = new Map(findItems(items.filter((i) => i.store === "safeway").map((i) => ({ ...i, checked: false })), list?.staples ?? [], sw.picks).map((f) => [f.id, f]));
+  const { items, toFind, findable, infos } = useMemo(() => {
+    const all = list?.items ?? [], staples = list?.staples ?? [];
+    const items = all.filter((i) => !(i.check && !i.checked)); // what Stock highlights isn't on the list yet
+    // What Find goes through: the Safeway things not got yet.
+    const toFind = findItems(all, staples, sw.picks);
+    // Every Safeway row's product (ticked ones too, so a ticked row still says what was bought).
+    const infos = new Map(findItems(items.filter((i) => i.store === "safeway").map((i) => ({ ...i, checked: false })), staples, sw.picks).map((f) => [f.id, f]));
+    return { items, toFind, findable: new Set(toFind.map((f) => f.id)), infos };
+  }, [list, sw.picks]);
   // Safeway signed out on the computer (Nov 16, Sam): what Simmer has as the cart may not be right, so it isn't shown
   // and the Safeway rows are a plain checklist until a cart read sees Safeway signed in again.
   const signedOut = sw.loaded && sw.signedOut;
   const live = sw.loaded && !sw.away && !signedOut; // Safeway can be reached: its rows get their controls
 
-  // Opening Shop reads Safeway's own cart, and Simmer's copy takes what's there (Nov 14: only the helper's panel did,
-  // so on the phone the copy went stale: 6 in the cart here, 4 on Safeway).
-  const { run, refresh } = sw;
-  useEffect(() => {
-    const c = new AbortController();
-    run("cart", {}, c.signal).then((r) => { if (r.ok) refresh(); }).finally(() => { if (!c.signal.aborted) setReading(false); });
-    return () => c.abort();
-  }, [run, refresh]);
-  // Signed out: coming back to Simmer (after signing in on the computer) reads Safeway's cart again.
-  useEffect(() => {
-    if (!signedOut) return;
-    const back = () => { if (document.visibilityState === "visible") run("cart", {}).then((r) => { if (r.ok) refresh(); }); };
-    document.addEventListener("visibilitychange", back);
-    return () => document.removeEventListener("visibilitychange", back);
-  }, [signedOut, run, refresh]);
-
   // The cart, with a change on its way counted (taken out: gone at once).
-  const lines = signedOut ? [] : sw.cart.map((l) => ({ ...l, qty: sw.qtyOf(l.productId, l.qty) })).filter((l) => l.qty > 0);
-  const { total, estimate } = cartTotal(lines);
-  const count = lines.reduce((n, l) => n + l.qty, 0);
-  // Each Safeway row's cart line (its first, when there are more); every other line ends the Safeway group.
-  const lineOf = new Map<string, CartLine>();
-  for (const it of items) if (it.store === "safeway") { const l = lines.find((x) => x.itemId === it.id); if (l) lineOf.set(it.id, l); }
-  const tied = new Set([...lineOf.values()].map((l) => l.productId));
-  const loose = lines.filter((l) => !tied.has(l.productId));
-  const inCart = (it: Item) => (it.store === "safeway" ? cartFor(lines, it.id).reduce((n, l) => n + l.qty, 0) : 0);
+  const { cart, pending } = sw;
+  const { lines, total, estimate, count, lineOf, inCartOf, loose } = useMemo(() => {
+    const lines = signedOut ? [] : cart.map((l) => ({ ...l, qty: pending[l.productId] ?? l.qty })).filter((l) => l.qty > 0);
+    // Each list item's cart line (its first, when there are more) and how many in all; every other line ends the
+    // Safeway group.
+    const byItem = new Map<string, CartLine>(), inCartOf = new Map<string, number>();
+    for (const l of lines) if (l.itemId) { if (!byItem.has(l.itemId)) byItem.set(l.itemId, l); inCartOf.set(l.itemId, (inCartOf.get(l.itemId) ?? 0) + l.qty); }
+    const lineOf = new Map<string, CartLine>();
+    for (const it of items) { const l = it.store === "safeway" && byItem.get(it.id); if (l) lineOf.set(it.id, l); }
+    const tied = new Set([...lineOf.values()].map((l) => l.productId));
+    return { lines, ...cartTotal(lines), count: lines.reduce((n, l) => n + l.qty, 0), lineOf, inCartOf, loose: lines.filter((l) => !tied.has(l.productId)) };
+  }, [cart, pending, signedOut, items]);
+  const inCart = (it: Item) => (it.store === "safeway" ? inCartOf.get(it.id) ?? 0 : 0);
 
   const product = (p: { id: string; name: string; image?: string }) => ({ id: p.id, name: p.name, price: "", image: p.image ?? "" });
-  const addUsual = (f: FindItem) => f.picked && sw.setQty(product(f.picked), Math.max(1, f.want), f.query, f);
-  // Usuals not in the cart yet, for Auto-fill: every row shows its count at once; Safeway takes them one after another.
-  const usual = toFind.filter((f) => f.picked && !lineOf.has(f.id) && !(sw.pending[f.picked.id] > 0));
-  const autoFill = async () => { usual.forEach((f) => sw.show(f.picked!.id, Math.max(1, f.want))); for (const f of usual) await addUsual(f); };
+  const want = (f: FindItem) => ({ p: product(f.picked!), qty: Math.max(1, f.want), query: f.query, forItem: f });
+  const addUsual = (f: FindItem) => { if (f.picked) { const w = want(f); void sw.setQty(w.p, w.qty, w.query, w.forItem); } };
+  // Usuals not in the cart yet, for Add usuals: every row shows its count at once; Safeway takes them one after another.
+  const usual = toFind.filter((f) => f.picked && !lineOf.has(f.id) && !(pending[f.picked.id] > 0));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,9 +181,9 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
       if (l) control = <Stepper compact qty={l.qty} name={cap(it.item)} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />;
       else if (f?.picked && waiting > 0) control = <Stepper compact qty={waiting} name={cap(it.item)} onChange={(q) => sw.setQty(product(f.picked!), q, f.query, f)} />;
       else if (!it.checked && f?.picked) control = <CartPlus name={cap(it.item)} onClick={() => addUsual(f)} />;
-      else if (!it.checked && findOf(it.id)) control = <button onClick={() => setFinding(it.id)} aria-label={`Find ${cap(it.item)} at Safeway`} className={`${pill} glass text-accent`}>Find</button>;
+      else if (!it.checked && findable.has(it.id)) control = <button onClick={() => setFinding(it.id)} aria-label={`Find ${cap(it.item)} at Safeway`} className={`${pill} glass text-accent`}>Find</button>;
     }
-    const canPick = it.store === "safeway" && live && Boolean(findOf(it.id)) && Boolean(f?.picked || l);
+    const canPick = it.store === "safeway" && live && findable.has(it.id) && Boolean(f?.picked || l);
     return (
       <ShopRow key={it.id} title={cap(it.item)} sub={sub} checked={it.checked} onTick={() => tickIt(it, !it.checked)} control={control}
         more={<More name={cap(it.item)} options={moreFor(it, n, canPick)} onPick={(v) => (v === "pick" ? setFinding(it.id) : act.move(it, v as Store))} />} />
@@ -222,12 +211,12 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
           )}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => {}, off: true }
-              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: reading || Object.keys(sw.pending).length > 0 } : null} />
+              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 } : null} />
           {!shown.length && <EmptyState icon="cart" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (
-              <button onClick={autoFill} className="shrink-0 t-foot font-semibold text-accent">Add usuals ({usual.length})</button>
+              <button onClick={() => void sw.fill(usual.map(want))} className="shrink-0 t-foot font-semibold text-accent">Add usuals ({usual.length})</button>
             )}>
               {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}
@@ -236,15 +225,11 @@ export function ShopScreen({ list, act }: { list: ListState | null; act: ShopAct
                   control={live && <Stepper compact qty={l.qty} name={l.name} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />} />
               ))}
             </Group>
-            {/* For when Simmer can't tell by itself that the order went through (it reads Safeway's Purchases page once
-                the cart page says it's empty, Nov 3). */}
             </div>
           ))}
         </>
       )}
-      {/* Last, so it never pushes the list down when it shows. */}
-
-      {finding && findOf(finding) && (
+      {finding && findable.has(finding) && (
         <Sheet label="Safeway's choices" wide onClose={() => setFinding(null)}>
           <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) tickIt(x, true); }} />
         </Sheet>

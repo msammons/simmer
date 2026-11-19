@@ -4,15 +4,15 @@
 // and the helper's end-to-end check (scripts/extension-test.mjs).
 
 /**
- * How the helper goes about it. `pause`: between items, so it moves like a person and Safeway can catch up.
- * `usualClear`/`usualGap`: a usual product is taken without asking only when one result matches it this well, this far
- * ahead of the next. `mostOfOne`: the most of one thing a plain count can ask for. For the helper's jobs (1.0 on):
- * `fastPoll`, how often it checks for jobs once there's activity or the panel is open, and `idleAfter`, how long after
- * the last job it goes back to checking every half minute. `stepWait`: how long to wait for Safeway after a tap.
- * `cartTries`: how many times to look for the cart page's products before going on without it. `noResultsHold`: how long
- * Safeway must keep saying "no results" before a search counts as finding nothing (it says so for a moment while loading).
+ * How the helper goes about it. `pause`: between jobs that aren't checkout's, so it moves like a person and Safeway can
+ * catch up. `usualClear`/`usualGap`: a usual product is taken without asking only when one result matches it this well,
+ * this far ahead of the next. `mostOfOne`: the most of one thing a plain count can ask for. `stepWait`: how long to wait
+ * for Safeway after a tap. `resultsTries` × `resultsWait`: how long to watch a page for its products (`cartTries` ×
+ * `resultsWait` on the cart page); since 26.11.19 the helper watches the page change rather than looking again and again,
+ * and these only set its limit. `noResultsHold`: how long Safeway must keep saying "no results" before a search counts
+ * as finding nothing (it says so for a moment while loading).
  */
-export const SETTINGS = { pause: 1500, searchTries: 6, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, fastPoll: 2500, idleAfter: 180_000, stepWait: 10_000, cartTries: 8, noResultsHold: 4000 };
+export const SETTINGS = { pause: 1500, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, stepWait: 10_000, cartTries: 8, noResultsHold: 4000 };
 
 /**
  * Safeway's pages, as data the helper reads them with (patterns are matched without regard to case). Safeway's pages

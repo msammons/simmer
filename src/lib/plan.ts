@@ -1,8 +1,10 @@
-// What's planned, in the Sheet (docs/PLAN.md, section 3). Meals and lunches are planned by number, not by day (Nov 3):
-// the Planned tab has one row per thing to make or pack (a dinner, a dessert, a lunch). Dinners are ticked off with the
-// date they were made; lunches aren't ticked off and stay until changed or removed. Made (the log that keeps "last made" true), Trips (finished shopping trips, for the store rhythm), Lunches (each
-// boy's options) and Plan counts (how many of each were asked for last time). The old Plan and Lunch plan tabs (one row
-// per night, per school day) are only read: what was still to come moved into Planned once (their `moved` column).
+// What's planned (docs/PLAN.md, section 3). Meals and lunches are planned by number, not by day (Nov 3): the Planned
+// tab has one row per thing to make or pack (a dinner, a dessert, a lunch). Dinners are ticked off with the date they
+// were made; lunches aren't ticked off and stay until changed or removed. Made (the log that keeps "last made" true),
+// Trips (finished shopping trips, for the store rhythm), Lunches (each boy's options) and Plan counts (how many of each
+// were asked for last time). The old Plan tab (one row per night) is only read, for when things were last made: what
+// was still to come moved into Planned on the first load after Nov 3, and nothing writes there since (Nov 19: the move,
+// run on every load, came out).
 // Rows are matched by their key and only those rows are written, so a hand edit anywhere else survives. Without the
 // Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
@@ -11,29 +13,24 @@ import { appendRows, atomically, readTab, readTabsIfAny, replaceTab, sheetsConfi
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, emptyLists, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
-import { parseCsv, records } from "./parse";
+import { col, newId, parseCsv, records, rowIds, yes } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { addDays, todayIn } from "./time";
 import { bothOf, listName, norm } from "./words";
-import { firstCounts, freezerMatch, kindOf, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
+import { firstCounts, freezerMatch, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
-const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", LUNCH_PLAN = "Lunch plan", FREEZER = "Freezer", PLANNED = "Planned", COUNTS = "Plan counts";
+const PLAN = "Plan", MADE = "Made", TRIPS = "Trips", LUNCHES = "Lunches", FREEZER = "Freezer", PLANNED = "Planned", COUNTS = "Plan counts";
 const HEADERS: Record<string, string[]> = {
   [PLAN]: ["date", "meal", "kids_meal", "effort", "eating", "pinned", "planned_by", "made", "notes", "groceries", "moved"],
   [MADE]: ["date", "recipe"],
   [TRIPS]: ["date", "store"],
   [LUNCHES]: ["kid", "part", "item", "ingredients", "notes"],
-  [LUNCH_PLAN]: ["date", "kid", ...LUNCH_PARTS, "school_lunch", "no_school", "groceries", "moved"],
   [FREEZER]: ["id", "item", "amount", "added", "store"],
   [PLANNED]: ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned", "day"],
   [COUNTS]: ["what", "count"],
 };
 
-const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
-const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-let seq = 0;
-const newId = () => `${Date.now().toString(36)}${(seq++ % 1296).toString(36).padStart(2, "0")}${Math.random().toString(36).slice(2, 5)}`;
 
 // ---- rows, the same with or without the Sheet
 
@@ -171,22 +168,17 @@ export type PlanData = {
 };
 
 /** Everything planning is built from, read once (each tab is one Sheets read). */
-type Tabs = { planned: string[][]; plan: string[][]; lunchPlan: string[][]; made: string[][]; trips: string[][]; options: string[][]; counts: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
+type Tabs = { planned: string[][]; plan: string[][]; made: string[][]; trips: string[][]; options: string[][]; counts: string[][]; hh: Awaited<ReturnType<typeof loadHousehold>>; freezer: Frozen[] };
 async function readTabs(): Promise<Tabs> {
-  // One read for all eight tabs on the Sheet (the household is kept for a minute by data.ts).
-  const want = [PLANNED, PLAN, LUNCH_PLAN, MADE, TRIPS, LUNCHES, COUNTS, FREEZER];
+  // One read for all seven tabs (the household is kept for a minute by data.ts).
+  const want = [PLANNED, PLAN, MADE, TRIPS, LUNCHES, COUNTS, FREEZER];
   const [read, hh] = await Promise.all([sheetsConfigured() ? readTabsIfAny(want) : Promise.all(want.map(rows)), loadHousehold()]);
-  const [planned, plan, lunchPlan, made, trips, options, counts, frozen] = read;
-  const freezer = freezerFrom(frozen);
-  return { planned, plan, lunchPlan, made, trips, options, counts, hh, freezer };
+  const [planned, plan, made, trips, options, counts, frozen] = read;
+  return { planned, plan, made, trips, options, counts, hh, freezer: freezerFrom(frozen) };
 }
 
-/** The Meals screen: what's still to make and pack, and what planning needs. Moves the old plan's coming nights over first, once. */
-export const loadPlan = atomically(async (): Promise<PlanData> => {
-  let tabs = await readTabs();
-  if (await moveOldPlan(tabs)) tabs = await readTabs(); // it wrote rows: read them as they are now
-  return planFrom(tabs);
-});
+/** The Meals screen: what's still to make and pack, and what planning needs. */
+export const loadPlan = async (): Promise<PlanData> => planFrom(await readTabs());
 
 function planFrom({ planned, plan, made, trips, options, counts, hh, freezer }: Tabs): PlanData {
   const p = toPlanned(planned);
@@ -205,7 +197,8 @@ function planFrom({ planned, plan, made, trips, options, counts, hh, freezer }: 
 
 /** Last time's numbers (the Plan counts tab: `quick 2`, `lunches:Theo 5`), or a usual week the first time. */
 function countsFrom(all: string[][], kids: string[]): Counts {
-  const saved = new Map(records(all).map((r) => [r.get("what").trim().toLowerCase(), Number(r.get("count"))]));
+  // A blank cell is no number (Nov 19: it read as 0), so the usual one stands.
+  const saved = new Map(records(all).filter((r) => r.get("count")).map((r) => [r.get("what").trim().toLowerCase(), Number(r.get("count"))]));
   const first = firstCounts(kids, true);
   if (!saved.size) return first;
   const n = (k: string, d: number) => { const v = saved.get(k.toLowerCase()); return v !== undefined && Number.isFinite(v) ? Math.max(0, Math.min(MAX_COUNT, Math.round(v))) : d; };
@@ -214,58 +207,12 @@ function countsFrom(all: string[][], kids: string[]): Counts {
   return out;
 }
 
-// ---- moving the old plan over (once)
-
-/**
- * The old Plan tab had a row per night and Lunch plan a row per school day. Nights from today on with a meal that wasn't
- * made become things to make (of the recipe's kind, else the night's effort; the boys' own dinner as a kids' one), and
- * lunches from today on become lunches to pack. Each row is marked `moved` first, so two phones opening at once don't
- * both move it, and it never happens twice. Groceries that were still waiting ("later") go on the list now. Answers
- * whether anything was moved.
- */
-async function moveOldPlan(t: Pick<Tabs, "plan" | "lunchPlan" | "freezer" | "planned" | "options">): Promise<boolean> {
-  const today = todayIn();
-  const latest = new Map<string, ReturnType<typeof records>[number]>();
-  const nightRows = records(t.plan).filter((r) => DATE.test(r.get("date")) && r.get("date") >= today && !yes(r.get("moved")));
-  for (const r of nightRows) latest.set(r.get("date"), r); // the last row for a date is the night
-  const nights = [...latest.values()].filter((r) => !r.get("made") && (r.get("meal") || r.get("kids_meal")));
-  const lunchRows = records(t.lunchPlan).filter((r) => DATE.test(r.get("date")) && r.get("date") >= today && r.get("kid") && !yes(r.get("moved")));
-  const lunches = lunchRows.filter((r) => !yes(r.get("no_school")) && LUNCH_PARTS.some((p) => r.get(p)));
-  if (!nightRows.length && !lunchRows.length) return false;
-
-  await upsert(PLAN, [...new Set(nightRows.map((r) => r.get("date")))].map((date) => ({ date, moved: "yes" })), ["date"], t.plan);
-  await upsert(LUNCH_PLAN, lunchRows.map((r) => ({ date: r.get("date"), kid: r.get("kid"), moved: "yes" })), ["date", "kid"], t.lunchPlan);
-  if (!nights.length && !lunches.length) return true;
-
-  const recipes = await loadRecipes(), options = t.options;
-  const byId = new Map(recipes.map((r) => [r.id, r]));
-  const kindFor = (meal: string, effort: string): Kind => { const r = byId.get(meal); const k = r && kindOf(r); return k ?? (/quick/i.test(effort) ? "quick" : "regular"); };
-  const recs: Record<string, string>[] = [];
-  const need: Need[] = [];
-  for (const r of nights) {
-    const later = r.get("groceries") === "later"; // planned weeks ahead: its groceries hadn't gone on the list yet
-    for (const [meal, kind] of [[r.get("meal"), kindFor(r.get("meal"), r.get("effort"))], [r.get("kids_meal"), "kids" as Kind]] as const) {
-      if (!meal) continue;
-      recs.push({ id: newId(), kind, recipe: meal, added: r.get("date"), pinned: yes(r.get("pinned")) ? "yes" : "" });
-      const recipe = byId.get(meal);
-      if (later && recipe) need.push(...needFor(recipe, t.freezer));
-    }
-  }
-  const moved = lunches.map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
-  for (const l of moved) recs.push({ id: newId(), kind: "lunch", kid: l.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, l[p]])), added: today });
-  await append(PLANNED, recs, t.planned);
-  const waited = lunches.filter((r) => r.get("groceries") === "later").map((r) => ({ kid: r.get("kid"), ...partsOf(r.get) }));
-  for (const it of lunchShopping(waited, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
-  if (need.length) await addItems(need, "");
-  return true;
-}
-
 // ---- planning
 
 type Need = { item: string; quantity: string; for: string; check: boolean };
 
 /** Water from the tap isn't bought ("½ cup water" landed on the Safeway list, Nov 3). */
-export const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewarm|ice|tap)\s+)?water$/i.test(item.replace(/\s+/g, " ").trim());
+const fromTheTap = (item: string) => /^(?:(?:hot|warm|cold|boiling|lukewarm|ice|tap)\s+)?water$/i.test(item.replace(/\s+/g, " ").trim());
 
 /** What a recipe needs from the store: everything but tap water and what's in the freezer (used from there instead). */
 const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
@@ -281,7 +228,8 @@ const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
  */
 async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set(), read?: { recipes: Recipe[]; freezer: Frozen[] }): Promise<number> {
   if (!recipeIds.length) return 0;
-  const [recipes, freezer, cart] = await Promise.all([read?.recipes ?? loadRecipes(), read?.freezer ?? loadFreezer(), loadCart().catch(() => [])]);
+  // A cart that can't be read stops the change (Nov 19: read as empty, what was in the cart came off the list).
+  const [recipes, freezer, cart] = await Promise.all([read?.recipes ?? loadRecipes(), read?.freezer ?? loadFreezer(), loadCart()]);
   const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer).map((n) => ({ ...n, stay: still.has(id) })) : []; });
   return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
 }
@@ -346,7 +294,9 @@ export const changePlanned = atomically(async (id: string, change: { recipe?: st
   if (dish && change.recipe) {
     await upsert(PLANNED, [{ id, recipe: change.recipe, pinned: change.pinned ? "yes" : "" }], ["id"], before);
     const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
-    const removed = await takeOffDishes([dish.recipe], new Set(), { recipes, freezer });
+    // Another helping of the old recipe still planned keeps its groceries (Nov 19: a swap took them all off).
+    const still = new Set(now.dishes.filter((d) => d.id !== id).map((d) => d.recipe));
+    const removed = await takeOffDishes([dish.recipe], still, { recipes, freezer });
     const r = recipes.find((x) => x.id === change.recipe);
     return { added: r ? await addItems(needFor(r, freezer), by) : 0, removed };
   }
@@ -388,7 +338,7 @@ export const clearPlanned = atomically(async (): Promise<{ removed: number }> =>
   const today = todayIn();
   const before = await rows(PLANNED);
   const dishes = toPlanned(before).dishes;
-  const cart = await loadCart().catch(() => []);
+  const cart = await loadCart(); // can't be read: nothing is emptied, rather than the cart's things too
   const held = new Set(cart.map((l) => l.itemId).filter(Boolean));
   const removed = await emptyLists(held);
   if (!dishes.length) return { removed };
@@ -436,8 +386,12 @@ export const removePlanned = atomically(async (id: string): Promise<{ removed: n
 
 /** A recipe deleted (Nov 14): every time it's on the plan comes off, with what only it needed on the list. */
 export const removeRecipeFromPlan = atomically(async (recipe: string): Promise<{ removed: number }> => {
-  let removed = 0;
-  for (const d of toPlanned(await rows(PLANNED)).dishes.filter((x) => x.recipe === recipe)) removed += (await removePlanned(d.id)).removed;
+  const before = await rows(PLANNED);
+  const gone = toPlanned(before).dishes.filter((x) => x.recipe === recipe);
+  if (!gone.length) return { removed: 0 };
+  // One write to Planned, and every helping's groceries off together.
+  await removeRows(PLANNED, (get) => gone.some((d) => d.id === get("id")), before);
+  const removed = await takeOffDishes(gone.map((d) => d.recipe));
   await tidyStock();
   return { removed };
 });
@@ -470,9 +424,22 @@ export const recordTrip = (store: Store) => append(TRIPS, [{ date: todayIn(), st
 export async function loadFreezer(): Promise<Frozen[]> {
   return freezerFrom(await rows(FREEZER));
 }
+/** A freezer row's id: its own, or one made from its thing and day for a row without (parse.ts rowIds). */
+const freezerIds = (all: string[][]) => rowIds(records(all), (get) => `${get("item")} ${get("added")}`);
 function freezerFrom(all: string[][]): Frozen[] {
-  return records(all).flatMap((r) => (r.get("item") ? [{ id: r.get("id") || `row-${r.rowNumber}`, item: r.get("item"), amount: r.get("amount"), added: r.get("added"), store: r.get("store") }] : []))
+  const ids = freezerIds(all);
+  return records(all).flatMap((r, i) => (r.get("item") ? [{ id: ids[i], item: r.get("item"), amount: r.get("amount"), added: r.get("added"), store: r.get("store") }] : []))
     .sort((a, b) => (a.added || "9").localeCompare(b.added || "9"));
+}
+/** The freezer's rows with every id written in, so a change matched by id finds a row that had none. */
+function withFreezerIds(all: string[][]): string[][] {
+  if (!all.length) return all;
+  const ids = freezerIds(all);
+  let i = all[0].findIndex((h) => h.trim().toLowerCase() === "id");
+  const out = all.map((r) => [...r]);
+  if (i < 0) { i = out[0].length; out[0].push("id"); }
+  for (let n = 1; n < out.length; n++) { while (out[n].length <= i) out[n].push(""); out[n][i] = ids[n - 1]; }
+  return out;
 }
 
 /** "2 salmon" → two salmon, put in today. The same thing added again adds up. */
@@ -480,15 +447,15 @@ export const addFrozen = atomically(async (text: string, store: string = "") => 
   const m = text.trim().match(/^(\d+)\s+(.+)$/);
   const item = (m ? m[2] : text).trim().slice(0, 60), amount = m ? m[1] : "";
   if (!item) return;
-  const before = await rows(FREEZER);
+  const before = withFreezerIds(await rows(FREEZER));
   const same = freezerFrom(before).find((f) => norm(f.item) === norm(item));
   if (same && /^\d+$/.test(same.amount) && amount) { await upsert(FREEZER, [{ id: same.id, amount: String(Number(same.amount) + Number(amount)) }], ["id"], before); return; }
-  await upsert(FREEZER, [{ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, item, amount, added: todayIn(), store }], ["id"], before);
+  await upsert(FREEZER, [{ id: newId(), item, amount, added: todayIn(), store }], ["id"], before);
 });
 
 /** One used: the amount goes down, and at none (or no amount written) it's gone. `before`: the tab as just read. */
 export const takeFrozen = atomically(async (id: string, before?: string[][]) => {
-  const all = before ?? (await rows(FREEZER));
+  const all = withFreezerIds(before ?? (await rows(FREEZER)));
   const f = freezerFrom(all).find((x) => x.id === id);
   if (!f) return;
   const n = Number(f.amount);
@@ -499,7 +466,10 @@ export const takeFrozen = atomically(async (id: string, before?: string[][]) => 
 /** Rows off a tab, in one write; `add`: rows to put at the end in the same write. */
 const removeRows = atomically(async (tab: string, drop: (get: (k: string) => string) => boolean, before?: string[][], add: Record<string, string>[] = []): Promise<string[][]> => {
   const all = before ?? (await rows(tab));
-  const head = all[0] ?? HEADERS[tab];
+  // A column the added rows need that the tab lacks joins the header (Nov 19: a new plan's days were lost).
+  const own = all[0] ?? [];
+  const missing = add.length ? HEADERS[tab].filter((h) => !own.some((x) => x.trim().toLowerCase() === h)) : [];
+  const head = all[0] ? [...own, ...missing] : HEADERS[tab];
   const headers = head.map((h) => h.trim().toLowerCase());
   const keep = [head, ...records(all).filter((r) => !drop(r.get)).map((r) => all[r.rowNumber - 1]), ...add.map((r) => headers.map((h) => r[h] ?? ""))];
   if (sheetsConfigured()) await replaceTab(tab, keep, all);

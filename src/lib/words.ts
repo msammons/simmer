@@ -47,7 +47,7 @@ const TYPED_UNITS = unitsRe(Object.keys(UNIT_NAMES).filter((w) => w.length > 1 |
 export const FRACTIONS: Record<string, string> = { "½": "1/2", "¼": "1/4", "¾": "3/4", "⅓": "1/3", "⅔": "2/3", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
   "⅕": "1/5", "⅖": "2/5", "⅗": "3/5", "⅘": "4/5", "⅙": "1/6", "⅚": "5/6", "⅐": "1/7", "⅑": "1/9", "⅒": "1/10" };
 /** "1½ cups" → "1 1/2 cups", "⅜ tsp" → "3/8 tsp". */
-const plainFractions = (s: string) => s.replace(new RegExp(`[${Object.keys(FRACTIONS).join("")}]`, "g"), (f) => ` ${FRACTIONS[f]}`)
+export const plainFractions = (s: string) => s.replace(new RegExp(`[${Object.keys(FRACTIONS).join("")}]`, "g"), (f) => ` ${FRACTIONS[f]}`)
   .replace(/(\d)\s+(\d+\/)/, "$1 $2").replace(/\s+/g, " ").trim();
 
 const ENTRY = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+(?:\.\d+)?|\d+/\d+)(?:\s*(?:${TYPED_UNITS})\.?(?=\s))?|a dozen|dozen|a couple|a few)\s+(.+)$`, "i");
@@ -101,7 +101,6 @@ export function known(name: string): { store: Store; section: Section } | null {
 // Nov 19: a range can have an en or em dash ("2–3 cloves garlic").
 const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\s*(?:-|–|—|to)\s*(?:\d+/\d+|\d+(?:\.\d+)?))?|an?|one|two|three|four)\s+(?:\((?:[^)]*)\)\s*)?(?:(${UNITS})\.?\s+(?:of\s+)?)?(.+)$`, "i");
 
-/** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
 /** Sizes and cuts before the name ("large", "chopped", "skinless, boneless"), as many as there are. */
 const LEADING = /^(?:(?:extra[- ]large|small|medium|large|jumbo|skinless|boneless|bone-in|skin-on|chopped(?!\s+(?:tomato|spinach|clam))|diced(?!\s+(?:tomato|green chile|chile))|minced(?!\s+(?:clam))|finely|roughly|coarsely|thinly|peeled)\s*,?\s+)+/i;
 
@@ -133,6 +132,7 @@ export function listName(item: string): string {
 /** The amount on a second choice: "or 2 tbsp peanut butter" (Nov 19: a plain regex left ${UNITS} unread, so it was "tbsp peanut butter"). */
 const OR_AMOUNT = new RegExp(String.raw`^\d[\d/ ]*\s*(?:(?:${UNITS})\.?\s+(?:of\s+)?)?`, "i");
 
+/** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
 export function parseIngredient(raw: string): Ingredient {
   const line = plainFractions(raw)
     // Typed the way people write cards (Nov 18): "Optional: dressing", "a little ginger", "2c cheese".
@@ -144,7 +144,6 @@ export function parseIngredient(raw: string): Ingredient {
   if (m) { quantity = m[1].toLowerCase().replace(/^(an?|one)$/, "1").replace(/^two$/, "2").replace(/^three$/, "3").replace(/^four$/, "4"); unit = m[2] === "T" ? "tbsp" : m[2] === "t" ? "tsp" : /^c$/i.test(m[2] ?? "") ? "cup" : (m[2] ?? "").toLowerCase(); item = m[3]; }
   // "15 ounce can pumpkin": the size came first, so the container is still on the name.
   if (unit) item = item.replace(/^(?:cans?|jars?|packages?|pkgs?|bags?|boxes|box|containers?|bottles?|cartons?)\s+(?:of\s+)?/i, "");
-  // What's bought, not how it's cut: "onion, diced" → onion; "garlic (minced)" → garlic; "salt to taste" → salt.
   // What's bought, without its size or how it's cut (Nov 18: "large onion" and "onion" were two lines; "8 skinless,
   // boneless chicken thighs" came out "skinless"). One choice of two: "red wine or balsamic vinegar" is the first, and
   // "refrigerated or frozen tortellini" the tortellini.

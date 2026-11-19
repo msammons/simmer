@@ -12,11 +12,6 @@ import { Button, EmptyState, Group, scrollAppTo } from "./ui";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/**
- * Simmer on the computer is older than this one: where to get the new one. A quiet group at the end of Shop,
- * so it never pushes the list down when it shows (Nov 11: no bars).
- */
-
 export const NOT_ANSWERING = "Can't reach Safeway right now. Check things off in the store instead.";
 /** Plain words for why a job didn't happen. */
 function problemText(error: string): string {
@@ -27,64 +22,75 @@ function problemText(error: string): string {
   return "That didn't go through on Safeway. Try again.";
 }
 
+/** The hook is still there (its life's controller set and not stopped). */
+const isAlive = (life: React.RefObject<AbortController | null>) => Boolean(life.current && !life.current.signal.aborted);
+
 type JobOutcome = { ok: true; result: Record<string, unknown> } | { ok: false; problem: string };
+/** One product's number for the cart, as Add usuals sends it. */
+export type CartWant = { p: Product; qty: number; query: string; forItem?: { id: string; item: string } | null };
 
 /**
- * The Safeway cart as Simmer knows it, whether the computer's answering, and doing jobs there. Quantities being changed
- * show straight away (`pending`) and settle when Safeway has them.
+ * Reading Safeway's own cart sends the computer to Safeway's cart page, so opening Shop again within a minute of the last
+ * reading (tab taps while shopping) takes Simmer's copy as it is. Signed out, it always looks again: coming back after
+ * signing in on the computer should show the cart.
+ */
+const CART_FRESH = 60_000;
+
+/**
+ * The Safeway cart as Simmer knows it, whether the computer's answering, and doing jobs there. Kept by App, so it lasts
+ * across tab taps (Add, Find and − n + stay put). Quantities being changed show straight away (`pending`) and settle
+ * when Safeway has them.
  */
 export function useSafeway() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
-  const [answering, setAnswering] = useState<boolean | null>(null);
   // A job the helper didn't pick up: Shop drops its Safeway controls and the Safeway rows are a plain checklist (Nov 3).
   const [away, setAway] = useState(false);
-  const [outdated, setOutdated] = useState(false);
   // Safeway signed out on the computer (Nov 16): Shop greys the cart and hides what's in it, since it may not be right.
   const [signedOut, setSignedOut] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Record<string, number>>({});
   const [problem, setProblem] = useState<string | null>(null);
-  const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // Safeway's cart page being read (Nov 16, Sam: no checking out while that's going).
+  const [reading, setReading] = useState(false);
+  // Stopped when the hook goes: nothing more is queued for the computer after that.
+  const life = useRef<AbortController | null>(null);
+  useEffect(() => { const c = new AbortController(); life.current = c; return () => c.abort(); }, []);
+  const out = useRef(false); // signed out, as the last cart read said
 
+  // Counts up with each cart read started and each change to the cart shown from a job's answer: a read answering after
+  // a newer one, or after a change, is older than what's showing, so it's dropped.
+  const cartAt = useRef(0);
   const refresh = useCallback(async () => {
+    const mine = ++cartAt.current;
     try {
       const r = await api.cart();
-      if (!alive.current) return;
-      setCart(r.cart); setPicks(r.picks); setAnswering(r.answering); setAway(r.away === true); setOutdated(r.outdated === true); setSignedOut(r.signedOut === true); setLoaded(true);
-    } catch (e) { if (!(e instanceof AuthError) && alive.current) setLoaded(true); }
+      if (mine !== cartAt.current || !isAlive(life)) return;
+      out.current = r.signedOut === true;
+      setCart(r.cart); setPicks(r.picks); setAway(r.away === true); setSignedOut(out.current); setLoaded(true);
+    } catch (e) { if (!(e instanceof AuthError) && isAlive(life)) setLoaded(true); }
   }, []);
-  useEffect(() => {
-    queueMicrotask(refresh);
-    const visible = () => document.visibilityState === "visible";
-    // No timer (Nov 11): the cart loads on open, when the app comes back, and after each job.
-    const back = () => { if (visible()) refresh(); };
-    document.addEventListener("visibilitychange", back);
-    return () => document.removeEventListener("visibilitychange", back);
-  }, [refresh]);
 
   /**
    * Queues a job and follows it. Each answer about it comes once the job's finished, or after about 20 seconds while it's
    * still going (the server waits, Nov 11: no timer in the app); a job nobody takes is given up by Simmer after 20 seconds.
    */
   const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal): Promise<JobOutcome> => {
+    if (signal?.aborted || !isAlive(life)) return { ok: false, problem: "" };
     let job: Job;
     try {
-      const q = await api.queueJob(kind, args);
-      setAnswering(q.answering);
-      job = q.job;
-    } catch (e) { return { ok: false, problem: errorText(e) }; }
+      job = (await api.queueJob(kind, args)).job;
+    } catch (e) { return { ok: false, problem: e instanceof AuthError ? "" : errorText(e) }; }
     for (const end = Date.now() + 150_000; Date.now() < end;) {
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
         const s = await api.job(job.id, signal);
         if (!s.job) return { ok: false, problem: problemText("") };
-        if (s.job.status === "done") { setAnswering(true); setAway(false); return { ok: true, result: s.job.result ?? {} }; }
+        if (s.job.status === "done") { setAway(false); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
           const error = String(s.job.result?.error ?? "");
           // The helper didn't pick it up: Safeway works as a checklist for the rest of this visit (no timer watches it).
-          if (error === "not-answering" || error === "stuck") { setAnswering(false); setAway(true); }
+          if (error === "not-answering" || error === "stuck") setAway(true);
           return { ok: false, problem: error === "cancelled" ? "" : problemText(error) };
         }
       } catch (e) {
@@ -97,35 +103,60 @@ export function useSafeway() {
   }, []);
 
   /**
+   * Shop opened, or the app came back to it: Simmer's copy of the cart, and Safeway's own cart read on the computer
+   * (Nov 14: only the helper's panel did, so on the phone the copy went stale: 6 in the cart here, 4 on Safeway). One
+   * reading on its way, or one done within CART_FRESH, is enough; signed out, it always looks again.
+   */
+  const lastRead = useRef({ busy: false, at: -Infinity });
+  const look = useCallback(() => {
+    void refresh();
+    const r = lastRead.current;
+    if (r.busy || (!out.current && Date.now() - r.at < CART_FRESH)) return;
+    r.busy = true;
+    setReading(true);
+    run("cart", {}, life.current?.signal).then((x) => {
+      r.busy = false;
+      r.at = Date.now();
+      if (!isAlive(life)) return;
+      setReading(false);
+      if (x.ok) void refresh();
+    });
+  }, [run, refresh]);
+
+  /**
    * Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. `query`:
    * the search that brings the product up; `alt`, other words to try; `on: "cart"`, change it on Safeway's cart page
    * first, where it's listed (from Cart, and from Find once it's in the cart: Nov 19, a − from the search page found
    * nothing at 2). The number shows at once (`pending`); taps while a change is on its way to
    * Safeway aren't sent one by one: when it's done, the latest number goes as one change (Nov 11: always responsive,
    * so the buttons never wait, and two changes for one product still never cross). One that fails puts the cart back
-   * and says why.
+   * and says why. Simmer's copy is read once when nothing's left on its way (each answer already has the number).
    */
   const latest = useRef<Record<string, number>>({});
   const sending = useRef<Record<string, boolean>>({});
+  const busy = useRef(0);
+  const settle = useCallback(() => { if (--busy.current === 0) void refresh(); }, [refresh]);
   const setQty = useCallback(async (p: Product, qty: number, query: string, forItem?: { id: string; item: string } | null, how?: { alt?: string; on?: "cart" }) => {
     setProblem(null);
     setPending((x) => ({ ...x, [p.id]: qty }));
     latest.current[p.id] = qty;
     if (sending.current[p.id]) return;
     sending.current[p.id] = true;
+    busy.current++;
     let sent = qty;
     let r: JobOutcome;
     for (;;) {
-      r = await run("setQty", { productId: p.id, qty: sent, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how });
-      if (!r.ok || !alive.current || latest.current[p.id] === sent) break;
+      r = await run("setQty", { productId: p.id, qty: sent, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how }, life.current?.signal);
+      if (!r.ok || !isAlive(life) || latest.current[p.id] === sent) break;
       sent = latest.current[p.id];
     }
     sending.current[p.id] = false;
     delete latest.current[p.id];
-    if (!alive.current) return;
+    if (!isAlive(life)) return;
     setPending((x) => { const { [p.id]: _gone, ...rest } = x; void _gone; return rest; });
     if (r.ok) {
       const now = Number(r.result.qty ?? sent);
+      cartAt.current++;
       setCart((c) => {
         const at = c.find((l) => l.productId === p.id);
         if (!now) return c.filter((l) => l.productId !== p.id);
@@ -133,26 +164,35 @@ export function useSafeway() {
         return [...c, { cart: "safeway", productId: p.id, name: p.name, price: p.price, image: p.image, qty: now, itemId: forItem?.id ?? "", item: forItem?.item ?? "", updated: "" }];
       });
       if (r.result.reached === false) setProblem("Safeway didn't take all of that. The cart shows what's there now.");
-      refresh();
     } else if (r.problem) setProblem(r.problem);
-  }, [run, refresh]);
+    settle();
+  }, [run, settle]);
+
+  /** Add usuals: every row shows its number at once; Safeway takes them one after another, then the cart is read once. */
+  const fill = useCallback(async (wants: CartWant[]) => {
+    setPending((x) => ({ ...x, ...Object.fromEntries(wants.map((w) => [w.p.id, w.qty])) }));
+    busy.current++;
+    for (const w of wants) {
+      if (!isAlive(life)) return;
+      await setQty(w.p, w.qty, w.query, w.forItem);
+    }
+    settle();
+  }, [setQty, settle]);
+
   /** The order went through: the cart shows empty at once (the server's answer follows with `refresh`). */
-  const forget = useCallback(() => setCart([]), []);
-  /** A number shown at once for a product whose change is about to be sent (Auto-fill shows every row's together). */
-  const show = useCallback((id: string, qty: number) => setPending((x) => ({ ...x, [id]: qty })), []);
+  const forget = useCallback(() => { cartAt.current++; setCart([]); }, []);
 
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, answering, away, outdated, signedOut, loaded, pending, problem, setProblem, refresh, run, setQty, qtyOf, forget, show };
+  return { cart, picks, away, signedOut, loaded, pending, reading, problem, setProblem, refresh, look, run, setQty, fill, qtyOf, forget };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
-/** A product's picture from Safeway, or a quiet placeholder. */
 const searchLink = (q: string) => `${PAGE.site}${PAGE.searchPath}${encodeURIComponent(q)}`;
 const productLink = (id: string) => `${PAGE.site}${PAGE.productPath.replace("{id}", id)}`;
 
-/** `tile`: a big picture across the top of a product tile once the screen is wide (Find's grid). */
+/** A product's picture from Safeway, or a quiet placeholder. `tile`: a big picture across the top of a product tile once the screen is wide (Find's grid). */
 export function ProductImage({ src, small, tile }: { src?: string; small?: boolean; tile?: boolean }) {
   const [broken, setBroken] = useState("");
   const size = `${small ? "size-10 rounded-lg" : "size-14 rounded-xl"}${tile ? " min-[640px]:h-32 min-[640px]:w-full" : ""}`;
@@ -162,11 +202,6 @@ export function ProductImage({ src, small, tile }: { src?: string; small?: boole
     : <span className={`flex ${size} shrink-0 items-center justify-center bg-sunk text-muted`}><Icon name="bag" className={small ? "size-5" : "size-6"} /></span>;
 }
 
-/**
- * − / count / +; − at one takes it out of the cart (a minus, never a trash: Sam, Nov 12). The count changes at once and the buttons never wait (Nov 11: always
- * responsive); quick taps go to Safeway as one change (useSafeway's setQty). `off`: Safeway can't be reached just now,
- * so neither can be pressed (Nov 3).
- */
 /** A row's + into the Safeway cart (Sam, Nov 17: "Plus on rows. Same button as changing quantities"). */
 export function CartPlus({ name, onClick }: { name: string; onClick: () => void }) {
   return (
@@ -177,6 +212,11 @@ export function CartPlus({ name, onClick }: { name: string; onClick: () => void 
   );
 }
 
+/**
+ * − / count / +; − at one takes it out of the cart (a minus, never a trash: Sam, Nov 12). The count changes at once and
+ * the buttons never wait (Nov 11: always responsive); quick taps go to Safeway as one change (useSafeway's setQty).
+ * `off`: Safeway can't be reached just now, so neither can be pressed (Nov 3).
+ */
 export function Stepper({ qty, name, off, compact, onChange }: { qty: number; name: string; off?: boolean; compact?: boolean; onChange: (n: number) => void }) {
   // `compact`: on a Shop row, beside the name, so the name keeps room.
   const btn = `glass relative before:absolute before:-inset-1.5 before:content-[''] flex ${compact ? "size-8" : "size-9"} items-center justify-center rounded-full text-accent transition active:scale-90 disabled:opacity-40 disabled:active:scale-100`;
@@ -226,7 +266,8 @@ function FindProduct({ p, sub, control }: { p: { name: string; image?: string };
   );
 }
 
-type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean };
+/** `by`: which search is loading it, so one stopped (Skip, Back, another search) takes only its own loading away. */
+type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean; by?: number };
 
 /**
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
@@ -244,37 +285,45 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [searches, setSearches] = useState<Record<string, Search>>({});
   const ctl = useRef<AbortController | null>(null);
+  const searchesMade = useRef(0);
   const query = it ? typed[it.id] ?? it.query : "";
+  const { run, setProblem, refresh } = sw; // each stays the same from render to render
   const search = useCallback(async (q: string, again = false) => {
     if (!q) return;
     ctl.current?.abort();
-    const c = new AbortController();
+    const c = new AbortController(), by = ++searchesMade.current;
     ctl.current = c;
-    setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true } }));
-    let r = await sw.run("search", { query: q }, c.signal);
+    setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true, by } }));
+    let r = await run("search", { query: q }, c.signal);
     // Safeway can say "no results" for a moment while its page is still building (Oct 31: "canned pumpkin" came back
     // empty, then full the next time), so an empty answer is asked once more before it's shown.
-    if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await sw.run("search", { query: q }, c.signal);
-    if (c.signal.aborted) return;
+    if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await run("search", { query: q }, c.signal);
+    if (c.signal.aborted) {
+      // Stopped before it answered: no grey rows left behind, so coming back to it searches again.
+      setSearches((s) => { if (s[q]?.by !== by) return s; const { [q]: _gone, ...rest } = s; void _gone; return rest; });
+      return;
+    }
     const signedIn = !r.ok || r.result.signedIn !== false;
     setSearches((s) => ({ ...s, [q]: r.ok
       ? { query: q, state: "done", products: (r.result.products as Product[]) ?? [], signedIn }
       : { query: q, state: "failed", products: [], signedIn: true } }));
     // A problem shows over the page (Nov 11: no bars); the results place says what's left to do.
-    if (!r.ok) sw.setProblem(r.problem || NOT_ANSWERING);
-    else if (!signedIn) { sw.setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`); void sw.refresh(); }
-  }, [sw, store]);
+    if (!r.ok) setProblem(r.problem || NOT_ANSWERING);
+    else if (!signedIn) { setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`); void refresh(); }
+  }, [run, setProblem, refresh, store]);
   // The item showing is searched for when it comes up (once; going back to it shows what was found). Its search words
   // are kept from then on, so a pick saved while it shows doesn't start another search.
   // Only then, and on Search: typing doesn't search (Nov 18: every letter of "lemon juice" went to Safeway, one after
   // another, and the last answered after 22 s).
   const itemId = it?.id ?? "";
-  const fresh = it && !(it.id in typed) ? it.query : "";
-  const known = Boolean(searches[fresh]);
+  // Coming back to an item whose search was stopped (Skip or Back before it answered) searches again.
+  const known = Boolean(searches[query]);
+  const shownItem = useRef("");
   useEffect(() => {
-    if (!fresh) return;
-    queueMicrotask(() => { setTyped((t) => (itemId in t ? t : { ...t, [itemId]: fresh })); if (!known) search(fresh); });
-  }, [fresh, known, search, itemId]);
+    if (!itemId || shownItem.current === itemId) return;
+    shownItem.current = itemId;
+    queueMicrotask(() => { setTyped((t) => (itemId in t ? t : { ...t, [itemId]: query })); if (!known) search(query); });
+  }, [itemId, query, known, search]);
   useEffect(() => () => ctl.current?.abort(), []);
   // Each search's results, in the order first shown.
   const [shown, setShown] = useState<Record<string, string[]>>({});

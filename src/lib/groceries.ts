@@ -4,29 +4,26 @@
 // dev) the list lives in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { after } from "next/server";
 import { generateJson } from "./google/gemini";
-import { appendRows, atomically, memo, readTab, readTabsIfAny, replaceTab, sheetsConfigured, updateRange, updateRanges } from "./google/sheets";
+import { appendRows, atomically, memo, outside, readTab, readTabsIfAny, replaceTab, sheetsConfigured, transact, updateRange, updateRanges } from "./google/sheets";
 import { AppError } from "./errors";
-import { parseCsv, records } from "./parse";
-import { known, norm, parseEntry } from "./words";
+import { col, newId, parseCsv, records, yes } from "./parse";
+import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
 export const SECTIONS = ["fresh", "pantry", "freezer", "household"] as const;
 export type Section = (typeof SECTIONS)[number];
 
-/** check: a dinner's thing (fresh or pantry), waiting on Stock until she says she needs it. */
 /**
  * check: a dinner's thing waiting in Stock's "For this plan" (not on a list). have: she checked and has it (Nov 11: Have |
  * Need), so it stays off the list and shows as Have; still a check, so every list leaves it out.
  */
 export type Item = { id: string; item: string; quantity: string; store: Store; section: Section; for: string; addedBy: string; addedAt: string; checked: boolean; check: boolean; have?: boolean };
 /**
- * A thing the house keeps. It goes on a list only when someone taps it on Stock as out (Nov 10: no Every week; nothing
- * comes back on a list by itself, since deciding to buy it again is that tap).
- */
-/**
- * A thing the house keeps. kind (Nov 16, Robin's run): common things always show on Stock; specialty ones (goat
+ * A thing the house keeps; it goes on a list only when someone taps Need on it (Nov 10: nothing comes back by itself).
+ * kind (Nov 16, Robin's run): common things always show on Stock; specialty ones (goat
  * cheese, five spice) show only while they're on the list or answered, and leave after the shop. group: the name of
  * the group it sits in on Stock (Cheese, Yogurt), set by her; "" for none.
  */
@@ -36,15 +33,15 @@ export type StapleKind = "common" | "specialty";
 const LIST = "List", STAPLES = "Staples", INGREDIENTS = "Ingredients";
 const LIST_HEADERS = ["id", "item", "quantity", "store", "section", "for", "added_by", "added_at", "checked", "checked_at", "check"];
 
-const asStore = (s: string): Store => {
+/** The store a cell names ("Trader Joe's", "TJs", "costco"), or "" for none it knows. */
+export const storeOf = (s: string): Store | "" => {
   const k = s.toLowerCase().replace(/[^a-z]/g, "");
-  return k.startsWith("trader") || k === "tj" || k === "tjs" ? "trader-joes" : k.startsWith("costco") ? "costco" : "safeway";
+  return k.startsWith("trader") || k === "tj" || k === "tjs" ? "trader-joes" : k.startsWith("costco") ? "costco" : k.startsWith("safeway") ? "safeway" : "";
 };
+const asStore = (s: string): Store => storeOf(s) || "safeway";
 const asSection = (s: string): Section => (SECTIONS as readonly string[]).includes(s.toLowerCase()) ? (s.toLowerCase() as Section) : "fresh";
-const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
 
 export { known, norm, parseEntry };
-
 
 // ---- reading
 
@@ -96,95 +93,139 @@ async function readList(): Promise<{ items: Item[]; rows?: string[][] }> {
 
 // ---- filing: which store and section an item goes in
 
-
 type Filing = { store: Store; section: Section };
+/** Where a thing goes until it's known: most things are Safeway's, and fresh is where she looks first. */
+const DEFAULT: Filing = { store: "safeway", section: "fresh" };
+const INGREDIENT_HEADERS = ["name", "section", "store"];
 
 /** The Ingredients tab by name (the first row for a name wins) and its row number. */
 function byName(rows: string[][]) {
   const out = new Map<string, Filing & { row: number }>();
-  for (const r of records(rows)) { const n = norm(r.get("name")); if (!out.has(n)) out.set(n, { store: asStore(r.get("store")), section: asSection(r.get("section")), row: r.rowNumber }); }
+  for (const r of records(rows)) { const n = norm(r.get("name")); if (n && !out.has(n)) out.set(n, { store: asStore(r.get("store")), section: asSection(r.get("section")), row: r.rowNumber }); }
   return out;
 }
+/** Where things go, as remembered (the Ingredients tab), by name. */
+const savedFilings = async (): Promise<Map<string, Filing>> => (sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients);
 
-/** Where an item goes: remembered, then common knowledge, then a quick guess (remembered after, so it's asked once). */
+/** Where an item goes by the rules: as remembered, then common knowledge, else the default. */
 export async function file(name: string): Promise<Filing> {
-  return (await fileAll([name]))[0];
+  return (await fileAll([{ name }])).filings[0];
 }
 
 /**
- * Where each of several items goes, with what's remembered read once (Nov 10: one read per item ran into Google's limit
- * of about 60 reads a minute) and the new guesses remembered together.
+ * Where each of several things goes, by the rules alone (what's remembered, read once, then common knowledge), and
+ * those neither knows, which go in the default place for now and are guessed after (see guessLater). `store`: the
+ * store she chose, kept whatever the guess.
  */
-const fileAll = atomically(async (names: string[]): Promise<Filing[]> => {
-  if (!names.length) return [];
-  const asked = memo(); // a change worked out again (redis-tabs.ts) doesn't ask Gemini again
-  const rows = sheetsConfigured() ? await rowsOf(INGREDIENTS) : null;
-  const saved: Map<string, Filing> = rows ? byName(rows) : (await mem()).ingredients;
-  const guessed: { name: string; f: Filing }[] = [];
-  const out = await Promise.all(names.map(async (name): Promise<Filing> => {
-    const r = saved.get(norm(name));
-    if (r) return { store: r.store, section: r.section };
-    const k = known(name);
-    if (k) return k;
-    const key = `file:${norm(name)}`;
-    if (asked.has(key)) { const f = asked.get(key) as Filing; guessed.push({ name, f }); return f; }
-    try {
-      const { data } = await generateJson<{ store: string; section: string }>(
-        `A family grocery list item: "${name}". Which store would they usually buy it at, and which part of the list is it? Stores: safeway (most things; the default), trader-joes (only Trader Joe's own products, like their frozen meals or dressings), costco (bulk household things like toilet paper). Sections: fresh (produce, dairy, meat, bread), pantry (shelf-stable food), freezer, household (not food).`,
-        { type: "OBJECT", properties: { store: { type: "STRING", enum: [...STORES] }, section: { type: "STRING", enum: [...SECTIONS] } }, required: ["store", "section"] },
-        { light: true, timeoutMs: 8_000 },
-      );
-      const f = { store: asStore(data.store), section: asSection(data.section) };
-      asked.set(key, f);
-      guessed.push({ name, f });
-      return f;
-    } catch (e) { console.error("couldn't file", name, e); return { store: "safeway", section: "fresh" }; }
-  }));
-  await rememberFilings(guessed);
-  return out;
-});
+async function fileAll(names: { name: string; store?: Store }[]): Promise<{ filings: Filing[]; unknown: { name: string; store?: Store }[] }> {
+  const saved = names.length ? await savedFilings() : new Map<string, Filing>();
+  const unknown: { name: string; store?: Store }[] = [];
+  const filings = names.map((x) => {
+    const r = saved.get(norm(x.name)) ?? known(x.name);
+    if (!r) unknown.push(x);
+    return { store: x.store ?? r?.store ?? DEFAULT.store, section: r?.section ?? DEFAULT.section };
+  });
+  return { filings, unknown };
+}
+
+/**
+ * Things the rules don't know are guessed once the answer has gone (Nov 19: an add waited on Gemini, one call per
+ * thing): one question for all of them, remembered, so no name is asked twice, and their lines (and kept things) still
+ * in the default place move to where they go. Outside a request (tests, scripts) it's done now. A change worked out
+ * again (redis-tabs.ts) doesn't ask again.
+ */
+function guessLater(names: { name: string; store?: Store }[]): Promise<void> | void {
+  const asked = memo();
+  const ask = names.filter((x) => !asked.has(`file:${norm(x.name)}`));
+  if (!ask.length || !process.env.GEMINI_API_KEY) return;
+  for (const x of ask) asked.set(`file:${norm(x.name)}`, true);
+  const run = () => guessFilings(ask).catch((e) => console.error("couldn't file", ask.map((x) => x.name), e));
+  // Outside the change's transaction (Nov 19, review): after() keeps its context, and the refile joined it once it was
+  // already written, so the guesses were lost and asked again.
+  try { after(() => outside(run)); } catch { return run(); }
+}
+
+async function guessFilings(names: { name: string; store?: Store }[]) {
+  const saved = await savedFilings(); // remembered meanwhile (she moved it, or another add asked): not asked again
+  const ask = [...new Map(names.filter((x) => !saved.has(norm(x.name))).map((x) => [norm(x.name), x])).values()].slice(0, 80);
+  if (!ask.length) return;
+  const { data } = await generateJson<{ items: { name: string; store: string; section: string }[] }>(
+    `Family grocery list items, one per line. For each, with its name exactly as written: which store they would usually buy it at, and which part of the list it is. Stores: safeway (most things; the default), trader-joes (only Trader Joe's own products, like their frozen meals or dressings), costco (bulk household things like toilet paper). Sections: fresh (produce, dairy, meat, bread), pantry (shelf-stable food), freezer, household (not food).\n\n${ask.map((x) => x.name).join("\n")}`,
+    { type: "OBJECT", properties: { items: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, store: { type: "STRING", enum: [...STORES] }, section: { type: "STRING", enum: [...SECTIONS] } }, required: ["name", "store", "section"] } } }, required: ["items"] },
+    { light: true, timeoutMs: 20_000 },
+  );
+  const answers = Array.isArray(data.items) ? data.items : [];
+  const got = new Map(answers.map((g) => [norm(String(g?.name ?? "")), g]));
+  const guessed = ask.flatMap((x, i) => {
+    const g = got.get(norm(x.name)) ?? (answers.length === ask.length ? answers[i] : undefined);
+    return g ? [{ name: x.name, kept: Boolean(x.store), f: { store: x.store ?? asStore(String(g.store ?? "")), section: asSection(String(g.section ?? "")) } }] : [];
+  });
+  if (guessed.length) await transact(() => refile(guessed));
+}
+
+/** Guesses remembered, and the lines and kept things still in the default place moved (`kept`: her store stays). */
+async function refile(guessed: { name: string; kept: boolean; f: Filing }[]) {
+  const now = await savedFilings();
+  const by = new Map(guessed.filter((g) => !now.has(norm(g.name))).map((g) => [norm(g.name), g]));
+  if (!by.size) return;
+  await rememberFilings([...by.values()]);
+  const { items, rows } = await readList();
+  const moved: CellChanges = items.flatMap((x) => {
+    const g = !x.checked && x.section === DEFAULT.section ? by.get(norm(x.item)) : undefined;
+    return g ? [[x.id, { section: g.f.section, ...(!g.kept && x.store === DEFAULT.store && { store: g.f.store }) }]] : [];
+  });
+  await setManyCells(moved, false, rows);
+  const { staples } = await loadList();
+  if (staples.some((s) => s.section === DEFAULT.section && by.has(norm(s.item)))) {
+    await writeStaples((all) => all.map((s) => { const g = s.section === DEFAULT.section ? by.get(norm(s.item)) : undefined; return g ? { ...s, section: g.f.section } : s; }));
+  }
+}
 
 /** The sections remembered for items by name (the Ingredients tab), for recipes to show what she set (Nov 16). */
 export async function savedSections(): Promise<Map<string, Section>> {
-  const saved: Map<string, Filing> = sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients;
-  return new Map([...saved].map(([n, f]) => [n, f.section]));
+  return new Map([...(await savedFilings())].map(([n, f]) => [n, f.section]));
 }
 
 /** Moves an item to Fresh or Pantry everywhere (Robin, Nov 15: cashews landed in Fresh): remembered, and on the list now. */
 export const fileSection = atomically(async (name: string, section: Section): Promise<void> => {
   // Its store as remembered or commonly known; no guess is asked for (she's only moving its section).
-  const saved: Map<string, Filing> = sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients;
-  const store = saved.get(norm(name))?.store ?? known(name)?.store ?? "safeway";
+  const store = (await savedFilings()).get(norm(name))?.store ?? known(name)?.store ?? DEFAULT.store;
   await rememberFilings([{ name, f: { store, section } }]);
   const { items, rows } = await readList();
   const same = items.filter((x) => norm(x.item) === norm(name) && x.section !== section && (section === "fresh" || section === "pantry"));
   if (same.length) await setManyCells(same.map((x) => [x.id, { section }]), false, rows);
 });
 
-/** Remembers where things go: a row already there for the name is changed, the rest added, in one write. */
+/**
+ * Remembers where things go: a row already there for the name is changed, the rest added, in one write, by the tab's
+ * own headers (a missing column joins the end).
+ */
 const rememberFilings = atomically(async (list: { name: string; f: Filing }[]) => {
   if (!list.length) return;
   if (!sheetsConfigured()) { const m = await mem(); for (const { name, f } of list) m.ingredients.set(norm(name), f); return; }
   const rows = await rowsOf(INGREDIENTS);
+  const own = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
+  const headers = [...own, ...INGREDIENT_HEADERS.filter((h) => !own.includes(h))];
+  const next = [headers, ...rows.slice(1).map((r) => [...r])];
   const at = byName(rows);
-  const last = new Map(list.map((x) => [norm(x.name), x])); // the same name twice: the later one
-  const changed: { range: string; values: string[][] }[] = [], added: string[][] = [];
-  for (const [n, { name, f }] of last) {
-    const r = at.get(n)?.row;
-    if (r) changed.push({ range: `${INGREDIENTS}!A${r}:C${r}`, values: [[name, f.section, f.store]] });
-    else added.push([name, f.section, f.store]);
+  for (const { name, f } of new Map(list.map((x) => [norm(x.name), x])).values()) { // the same name twice: the later one
+    const cells: Record<string, string> = { name, section: f.section, store: f.store };
+    const n = at.get(norm(name))?.row;
+    if (!n) { next.push(headers.map((h) => cells[h] ?? "")); continue; }
+    const row = next[n - 1];
+    headers.forEach((h, i) => { if (h in cells) { while (row.length < i) row.push(""); row[i] = cells[h]; } });
   }
-  await updateRanges(changed);
-  if (added.length) await appendRows(INGREDIENTS, [...(rows.length ? [] : [["name", "section", "store"]]), ...added]);
+  await replaceTab(INGREDIENTS, next, rows);
 });
 
 // ---- changing
 
-const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const stamp = () => new Date().toISOString();
 
-/** Adds an item, or merges it into the same unchecked item already on the list (quantities add up when they're numbers). */
-/** `filing`: where it goes, as she chose; a store alone leaves the section to work out (only for a new line, Nov 19). */
+/**
+ * Adds an item, or merges it into the same unchecked item already on the list (quantities add up when they're numbers).
+ * `filing`: where it goes, as she chose; a store alone leaves the section to work out (only for a new line, Nov 19).
+ */
 export const addItem = atomically(async (text: string, by: string, forWhat: string = "", filing?: { store: Store; section?: Section }, amount?: string): Promise<Item> => {
   const parsed = parseEntry(text);
   const { item, quantity } = amount === undefined ? parsed : { item: text.trim(), quantity: amount.trim() };
@@ -194,13 +235,14 @@ export const addItem = atomically(async (text: string, by: string, forWhat: stri
   if (same) {
     const q = addUp(same.quantity, quantity);
     // Added by hand onto a dinner's line: it says so, so taking the dinner off leaves it.
-    const f = forWhat ? joinFor(same.for, forWhat) : same.for && !forOf(same.for).includes(BY_HAND) ? [BY_HAND, ...forOf(same.for)].join(", ").slice(0, 120) : same.for;
+    const f = forWhat ? joinFor(same.for, forWhat) : same.for && !forOf(same.for).includes(BY_HAND) ? [BY_HAND, ...forOf(same.for)].join(", ") : same.for;
     if (q !== same.quantity || f !== same.for) await setManyCells([[same.id, { quantity: q, for: f }]], true, rows);
     return { ...same, quantity: q, for: f };
   }
-  const f = filing?.section ? { store: filing.store, section: filing.section } : { ...(await file(item)), ...(filing && { store: filing.store }) };
+  const { filings: [f], unknown } = filing?.section ? { filings: [{ store: filing.store, section: filing.section }], unknown: [] } : await fileAll([{ name: item, store: filing?.store }]);
   const row: Item = { id: newId(), item, quantity, store: f.store, section: f.section, for: forWhat, addedBy: by, addedAt: stamp(), checked: false, check: false };
   await appendItems([row], rows);
+  await guessLater(unknown);
   return row;
 });
 
@@ -223,33 +265,27 @@ const appendItems = atomically(async (rows: Item[], existing?: string[][]) => {
   }
   await appendRows(LIST, rows.map((r) => headers.map((h) => cellsOf(r)[h] ?? "")));
 });
-const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
 
 // ---- adding amounts up
 
 const GLYPHS: Record<string, number> = { "½": 1 / 2, "¼": 1 / 4, "¾": 3 / 4, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 1 / 8 };
-/** Units that can be added up, each spelling → one name ("lbs", "pounds" → lb). Others (a "medium" onion) aren't summed. */
-const UNITS: Record<string, string> = {
-  lb: "lb", lbs: "lb", pound: "lb", pounds: "lb", oz: "oz", ounce: "oz", ounces: "oz",
-  can: "can", cans: "can", head: "head", heads: "head", bunch: "bunch", bunches: "bunch", bag: "bag", bags: "bag",
-  jar: "jar", jars: "jar", box: "box", boxes: "box", bottle: "bottle", bottles: "bottle", package: "package", packages: "package",
-  pkg: "package", pkgs: "package", loaf: "loaf", loaves: "loaf", stick: "stick", sticks: "stick", clove: "clove", cloves: "clove",
-  cup: "cup", cups: "cup", tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp", tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-  pint: "pint", pints: "pint", quart: "quart", quarts: "quart", gallon: "gallon", gallons: "gallon", dozen: "dozen",
-};
-const PLURAL: Record<string, string> = { bunch: "bunches", box: "boxes", loaf: "loaves" };
-const SAME_PLURAL = new Set(["lb", "oz", "tbsp", "tsp", "dozen"]);
+/** Units that don't take an s (2 lb, 500 g), and those with their own plural. */
+const SAME_PLURAL = new Set(["lb", "oz", "tbsp", "tsp", "dozen", "g", "kg", "ml", "l"]);
+const PLURAL: Record<string, string> = { bunch: "bunches", box: "boxes", loaf: "loaves", pinch: "pinches", dash: "dashes", pouch: "pouches" };
+const amountText = (n: number, unit: string) => [numberText(n), !unit ? "" : SAME_PLURAL.has(unit) || n <= 1 ? unit : PLURAL[unit] ?? `${unit}s`].filter(Boolean).join(" ");
 
-/** "1½ lb", "1 1/2 lbs", "1/2 pound", "2" → { n, unit } (unit "" for a plain count); null when it isn't one number and one known unit. */
+/**
+ * "1½ lb", "1 1/2 lbs", "1/2 pound", "2" → { n, unit } (unit "" for a plain count), in the units ingredient lines are
+ * read with (words.ts, Nov 19: grams, slices and the rest weren't added up); null when it isn't one number and one unit.
+ */
 export function amountOf(q: string): { n: number; unit: string } | null {
-  const m = q.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)?\s*(?:(\d+)\/(\d+)|([½¼¾⅓⅔⅛]))?\s*([a-z]+\.?)?$/);
-  if (!m || (!m[1] && !m[2] && !m[4])) return null;
-  if (m[1] && m[2] && /\./.test(m[1])) return null; // "1.5 1/2"
-  const n = Number(m[1] ?? 0) + (m[2] ? Number(m[2]) / Number(m[3]) : 0) + (m[4] ? GLYPHS[m[4]] : 0);
+  const m = plainFractions(q).match(/^(\d+(?:\.\d+)?)?\s*(?:(\d+)\/(\d+))?\s*([a-z]+)?\.?$/i);
+  if (!m || (!m[1] && !m[2]) || (m[1]?.includes(".") && m[2])) return null; // "1.5 1/2"
+  const n = Number(m[1] ?? 0) + (m[2] ? Number(m[2]) / Number(m[3]) : 0);
   if (!Number.isFinite(n) || (m[2] && !Number(m[3]))) return null;
-  const word = (m[5] ?? "").replace(/\.$/, "");
-  if (word && !UNITS[word]) return null;
-  return { n, unit: word ? UNITS[word] : "" };
+  const word = m[4] ?? "";
+  const unit = word && (UNIT_NAMES[word] ?? UNIT_NAMES[word.toLowerCase()]); // T is a tablespoon, t a teaspoon
+  return word && !unit ? null : { n, unit: unit || "" };
 }
 /** 2.5 → "2½", 0.5 → "½", 2 → "2"; other fractions as decimals ("1.38"). */
 function numberText(n: number): string {
@@ -262,16 +298,25 @@ function numberText(n: number): string {
 
 /**
  * Two amounts of the same thing on the list, added up when they share a unit: "1 lb" + "1 lb" → "2 lb", "1½ lb" + "1/2 lb"
- * → "2 lb", "1" + "1" → "2" (Nov 9: pounds stayed "1 lb"). Otherwise the newer amount, or the one there is.
+ * → "2 lb", "1" + "1" → "2" (Nov 9: pounds stayed "1 lb"). Different units are both kept ("1 dozen + 1"; Nov 10: a
+ * recipe's "1" egg replaced the "1 dozen" added by hand), and a combined amount gains in its part with the same unit
+ * ("1 dozen + 1" + "1" → "1 dozen + 2"). Otherwise the newer amount, or the one there is.
  */
 export function addUp(a: string, b: string): string {
-  const x = amountOf(a), y = amountOf(b);
-  // Different units: both kept ("1 dozen + 1"; Nov 10: a recipe's "1" egg replaced the "1 dozen" added by hand).
-  if (x && y && x.unit !== y.unit) return `${a.trim()} + ${b.trim()}`;
+  return b.split(" + ").reduce((sum, part) => addPart(sum.trim(), part.trim()), a);
+}
+function addPart(a: string, b: string): string {
+  const y = amountOf(b);
+  if (a.includes(" + ")) {
+    if (!y) return a;
+    const parts = a.split(" + ");
+    const i = parts.findIndex((p) => amountOf(p)?.unit === y.unit);
+    return i < 0 ? `${a} + ${b}` : parts.map((p, j) => (j === i ? addPart(p, b) : p)).join(" + ");
+  }
+  const x = amountOf(a);
+  if (x && y && x.unit !== y.unit) return `${a} + ${b}`;
   if (!x || !y) return b || a;
-  const n = x.n + y.n;
-  const unit = !x.unit ? "" : SAME_PLURAL.has(x.unit) || n <= 1 ? x.unit : PLURAL[x.unit] ?? `${x.unit}s`;
-  return [numberText(n), unit].filter(Boolean).join(" ");
+  return amountText(x.n + y.n, x.unit);
 }
 
 /**
@@ -284,17 +329,14 @@ export function takeAway(a: string, b: string): string | null {
     for (let i = parts.length - 1; i >= 0; i--) {
       const less = takeAway(parts[i], b);
       if (less === null) continue;
-      const rest = [...parts.slice(0, i), ...(less ? [less] : []), ...parts.slice(i + 1)];
-      return rest.join(" + ");
+      return [...parts.slice(0, i), ...(less ? [less] : []), ...parts.slice(i + 1)].join(" + ");
     }
     return null;
   }
   const x = amountOf(a), y = amountOf(b);
   if (!x || !y || x.unit !== y.unit) return null;
   const n = x.n - y.n;
-  if (n <= 1e-6) return "";
-  const unit = !x.unit ? "" : SAME_PLURAL.has(x.unit) || n <= 1 ? x.unit : PLURAL[x.unit] ?? `${x.unit}s`;
-  return [numberText(n), unit].filter(Boolean).join(" ");
+  return n <= 1e-6 ? "" : amountText(n, x.unit);
 }
 
 /** The dinners a list item is for ("tacos, turkey chili"). */
@@ -308,7 +350,7 @@ export const BY_HAND = "added by hand";
 const joinFor = (now: string, what: string) => {
   const parts = forOf(now);
   if (!what || parts.includes(what)) return now;
-  return [...(parts.length ? parts : [BY_HAND]), what].join(", ").slice(0, 120);
+  return [...(parts.length ? parts : [BY_HAND]), what].join(", ");
 };
 
 /**
@@ -320,17 +362,31 @@ const joinFor = (now: string, what: string) => {
 export const takeOffFor = atomically(async (needs: { item: string; quantity: string; for: string; stay?: boolean }[], held: Set<string> = new Set()): Promise<number> => {
   if (!needs.length) return 0;
   const { items, rows } = await readList();
+  // Each dinner's helpings of a thing together: planned twice and taken off, both amounts come off.
+  const helpings = new Map<string, { key: string; for: string; amounts: string[]; stay: boolean }>();
+  for (const n of needs) {
+    const key = norm(n.item), h = helpings.get(`${key}\n${n.for}`) ?? { key, for: n.for, amounts: [], stay: false };
+    h.amounts.push(n.quantity);
+    h.stay ||= Boolean(n.stay);
+    helpings.set(`${key}\n${n.for}`, h);
+  }
+  const open = new Map<string, Item[]>();
+  for (const x of items) if (!x.checked) open.set(norm(x.item), [...(open.get(norm(x.item)) ?? []), x]);
   const drop = new Set<string>();
   const cut = new Map<string, { quantity: string; for: string }>();
-  for (const n of needs) {
-    const it = items.find((x) => !x.checked && !drop.has(x.id) && norm(x.item) === norm(n.item) && forOf(cut.get(x.id)?.for ?? x.for).includes(n.for));
+  for (const h of helpings.values()) {
+    const it = open.get(h.key)?.find((x) => !drop.has(x.id) && forOf(cut.get(x.id)?.for ?? x.for).includes(h.for));
     if (!it || held.has(it.id)) continue;
     const now = cut.get(it.id) ?? { quantity: it.quantity, for: it.for };
     // `stay`: the same dinner is still planned (it was planned twice): its amount is cut back, and it stays for it.
-    const others = n.stay ? forOf(now.for) : forOf(now.for).filter((f) => f !== n.for);
+    const others = h.stay ? forOf(now.for) : forOf(now.for).filter((f) => f !== h.for);
     if (!others.length) { drop.add(it.id); cut.delete(it.id); continue; }
-    const less = n.quantity ? takeAway(now.quantity, n.quantity) : null;
-    cut.set(it.id, { quantity: less === null || (n.stay && less === "") ? now.quantity : less, for: others.join(", ") });
+    let quantity = now.quantity;
+    for (const a of h.amounts) {
+      const less = a ? takeAway(quantity, a) : null;
+      if (less !== null && !(h.stay && less === "")) quantity = less;
+    }
+    cut.set(it.id, { quantity, for: others.join(", ") });
   }
   const cuts: CellChanges = [...cut].map(([id, c]) => [id, { quantity: c.quantity, for: c.for }]);
   if (rows && drop.size) {
@@ -351,12 +407,12 @@ export const takeOffFor = atomically(async (needs: { item: string; quantity: str
  * the Safeway cart (`held`), which stays so the cart and the list agree. Answers how many came off.
  */
 export const emptyLists = atomically(async (held: Set<string> = new Set()): Promise<number> => {
-  const { items } = await loadList();
+  const { items, rows } = await readList();
   const off = items.filter((x) => !held.has(x.id));
   // What was ticked as got is written down as bought first (Nov 14: Done shopping is gone, so this is where it's noted).
   await recordBought(off.filter((x) => x.checked));
   const ids = off.map((x) => x.id);
-  if (ids.length) await removeItems(ids);
+  if (ids.length) await removeItems(ids, rows);
   return ids.length;
 });
 
@@ -370,27 +426,32 @@ export const addItems = atomically(async (entries: { item: string; quantity: str
   // What the house keeps (Stock) is only highlighted there, to check; so is everything a dinner needs, fresh too (Sam,
   // Nov 14: Shop had every fresh thing she'd never said Need to); the rest goes on a list.
   const kept = new Set(staples.map((s) => norm(s.item)));
-  const fresh: Item[] = [];
-  const merged = new Map<string, { quantity: string; for: string }>();
+  const open = new Map<string, Item>(); // the unchecked line for each thing (the first, as merging always picks)
+  for (const x of items) if (!x.checked && !open.has(norm(x.item))) open.set(norm(x.item), x);
+  const fresh: Item[] = [], merged = new Set<Item>();
   for (const e of entries) {
     const item = e.item.replace(/\s+/g, " ").trim().slice(0, 80);
     if (!item) continue;
-    const same = [...fresh, ...items].find((x) => !x.checked && norm(x.item) === norm(item));
-    if (same) {
-      const q = e.check && !same.check ? same.quantity : addUp(same.quantity, e.quantity);
-      const f = joinFor(same.for, e.for);
-      if (fresh.includes(same)) { same.quantity = q; same.for = f; if (!e.check) same.check = false; }
-      else if (q !== same.quantity || f !== same.for || (!e.check && same.check)) { merged.set(same.id, { quantity: q, for: f }); Object.assign(same, { quantity: q, for: f, check: e.check ? same.check : false }); }
+    const same = open.get(norm(item));
+    if (!same) {
+      const x: Item = { id: newId(), item, quantity: e.quantity, store: DEFAULT.store, section: DEFAULT.section, for: e.for, addedBy: by, addedAt: stamp(), checked: false, check: Boolean(e.check) };
+      fresh.push(x);
+      open.set(norm(item), x);
       continue;
     }
-    fresh.push({ id: newId(), item, quantity: e.quantity, store: "safeway", section: "fresh", for: e.for, addedBy: by, addedAt: stamp(), checked: false, check: Boolean(e.check) });
+    // Its amount always joins with its name (Nov 19: a dinner joining a line she'd said Need to added its name but not
+    // its amount, so taking the dinner off took away what it never added). A thing for a list takes it off Stock.
+    const change = { quantity: addUp(same.quantity, e.quantity), for: joinFor(same.for, e.for), check: e.check ? same.check : false };
+    if (change.quantity === same.quantity && change.for === same.for && change.check === same.check) continue;
+    Object.assign(same, change);
+    if (!fresh.includes(same)) merged.add(same);
   }
-  // Filed together, so the few new things that need a guess are asked about at the same time.
-  const filings = await fileAll(fresh.map((x) => x.item));
-  fresh.forEach((x, i) => Object.assign(x, filings[i]));
-  for (const x of fresh) x.check = kept.has(norm(x.item)) || Boolean(x.check);
-  await setManyCells([...merged].map(([id, m]) => [id, { quantity: m.quantity, for: m.for, check: checkCell(items.find((x) => x.id === id)!) }]), false, rows);
+  // Filed together by the rules; the few they don't know are guessed together once the answer's gone.
+  const { filings, unknown } = await fileAll(fresh.map((x) => ({ name: x.item })));
+  fresh.forEach((x, i) => Object.assign(x, filings[i], { check: kept.has(norm(x.item)) || x.check }));
+  await setManyCells([...merged].map((x) => [x.id, { quantity: x.quantity, for: x.for, check: checkCell(x) }]), false, rows);
   await appendItems(fresh, rows);
+  await guessLater(unknown);
   // How many rows changed, waiting on Stock or on a list (Nov 14: a dinner's things all wait on Stock, and the screens
   // read the list again whenever this isn't 0).
   return fresh.length + merged.size;
@@ -477,23 +538,21 @@ export const moveItem = atomically(async (id: string, to: { store?: Store; secti
 const BOUGHT = "Bought";
 const BOUGHT_HEADERS = ["item", "quantity", "store", "date_bought", "for"];
 const boughtRow = (x: Item) => [x.item, x.quantity, x.store, stamp().slice(0, 10), x.for];
-const boughtMemory: string[][] = [];
 
-/** What has been bought so far (the Bought tab), newest last; read for the tests and for whatever looks back later. */
-export async function loadBought(): Promise<string[][]> {
-  return sheetsConfigured() ? (await readTab(BOUGHT)).slice(1) : [...boughtMemory];
-}
-
-/** Bought history (Nov 3): what's coming off the list is written down first, so the rows only go once the note is safely made. */
+/**
+ * Bought history (Nov 3), kept in the Bought tab for whatever looks back later (local dev keeps none): what's coming
+ * off the list is written down first, so the rows only go once the note is safely made.
+ */
 const recordBought = atomically(async (gone: Item[]) => {
-  if (!gone.length) return;
-  if (!sheetsConfigured()) { boughtMemory.push(...gone.map(boughtRow)); return; }
+  if (!gone.length || !sheetsConfigured()) return;
   const existing = await readTab(BOUGHT);
   await appendRows(BOUGHT, [...(existing.length ? [] : [BOUGHT_HEADERS]), ...gone.map(boughtRow)]);
 });
 
-/** Finishing a trip: the store's checked items come off the list (everything else stays, including other stores'). */
-/** Bought: clears that store's checked items, and `alsoIds` (for Safeway, what's in the cart). */
+/**
+ * Finishing a trip: the store's checked items come off the list, and `alsoIds` (for Safeway, what's in the cart);
+ * everything else stays, other stores' too.
+ */
 export const doneShopping = atomically(async (store: Store, alsoIds: Set<string> = new Set()): Promise<number> => {
   const off = (x: Item) => x.store === store && (x.checked || alsoIds.has(x.id));
   if (!sheetsConfigured()) {
@@ -553,10 +612,11 @@ const writeStaples = atomically(async (change: (all: Staple[]) => Staple[]) => {
 export const addStaple = atomically(async (text: string, section?: Section, opts: { kind?: StapleKind; group?: string } = {}) => {
   const item = text.replace(/\s+/g, " ").trim().slice(0, 80);
   if (!item) return;
-  const f = await file(item);
+  const { filings: [f], unknown } = await fileAll([{ name: item }]);
   await writeStaples((all) => (all.some((s) => norm(s.item) === norm(item))
     ? all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(opts.kind && { kind: opts.kind }), ...(opts.group !== undefined && { group: opts.group }) } : s))
     : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "", kind: opts.kind ?? "common", group: opts.group ?? "" }]));
+  if (!section) await guessLater(unknown);
 });
 /** A kept thing made common or specialty, or put in a group ("" for none) (Nov 16). */
 export const setStaple = (item: string, change: { kind?: StapleKind; group?: string }) =>
@@ -574,10 +634,11 @@ export const moveStaple = (item: string, section: Section) => writeStaples((all)
  * one rule in one place (Nov 3, replacing "highlights reset with a new week").
  */
 export const dropHighlightsNotFor = atomically(async (planned: string[]) => {
-  const names = planned.map(norm).filter(Boolean);
+  const names = new Set(planned.map(norm).filter(Boolean));
   // Only a dinner's own rows (Nov 14: a kept thing's Have or Need, or one added by hand, is never dropped here).
   const forDinner = (x: Item) => Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week" && !forOf(x.for).includes(BY_HAND);
-  const stale = (x: Item) => x.check && !x.checked && forDinner(x) && !names.some((n) => norm(x.for).includes(n));
+  // By whole names (Nov 19: "soup" planned kept chicken soup's rows).
+  const stale = (x: Item) => x.check && !x.checked && forDinner(x) && !forOf(x.for).some((f) => names.has(norm(f)));
   if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !stale(x)); return; }
   const { items, rows } = await readList();
   const ids = items.filter(stale).map((x) => x.id);

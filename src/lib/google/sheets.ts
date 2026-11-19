@@ -44,7 +44,7 @@ export const updateRange = (range: string, rows: string[][]) => R.updateRanges(s
 export const transact = <T>(change: () => Promise<T>): Promise<T> => (redis() ? R.transact(store(), change) : change());
 /** A function whose every call is one transaction. */
 export const atomically = <A extends unknown[], T>(f: (...a: A) => Promise<T>) => (...a: A): Promise<T> => transact(() => f(...a));
-export { memo } from "./redis-tabs";
+export { memo, outside } from "./redis-tabs";
 
 // ---- Settings → Copy to Google Sheet
 
@@ -101,7 +101,9 @@ const a1 = (title: string, cell = "") => `'${title.replace(/'/g, "''")}'${cell &
  */
 export async function exportToSheet(): Promise<number> {
   if (!googleConfigured()) throw new Error("There's no Google Sheet to copy to.");
-  const tabs = await R.allTabs(store());
+  // The checkout record is a list of its own now (Nov 19), sent as its old tab (imported here, not at the top: checkout.ts
+  // imports this file).
+  const tabs = [...(await R.allTabs(store())).filter(([t]) => t !== "Checkout record"), ["Checkout record", await (await import("../checkout")).checkoutRecordRows()] as [string, string[][]]];
   if (!tabs.length) return 0;
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
   const sheet = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}`;
