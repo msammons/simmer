@@ -7,6 +7,7 @@
 //
 // In its own file rather than checkout.ts because it needs Face ID (passkeys.ts, which itself records through
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
+import { NS } from "./google/redis-tabs";
 import { recordTrip } from "./plan";
 import { print as CHECKOUT_PRINT } from "./checkout-print.json";
 import { randomBytes } from "node:crypto";
@@ -59,23 +60,23 @@ export type TimesView = { days: { key: string; label: string }[]; day: string; t
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
 /** Each reading under its own id (Nov 19: one shared key let a second Get ready swap the figures Face ID approved). */
-const PREPARED_KEY = "simmer:checkout-prepared:";
+const PREPARED_KEY = `${NS}:checkout-prepared:`;
 /** The pickup times just offered: a set, each added in one step, kept 10 minutes from the last listing. */
-const TIMES_KEY = "simmer:checkout-times-offered";
+const TIMES_KEY = `${NS}:checkout-times-offered`;
 const TIMES_MS = 10 * 60_000;
-const APPROVAL_KEY = "simmer:checkout-approval:";
-const RUN_KEY = "simmer:checkout-run:";
+const APPROVAL_KEY = `${NS}:checkout-approval:`;
+const RUN_KEY = `${NS}:checkout-run:`;
 /** An order started, by its approval's id: what was approved, kept for working out what happened (Nov 19). */
-const ORDER_KEY = "simmer:checkout-order:";
+const ORDER_KEY = `${NS}:checkout-order:`;
 /** What an order came to, by its approval's id, worked out once when the helper reports (Nov 19). */
-const OUTCOME_KEY = "simmer:checkout-outcome:";
+const OUTCOME_KEY = `${NS}:checkout-outcome:`;
 /** A placing job pressing for this long with no report: the phone stops following and says to check Safeway. */
 const PRESS_FOLLOW_MS = 3 * 60_000;
 /** An order on its way and not reported yet: while it's there, no other order starts (outside review, Nov 14). */
-const GOING_KEY = "simmer:checkout-order-going";
+const GOING_KEY = `${NS}:checkout-order-going`;
 const GOING_MS = 30 * 60_000;
 /** The helper versions that have passed a test run on the account (docs/CHECKOUT.md: an update needs a new one). */
-const DRY_KEY = "simmer:checkout-dry-passed";
+const DRY_KEY = `${NS}:checkout-dry-passed`;
 /** How long the server waits on the helper per request; the sheet asks again while it's still going (no timers). */
 export const WAIT_MS = 20_000;
 

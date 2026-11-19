@@ -8,6 +8,7 @@
 // (simmer:job:<id>, dropped by Redis a day after its last change), every status change is made only from the status
 // read, in one step (kv.ts swap), and two sorted sets index them: every job by when it was queued (the panel's log),
 // and the ones still open (the queue).
+import { NS } from "./google/redis-tabs";
 import manifest from "../../extension-working/manifest.json";
 import { clearCart, loadCart, matchCart, savePick, setCartLine, setCartLines } from "./safeway";
 import { imageFor, orderSince } from "./safeway-helper.mjs";
@@ -50,12 +51,12 @@ export const JOB_TIMES = { pickup: 20_000, checkoutPickup: 60_000, stuck: 120_00
  */
 const PLACE_AFTER_DEADLINE = 60_000;
 
-const JOB = (id: string) => `simmer:job:${id}`;
+const JOB = (id: string) => `${NS}:job:${id}`;
 /** Every job by when it was queued, for the panel's log; trimmed to a day as jobs are queued. */
-const INDEX = "simmer:jobs";
+const INDEX = `${NS}:jobs`;
 /** The jobs still waiting or being done (the queue); one that finished leaves it. */
-const OPEN = "simmer:jobs-open";
-const HELPER_KEY = "simmer:helper";
+const OPEN = `${NS}:jobs-open`;
+const HELPER_KEY = `${NS}:helper`;
 const KEEP_S = JOB_TIMES.keep / 1000;
 
 // An id sorts as it was made: the time, then a count within this server (two jobs queued in the same millisecond keep
@@ -141,7 +142,7 @@ const lateError = (j: Job) => (j.status === "waiting" ? "not-answering" : "stuck
  * Whether the computer looks away (Nov 19, for Shop's plain checklist): set when a job is given up as not answering or
  * stuck, and cleared when a job is next done, so it says the latest job failed that way and none has worked since.
  */
-const AWAY_KEY = "simmer:helper-away";
+const AWAY_KEY = `${NS}:helper-away`;
 /** An overdue job, given up: failed, with why (only if it's still as it was read). */
 async function giveUp(id: string, read?: { job: Job; raw: string }): Promise<Job | null> {
   const j = await change(id, (x) => (overdue(x) ? { ...x, status: "failed", result: { error: lateError(x) } } : null), read);
@@ -174,7 +175,7 @@ export const helperOutdated = (h: Helper | null) => Boolean(h?.version) && older
  * out, and it may not be right). Set by a cart read or search that sees Safeway signed out, and by a checkout step
  * that stopped "signed out"; only a cart read that sees Safeway signed in clears it (and puts the cart right). Kept under its own key, so a check-in never writes over it.
  */
-const SIGNED_OUT_KEY = "simmer:safeway-signed-out";
+const SIGNED_OUT_KEY = `${NS}:safeway-signed-out`;
 async function noteSignedIn(signedIn: boolean): Promise<void> {
   if (signedIn) await kv().del(SIGNED_OUT_KEY);
   else await kv().set(SIGNED_OUT_KEY, now(), { ex: 30 * 24 * 3600 });
@@ -295,7 +296,7 @@ async function checkIn(version: string, panel: boolean): Promise<Helper | null> 
  * gone, and nothing could wake the helper. Its own key is written only when the helper subscribes. Null takes it off,
  * when the push service says it's gone.
  */
-const PUSH_KEY = "simmer:helper-push";
+const PUSH_KEY = `${NS}:helper-push`;
 export async function savePush(push: { key: string; sub: PushSub } | null): Promise<void> {
   if (push) await kv().set(PUSH_KEY, JSON.stringify(push), { ex: 400 * 24 * 3600 });
   else await kv().del(PUSH_KEY);
@@ -330,7 +331,7 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
     // Test runs and placing only by the helper Simmer ships (Nov 19, review): an older one never asks "may I press?".
     if ((w.job.kind === "checkoutPlace" || w.job.kind === "checkoutDry") && version !== HELPER_VERSION) continue;
     // A placing job is also claimed under its own key first (outside review, Nov 14), which stays even if it's handed back.
-    if (w.job.kind === "checkoutPlace" && (await kv().set(`simmer:claimed:${w.job.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") continue;
+    if (w.job.kind === "checkoutPlace" && (await kv().set(`${NS}:claimed:${w.job.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") continue;
     let took = false;
     // Which helper took it (outside review, Nov 18): a test run counts only for the helper Simmer ships.
     const job = await change(w.job.id, (j) => { took = j.status === "waiting"; return took ? { ...j, status: "working", args: { ...j.args, by: str(version, 40) } } : null; });
@@ -496,4 +497,4 @@ export async function recentJobs(limit = 20): Promise<Activity[]> {
 }
 
 /** For tests. */
-export const resetJobs = () => { for (const p of ["simmer:job", "simmer:helper", "simmer:claimed:"]) resetKv(p); };
+export const resetJobs = () => { for (const p of [`${NS}:job`, `${NS}:helper`, `${NS}:claimed:`]) resetKv(p); };
