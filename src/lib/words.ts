@@ -67,7 +67,7 @@ const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\
 
 /** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
 /** Sizes and cuts before the name ("large", "chopped", "skinless, boneless"), as many as there are. */
-const LEADING = /^(?:(?:extra[- ]large|small|medium|large|jumbo|skinless|boneless|bone-in|skin-on|chopped|diced|minced|finely|roughly|coarsely|thinly|peeled)\s*,?\s+)+/i;
+const LEADING = /^(?:(?:extra[- ]large|small|medium|large|jumbo|skinless|boneless|bone-in|skin-on|chopped(?!\s+(?:tomato|spinach|clam))|diced(?!\s+(?:tomato|green chile|chile))|minced(?!\s+(?:clam))|finely|roughly|coarsely|thinly|peeled)\s*,?\s+)+/i;
 
 /**
  * One line that's two things to buy: "salt and black pepper" is salt and black pepper, when each is something known

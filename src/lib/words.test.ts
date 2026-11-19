@@ -53,6 +53,8 @@ describe("what goes on the list (Nov 18)", () => {
     expect(item("1 large onion, diced")).toEqual(["onion"]);
     expect(item("8 skinless, boneless chicken thighs")).toEqual(["chicken thighs"]);
     expect(item("2 cups whole milk")).toEqual(["whole milk"]);
+    expect(item("1 (14-ounce) can diced tomatoes")).toEqual(["diced tomatoes"]);
+    expect(item("1 box chopped spinach")).toEqual(["chopped spinach"]);
   });
   it("takes one choice of two, and puts two things on two lines", () => {
     expect(item("1 teaspoon red wine vinegar or balsamic vinegar")).toEqual(["red wine vinegar"]);
