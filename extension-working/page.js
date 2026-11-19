@@ -204,6 +204,7 @@ export async function safewayPage(action, arg, P) {
     };
   }
 
+  // not-checkout:start (add, quantities, snapshots: never used by checkout; changes here need no test run, docs/CHECKOUT.md)
   if (action === "add") {
     const { id, times } = arg;
     const find = () => products().find((p) => p.id === id);
@@ -283,6 +284,7 @@ export async function safewayPage(action, arg, P) {
   }
 
   if (action === "snapshot") return snapshot(arg.id);
+  // not-checkout:end
 
   // Checkout, read-only (Nov 12, docs/CHECKOUT.md phase 1): what the page says, its links (with where they go) and its
   // buttons' words. Nothing here presses, types, or changes anything.
@@ -481,6 +483,7 @@ export async function safewayPage(action, arg, P) {
     return { pressed: true, words: words.slice(0, 160), checked: found[0].checked };
   }
 
+  // not-checkout:start (Purchases page and samples: never used by checkout)
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
   // Answers { signedIn, online (the Online tab found and showing), pressed, none ("no orders" said), entries (the words
   // of each order listed with a date), text (the page's words, to learn from) }. It only reads and presses that tab.
@@ -524,6 +527,7 @@ export async function safewayPage(action, arg, P) {
       `around the first add: ${around ? tidy(around).slice(0, 5000) : "none"}`,
     ].join("\n");
   }
+  // not-checkout:end
 
   return null;
 }

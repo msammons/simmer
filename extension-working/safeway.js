@@ -99,6 +99,7 @@ async function waitForProducts(tabId, page, settings, tries = settings.resultsTr
 const searchUrl = (query, page) => `${page.site}${page.searchPath}${encodeURIComponent(query)}`;
 const search = (tabId, query, page, settings) => open(tabId, searchUrl(query, page), page, settings);
 const sameWords = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === String(b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+// not-checkout:start (searching: never used by checkout; changes here need no test run, docs/CHECKOUT.md)
 /**
  * A search as it is: read where it stands when the tab is already showing that search (an Add from Find, right after
  * Find's search; no reload, Oct 31), else opened.
@@ -115,6 +116,7 @@ async function searchHere(tabId, query, page, settings) {
 /** Safeway's cart page, read with the page details for it (Simmer's `cartItems`, over the search page's). */
 const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: page.emptyCart || page.noResults, onlyInCart: true });
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
+// not-checkout:end
 /** The cart page as it is: read where it stands when the tab is already showing it (no reload), else opened. */
 async function cartHere(tabId, page, settings) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -124,6 +126,7 @@ async function cartHere(tabId, page, settings) {
   return r && (r.products.some((p) => p.inCart) || r.held) ? r : openCart(tabId, page, settings);
 }
 
+// not-checkout:start (the Purchases page, read after an empty cart: never used by checkout)
 /**
  * Safeway's Purchases page, Online tab (1.3): opened, the tab pressed once if another is showing, then watched until an
  * order with a date is listed, or "no orders" has held for a few seconds (as with "no results", it may show for a
@@ -147,6 +150,7 @@ async function readOrders(tabId, page, settings) {
   return last;
 }
 
+// not-checkout:end
 /**
  * Does one job. Answers { ok: true, result } or { ok: false, error } with an error word Simmer turns into plain words
  * ("signed-out", "not-found", "not-loaded", "failed").

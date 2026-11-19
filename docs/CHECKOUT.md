@@ -163,7 +163,11 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 3. Turning on real orders, after dry runs match. Built Nov 14 (Sam: "Build it"), helper 26.11.14.7, still behind the
    server's switch (`CHECKOUT_ENABLED`, off until Sam turns it on):
    - **Place order · $X** shows beside Test run only when the server allows it and this helper version has passed a
-     test run on the account (kept per version; an update needs a new one). Tapping it asks first (store, time, card,
+     test run on the account, kept by the helper's checkout fingerprint (Sam, Nov 18): a hash of the helper's
+     code with only the parts marked `not-checkout` (searching, adding, quantities, the Purchases page, samples) left out,
+     so an update that touches anything checkout runs, or anything it shares, needs a new test run, and a search or cart
+     fix doesn't. `scripts/checkout-print.mjs` writes it; a test fails if it's stale. Every order is still checked
+     against what was approved (cart, total, store, card, time, bags) right before the press, and stops on any difference. Tapping it asks first (store, time, card,
      total, highlights), then Face ID approves exactly those figures.
    - The approval is taken out in one step (single use), must be within 2 minutes and the cart unchanged, and every stop
      is checked again before the helper is asked.
