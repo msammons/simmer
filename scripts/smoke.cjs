@@ -387,10 +387,10 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         && (await groupPick.selectOption("").then(() => groupPick.inputValue())) === "" && (await groupPick.selectOption("Smoke cheese").then(() => groupPick.inputValue())) === "Smoke cheese");
       await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await page.waitForTimeout(1500);
       const groupMenu = () => page.getByLabel("More for the Smoke cheese group");
-      const noToggle = async () => (await page.getByRole("button", { name: "Smoke cheese" }).getAttribute("aria-expanded")) === null;
+      const startsOpen = async () => (await page.getByRole("button", { name: "Smoke cheese" }).getAttribute("aria-expanded")) === "true";
       if (process.env.SHOT) { await page.locator('[data-group="Smoke cheese"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.SHOT}/${tag}-group.png` }); }
       ok("stock: a group's header row is tinted", !/rgba\(0, 0, 0, 0\)|transparent/.test(await page.locator('[data-group="Smoke cheese"]').evaluate((g) => getComputedStyle(g.firstElementChild).backgroundColor)));
-      ok("stock: a group shows from its first thing, nothing to show or hide while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await noToggle()));
+      ok("stock: a group shows from its first thing, open while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await startsOpen()));
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);
       await page.getByLabel("Group", { exact: true }).selectOption({ label: "Smoke cheese" });
@@ -399,7 +399,11 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("stock: a new thing put in a group lands in the group's section", (await page.locator("section").filter({ has: page.getByRole("heading", { name: "Household", exact: true }) }).getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       ok("stock: ⋯ can still put a kept thing in a group", (await page.getByLabel("More for smoke swiss").locator("option[value=group]").count()) === 1);
       const cheese = page.getByRole("button", { name: "Smoke cheese" });
-      ok("stock: a group of two, both Need, shows both, with nothing to show or hide", (await cheese.count()) === 1 && (await noToggle()) && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
+      ok("stock: a group of two, both Need, shows both, open", (await cheese.count()) === 1 && (await startsOpen()) && (await answerOf("smoke cheddar")) === "need" && (await answerOf("smoke swiss")) === "need");
+      await cheese.tap(); await page.waitForTimeout(300);
+      ok("stock: and still closes, to its name alone", (await cheese.getAttribute("aria-expanded")) === "false" && (await page.locator('[data-group="Smoke cheese"] [role=group]').count()) === 0);
+      await cheese.tap(); await page.waitForTimeout(300);
+      ok("stock: and opens again", (await startsOpen()) && (await page.locator('[data-group="Smoke cheese"] [role=group]').count()) === 2);
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
       ok("stock: one answered Have: the group closes and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false"
         && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
