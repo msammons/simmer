@@ -352,7 +352,8 @@ const READABLE = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
  * recipes; anything it couldn't read stays blank for her.
  */
 export async function readRecipeFile(f: { name: string; mimeType: string; data: string }): Promise<Draft[]> {
-  const src = f.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || (f.mimeType.startsWith("image/") ? "Photo" : "File");
+  // A picture is "Photo": its file name is the camera's (IMG_0045), not where the recipe came from (Nov 18).
+  const src = f.mimeType.startsWith("image/") ? "Photo" : f.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || "File";
   if (/^text\//.test(f.mimeType)) return readText(Buffer.from(f.data, "base64").toString("utf8"), src);
   if (!READABLE.test(f.mimeType)) throw new AppError("Simmer can read pictures, PDFs and text files.");
   const schema = structuredClone(DRAFT_SCHEMA) as typeof DRAFT_SCHEMA & { properties: { recipes: { items: { properties: Record<string, unknown>; required: string[] } } } };

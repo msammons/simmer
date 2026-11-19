@@ -27,3 +27,20 @@ describe("spices", () => {
     expect(parseIngredient("2 cloves garlic, minced")).toMatchObject({ item: "garlic", section: "fresh" });
   });
 });
+
+describe("lines typed the way people write cards (Nov 18)", () => {
+  const p = (s: string) => { const i = parseIngredient(s); return [i.quantity, i.unit, i.item, i.section]; };
+  it("reads a unit stuck to the number, and T as a tablespoon, t as a teaspoon", () => {
+    expect(p("2c Shredded cheese")).toEqual(["2", "cup", "shredded cheese", "fresh"]);
+    expect(p("4 T vegetable oil (try 3T next time)")).toEqual(["4", "tbsp", "vegetable oil", "pantry"]);
+    expect(p("1/2 t salt")).toEqual(["1/2", "tsp", "salt", "pantry"]);
+  });
+  it("drops Optional: and a little, and files flour, cornmeal and a misspelt turmeric with the pantry", () => {
+    expect(p("Optional: add dressing of choice")).toEqual(["", "", "dressing", "pantry"]);
+    expect(p("a little ginger (fresh or ground is optional, but yummy!)")).toEqual(["", "", "ginger", "fresh"]);
+    expect(p("1 cup bread flour")[3]).toBe("pantry");
+    expect(p("1 cup yellow cornmeal")[3]).toBe("pantry");
+    expect(p("1/2 T tumeric")[3]).toBe("pantry");
+    expect(p("2 eggs")).toEqual(["2", "", "eggs", "fresh"]);
+  });
+});

@@ -139,7 +139,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {(r.tags.length > 0 || r.source) && (
         <Group>
           {r.tags.length > 0 && <Row title="Tags" value={r.tags.join(", ")} />}
-          {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={r.source} />}
+          {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={/^(?:img|pxl|dsc|dcim|photo|image|screenshot)[_ -]?\d/i.test(r.source) ? "Photo" : r.source} />}
         </Group>
       )}
     </div>
