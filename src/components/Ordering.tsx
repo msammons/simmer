@@ -14,7 +14,7 @@
 // taps when it's approved).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
-import { api, approveWithFaceId, errorText, faceIdAnswer, setUpFaceId, type CheckoutSettings, type Choices } from "@/lib/client";
+import { api, approveWithFaceId, errorText, faceIdAnswer, faceIdWhere, setUpFaceId, WHERE, type CheckoutSettings, type Choices } from "@/lib/client";
 import { needsFaceId } from "@/lib/checkout-rules";
 import { Alert, Button, ConfirmSheet, Group, Held, Row } from "./ui";
 
@@ -76,6 +76,14 @@ export function useOrdering() {
   const [editing, setEditing] = useState<Field | null>(null);
   const [approveCode, setApproveCode] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
+  // Where this phone's last approval was made (client.ts faceIdWhere): read on open and whenever an approval notes it.
+  const [where, setWhere] = useState<"here" | "elsewhere" | "">("");
+  useEffect(() => {
+    const read = () => setWhere(faceIdWhere());
+    read();
+    window.addEventListener(WHERE, read);
+    return () => window.removeEventListener(WHERE, read);
+  }, []);
   const setupOptions = usePrepared<PublicKeyCredentialCreationOptionsJSON>();
   const approveOptions = usePrepared<{ options: PublicKeyCredentialRequestOptionsJSON; code: string }>();
   const checkOptions = usePrepared<PublicKeyCredentialRequestOptionsJSON>();
@@ -266,7 +274,12 @@ export function useOrdering() {
     <FieldPage field={editing} value={s} onFound={prepareCheck} onSave={(v) => { setEditing(null); void save(v); }} onBack={() => { setEditing(null); checkOptions.clear(); }} />
   );
 
-  return { loaded, s, server, faceIds, onOffRow, faceIdRows, limitRow, storeRow, cardRow, sheets, editor, turnOn: tapOnOff };
+  // Offered on Check out after an approval made on another phone (Nov 18): set it up here, approved there once.
+  const hereRow = faceIds > 0 && (where === "elsewhere" || fresh) && (
+    fresh ? <Row icon="face" title="Set up after approving" subtitle="Approve this phone on one with Face ID, then tap here." value={fresh.code} onClick={setUpAfterApproving} /> : <Row icon="face" title="Set up Face ID on this phone" subtitle="Then approve here, without the other phone." onClick={tapFaceId} accessory="chevron" />
+  );
+
+  return { loaded, s, server, faceIds, onOffRow, faceIdRows, hereRow, limitRow, storeRow, cardRow, sheets, editor, turnOn: tapOnOff };
 }
 
 /** Settings → Ordering (Nov 13): the on/off switch and Face ID; the limit, store and card are set in Shop → Check out. */
