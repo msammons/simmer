@@ -28,7 +28,7 @@ function dayName(day: string): string {
 
 /**
  * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
- * day's adds (Quick, Regular and the other kinds) are in its first row's ⋯, or a quiet Add on a day with nothing yet. A
+ * day ends with a quiet Add meal row, after its meals (Nov 18), which opens every recipe with kind pills. A
  * day can hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
  * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
@@ -48,7 +48,7 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
   const undated = dishes.filter((d) => !d.day);
   const later = dishes.filter((d) => d.day && d.day > days[days.length - 1]);
-  const meal = (d: Dish, first = false) => {
+  const meal = (d: Dish) => {
     const r = recipes.find((x) => x.id === d.recipe);
     const name = mealName(d.recipe, recipes);
     return (
@@ -60,12 +60,10 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
           <select value="" aria-label={`More for ${name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); else if (v === "add" && d.day) onAdd(null, d.day); }}>
+            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}>
             <option value="" disabled>{name}</option>
             <option value="move">Move to another day</option>
             <option value="take">Take off the plan</option>
-            {/* The day's Add rides on its first row's ⋯ (Sam, Nov 17); the sheet picks the kind (Nov 18). */}
-            {first && d.day && <option value="add">{`Add meal to ${dayName(d.day)}`}</option>}
           </select>
         </label>
       </div>
@@ -82,13 +80,12 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
       {plan && (
         <>
           {days.map((day) => {
-            // Calmer (Sam, Nov 17): the day's adds live in its first row's ⋯, two taps to the sheet. A day without a meal
-            // has one quiet row, Add, which opens the same choices; a day with meals adds through its first meal's ⋯.
+            // Every day ends with its own Add row, after its meals (Sam, Nov 18: back from the first meal's ⋯).
             const mine = dishes.filter((d) => d.day === day);
             return (
               <Group key={day} header={dayName(day)}>
-                {mine.map((d, i) => meal(d, i === 0))}
-                {!mine.length && (
+                {mine.map((d) => meal(d))}
+                {(
                   // As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
                   // One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first).
                   <button type="button" aria-label={`Add meal to ${dayName(day)}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
