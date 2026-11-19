@@ -99,7 +99,8 @@ export function useSafeway() {
   /**
    * Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. `query`:
    * the search that brings the product up; `alt`, other words to try; `on: "cart"`, change it on Safeway's cart page
-   * first, where it's listed (from Cart). The number shows at once (`pending`); taps while a change is on its way to
+   * first, where it's listed (from Cart, and from Find once it's in the cart: Nov 19, a − from the search page found
+   * nothing at 2). The number shows at once (`pending`); taps while a change is on its way to
    * Safeway aren't sent one by one: when it's done, the latest number goes as one change (Nov 11: always responsive,
    * so the buttons never wait, and two changes for one product still never cross). One that fails puts the cart back
    * and says why.
@@ -364,7 +365,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             return (
               <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
                 control={qty > 0
-                  ? <Stepper qty={qty} name={p.name} onChange={(n) => sw.setQty(p, n, query, forIt)} />
+                  ? <Stepper qty={qty} name={p.name} onChange={(n) => sw.setQty(p, n, query, forIt, { on: "cart" })} />
                   : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, 1, query, forIt)}>Add</Button>} />
             );
           })}

@@ -324,9 +324,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await clear(name);
         await haveOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: a meal thing: Have lights", (await answerOf(name)) === "have");
-        const tint = async (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
-        const kept = page.locator("[data-fresh], div:not([data-meal])").filter({ has: page.getByRole("group", { name: /^Have or need / }) }).filter({ hasNot: page.locator("[data-group]") });
-        ok("stock: a dinner's thing has the highlight colour, a kept thing doesn't", !/rgba\(0, 0, 0, 0\)|transparent/.test(await tint(meal.first())) && (!(await kept.count()) || /rgba\(0, 0, 0, 0\)|transparent/.test(await tint(kept.last()))));
+        const color = async (loc) => loc.evaluate((el) => getComputedStyle(el.querySelector("span span")).color);
+        const kept = page.locator("div:not([data-meal])").filter({ has: page.getByRole("group", { name: /^Have or need / }) }).filter({ hasNot: page.locator("[data-group]") });
+        ok("stock: a dinner's thing's name is in the highlight colour, a kept thing's isn't", !(await kept.count()) || (await color(meal.first())) !== (await color(kept.last())));
         await needOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: Need switches it (never both), still marked", (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
         await needOf(name).tap(); await page.waitForTimeout(1200);
@@ -389,6 +389,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const groupMenu = () => page.getByLabel("More for the Smoke cheese group");
       const showAllText = async () => ((await groupMenu().locator("option[value=all]").count()) ? (await groupMenu().locator("option[value=all]").innerText()).trim() : "");
       if (process.env.SHOT) { await page.locator('[data-group="Smoke cheese"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.SHOT}/${tag}-group.png` }); }
+      ok("stock: a group's header row is tinted", !/rgba\(0, 0, 0, 0\)|transparent/.test(await page.locator('[data-group="Smoke cheese"]').evaluate((g) => getComputedStyle(g.firstElementChild).backgroundColor)));
       ok("stock: a group shows from its first thing, no Show all in its ⋯ while everything in it is Need", (await page.locator('[data-group="Smoke cheese"]').count()) === 1 && (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 1 && (await showAllText()) === "");
       await stockField.fill("smoke swiss");
       await page.getByLabel("More for smoke cheddar").selectOption("household"); await page.waitForTimeout(1500);

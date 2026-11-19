@@ -90,11 +90,11 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
               // Nothing to show or hide (everything in it already shows): the header stays, without its hide/show (Sam, Nov 16).
               const toggles = !l.rows.every(wanted);
               const flip = () => { if (toggles && !showAll) toggle(key); };
-              // A group (Nov 19, Sam): no highlight colour (that's for a dinner's things now), a plain header row with the
-              // group's name and an arrow; tapping it switches between all its items and only cart items, and its ⋯ has both.
+              // A group (Nov 19, Sam): its header row tinted, the name in the usual colour (coloured words are a dinner's
+              // things), and an arrow; tapping it switches between all its items and only cart items, and its ⋯ has both.
               return [
                 <div key={key} data-group={l.name} className="divide-y divide-line">
-                  <div className="flex h-[3.25rem] items-center pr-2">
+                  <div className="flex h-[3.25rem] items-center bg-accent/[0.08] pr-2">
                     <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={flip}
                       className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-4 pr-2 text-left">
                       <span className="min-w-0 truncate t-body font-semibold text-ink">{cap(l.name)}</span>
@@ -270,13 +270,13 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/[0.08]" : ""} ${fresh ? "sm-flash" : ""}`}>
+    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       {/* A planned dinner's thing (Sam, Nov 18): how much all the planned dinners need, on its own line under the name;
-          no asterisk. Its row has the highlight colour (Nov 19: its ⋯ differs from a kept thing's, so it looks different). */}
+          no asterisk. Its name is in the highlight colour (Nov 19: its ⋯ differs from a kept thing's, so it looks different). */}
       <span className="min-w-0 flex-1">
-        <span className="block break-words t-body">{cap(r.name)}</span>
+        <span className={`block break-words t-body ${r.meal ? "text-accent" : ""}`}>{cap(r.name)}</span>
         {r.meal && shownAmount(r.amount) && <span className="block truncate t-foot text-muted">{shownAmount(r.amount)}</span>}
       </span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">
