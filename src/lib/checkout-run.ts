@@ -343,7 +343,7 @@ async function passedDryRun(version: string) {
  * version that has passed a test run on this account, with the helper on the computer up to date.
  */
 export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string }> {
-  if (!serverOn()) return { canOrder: false, orderWhy: "Placing orders from Simmer is turned off for now." };
+  if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now." };
   if ((await helperStatus()).outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first." };
   if (!(await passedVersions()).includes(HELPER_VERSION)) return { canOrder: false, orderWhy: "Do a test run first: this helper hasn't done one yet." };
   return { canOrder: true, orderWhy: "" };
@@ -351,6 +351,8 @@ export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string
 
 /** Safeway's order number on the page it lands on after Place Order, when it shows one. */
 export const orderNumberIn = (text: string) => text.replace(/\s+/g, " ").match(/\border\s*(?:number|no\.?|#)\s*(?:is\s*)?[:#]?\s*([A-Z0-9-]{6,})/i)?.[1] ?? "";
+/** Safeway's own confirmation address, which carries the order number: /order/confirmation/198111519 (Nov 18). */
+export const confirmationNumberIn = (url: string) => (/^https:\/\/www\.safeway\.com\/[a-z/]*order\/confirmation\/(\d{6,})(?:[?#/]|$)/i.exec(url)?.[1] ?? "");
 
 /**
  * Places the approved order, once (docs/CHECKOUT.md "Each order"): the approval is taken out first, in one step, so two
@@ -365,7 +367,7 @@ export async function placeOrder(approvalId: string, ms = WAIT_MS): Promise<Orde
   if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Get ready again."]);
   const open = await orderOpen();
   if (!open.canOrder) return refuse([open.orderWhy]);
-  if (await kv().get(GOING_KEY)) return refuse(["An order is already on its way, or Simmer isn't sure about the last one. Check Safeway."]);
+  if (await kv().get(GOING_KEY)) return refuse(["An order is already on its way, or the last one may not have gone through. Check Safeway."]);
   const s = await loadSettings();
   const now = Date.now(), cart = await cartNow();
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
@@ -411,8 +413,10 @@ export function expectFor(a: Approved) {
 }
 
 /** Safeway's page after the press says the order went through: an order number, or its thank-you or confirmation words (never the address alone). */
+// Or Safeway's confirmation address with its order number (Nov 18: the page was read before its words filled in, so a
+// placed order came back "not sure" and the cart stayed).
 export const confirmed = (after: { url: string; text: string } | null | undefined) =>
-  Boolean(after) && (Boolean(orderNumberIn(after!.text)) || /thank you for your order|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after!.text));
+  Boolean(after) && (Boolean(orderNumberIn(after!.text)) || Boolean(confirmationNumberIn(after!.url)) || /thank you for your order|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after!.text));
 
 /**
  * How placing stands: still going, or what happened (reported once). Ordered: the cart comes off the Safeway list as
@@ -425,7 +429,7 @@ export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderRes
   const a = json<Approved>(await kv().getdel(ORDER_KEY + jobId));
   if (!a) throw new AppError("That order was already reported. Check Safeway.");
   const r = (job?.result ?? {}) as { stopped?: string; pressed?: boolean; why?: string; error?: string; after?: { url: string; text: string } | null };
-  const unsure: OrderResult = { ok: false, unsure: true, reasons: ["Simmer isn't sure the order went through. Check Safeway before trying again."] };
+  const unsure: OrderResult = { ok: false, unsure: true, reasons: ["Not sure the order went through. Check Safeway before trying again."] };
   let result: OrderResult;
   if (!job || job.kind !== "checkoutPlace") result = unsure;
   // Not taken in time: almost surely nothing happened, but the helper may have taken it in the same moment, so it's never
@@ -434,7 +438,7 @@ export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderRes
   // Ordered only when Safeway's page says so (outside review): a move to some other page isn't proof.
   // Whether or not the page moved (Safeway may confirm in place), as long as it says so.
   else if (r.pressed && confirmed(r.after)) {
-    const number = orderNumberIn(r.after?.text ?? "");
+    const number = orderNumberIn(r.after?.text ?? "") || confirmationNumberIn(r.after?.url ?? "");
     result = { ok: true, ordered: `Ordered · pickup ${a.windowWords} · $${(a.totalCents / 100).toFixed(2)}`, number };
     const lines = await loadCart();
     await doneShopping("safeway", new Set(lines.map((l) => l.itemId).filter(Boolean)));

@@ -37,7 +37,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
           <>
             <Group header="Cart">
               <Row icon="cart" title="In the cart" value={`${count} thing${count === 1 ? "" : "s"}`} />
-              <Row icon="bag" title="Simmer's estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
+              <Row icon="bag" title="Estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
             </Group>
             {ready ? <TestRun /> : <p className="px-4 t-sub text-muted">Set up ordering in Settings → Ordering: Face ID, a limit per order, then turn it on.</p>}
           </>
@@ -160,7 +160,7 @@ function TestRun() {
       setRun({ stage: "ordered", view, result: r });
     } catch (e) {
       if (ac.signal.aborted) return;
-      if (approved) setRun({ stage: "ordered", view, result: { ok: false, unsure: true, reasons: ["Simmer isn't sure the order went through. Check Safeway before trying again."] } });
+      if (approved) setRun({ stage: "ordered", view, result: { ok: false, unsure: true, reasons: ["Not sure the order went through. Check Safeway before trying again."] } });
       else showReady(view);
       setProblem(errorText(e));
     } finally {

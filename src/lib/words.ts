@@ -66,6 +66,19 @@ const UNITS = "cups?|c|tablespoons?|tbsps?|tbsp|T|teaspoons?|tsps?|tsp|t|pounds?
 const LINE = new RegExp(String.raw`^((?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?:\s*(?:-|to)\s*(?:\d+/\d+|\d+(?:\.\d+)?))?|an?|one|two|three|four)\s+(?:\((?:[^)]*)\)\s*)?(?:(${UNITS})\.?\s+(?:of\s+)?)?(.+)$`, "i");
 
 /** "1 lb ground turkey" → 1, lb, ground turkey; "1/2 cup onion, diced" → 1/2, cup, onion; "Salt to taste" → salt. */
+/** Sizes and cuts before the name ("large", "chopped", "skinless, boneless"), as many as there are. */
+const LEADING = /^(?:(?:extra[- ]large|small|medium|large|jumbo|skinless|boneless|bone-in|skin-on|chopped|diced|minced|finely|roughly|coarsely|thinly|peeled)\s*,?\s+)+/i;
+
+/**
+ * One line that's two things to buy: "salt and black pepper" is salt and black pepper, when each is something known
+ * (never "half and half" or "mac and cheese"). Anything else stays one.
+ */
+export function bothOf(item: string): string[] {
+  if (KNOWN[norm(item)]) return [item];
+  const m = item.match(/^(.+?)\s+(?:and|&)\s+(.+)$/i);
+  return m && known(m[1]) && known(m[2]) ? [m[1].trim(), m[2].trim()] : [item];
+}
+
 export function parseIngredient(raw: string): Ingredient {
   const line = raw.replace(/[½¼¾⅓⅔⅛]/g, (f) => ` ${FRACTIONS[f]}`).replace(/(\d)\s+(\d\/)/, "$1 $2").replace(/\s+/g, " ").trim()
     // Typed the way people write cards (Nov 18): "Optional: dressing", "a little ginger", "2c cheese".
@@ -78,6 +91,12 @@ export function parseIngredient(raw: string): Ingredient {
   // "15 ounce can pumpkin": the size came first, so the container is still on the name.
   if (unit) item = item.replace(/^(?:cans?|jars?|packages?|pkgs?|bags?|boxes|box|containers?|bottles?|cartons?)\s+(?:of\s+)?/i, "");
   // What's bought, not how it's cut: "onion, diced" → onion; "garlic (minced)" → garlic; "salt to taste" → salt.
-  item = item.replace(/\([^)]*\)/g, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided|of choice)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
+  // What's bought, without its size or how it's cut (Nov 18: "large onion" and "onion" were two lines; "8 skinless,
+  // boneless chicken thighs" came out "skinless"). One choice of two: "red wine or balsamic vinegar" is the first, and
+  // "refrigerated or frozen tortellini" the tortellini.
+  item = item.replace(/\([^)]*\)/g, "").replace(LEADING, "");
+  const or = item.split(/,| - | – /)[0].match(/^(.+?)\s+or\s+(.+)$/i);
+  if (or) item = !/\s/.test(or[1].trim()) && /\s/.test(or[2].trim()) && !known(or[1]) ? or[2].replace(/^\d[\d/ ]*\s*(?:(?:${UNITS})\.?\s+)?/i, "") : or[1];
+  item = item.replace(LEADING, "").split(/,| - | – /)[0].replace(/\b(to taste|as needed|optional|for serving|divided|of choice)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
   return { line: raw.trim(), quantity, unit, item: item || line.toLowerCase(), section: known(item)?.section ?? "fresh" };
 }

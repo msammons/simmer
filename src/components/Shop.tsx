@@ -97,7 +97,7 @@ function ShopRow({ title, sub, checked, onTick, control, more }: {
 }) {
   const words = (
     <span className="min-w-0 flex-1">
-      <span className={`block truncate t-body ${checked ? "text-muted line-through" : ""}`}>{title}</span>
+      <span className={`block break-words t-body ${checked ? "text-muted line-through" : ""}`}>{title}</span>
       {sub && <span className="block truncate t-foot text-muted">{sub}</span>}
     </span>
   );

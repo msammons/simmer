@@ -16,19 +16,9 @@ export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r
 
 // ---- Meals (tab)
 
-/**
- * What a day's adds offer, in its first row's ⋯ (Sam, Nov 17: two taps for Quick and Regular are fine, for a calmer page;
- * lunch stays as an option, Nov 16), each saying what it does ("each item should say add").
- */
-const ADDS: Kind[] = ["quick", "regular", "breakfast", "lunchmeal", "kids", "dessert", "side"];
-const ADD_WORDS: Record<Kind, string> = { quick: "Add a quick dinner", regular: "Add a regular dinner", breakfast: "Add breakfast", lunchmeal: "Add lunch", kids: "Add a kids' dinner", dessert: "Add dessert", side: "Add a side" };
-const addOptions = ADDS.map((k) => <option key={k} value={k}>{ADD_WORDS[k]}</option>);
 /** The kinds in the order she plans them, with their headings in the add sheet (Nov 17). */
 const KIND_ORDER: Kind[] = ["quick", "regular", "kids", "breakfast", "lunchmeal", "dessert", "side"];
 const KIND_HEADERS: Record<Kind, string> = { quick: "Quick", regular: "Regular", kids: "Kids' dinners", breakfast: "Breakfast", lunchmeal: "Lunch", dessert: "Desserts", side: "Sides" };
-
-/** "a quick dinner", "a dessert": one of a kind, in a sentence. */
-const ONE: Record<Kind, string> = { quick: "a quick dinner", regular: "a regular dinner", kids: "a kids' dinner", dessert: "a dessert", side: "a side", breakfast: "a breakfast", lunchmeal: "a lunch" };
 
 /** "Wed, Nov 18": every day by its date (Sam, Nov 16: dates, not Today and Tomorrow). */
 function dayName(day: string): string {
@@ -70,12 +60,12 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
         <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
           <span aria-hidden>⋯</span>
           <select value="" aria-label={`More for ${name}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); else if (v && d.day) onAdd(v as Kind, d.day); }}>
+            onChange={(e) => { const v = e.target.value; if (v === "move") setMoving(d); else if (v === "take") setTaking(d); else if (v === "add" && d.day) onAdd(null, d.day); }}>
             <option value="" disabled>{name}</option>
             <option value="move">Move to another day</option>
             <option value="take">Take off the plan</option>
-            {/* The day's adds ride on its first row's ⋯ (Sam, Nov 17), under the day's name. */}
-            {first && d.day && <optgroup label={`Add to ${dayName(d.day)}`}>{addOptions}</optgroup>}
+            {/* The day's Add rides on its first row's ⋯ (Sam, Nov 17); the sheet picks the kind (Nov 18). */}
+            {first && d.day && <option value="add">{`Add meal to ${dayName(d.day)}`}</option>}
           </select>
         </label>
       </div>
@@ -100,14 +90,10 @@ export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, 
                 {mine.map((d, i) => meal(d, i === 0))}
                 {!mine.length && (
                   // As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
-                  <label className="relative flex w-full items-center gap-3 px-4 py-3 active:bg-sunk">
+                  // One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first).
+                  <button type="button" aria-label={`Add meal to ${dayName(day)}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
                     <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
-                    <select value="" aria-label={`Add to ${dayName(day)}`} className="absolute inset-0 cursor-pointer opacity-0 text-base"
-                      onChange={(e) => { const k = e.target.value as Kind; if (k) onAdd(k, day); }}>
-                      <option value="" disabled>{dayName(day)}</option>
-                      {addOptions}
-                    </select>
-                  </label>
+                  </button>
                 )}
               </Group>
             );
@@ -150,11 +136,15 @@ const plannable = (r: Recipe) => kindOf(r) !== null;
  */
 export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kind: Kind | null; day: string; plan: PlanData; recipes: Recipe[]; onAdd: (dish: NewDish) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
+  // Which kind to show: every kind at first, each under its heading (Sam, Nov 18: a filter in the sheet, not a pick before it).
+  const [only, setOnly] = useState<Kind | "">(kind ?? "");
   // Already on this day: "Planned" (the same recipe can go on another day).
   const planned = useMemo(() => new Set(plan.dishes.filter((d) => d.day === day).map((d) => d.recipe)), [plan.dishes, day]);
   const term = q.trim();
-  const mine = useMemo(() => recipes.filter((r) => (kind ? kindOf(r) === kind : kindOf(r) !== null)).sort((a, b) => a.name.localeCompare(b.name)), [recipes, kind]);
-  const found = useMemo(() => (term ? searchRecipes(recipes, term).filter(plannable) : []), [recipes, term]);
+  const all = useMemo(() => recipes.filter(plannable).sort((a, b) => a.name.localeCompare(b.name)), [recipes]);
+  const kinds = KIND_ORDER.filter((k) => all.some((r) => kindOf(r) === k));
+  const mine = only ? all.filter((r) => kindOf(r) === only) : all;
+  const found = useMemo(() => (term ? searchRecipes(recipes, term).filter((r) => plannable(r) && (!only || kindOf(r) === only)) : []), [recipes, term, only]);
   // Closes at once (Sam, Nov 10: no "Saving…"): the dinner shows on Meals straight away and saves behind it.
   function add(dish: NewDish) {
     onAdd(dish);
@@ -164,15 +154,25 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
   const row = (r: Recipe) => {
     const here = planned.has(r.id);
     return <Row key={r.id} title={r.name} value={here ? "Planned" : undefined} disabled={here}
-      onClick={here ? undefined : () => add({ kind: kindOf(r) ?? kind ?? "regular", recipe: r.id, pinned: true, day })} />;
+      onClick={here ? undefined : () => add({ kind: kindOf(r) ?? "regular", recipe: r.id, pinned: true, day })} />;
   };
   return (
-    <Sheet label="Add a meal" title={kind ? `${dayName(day)}: ${ONE[kind]}` : dayName(day)} onClose={onClose} tall>
+    <Sheet label="Add a meal" title={dayName(day)} onClose={onClose} tall>
       <div className="space-y-5 pb-2">
         {/* No autofocus: on a phone the keyboard would cover the list. */}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a recipe" aria-label="Find a recipe" enterKeyHint="search"
           className="h-[52px] w-full rounded-full bg-card px-5 text-base outline-none ring-accent focus:ring-2" />
-        {term || kind ? (
+        {kinds.length > 1 && (
+          <span className="relative inline-block">
+            <select aria-label="Kind" value={only} onChange={(e) => setOnly(e.target.value as Kind | "")}
+              className="h-9 appearance-none rounded-full bg-sunk pl-3.5 pr-8 text-base font-semibold text-ink outline-none ring-accent focus:ring-2">
+              <option value="">All kinds</option>
+              {kinds.map((k) => <option key={k} value={k}>{KIND_HEADERS[k]}</option>)}
+            </select>
+            <Icon name="down" className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          </span>
+        )}
+        {term || only ? (
           <Group>
             {term ? found.slice(0, 30).map((r) => row(r)) : mine.map((r) => row(r))}
             {term && !found.length && <Nothing>{`No recipe called “${term.slice(0, 80)}”`}</Nothing>}

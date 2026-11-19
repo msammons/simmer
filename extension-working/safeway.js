@@ -414,7 +414,14 @@ async function placeOrder(tabId, page, settings, windowId, expect) {
   if (!press?.pressed) return { ...r, stopped: "not pressed", pressed: false, why: String(press?.why ?? "no answer") };
   // Pressed. Whatever happens next, it's never pressed again: read where Safeway lands, for the order number.
   const to = await urlChange(tabId, from, 30_000);
-  const after = await onPage(tabId, "look", null, page);
+  // Safeway's confirmation page fills in a few seconds after it opens (Nov 18: read at once, it was only the header, and
+  // Simmer couldn't say the order went through). Only reading here: it waits for the thank-you words, up to 15 s.
+  let after = null;
+  for (let i = 0; i < 10; i++) {
+    after = await onPage(tabId, "look", null, page);
+    if (/thank you|order (?:number|no\.?|#)|order (?:is |has been )?(?:placed|confirmed|received)/i.test(after?.text ?? "")) break;
+    await sleep(1500);
+  }
   return { stopped: to ? "placed" : "pressed", pressed: true, chosen: r.chosen, final: r.final, after: after ? { url: after.url, text: after.text.slice(0, 4000) } : null };
 }
 

@@ -113,7 +113,7 @@ describe("after the order", () => {
 
   it("highlights five or more of a thing, one thing over $30, and a total well over the estimate", () => {
     expect(unusual([{ name: "Milk", qty: 5, priceCents: 499 }, { name: "Salmon", qty: 1, priceCents: 3001 }], 10000, 11501)).toEqual([
-      "5 × Milk", "Salmon is $30.01", "The total is more than Simmer expected ($100.00)",
+      "5 × Milk", "Salmon is $30.01", "The total is more than expected ($100.00)",
     ]);
     expect(unusual([{ name: "Milk", qty: 4, priceCents: 3000 }], 10000, 11500)).toEqual([]);
   });

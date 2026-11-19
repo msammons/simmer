@@ -114,7 +114,7 @@ export function unusual(lines: { name: string; qty: number; priceCents: number |
     if (l.qty >= 5) out.push(`${l.qty} × ${l.name}`);
     if (l.priceCents !== null && l.priceCents > 3000) out.push(`${l.name} is $${(l.priceCents / 100).toFixed(2)}`);
   }
-  if (estimateCents && totalCents > estimateCents * 1.15) out.push(`The total is more than Simmer expected ($${(estimateCents / 100).toFixed(2)})`);
+  if (estimateCents && totalCents > estimateCents * 1.15) out.push(`The total is more than expected ($${(estimateCents / 100).toFixed(2)})`);
   return out;
 }
 

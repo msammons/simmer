@@ -8,7 +8,7 @@ import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type 
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
 import { Icon } from "./icons";
-import { Button, EmptyState, Group } from "./ui";
+import { Button, EmptyState, Group, scrollAppTo } from "./ui";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -299,7 +299,8 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const results = order ? [...ranked].sort((a, b) => at(a.product.id) - at(b.product.id)) : ranked;
   const inCartForIt = qtyFor(sw.cart, it.id);
   const last = index === items.length - 1;
-  const move = (to: number) => { ctl.current?.abort(); onIndex(to); };
+  // A new item starts at the top (Nov 18: after Next at the bottom, Robin had to scroll up to see what came next).
+  const move = (to: number) => { ctl.current?.abort(); onIndex(to); scrollAppTo(0); };
   // Where Next goes: the next item still to find (else the cart). Shown at the top in a row that's always there, so it
   // appearing after an Add doesn't push the results under the finger.
   const to = nextAfter(items, sw.cart, index);

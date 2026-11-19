@@ -109,13 +109,13 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("meals: no day is called Today or Tomorrow", (await page.getByRole("heading", { name: /^(Today|Tomorrow)$/ }).count()) === 0);
       // A day's adds (Nov 17, calmer): its first row's ⋯, or one quiet Add on a day with nothing yet; two taps to the sheet.
       const days7 = page.locator("section").filter({ has: page.getByRole("heading", { name: /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), / }) });
-      const addOn = async (name, kind) => { const g = dayGroup(name), add = g.getByLabel(`Add to ${name}`); await ((await add.count()) ? add : g.getByLabel(/^More for /).first()).selectOption(kind); };
+      // One Add (Nov 18): a button on an empty day, or "Add meal to …" in the first dinner's ⋯; the sheet filters by kind.
+      const addOn = async (name) => { const g = dayGroup(name), add = g.getByRole("button", { name: `Add meal to ${name}` }); if (await add.count()) await add.tap(); else await g.getByLabel(/^More for /).first().selectOption("add"); };
       ok("meals: days by date from today, no Quick, Regular or Other buttons, no ⋯ by the date", (await days7.count()) === 7
         && (await page.getByRole("button", { name: /^(Quick|Regular) for / }).count()) === 0 && (await page.getByLabel(/^Other for /).count()) === 0
         && (await page.locator("section > div.px-4 label").count()) === 0);
       {
-        const empty = page.getByLabel(/^Add to /).first();
-        ok("meals: a day with nothing has one Add whose choices start with Quick and Regular", (await empty.count()) === 0 || (await empty.locator("option").allInnerTexts()).slice(1).join() === "Add a quick dinner,Add a regular dinner,Add breakfast,Add lunch,Add a kids' dinner,Add dessert,Add a side");
+        ok("meals: a day with nothing has one Add, with no kinds to pick first", (await page.getByRole("button", { name: /^Add meal to / }).count()) > 0 && (await page.getByLabel(/^Add to /).count()) === 0);
       }
       await page.getByRole("button", { name: "Show more days" }).tap(); await page.waitForTimeout(200);
       ok("meals: Show more shows 14 days, and Show fewer goes back", (await days7.count()) === 14);
@@ -129,9 +129,14 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         if (/\bweek\b/i.test(await page.locator("main").innerText())) old.push("week");
         ok("meals: none of the old things are back", !old.length, old.join(", "));
       }
-      await addOn(TODAY, "quick"); await page.waitForTimeout(500);
+      await addOn(TODAY); await page.waitForTimeout(500);
       const kindSheet = page.getByRole("dialog", { name: "Add a meal" });
-      ok("meals: Quick opens her quick dinners for that day", await kindSheet.getByRole("heading", { name: `${TODAY}: a quick dinner` }).isVisible());
+      ok("meals: Add opens her recipes for that day, all kinds, with a kind filter", await kindSheet.getByRole("heading", { name: TODAY }).isVisible()
+        && ((await kindSheet.getByLabel("Kind").count()) === 0 || (await kindSheet.getByLabel("Kind").locator("option").first().innerText()) === "All kinds"));
+      if (await kindSheet.getByLabel("Kind").count()) {
+        await kindSheet.getByLabel("Kind").selectOption("quick"); await page.waitForTimeout(200);
+        ok("meals: the filter shows one kind, without headings", (await kindSheet.locator("section h2, section h3").count()) === 0 || (await kindSheet.getByRole("heading", { name: "Regular" }).count()) === 0);
+      }
       const mealMenus = (where) => where.getByLabel(/^More for /);
       const todayMeals = () => mealMenus(todayGroup).count();
       const before = await todayMeals();
@@ -145,17 +150,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await didnt.getByRole("button", { name: "OK" }).tap(); await page.waitForTimeout(300);
       ok("meals: after the alert, the page scrolls again", (await page.evaluate(() => document.getElementById("scroller").style.overflow)) === "");
       await page.unroute("**/api/plan");
-      await addOn(TODAY, "quick"); await page.waitForTimeout(500);
+      await addOn(TODAY); await page.waitForTimeout(500);
       await kindSheet.getByRole("button", { name: firstName, exact: true }).tap();
       await page.waitForResponse((r) => r.url().includes("/api/plan") && r.request().method() === "POST", { timeout: 8000 }).catch(() => null);
       await page.waitForTimeout(400);
       ok("meals: picking one puts it on that day", (await todayMeals()) === before + 1);
       // A day with a dinner (Nov 17): no Add row; its first dinner's ⋯ has the day's adds after its own.
       const firstMenu = mealMenus(todayGroup).first();
-      ok("meals: a day with a dinner adds through its first dinner's ⋯, and only that one", (await todayGroup.getByLabel(`Add to ${TODAY}`).count()) === 0
-        && (await firstMenu.locator(`optgroup[label="Add to ${TODAY}"] option`).allInnerTexts()).slice(0, 2).join() === "Add a quick dinner,Add a regular dinner"
-        && (await mealMenus(todayGroup).count() < 2 || (await mealMenus(todayGroup).nth(1).locator("optgroup").count()) === 0));
-      await firstMenu.selectOption("quick"); await page.waitForTimeout(400);
+      ok("meals: a day with a dinner adds through its first dinner's ⋯, and only that one", (await todayGroup.getByRole("button", { name: `Add meal to ${TODAY}` }).count()) === 0
+        && (await firstMenu.locator('option[value="add"]').innerText()) === `Add meal to ${TODAY}`
+        && (await mealMenus(todayGroup).count() < 2 || (await mealMenus(todayGroup).nth(1).locator('option[value="add"]').count()) === 0));
+      await firstMenu.selectOption("add"); await page.waitForTimeout(400);
       ok("meals: one already on that day shows Planned", await kindSheet.getByRole("button", { name: new RegExp(`^${firstName}.*Planned`) }).isDisabled());
       await kindSheet.getByRole("button", { name: "Close" }).last().tap(); await page.waitForTimeout(300);
       // A meal: tap for its recipe; its ⋯ (Nov 17) takes it off after asking, or moves it to another day.
@@ -215,7 +220,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabs.getByRole("button", { name: "Meals" }).tap(); await page.waitForTimeout(800);
       ok("recipe: it's on Meals, on tomorrow's date", (await dayGroup(TOMORROW).getByRole("button", { name: /^Turkey chili/ }).count()) === 1);
       // A search with no match.
-      await addOn(TODAY, "regular"); await page.waitForTimeout(500);
+      await addOn(TODAY); await page.waitForTimeout(500);
       const addSheet = page.getByRole("dialog", { name: "Add a meal" });
       const box = addSheet.getByLabel("Find a recipe");
       ok("add a meal: one sheet with a search box, not focused", (await addSheet.isVisible()) && (await box.isVisible()) && !(await box.evaluate((el) => el === document.activeElement)));
