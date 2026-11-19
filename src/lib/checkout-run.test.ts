@@ -41,6 +41,7 @@ const page = (change: (t: string) => string = (t) => t) => ({
 type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: ReturnType<typeof page> | null; times?: { id: string; words: string }[]; bagsOwn?: boolean };
 const READY: Reading = { stopped: "ready", chosen: FRI6, final: page(), bagsOwn: true };
 /** The helper's listing of free times (Nov 14), and its getting ready with the one picked. */
+let helperBy = "9.9.9";
 const helper = (kind: JobKind, args: Record<string, unknown>): Reading => (args.list ? { stopped: "times", chosen: null, final: null, times: [FRI6] } : READY);
 
 /** The helper, stood in for: each job is answered with what `does` says, at once (or left going with `going`). */
@@ -58,7 +59,7 @@ async function faceId() {
 
 beforeEach(async () => {
   resetCheckout(); resetPasskeys(); resetKv(); resetSafeway(); jobs.clear(); verifyAuth.mockReset(); verifyReg.mockReset();
-  does = helper; going = false; counter = 0; n = 0;
+  does = helper; going = false; counter = 0; n = 0; helperBy = "9.9.9";
   vi.mocked(queueJob).mockReset(); vi.mocked(waitForJob).mockReset();
   vi.mocked(queueJob).mockImplementation(async (kind, args) => {
     const j: Job = { id: `j${++n}`, kind, status: "waiting", args, result: null, created: new Date().toISOString(), updated: new Date().toISOString() };
@@ -68,7 +69,8 @@ beforeEach(async () => {
   vi.mocked(waitForJob).mockImplementation(async (id) => {
     const j = jobs.get(id);
     if (!j) return { job: null, answering: true };
-    if (j.status === "waiting" && !going) Object.assign(j, { status: "done", result: does(j.kind, j.args), updated: new Date().toISOString() });
+    // Taken by the helper Simmer ships unless a test says otherwise (`by`).
+    if (j.status === "waiting" && !going) Object.assign(j, { status: "done", args: { by: helperBy, ...j.args }, result: does(j.kind, j.args), updated: new Date().toISOString() });
     return { job: { ...j }, answering: true };
   });
   await saveSettings({ on: true, limitCents: 2000, store: "100 Main St", card: "4242" });
@@ -283,6 +285,11 @@ describe("the test run", () => {
     expect(recorded("test run").at(-1)).toMatchObject({ ok: true, faceId: "cred-1", approvalId: id });
   });
 
+  it("doesn't count when an older helper ran it (outside review, Nov 18)", async () => {
+    helperBy = "9.9.8";
+    expect(await testRun(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/isn't up to date/)] });
+  });
+
   it("is single use: a second run with the same approval is refused, before the helper is asked", async () => {
     const id = await approved();
     await testRun(id);
@@ -448,10 +455,14 @@ describe("placing the order (phase 3, Nov 14)", () => {
     expect(confirmed({ url: "https://x/erums/cart", text: "Thank you for your order" })).toBe(true);
     expect(confirmed({ url: "https://x/erums/checkout", text: "Something went wrong" })).toBe(false);
     // Safeway's own confirmation address with its order number counts, before the page's words fill in (Nov 18).
-    expect(confirmed({ url: "https://www.safeway.com/erums/order/confirmation/198111519?summary=savingsApplied&", text: "Skip to search Grocery" })).toBe(true);
+    const conf = "https://www.safeway.com/erums/order/confirmation/198111519?summary=savingsApplied&";
+    expect(confirmed({ url: conf, text: "Skip to search Grocery" }, conf)).toBe(true);
+    expect(confirmed({ url: conf, text: "Skip to search Grocery" })).toBe(false); // the tab never moved there
+    expect(confirmed({ url: conf, text: "Skip to search Grocery" }, "https://www.safeway.com/erums/checkout")).toBe(false);
     expect(confirmationNumberIn("https://www.safeway.com/erums/order/confirmation/198111519?summary=x")).toBe("198111519");
-    expect(confirmed({ url: "https://www.safeway.com/erums/order/confirmation/", text: "" })).toBe(false);
-    expect(confirmed({ url: "https://evil.example/www.safeway.com/order/confirmation/198111519", text: "" })).toBe(false);
+    expect(confirmed({ url: "https://www.safeway.com/erums/order/confirmation/", text: "" }, "https://www.safeway.com/erums/order/confirmation/")).toBe(false);
+    const evil = "https://evil.example/www.safeway.com/order/confirmation/198111519";
+    expect(confirmed({ url: evil, text: "" }, evil)).toBe(false);
   });
 
   it("counts a confirmation shown in place, without the page moving", async () => {

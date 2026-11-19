@@ -204,87 +204,6 @@ export async function safewayPage(action, arg, P) {
     };
   }
 
-  // not-checkout:start (add, quantities, snapshots: never used by checkout; changes here need no test run, docs/CHECKOUT.md)
-  if (action === "add") {
-    const { id, times } = arg;
-    const find = () => products().find((p) => p.id === id);
-    let p = find();
-    if (!p) return { ok: false, why: "gone" };
-    p.card.scrollIntoView({ block: "center" });
-    await sleep(600);
-    if (!p.inCart) {
-      const add = addButton(p.card);
-      if (!add) return { ok: false, why: "no-add", snapshot: snapshot(id) };
-      const before = { count: cartCount(), add: label(add) };
-      add.click();
-      // Wait for Safeway to show it's in the cart: the Add button turns into a quantity, or the cart count goes up.
-      let counted = false, changed = false;
-      for (let i = 0; i < 20; i++) {
-        await sleep(400);
-        p = find();
-        const now = cartCount();
-        counted = before.count !== null && now !== null && now > before.count;
-        changed = (tiles()[id] ?? "") !== before.add;
-        if (p?.inCart || counted) break;
-      }
-      // With no cart count to read, a changed Add button is the only sign left; trust it, but say so.
-      if (!p?.inCart && !counted && !(before.count === null && changed)) return { ok: false, why: "not-added", snapshot: snapshot(id) };
-      if (!p?.inCart) return { ok: true, qty: 1, sure: counted, snapshot: snapshot(id) };
-    }
-    for (let n = p.qty || 1; n < times; n++) {
-      const plus = plusButton(p.card);
-      if (!plus) break;
-      plus.click();
-      await sleep(1200);
-      p = find() ?? p;
-    }
-    p = find() ?? p;
-    return { ok: true, qty: p.qty || 1, sure: true };
-  }
-
-  // Sets how many of a product are in the cart (0 takes it out), pressing Add, + or − one at a time and waiting for
-  // Safeway to show each change. Answers { ok, qty, name, price, image }, qty being what the page shows at the end.
-  if (action === "setQty") {
-    const { id, qty: want, wait = 10000 } = arg;
-    const find = () => products().find((p) => p.id === id);
-    let p = find();
-    if (!p) return { ok: false, why: "not-found" };
-    p.card.scrollIntoView({ block: "center" });
-    await sleep(500);
-    const settle = async (changed) => { for (let t = 0; t < wait; t += 400) { await sleep(400); p = find(); if (changed(p)) return true; } return false; };
-    const now = () => (p?.inCart ? p.qty || 1 : 0);
-    const about = { name: p.name, price: p.price, image: p.image };
-    if (!p.inCart && want > 0) {
-      const add = addButton(p.card);
-      if (!add) return { ok: false, why: "no-add", qty: 0, ...about };
-      const count = cartCount();
-      add.click();
-      await settle((x) => x?.inCart || (count !== null && (cartCount() ?? 0) > count));
-      if (!p?.inCart) return { ok: false, why: "not-added", qty: 0, ...about };
-    }
-    for (let n = 0; n < 40 && p && now() !== want; n++) {
-      const before = now();
-      const button = before < want ? plusButton(p.card) : minusButton(p.card);
-      if (!button) break;
-      button.click();
-      // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
-      // Only on −: a + from 1 waited 3 s for a question that never comes (Nov 18: every change after Add took ~16 s).
-      if (before === 1 && before > want && P.confirmRemove) {
-        for (let t = 0; t < 3000; t += 250) {
-          await sleep(250);
-          const yes = buttons(document).find((b) => re(P.confirmRemove).test(label(b)));
-          if (yes) { yes.click(); break; }
-          if (!find()) break;
-        }
-      }
-      if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
-    }
-    p = find();
-    return { ok: now() === want, qty: now(), ...about };
-  }
-
-  if (action === "snapshot") return snapshot(arg.id);
-  // not-checkout:end
 
   // Checkout, read-only (Nov 12, docs/CHECKOUT.md phase 1): what the page says, its links (with where they go) and its
   // buttons' words. Nothing here presses, types, or changes anything.
@@ -483,6 +402,87 @@ export async function safewayPage(action, arg, P) {
     return { pressed: true, words: words.slice(0, 160), checked: found[0].checked };
   }
 
+  // not-checkout:start (add, quantities, snapshots: never used by checkout; changes here need no test run, docs/CHECKOUT.md)
+  if (action === "add") {
+    const { id, times } = arg;
+    const find = () => products().find((p) => p.id === id);
+    let p = find();
+    if (!p) return { ok: false, why: "gone" };
+    p.card.scrollIntoView({ block: "center" });
+    await sleep(600);
+    if (!p.inCart) {
+      const add = addButton(p.card);
+      if (!add) return { ok: false, why: "no-add", snapshot: snapshot(id) };
+      const before = { count: cartCount(), add: label(add) };
+      add.click();
+      // Wait for Safeway to show it's in the cart: the Add button turns into a quantity, or the cart count goes up.
+      let counted = false, changed = false;
+      for (let i = 0; i < 20; i++) {
+        await sleep(400);
+        p = find();
+        const now = cartCount();
+        counted = before.count !== null && now !== null && now > before.count;
+        changed = (tiles()[id] ?? "") !== before.add;
+        if (p?.inCart || counted) break;
+      }
+      // With no cart count to read, a changed Add button is the only sign left; trust it, but say so.
+      if (!p?.inCart && !counted && !(before.count === null && changed)) return { ok: false, why: "not-added", snapshot: snapshot(id) };
+      if (!p?.inCart) return { ok: true, qty: 1, sure: counted, snapshot: snapshot(id) };
+    }
+    for (let n = p.qty || 1; n < times; n++) {
+      const plus = plusButton(p.card);
+      if (!plus) break;
+      plus.click();
+      await sleep(1200);
+      p = find() ?? p;
+    }
+    p = find() ?? p;
+    return { ok: true, qty: p.qty || 1, sure: true };
+  }
+
+  // Sets how many of a product are in the cart (0 takes it out), pressing Add, + or − one at a time and waiting for
+  // Safeway to show each change. Answers { ok, qty, name, price, image }, qty being what the page shows at the end.
+  if (action === "setQty") {
+    const { id, qty: want, wait = 10000 } = arg;
+    const find = () => products().find((p) => p.id === id);
+    let p = find();
+    if (!p) return { ok: false, why: "not-found" };
+    p.card.scrollIntoView({ block: "center" });
+    await sleep(500);
+    const settle = async (changed) => { for (let t = 0; t < wait; t += 400) { await sleep(400); p = find(); if (changed(p)) return true; } return false; };
+    const now = () => (p?.inCart ? p.qty || 1 : 0);
+    const about = { name: p.name, price: p.price, image: p.image };
+    if (!p.inCart && want > 0) {
+      const add = addButton(p.card);
+      if (!add) return { ok: false, why: "no-add", qty: 0, ...about };
+      const count = cartCount();
+      add.click();
+      await settle((x) => x?.inCart || (count !== null && (cartCount() ?? 0) > count));
+      if (!p?.inCart) return { ok: false, why: "not-added", qty: 0, ...about };
+    }
+    for (let n = 0; n < 40 && p && now() !== want; n++) {
+      const before = now();
+      const button = before < want ? plusButton(p.card) : minusButton(p.card);
+      if (!button) break;
+      button.click();
+      // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
+      // Only on −: a + from 1 waited 3 s for a question that never comes (Nov 18: every change after Add took ~16 s).
+      if (before === 1 && before > want && P.confirmRemove) {
+        for (let t = 0; t < 3000; t += 250) {
+          await sleep(250);
+          const yes = buttons(document).find((b) => re(P.confirmRemove).test(label(b)));
+          if (yes) { yes.click(); break; }
+          if (!find()) break;
+        }
+      }
+      if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
+    }
+    p = find();
+    return { ok: now() === want, qty: now(), ...about };
+  }
+
+  if (action === "snapshot") return snapshot(arg.id);
+  // not-checkout:end
   // not-checkout:start (Purchases page and samples: never used by checkout)
   // Safeway's Purchases page (1.3): shows its Online tab (pressing it once when another is showing), then reads it.
   // Answers { signedIn, online (the Online tab found and showing), pressed, none ("no orders" said), entries (the words
