@@ -64,7 +64,7 @@ of her is a cost.
 ### What people asked for comes first
 - **A path someone asked for stays as direct as they asked**, unless they choose otherwise. A budget alone never folds
   it into a menu. Robin asked for Quick and Regular right on each day; on Nov 17 Sam chose two taps for a calmer page:
-  a day's adds are in its first row's ⋯ (Add on a day with nothing yet).
+  a day's adds were in its first row's ⋯; on Nov 18 every day got its Add meal row back, at the end of its meals.
 
 ### Simple, user-driven
 - Simple controls that do what they say; no smart behaviour that guesses, fills or decides for her. Nothing goes on a
@@ -90,7 +90,7 @@ Kept against an outside critique that argued the other way:
 Changed:
 - Meals: tried **one Add per day** (recipes grouped by kind) and **reverted the same day**: Robin asked for Quick and
   Regular on the day, and the single Add made her scan every kind. Later on Nov 17 Sam chose calmer over one tap: a day's
-  adds sit in its first dinner's ⋯, and a day with no dinner has one Add row.
+  adds sat in its first dinner's ⋯ until Nov 18, when every day ended with its own Add meal row again.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
 - Shop: **Add usuals (N)**; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
   **Show checked** live in Shop's ⋯ above the list; the add field has a **plain grey + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
@@ -98,7 +98,7 @@ Changed:
 - List groups keep their outline and tinted header, toned down: a 1px faint outline, a lighter tint, the name in medium
   weight, a grey ⋯ (Sam, Nov 17: "pretty close… just too bold").
 - **Add words:** "Add" and one word for what's added: Add meal, Add recipe, Add item (Sam, Nov 17).
-- **Meals adds with one Add** (Sam, Nov 18): no kind picked first; the add sheet shows every kind under its heading, with a pill for each kind and All first. No sentence on screen speaks of Simmer in the third person ("Not sure the order went through", not "Simmer isn't sure").
+- **Meals adds with one Add** (Sam, Nov 18): an Add meal row at the end of every day, after its meals; no kind picked first; the add sheet shows every kind under its heading, with a pill for each kind and All first. No sentence on screen speaks of Simmer in the third person ("Not sure the order went through", not "Simmer isn't sure").
 - **Colour (Nov 17 pass):** orange is for things you tap (row actions on glass, text buttons, the one filled button per
   screen); a new row's + is grey everywhere; recipe step numbers and a sheet's × are grey.
 - Adding from a page (Meals' Add meal, Recipes' Add recipe) is a **grey + and grey words** at a row's height (Sam, Nov 17: orange was still too bold); the big
@@ -118,7 +118,7 @@ Nov 17 with a small test household; the budget is where it should get to.
 | Taps per thing when checking the house | 1 | 1 |
 | Taps to put the usuals in the Safeway cart | 1 | 1 |
 | Taps to place a Safeway order, after Get ready | 3 + Face ID | 3 + Face ID |
-| Controls on Meals' first screen | 1 per day + 1 per meal + top bar | Add on an empty day; a day's adds in its first meal's ⋯ (Sam, Nov 17: two taps, calmer) |
+| Controls on Meals' first screen | 1 per day + 1 per meal + top bar | An Add meal row ending every day (Sam, Nov 18) |
 | Controls on List's first screen | 25 | 37 |
 | Controls on Shop's first screen | 20 | 13 (test data) |
 | Words on a tab's first screen | 150 | not yet measured per screen |
