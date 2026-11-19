@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateJson } from "./google/gemini";
-import { appendRows, ensureTab, readTabIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
+import { appendRows, atomically, readTab, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
 import { savedSections, type Section, type Store } from "./groceries";
@@ -61,7 +61,7 @@ function toRecipes(rows: string[][]): Recipe[] {
 const local = () => readFile(path.join(process.cwd(), "data", "recipes.csv"), "utf8").then(parseCsv, () => [] as string[][]);
 
 export async function loadRecipes(): Promise<Recipe[]> {
-  const rs = !sheetsConfigured() ? [...(memory ??= toRecipes(await local()))] : toRecipes(await readTabIfAny(TAB));
+  const rs = !sheetsConfigured() ? [...(memory ??= toRecipes(await local()))] : toRecipes(await readTab(TAB));
   // An ingredient's section as she set it (Nov 16), over the guess: the same place it goes on the list.
   const saved = await savedSections().catch(() => new Map<string, Section>());
   if (!saved.size) return rs;
@@ -111,7 +111,7 @@ export const saveRecipe = async (r: Recipe): Promise<Recipe> => (await saveRecip
  * Saves several recipes as saveRecipe does, with one read and at most two writes however many there are (Nov 10: an
  * import of many saved each with its own read and writes, past Google's limit of about 60 a minute).
  */
-export async function saveRecipes(rs: Recipe[]): Promise<Recipe[]> {
+export const saveRecipes = atomically(async (rs: Recipe[]): Promise<Recipe[]> => {
   if (!rs.length) return rs;
   if (!sheetsConfigured()) {
     const m = (memory ??= toRecipes(await local()));
@@ -120,9 +120,8 @@ export async function saveRecipes(rs: Recipe[]): Promise<Recipe[]> {
   }
   const byId = new Map<string, Recipe>();
   for (const r of rs) byId.set(r.id, r); // the same recipe twice: the later one, in the first one's place
-  const rows = await readTabIfAny(TAB);
+  const rows = await readTab(TAB);
   if (!rows.length) {
-    await ensureTab(TAB);
     await appendRows(TAB, [HEADERS, ...[...byId.values()].map((r) => { const c = cells(r); return HEADERS.map((h) => c[h]); })]);
     return rs;
   }
@@ -144,28 +143,28 @@ export async function saveRecipes(rs: Recipe[]): Promise<Recipe[]> {
   await updateRanges(data);
   if (fresh.length) await appendRows(TAB, fresh.map((r) => { const c = cells(r); return headers.map((h) => c[h] ?? ""); }));
   return rs;
-}
+});
 
 /** Deletes a recipe from the collection (Sam, Nov 14: from its Edit sheet, asked first). Answers whether it was there. */
-export async function deleteRecipe(id: string): Promise<boolean> {
+export const deleteRecipe = atomically(async (id: string): Promise<boolean> => {
   if (!sheetsConfigured()) {
     const m = (memory ??= toRecipes(await local()));
     const i = m.findIndex((x) => x.id === id);
     if (i >= 0) m.splice(i, 1);
     return i >= 0;
   }
-  const rows = await readTabIfAny(TAB);
+  const rows = await readTab(TAB);
   const keep = records(rows).filter((x) => x.get("id") !== id);
   if (keep.length === Math.max(0, rows.length - 1)) return false;
   await replaceTab(TAB, [rows[0], ...keep.map((x) => rows[x.rowNumber - 1])], rows);
   return true;
-}
+});
 
-export async function updateRecipe(id: string, change: (r: Recipe) => Recipe): Promise<Recipe> {
+export const updateRecipe = atomically(async (id: string, change: (r: Recipe) => Recipe): Promise<Recipe> => {
   const r = (await loadRecipes()).find((x) => x.id === id);
   if (!r) throw new AppError("That recipe isn't in the collection anymore.");
   return saveRecipe(change(r));
-}
+});
 
 /** The recipe already in the collection with the same name, if there is one. */
 export const sameName = (all: Recipe[], name: string) => all.find((r) => norm(r.name) === norm(name));

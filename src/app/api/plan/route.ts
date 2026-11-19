@@ -2,6 +2,7 @@ import { AppError } from "@/lib/errors";
 import { friendly } from "@/lib/friendly";
 import { authorized, unauthorized } from "@/lib/auth";
 import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount, tidyStock } from "@/lib/plan";
+import { transact } from "@/lib/google/sheets";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 
 const text = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -37,28 +38,32 @@ export async function GET(req: Request) {
 /**
  * POST { op: "plan", dishes, lunches, counts, by }: more to make and pack, on top of what's there.
  * { op: "change", id, recipe?, pinned?, part?, item?, by }, { op: "made", id }, { op: "remove", id }: one planned thing.
- * Answers with everything as it is now, and `added`: how many things went on the grocery list.
+ * Answers with everything as it is now, and `added`: how many things went on the grocery list. The change, the tidy-up
+ * and the answer are one transaction (Nov 19): each tab is read once, and a change made elsewhere meanwhile isn't lost.
  */
 export async function POST(req: Request) {
   if (!authorized(req)) return unauthorized();
   const b = await req.json().catch(() => null);
   try {
-    let added = 0, removed = 0;
-    const id = text(b?.id, 40);
-    if (b?.op === "plan") {
-      const dishes = (Array.isArray(b.dishes) ? b.dishes : []).slice(0, KINDS.length * MAX_COUNT).map(dish).filter((d: NewDish | null): d is NewDish => d !== null);
-      const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 8 * MAX_COUNT).map(lunch).filter((l: NewLunch | null): l is NewLunch => l !== null);
-      ({ added, removed } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
-    } else if (b?.op === "change" && id) {
-      ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }), ...(/^\d{4}-\d{2}-\d{2}$/.test(text(b.day, 10)) && { day: text(b.day, 10) }) }, text(b.by, 20)));
-    } else if (b?.op === "made" && id) await markMade(id);
-    else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
-    else if (b?.op === "clear") ({ removed } = await clearPlanned());
-    else if (b?.op === "count" && text(b.recipe) && (KINDS as readonly string[]).includes(b.kind) && Number.isFinite(Number(b.count))) ({ added, removed } = await setCount(text(b.recipe), b.kind, Number(b.count), text(b.by, 20)));
-    else return Response.json({ error: "Unknown change." }, { status: 400 });
-    // A dinner's leftovers on Stock for dinners no longer planned come off (Nov 14).
-    if (b?.op !== "made") await tidyStock().catch((e) => console.error("couldn't tidy Stock", e));
-    return Response.json({ ...(await loadPlan()), added, removed }, fresh);
+    const out = await transact(async () => {
+      let added = 0, removed = 0;
+      const id = text(b?.id, 40);
+      if (b?.op === "plan") {
+        const dishes = (Array.isArray(b.dishes) ? b.dishes : []).slice(0, KINDS.length * MAX_COUNT).map(dish).filter((d: NewDish | null): d is NewDish => d !== null);
+        const lunches = (Array.isArray(b.lunches) ? b.lunches : []).slice(0, 8 * MAX_COUNT).map(lunch).filter((l: NewLunch | null): l is NewLunch => l !== null);
+        ({ added, removed } = await savePlan(dishes, lunches, counts(b.counts), text(b.by, 20)));
+      } else if (b?.op === "change" && id) {
+        ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }), ...(/^\d{4}-\d{2}-\d{2}$/.test(text(b.day, 10)) && { day: text(b.day, 10) }) }, text(b.by, 20)));
+      } else if (b?.op === "made" && id) await markMade(id);
+      else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
+      else if (b?.op === "clear") ({ removed } = await clearPlanned());
+      else if (b?.op === "count" && text(b.recipe) && (KINDS as readonly string[]).includes(b.kind) && Number.isFinite(Number(b.count))) ({ added, removed } = await setCount(text(b.recipe), b.kind, Number(b.count), text(b.by, 20)));
+      else return null;
+      // A dinner's leftovers on Stock for dinners no longer planned come off (Nov 14).
+      if (b?.op !== "made") await tidyStock().catch((e) => console.error("couldn't tidy Stock", e));
+      return { ...(await loadPlan()), added, removed };
+    });
+    return out ? Response.json(out, fresh) : Response.json({ error: "Unknown change." }, { status: 400 });
   } catch (e) {
     return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
   }

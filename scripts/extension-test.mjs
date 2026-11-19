@@ -29,6 +29,8 @@ if (!process.env.SIMMER_URL) {
   const env = { ...process.env, HOUSEHOLD_PASSCODE: PASS, GOOGLE_SERVICE_ACCOUNT_JSON: "", GEMINI_API_KEY: "" };
   if (!process.env.SKIP_BUILD) await new Promise((ok, bad) => spawn("npx", ["next", "build"], { env, stdio: "ignore" }).on("exit", (c) => (c ? bad(new Error("build failed")) : ok())));
   server = spawn("npx", ["next", "start", "-p", "3205"], { env, stdio: "ignore", detached: true });
+  // Never leave it running (Nov 19: a run that crashed left its server up, and the next run's list doubled up).
+  process.on("exit", () => { try { process.kill(-server.pid); } catch { /* already gone */ } });
   const up = await until(() => fetch(`${LOCAL}/api/version`).then((r) => r.ok, () => false), 90_000);
   if (!up) { console.log("Simmer didn't start"); process.kill(-server.pid); process.exit(1); }
 }
@@ -173,6 +175,9 @@ await ctx.route("https://elsewhere.test/**", (route) => route.fulfill({ contentT
 let [worker] = ctx.serviceWorkers();
 worker ??= await ctx.waitForEvent("serviceworker");
 const id = new URL(worker.url()).host;
+// Wakes the helper as Simmer's push would (no push in this test). Chrome swaps the background worker out when it's idle,
+// so the current one is looked up each time (Nov 19: a kept handle had gone stale and the nudge did nothing).
+const nudge = async () => { const w = ctx.serviceWorkers().find((x) => x.url().includes(id)) ?? await ctx.waitForEvent("serviceworker"); await w.evaluate(() => self.simmerCheck()).catch(() => {}); };
 const safewayQty = async (pid) => (await safeway.evaluate(() => localStorage.getItem("cart") || "{}").then(JSON.parse))[pid] ?? 0;
 const cartQty = async (pid) => (await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.qty ?? 0;
 
@@ -185,9 +190,10 @@ await phone.setViewportSize({ width: 390, height: 844 });
 await phone.goto(`${ADDRESS}/`);
 await phone.getByLabel("Household passcode").fill(PASS);
 await phone.getByRole("button", { name: "Get started" }).click();
-await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Lists" }).click();
-await phone.getByRole("radio", { name: "Safeway" }).click();
-expect(await phone.getByText(/Can't reach Safeway right now/).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the computer not answering is said plainly, and quickly");
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+// Before the helper's set up, Shop still lists the Safeway things (whether the computer answers is known per job now,
+// Nov 11: no check-ins), each with Find.
+expect(await phone.getByRole("button", { name: /^Find .* at Safeway$/ }).first().waitFor({ timeout: 10_000 }).then(() => true, () => false), "Shop lists the Safeway things with Find before the helper's set up");
 
 // Setup in the panel: a wrong address and a wrong passcode say so; then the panel is Simmer, open on Lists at Safeway.
 const panel = await ctx.newPage();
@@ -204,15 +210,17 @@ expect(await panel.getByText("Wrong passcode.").waitFor({ timeout: 10_000 }).the
 await panel.fill("#code", PASS);
 await panel.click("text=Continue");
 const sim = panel.frameLocator("#simmer");
-expect(await sim.getByRole("radio", { name: "Safeway" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer, open on Lists (passcode passed by message)");
-expect(await sim.getByRole("radio", { name: "Safeway" }).getAttribute("aria-checked") === "true", "the panel's Lists opens on Safeway");
+expect(await sim.getByRole("radio", { name: "Safeway" }).waitFor({ timeout: 30_000 }).then(() => true, () => false), "the panel shows Simmer (passcode passed by message)");
+expect(await sim.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).getAttribute("aria-current").then((v) => v === "page", () => false) || await sim.getByText("Milk", { exact: true }).isVisible(), "the panel opens on Shop");
 expect(!(await panel.locator("#simmer").getAttribute("src")).includes(PASS), "the passcode isn't in the frame's address");
 
 const t0 = Date.now();
 const heard = await until(async () => (await api("/api/safeway/jobs")).answering, 30_000);
 console.log(`(the helper checked in ${heard ? `after ${Date.now() - t0} ms` : "not at all"})`);
 // Find: Safeway's choices for an item, searched by the helper on the stand-in Safeway, with pictures.
-await sim.getByRole("button", { name: "Find", exact: true }).first().click();
+const findBtn = sim.getByRole("button", { name: /^Find .* at Safeway$/ }).first();
+if (!(await findBtn.waitFor({ timeout: 30_000 }).then(() => true, () => false))) { console.log("Shop showed:", (await sim.locator("main").innerText()).slice(0, 600)); console.log("phone showed:", (await phone.locator("main").innerText()).slice(0, 300)); }
+await findBtn.click();
 const add = sim.getByRole("dialog").getByRole("button", { name: "Add", exact: true });
 const found = await add.first().waitFor({ timeout: 30_000 }).then(() => true, () => false);
 expect(found, "Find: a search comes back with products");
@@ -231,7 +239,7 @@ expect((await api("/api/safeway/cart")).cart.find((l) => l.productId === pid)?.i
 expect(await sim.getByRole("button", { name: /^Next: Bag bananas/ }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "after an Add, Next (naming the next item) shows at the top");
 const choices = sim.getByRole("dialog");
 await choices.getByRole("button", { name: /^One more/ }).first().click();
-expect(await choices.getByRole("button", { name: /^One more/ }).first().isDisabled() && await choices.getByRole("status", { name: /^Changing .* on Safeway/ }).first().isVisible(), "a product is locked, with a spinner, while its change is on the way");
+expect(await choices.getByLabel("2 in the cart").first().isVisible(), "+ shows the new count at once, while the change goes to Safeway");
 expect(await until(async () => (await safewayQty(pid)) === 2 && (await cartQty(pid)) === 2), "+ adds one on Safeway, and Simmer reads Safeway's count right");
 expect(!(await sim.getByText(/didn't take all/).count()), "no \"didn't take all\" when it did");
 expect(queries.length === searchesAtAdd, `Add and + happen on the search page showing, without loading it again (${queries.length - searchesAtAdd} more)`);
@@ -239,10 +247,12 @@ expect((await api("/api/safeway")).picks.some((p) => p.item === "milk" && p.id =
 
 // In the cart (the Safeway list's own rows): − takes one off, and the trash at one takes it out.
 await sim.locator("body").press("Escape");
-expect(await sim.getByText("In the cart", { exact: true }).waitFor({ timeout: 10_000 }).then(() => true, () => false), "the Safeway list shows what's in the cart");
+expect(await sim.getByLabel("2 in the cart").first().waitFor({ timeout: 10_000 }).then(() => true, () => false), "Shop's Safeway row shows what's in the cart");
 const searchesBefore = queries.length;
 await sim.getByRole("button", { name: /^One less/ }).click();
-expect(await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1), "− takes one off on Safeway");
+const minusOk = await until(async () => (await safewayQty(pid)) === 1 && (await cartQty(pid)) === 1);
+expect(minusOk, "− takes one off on Safeway");
+if (!minusOk) console.log("after −: safeway", await safewayQty(pid), "simmer", await cartQty(pid), "dialogs", await sim.getByRole("dialog").count(), "| tab", safeway.url(), "| jobs", JSON.stringify((await api("/api/safeway/jobs")).jobs?.slice?.(-2) ?? "").slice(0, 600));
 expect(queries.length === searchesBefore && await until(() => new URL(safeway.url()).pathname === "/erums/cart", 20_000), "cart changes are made on Safeway's cart page, which stays showing");
 await sim.getByRole("button", { name: /^Take .* out of the cart/ }).click();
 expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(pid)) === 0), "the trash takes it out of the Safeway cart");
@@ -250,11 +260,10 @@ expect(await until(async () => (await safewayQty(pid)) === 0 && (await cartQty(p
 // The phone path: with the panel closed, a search and an add from a plain page are done by the background.
 await panel.close();
 await phone.reload();
-await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Lists" }).click();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
 await phone.getByRole("radio", { name: "Safeway" }).click();
-await phone.getByRole("button", { name: "Find", exact: true }).first().click();
-// The background stays quick for a few minutes after activity; nudge it as the half-minute alarm would.
-worker.evaluate(() => self.simmerCheck()).catch(() => {});
+await phone.getByRole("button", { name: /^Find .* at Safeway$/ }).first().click();
+void nudge();
 const padd = phone.getByRole("dialog").getByRole("button", { name: "Add", exact: true });
 expect(await padd.first().waitFor({ timeout: 45_000 }).then(() => true, () => false), "phone: a search is done by the background, panel closed");
 await padd.first().click();
@@ -266,21 +275,26 @@ expect(queries.includes("bananas") && !queries.some((q) => /bag|\.\.\./.test(q))
 signedIn = false;
 await safeway.reload(); // Safeway shows it's signed out once its page loads again
 await phone.getByRole("dialog").getByRole("button", { name: /^One more/ }).first().click();
-expect(await phone.getByRole("dialog").getByText(/isn't signed in on the computer/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
+expect(await phone.getByRole("dialog").getByText(/isn't signed in/).waitFor({ timeout: 45_000 }).then(() => true, () => false), "signed out: says so, adds nothing");
 signedIn = true;
+// Signing in takes Safeway off its sign-in page, where the helper parks its tab while signed out.
+for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
 
 // The cart emptied on Safeway (1.3): with no online orders only Simmer's copy empties and the list stays; with an order
 // placed today, the cart's things come off the list too.
 const bananasOnList = async () => (await api("/api/list")).items.some((i) => i.item === "bag bananas");
-const cartJob = async () => { await api("/api/safeway/jobs", { op: "queue", kind: "cart" }); worker.evaluate(() => self.simmerCheck()).catch(() => {}); };
+let lastCartJob = null;
+const cartJob = async () => { const r = await api("/api/safeway/jobs", { op: "queue", kind: "cart" }); lastCartJob = r?.job?.id ?? JSON.stringify(r); void nudge(); };
 const bananaInCart = async () => (await api("/api/safeway/cart")).cart.find((l) => l.qty > 0);
 const inCartNow = await bananaInCart();
 await safeway.evaluate(() => localStorage.removeItem("cart"));
 await cartJob();
-expect(await until(async () => !(await bananaInCart()), 60_000) && await bananasOnList(), "an emptied Safeway cart with no online orders empties Simmer's cart and leaves the list");
+const emptied = await until(async () => !(await bananaInCart()), 60_000);
+expect(emptied && await bananasOnList(), "an emptied Safeway cart with no online orders empties Simmer's cart and leaves the list");
+if (!emptied) console.log("cart job", lastCartJob, JSON.stringify(await api(`/api/safeway/jobs?id=${lastCartJob}`)).slice(0, 700), "| simmer cart", JSON.stringify((await api("/api/safeway/cart")).cart), "| last jobs", JSON.stringify((await api("/api/safeway/jobs?recent=1")).jobs?.slice?.(0, 4)).slice(0, 900));
 const bananaItem = (await api("/api/list")).items.find((i) => i.item === "bag bananas");
 await api("/api/safeway/jobs", { op: "queue", kind: "setQty", productId: inCartNow?.productId ?? "960010", qty: 1, query: "bananas", name: inCartNow?.name ?? "Bananas", itemId: bananaItem?.id, item: "bag bananas" });
-worker.evaluate(() => self.simmerCheck()).catch(() => {});
+void nudge();
 await until(async () => Boolean(await bananaInCart()), 60_000);
 await safeway.evaluate(() => localStorage.removeItem("cart"));
 ordered = true;

@@ -27,9 +27,13 @@ const answerOf = (it: Item | null): Answer => (!it ? "check" : it.have ? "have" 
 
 export function rowsOf(list: ListState | null, kitchen: Kitchen | null, opts: { all?: boolean } = {}): StockRow[] {
   const items = (list?.items ?? []).filter((i) => !i.checked);
-  const find = (name: string) => items.find((i) => norm(i.item) === norm(name)) ?? null;
+  // Looked up by name once (Nov 19), the first of a name winning as before, and each item's dinner mark worked out once.
+  const byName = new Map<string, Item>();
+  for (const i of items) if (!byName.has(norm(i.item))) byName.set(norm(i.item), i);
+  const dinner = new Map(items.map((i) => [i, fromDinner(i)]));
+  const find = (name: string) => byName.get(norm(name)) ?? null;
   const row = (key: string, name: string, section: Section, store: Store, it: Item | null, staple: Staple | null, frozen: Frozen | null): StockRow => {
-    const meal = Boolean(it && fromDinner(it));
+    const meal = Boolean(it && dinner.get(it));
     return { key, name, section, store, answer: answerOf(it), meal, amount: meal ? it!.quantity : "", item: it, staple, frozen, group: staple?.group ?? "" };
   };
   const rows: StockRow[] = [];
@@ -45,7 +49,7 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null, opts: { 
   }
   // What the dinners need that isn't kept: every dinner thing, fresh and pantry (Nov 14), in its own section, highlighted.
   for (const it of items) {
-    if (known.has(norm(it.item)) || !fromDinner(it)) continue;
+    if (known.has(norm(it.item)) || !dinner.get(it)) continue;
     known.add(norm(it.item));
     rows.push(row(`m|${it.id}`, it.item, it.section, it.store, it, null, null));
   }

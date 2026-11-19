@@ -5,7 +5,7 @@ import { freezerMatch } from "@/lib/week";
 import { norm } from "@/lib/words";
 import { Check } from "./Shop";
 import { Icon } from "./icons";
-import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, IconButton, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
+import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, IconButton, MoreMenu, Row, Segmented, Sheet, TopBar, useSwipe } from "./ui";
 
 const EFFORT: Record<Effort, string> = { quick: "Quick", regular: "Regular" };
 const FOR = { everyone: "Everyone", kids: "Kids' dinner", adults: "Grown-ups" } as const;
@@ -32,36 +32,48 @@ function Some({ header, items, onOpen }: { header: string; items: Recipe[] } & O
   const [all, setAll] = useState(false);
   if (!items.length) return null;
   return (
-    <Group header={header} aside={items.length > 6 ? <button className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
+    <Group header={header} aside={items.length > 6 ? <button type="button" className="t-foot font-semibold text-accent" onClick={() => setAll(!all)}>{all ? "Fewer" : `All ${items.length}`}</button> : undefined}>
       {(all ? items : items.slice(0, 6)).map((r) => <RecipeRow key={r.id} r={r} onOpen={onOpen} />)}
     </Group>
   );
 }
 
+const NO_FREEZER: Frozen[] = []; // one empty list, so the lists below aren't worked out again on every draw
+const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
+
 /** The Recipes tab: her collection by kind, each kind opening to all of it. */
-export function RecipesScreen({ recipes, onOpen, onAdd, freezer = [] }: {
+export function RecipesScreen({ recipes, onOpen, onAdd, freezer = NO_FREEZER }: {
   recipes: Recipe[] | null; freezer?: Frozen[]; onAdd: () => void;
 } & Opens) {
-  const opens = { onOpen };
-  const all = useMemo(() => recipes ?? [], [recipes]);
-  const active = all; // every recipe shows (Nov 14: "Stop suggesting" went with suggestions; hidden ones are back)
-  const byName = (a: Recipe, b: Recipe) => a.name.localeCompare(b.name);
+  // Every recipe shows (Nov 14: "Stop suggesting" went with suggestions; hidden ones are back). Worked out once per change.
+  const lists = useMemo(() => {
+    const all = [...(recipes ?? [])].sort(byName);
+    const frozen = freezer.map((f) => f.item);
+    const fromFreezer = all.filter((r) => r.for !== "kids" && frozen.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f, it))))
+      .sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1));
+    return {
+      fromFreezer,
+      favorites: all.filter((r) => (r.rating ?? 0) >= 3),
+      quick: all.filter((r) => r.effort === "quick" && r.for !== "kids"),
+      regular: all.filter((r) => r.effort === "regular" && r.for !== "kids"),
+      kids: all.filter((r) => r.for === "kids"),
+    };
+  }, [recipes, freezer]);
   return (
     <div className="space-y-6">
       <BrandBar />
       <h1 className="sr-only">Recipes</h1>
-      {!recipes ? <Held groups={[1, 5, 4]} /> : !all.length ? (
-        <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipe</Button>}>
-        </EmptyState>
+      {!recipes ? <Held groups={[1, 5, 4]} /> : !recipes.length ? (
+        <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipe</Button>} />
       ) : (
         <>
           {/* As a day's Add on Meals (Sam, Nov 17): a grey + and grey words at a row's height. */}
-          <Group><button onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipe</span></button></Group>
-          <Some header="From the freezer" items={active.filter((r) => r.for !== "kids" && freezer.some((f) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(f.item, it)))).sort((a, b) => (a.effort === b.effort ? byName(a, b) : a.effort === "quick" ? -1 : 1))} {...opens} />
-          <Some header="Favorites" items={active.filter((r) => (r.rating ?? 0) >= 3).sort(byName)} {...opens} />
-          <Some header="Quick" items={active.filter((r) => r.effort === "quick" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Regular" items={active.filter((r) => r.effort === "regular" && r.for !== "kids").sort(byName)} {...opens} />
-          <Some header="Kids' dinners" items={active.filter((r) => r.for === "kids").sort(byName)} {...opens} />
+          <Group><button type="button" onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipe</span></button></Group>
+          <Some header="From the freezer" items={lists.fromFreezer} onOpen={onOpen} />
+          <Some header="Favorites" items={lists.favorites} onOpen={onOpen} />
+          <Some header="Quick" items={lists.quick} onOpen={onOpen} />
+          <Some header="Regular" items={lists.regular} onOpen={onOpen} />
+          <Some header="Kids' dinners" items={lists.kids} onOpen={onOpen} />
         </>
       )}
     </div>
@@ -85,12 +97,23 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
   useEffect(() => {
     // Keep the screen awake while cooking, where the browser allows it.
+    // A lock that arrives after the recipe is closed is let go at once, and an old one before a new one (Nov 19: none left held).
     let lock: { release: () => Promise<void> } | null = null;
+    let gone = false;
     const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<{ release: () => Promise<void> }> } };
-    const take = () => { if (document.visibilityState === "visible") nav.wakeLock?.request("screen").then((l) => { lock = l; }, () => {}); };
+    const take = () => {
+      if (document.visibilityState !== "visible" || !nav.wakeLock) return;
+      lock?.release().catch(() => {});
+      lock = null;
+      nav.wakeLock.request("screen").then((l) => {
+        if (gone) { l.release().catch(() => {}); return; }
+        lock?.release().catch(() => {});
+        lock = l;
+      }, () => {});
+    };
     take();
     document.addEventListener("visibilitychange", take);
-    return () => { document.removeEventListener("visibilitychange", take); lock?.release().catch(() => {}); };
+    return () => { gone = true; document.removeEventListener("visibilitychange", take); lock?.release().catch(() => {}); };
   }, []);
   const fresh = r.ingredients.filter((i) => i.section === "fresh"), frozen = r.ingredients.filter((i) => i.section === "freezer");
   const rest = r.ingredients.filter((i) => i.section !== "fresh" && i.section !== "freezer");
@@ -99,20 +122,18 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
     <div key={n} className="flex min-h-[3.25rem] items-center gap-2 pl-4 pr-2">
       <span className="min-w-0 flex-1 py-3 t-body">{i.line}</span>
       {onSection && (
-        <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
-          <span aria-hidden>⋯</span>
-          <select value="" aria-label={`More for ${i.item}`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-            onChange={(e) => { const sec = e.target.value as RecipeSection; if (sec) onSection(i.item, sec); }}>
-            <option value="" disabled>{i.item}</option>
-            <option value="fresh" disabled={i.section === "fresh"}>Move to Fresh</option>
-            <option value="freezer" disabled={i.section === "freezer"}>Move to Freezer</option>
-            <option value="pantry" disabled={i.section !== "fresh" && i.section !== "freezer"}>Move to Pantry</option>
-          </select>
-        </label>
+        <MoreMenu label={`More for ${i.item}`} title={i.item} onPick={(sec) => onSection(i.item, sec as RecipeSection)}
+          options={[
+            { value: "fresh", label: "Move to Fresh", off: i.section === "fresh" },
+            { value: "freezer", label: "Move to Freezer", off: i.section === "freezer" },
+            { value: "pantry", label: "Move to Pantry", off: i.section !== "fresh" && i.section !== "freezer" },
+          ]} />
       )}
     </div>
   );
-  const link = /^https?:\/\//.test(r.source) ? r.source : "";
+  // A source that only looks like a link (a typo, a space) shows as written rather than breaking the page (Nov 19).
+  const site = (() => { try { return /^https?:\/\//.test(r.source) ? new URL(r.source).hostname.replace(/^www\./, "") : ""; } catch { return ""; } })();
+  const link = site ? r.source : "";
   return (
     <div ref={screen} className="space-y-6">
       <TopBar title={r.name} subtitle={[summary(r, true), r.serves && `Serves ${r.serves}`].filter(Boolean).join(" · ")} onBack={onBack} backLabel={backLabel}
@@ -139,7 +160,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
       {(r.tags.length > 0 || r.source) && (
         <Group>
           {r.tags.length > 0 && <Row title="Tags" value={r.tags.join(", ")} />}
-          {link ? <Row title="Where it's from" value={new URL(link).hostname.replace(/^www\./, "")} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={/^(?:img|pxl|dsc|dcim|photo|image|screenshot)[_ -]?\d/i.test(r.source) ? "Photo" : r.source} />}
+          {link ? <Row title="Where it's from" value={site} accessory="external" href={link} /> : r.source && <Row title="Where it's from" value={/^(?:img|pxl|dsc|dcim|photo|image|screenshot)[_ -]?\d/i.test(r.source) ? "Photo" : r.source} />}
         </Group>
       )}
     </div>
@@ -218,19 +239,26 @@ export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
   const twin = (name: string) => recipes.find((r) => norm(r.name) === norm(name));
 
   const photo = useRef<HTMLInputElement>(null), files = useRef<HTMLInputElement>(null);
+  // Only the latest reading counts (Nov 19): an answer to an earlier pick, or one that comes after Back, is dropped.
+  const asked = useRef(0);
   async function pick(f: File | undefined) {
     if (!f) return;
+    const n = ++asked.current;
     setBusy(true); setError(null);
-    try { await read({ file: await fileToSend(f) }); } catch (e) { setError(errorText(e)); setBusy(false); }
+    let file;
+    try { file = await fileToSend(f); } catch (e) { if (n === asked.current) { setError(errorText(e)); setBusy(false); } return; }
+    if (n === asked.current) await read({ file });
   }
   async function read(from: Parameters<typeof api.readRecipe>[0]) {
+    const n = ++asked.current;
     setBusy(true); setError(null);
     try {
       const { found } = await api.readRecipe(from);
+      if (n !== asked.current) return;
       if (found.length === 1) setStep({ at: "review", d: found[0] });
       else { setPicked(new Set(found.flatMap((d, i) => (twin(d.name) ? [] : [i])))); setStep({ at: "pick", found }); }
-    } catch (e) { setError(errorText(e)); }
-    setBusy(false);
+    } catch (e) { if (n === asked.current) setError(errorText(e)); }
+    if (n === asked.current) setBusy(false);
   }
   // Saved behind the scenes (Nov 11: always responsive): the sheet closes and the recipe shows at once.
   const save = (ds: Draft[], duplicates: "skip" | "replace" | undefined) => onSave(ds.map(tidy), duplicates, step);
@@ -290,7 +318,7 @@ export function AddRecipesSheet({ recipes, initial, onSave, onClose }: {
   return (
     <Sheet label="Add recipe" title="Add recipe" onClose={onClose} footer={footer}>
       <div className="space-y-4 pb-2">
-        {back && <button aria-label="Back to Add recipe" className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
+        {back && <button type="button" aria-label="Back to Add recipe" disabled={busy} className="t-sub -mt-1 flex items-center gap-1 font-semibold text-accent disabled:opacity-40" onClick={back}><Icon name="left" className="size-4" strokeWidth={2.4} />Back</button>}
         {body}
         <input ref={photo} type="file" accept="image/*" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         <input ref={files} type="file" accept="application/pdf,image/*,text/plain,.pdf,.txt" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />

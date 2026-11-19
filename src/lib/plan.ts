@@ -7,7 +7,7 @@
 // Sheet (local dev, tests) the tabs live in memory, seeded from data/*.csv.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { appendRows, ensureTab, readTabIfAny, readTabsIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
+import { appendRows, atomically, readTab, readTabsIfAny, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
 import { loadHousehold } from "./data";
 import { addItems, dropHighlightsNotFor, emptyLists, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
@@ -42,14 +42,15 @@ const file = (tab: string) => path.join(process.cwd(), "data", `${tab.toLowerCas
 
 async function rows(tab: string): Promise<string[][]> {
   // A failed read throws (read as empty, a change written after it would erase the tab).
-  if (sheetsConfigured()) return readTabIfAny(tab);
+  if (sheetsConfigured()) return readTab(tab);
   if (!memory.has(tab)) memory.set(tab, await readFile(file(tab), "utf8").then(parseCsv, () => [] as string[][]));
   return memory.get(tab)!.map((r) => [...r]);
 }
 
 // Each takes the tab as just read when the caller has it (`before`), and answers with the tab as it is after, so one
 // change to a tab is one read and one write (Nov 10: reading the tab again for each step ran into Google's limit of
-// about 60 reads a minute).
+// about 60 reads a minute). Every change here is one transaction (Nov 19, redis-tabs.ts): `before` comes from the same
+// transaction, so its row numbers are the ones written to.
 
 /** Records written into a tab's rows: rows whose key columns match are changed in place, the rest added at the end. */
 function upserted(tab: string, before: string[][], recs: Record<string, string>[], keys: string[]) {
@@ -75,12 +76,11 @@ function upserted(tab: string, before: string[][], recs: Record<string, string>[
 }
 
 /** Writes records into a tab: rows whose key columns match are updated in place, the rest added at the end. */
-async function upsert(tab: string, recs: Record<string, string>[], keys: string[], before?: string[][]): Promise<string[][]> {
+const upsert = atomically(async (tab: string, recs: Record<string, string>[], keys: string[], before?: string[][]): Promise<string[][]> => {
   if (!recs.length) return before ?? rows(tab);
   const old = before ?? (await rows(tab));
   const { all, headers, missing, width, changed, added } = upserted(tab, old, recs, keys);
   if (!sheetsConfigured()) { memory.set(tab, [...all, ...added]); return [...all, ...added]; }
-  if (missing.length) await ensureTab(tab);
   // The new headers and every changed row in one write, then the new rows in one more.
   await updateRanges([
     ...(missing.length ? [{ range: `${tab}!${col(width)}1:${col(width + missing.length - 1)}1`, values: [missing] }] : []),
@@ -88,14 +88,14 @@ async function upsert(tab: string, recs: Record<string, string>[], keys: string[
   ]);
   if (added.length) await appendRows(tab, added);
   return [...all, ...added];
-}
+});
 
-async function append(tab: string, recs: Record<string, string>[], before?: string[][]): Promise<string[][]> {
+const append = atomically(async (tab: string, recs: Record<string, string>[], before?: string[][]): Promise<string[][]> => {
   if (!recs.length) return before ?? rows(tab);
   const all = before ?? (await rows(tab));
   if (!all.length) {
     const fresh = [HEADERS[tab], ...recs.map((r) => HEADERS[tab].map((h) => r[h] ?? ""))];
-    if (sheetsConfigured()) { await ensureTab(tab); await appendRows(tab, fresh); }
+    if (sheetsConfigured()) await appendRows(tab, fresh);
     else memory.set(tab, fresh);
     return fresh;
   }
@@ -111,7 +111,7 @@ async function append(tab: string, recs: Record<string, string>[], before?: stri
   if (sheetsConfigured()) await appendRows(tab, out);
   else memory.set(tab, [...all, ...out]);
   return [...all, ...out];
-}
+});
 
 
 // ---- reading what's planned
@@ -182,11 +182,11 @@ async function readTabs(): Promise<Tabs> {
 }
 
 /** The Meals screen: what's still to make and pack, and what planning needs. Moves the old plan's coming nights over first, once. */
-export async function loadPlan(): Promise<PlanData> {
+export const loadPlan = atomically(async (): Promise<PlanData> => {
   let tabs = await readTabs();
   if (await moveOldPlan(tabs)) tabs = await readTabs(); // it wrote rows: read them as they are now
   return planFrom(tabs);
-}
+});
 
 function planFrom({ planned, plan, made, trips, options, counts, hh, freezer }: Tabs): PlanData {
   const p = toPlanned(planned);
@@ -298,7 +298,7 @@ export type NewLunch = Omit<Lunch, "id">;
  * Before that, highlights in Stock that no longer belong to anything planned are dropped (see dropHighlightsNotFor), so
  * a pantry check from a dinner made or removed since doesn't linger. Answers how many things went on a list.
  */
-export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number; removed: number }> {
+export const savePlan = atomically(async (dishes: NewDish[], lunches: NewLunch[], counts: Counts | null, by: string): Promise<{ added: number; removed: number }> => {
   const today = todayIn();
   let removed = 0;
   // Each tab read once (Nov 10: reading Planned again for every step ran into Google's limit of about 60 reads a minute).
@@ -327,14 +327,14 @@ export async function savePlan(dishes: NewDish[], lunches: NewLunch[], counts: C
   const need: Need[] = dishes.flatMap((d) => { const r = byId.get(d.recipe); return r ? needFor(r, freezer) : []; });
   for (const it of lunchShopping(lunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
   return { added: need.length ? await addItems(need, by) : 0, removed };
-}
+});
 
 /**
  * One planned thing changed: another recipe for a dish (Something else), or another option for one part of a lunch.
  * What the new one needs goes on the list; what only the old one needed comes off, unless it's ticked off or in the
  * cart (Nov 10: before, it stayed, and a swap left its groceries behind).
  */
-export async function changePlanned(id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string; day?: string }, by: string): Promise<{ added: number; removed?: number }> {
+export const changePlanned = atomically(async (id: string, change: { recipe?: string; pinned?: boolean; part?: LunchPart; item?: string; day?: string }, by: string): Promise<{ added: number; removed?: number }> => {
   const before = await rows(PLANNED);
   const now = toPlanned(before);
   const dish = now.dishes.find((d) => d.id === id), lunch = now.lunches.find((l) => l.id === id);
@@ -356,13 +356,13 @@ export async function changePlanned(id: string, change: { recipe?: string; pinne
     return { added: need.length ? await addItems(need.map((item) => ({ item, quantity: "", for: "lunches", check: false })), by) : 0 };
   }
   return { added: 0 };
-}
+});
 
 /**
  * Made it (or packed it): it comes off what's to make, with today's date, and a dinner from the collection is logged
  * (so "last made" stays true) and counts the freezer down. The grocery list is left alone.
  */
-export async function markMade(id: string) {
+export const markMade = atomically(async (id: string) => {
   const before = await rows(PLANNED);
   const now = toPlanned(before);
   const dish = now.dishes.find((d) => d.id === id);
@@ -377,14 +377,14 @@ export async function markMade(id: string) {
   const freezer = await rows(FREEZER);
   const f = freezerFrom(freezer).find((x) => [r.protein, ...r.ingredients.map((i) => i.item)].some((it) => it && freezerMatch(x.item, it)));
   if (f) await takeFrozen(f.id, freezer);
-}
+});
 
 /**
  * New plan: a fresh start for the whole app (Nov 11). Every dinner comes off, logged as made on the day it was planned
  * (nothing is ticked off), so "last made" stays true; every list is emptied, except what's in the Safeway cart. Answers
  * how many list lines came off.
  */
-export async function clearPlanned(): Promise<{ removed: number }> {
+export const clearPlanned = atomically(async (): Promise<{ removed: number }> => {
   const today = todayIn();
   const before = await rows(PLANNED);
   const dishes = toPlanned(before).dishes;
@@ -396,14 +396,14 @@ export async function clearPlanned(): Promise<{ removed: number }> {
   await upsert(PLANNED, dishes.map((d) => ({ id: d.id, made: added.get(d.id) ?? today })), ["id"], before);
   await append(MADE, dishes.map((d) => ({ date: added.get(d.id) ?? today, recipe: d.recipe })));
   return { removed };
-}
+});
 
 /**
  * How many of one dinner (Nov 10: − count +, sent once she stops tapping). More: the extra helpings go on the plan and
  * their groceries on the list (amounts added up). Fewer: helpings come off, and their groceries are cut back, or taken
  * off when none is left (never what's ticked off, in the cart or added by hand). Answers what went on and came off.
  */
-export async function setCount(recipe: string, kind: Kind, count: number, by: string): Promise<{ added: number; removed: number }> {
+export const setCount = atomically(async (recipe: string, kind: Kind, count: number, by: string): Promise<{ added: number; removed: number }> => {
   const want = Math.max(0, Math.min(MAX_COUNT, Math.round(count)));
   const today = todayIn();
   const before = await rows(PLANNED);
@@ -421,10 +421,10 @@ export async function setCount(recipe: string, kind: Kind, count: number, by: st
     return { added: 0, removed: await takeOffDishes(Array.from({ length: gone.size }, () => recipe), want ? new Set([recipe]) : new Set()) };
   }
   return { added: 0, removed: 0 };
-}
+});
 
 /** Not making it after all: it comes off, and so does what only it needed on the list (Nov 10), unless bought already. */
-export async function removePlanned(id: string): Promise<{ removed: number }> {
+export const removePlanned = atomically(async (id: string): Promise<{ removed: number }> => {
   const before = await rows(PLANNED);
   const all = toPlanned(before).dishes;
   const dish = all.find((d) => d.id === id);
@@ -432,21 +432,21 @@ export async function removePlanned(id: string): Promise<{ removed: number }> {
   // Planned more than once (Nov 10: "×2"): one fewer, so its groceries are cut back by one helping, not taken off.
   const still = new Set(all.filter((d) => d.id !== id).map((d) => d.recipe));
   return { removed: dish ? await takeOffDishes([dish.recipe], still) : 0 };
-}
+});
 
 /** A recipe deleted (Nov 14): every time it's on the plan comes off, with what only it needed on the list. */
-export async function removeRecipeFromPlan(recipe: string): Promise<{ removed: number }> {
+export const removeRecipeFromPlan = atomically(async (recipe: string): Promise<{ removed: number }> => {
   let removed = 0;
   for (const d of toPlanned(await rows(PLANNED)).dishes.filter((x) => x.recipe === recipe)) removed += (await removePlanned(d.id)).removed;
   await tidyStock();
   return { removed };
-}
+});
 
 /**
  * After the plan changes (Nov 14): a dinner's things still waiting on Stock for a dinner no longer planned come off (the
  * shredded cheese for tacos stayed after the tacos went: it was in the cart at New plan, and nothing took it off after).
  */
-export async function tidyStock(): Promise<void> {
+export const tidyStock = atomically(async (): Promise<void> => {
   const [planned, recipes] = await Promise.all([rows(PLANNED), loadRecipes()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
@@ -454,12 +454,11 @@ export async function tidyStock(): Promise<void> {
   const today = todayIn();
   const current = now.dishes.filter((d) => !d.day || d.day >= today);
   await dropHighlightsNotFor([...current.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
-}
+});
 
-/** The freezer and when the next trips are, for the Groceries tab. */
+/** The freezer, for Stock (Nov 19: the trips it also answered with were read for nothing; nothing shows them). */
 export async function loadKitchen() {
-  const [freezer, trips] = await Promise.all([loadFreezer(), rows(TRIPS)]);
-  return { freezer, trips: tripsDue(trips, todayIn()) };
+  return { freezer: await loadFreezer() };
 }
 
 /** A finished trip (Done shopping), for the store rhythm. */
@@ -477,7 +476,7 @@ function freezerFrom(all: string[][]): Frozen[] {
 }
 
 /** "2 salmon" → two salmon, put in today. The same thing added again adds up. */
-export async function addFrozen(text: string, store = "") {
+export const addFrozen = atomically(async (text: string, store: string = "") => {
   const m = text.trim().match(/^(\d+)\s+(.+)$/);
   const item = (m ? m[2] : text).trim().slice(0, 60), amount = m ? m[1] : "";
   if (!item) return;
@@ -485,20 +484,20 @@ export async function addFrozen(text: string, store = "") {
   const same = freezerFrom(before).find((f) => norm(f.item) === norm(item));
   if (same && /^\d+$/.test(same.amount) && amount) { await upsert(FREEZER, [{ id: same.id, amount: String(Number(same.amount) + Number(amount)) }], ["id"], before); return; }
   await upsert(FREEZER, [{ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, item, amount, added: todayIn(), store }], ["id"], before);
-}
+});
 
 /** One used: the amount goes down, and at none (or no amount written) it's gone. `before`: the tab as just read. */
-export async function takeFrozen(id: string, before?: string[][]) {
+export const takeFrozen = atomically(async (id: string, before?: string[][]) => {
   const all = before ?? (await rows(FREEZER));
   const f = freezerFrom(all).find((x) => x.id === id);
   if (!f) return;
   const n = Number(f.amount);
   if (Number.isFinite(n) && n > 1) await upsert(FREEZER, [{ id, amount: String(n - 1) }], ["id"], all);
   else await removeRows(FREEZER, (get) => get("id") === id, all);
-}
+});
 
 /** Rows off a tab, in one write; `add`: rows to put at the end in the same write. */
-async function removeRows(tab: string, drop: (get: (k: string) => string) => boolean, before?: string[][], add: Record<string, string>[] = []): Promise<string[][]> {
+const removeRows = atomically(async (tab: string, drop: (get: (k: string) => string) => boolean, before?: string[][], add: Record<string, string>[] = []): Promise<string[][]> => {
   const all = before ?? (await rows(tab));
   const head = all[0] ?? HEADERS[tab];
   const headers = head.map((h) => h.trim().toLowerCase());
@@ -506,4 +505,4 @@ async function removeRows(tab: string, drop: (get: (k: string) => string) => boo
   if (sheetsConfigured()) await replaceTab(tab, keep, all);
   else memory.set(tab, keep);
   return keep;
-}
+});
