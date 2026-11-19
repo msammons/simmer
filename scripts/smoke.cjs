@@ -324,6 +324,9 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
         await clear(name);
         await haveOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: a meal thing: Have lights", (await answerOf(name)) === "have");
+        const tint = async (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+        const kept = page.locator("[data-fresh], div:not([data-meal])").filter({ has: page.getByRole("group", { name: /^Have or need / }) }).filter({ hasNot: page.locator("[data-group]") });
+        ok("stock: a dinner's thing has the highlight colour, a kept thing doesn't", !/rgba\(0, 0, 0, 0\)|transparent/.test(await tint(meal.first())) && (!(await kept.count()) || /rgba\(0, 0, 0, 0\)|transparent/.test(await tint(kept.last()))));
         await needOf(name).tap(); await page.waitForTimeout(1200);
         ok("stock: Need switches it (never both), still marked", (await answerOf(name)) === "need" && (await meal.filter({ hasText: new RegExp(name, "i") }).count()) === 1);
         await needOf(name).tap(); await page.waitForTimeout(1200);
@@ -399,11 +402,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await haveOf("smoke swiss").tap(); await page.waitForTimeout(1500);
       ok("stock: one answered Have: the group closes, its ⋯ offering Show everything in it, unchecked, and that thing tucks away", (await cheese.getAttribute("aria-expanded")) === "false" && (await showAllText()) === "Show all items"
         && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      const cartText = async () => (await groupMenu().locator("option[value=cart]").innerText()).trim();
+      ok("stock: closed, the group's ⋯ has Show cart items only checked", (await cartText()) === "✓ Show cart items only");
       await groupMenu().selectOption("all"); await page.waitForTimeout(300);
-      ok("stock: Show everything in the group, from its's ⋯ opens it, checked", (await showAllText()) === "✓ Show all items" && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      ok("stock: Show everything in the group, from its's ⋯ opens it, checked", (await showAllText()) === "✓ Show all items" && (await cartText()) === "Show cart items only" && (await cheese.getAttribute("aria-expanded")) === "true" && (await answerOf("smoke swiss")) === "have");
+      await cheese.tap(); await page.waitForTimeout(300);
+      ok("stock: tapping the group's name goes back to cart items only", (await cheese.getAttribute("aria-expanded")) === "false" && (await cartText()) === "✓ Show cart items only" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 0);
+      await cheese.tap(); await page.waitForTimeout(300);
+      ok("stock: and again to all items", (await cheese.getAttribute("aria-expanded")) === "true" && (await page.getByRole("group", { name: "Have or need smoke swiss" }).count()) === 1);
       // The list's own ⋯ by Add: Show all shows every kept thing and opens every group; checked while on.
       const listMenu = page.getByLabel("More for the list");
-      await groupMenu().selectOption("all"); await page.waitForTimeout(300);
+      await groupMenu().selectOption("cart"); await page.waitForTimeout(300);
       await listMenu.selectOption("all"); await page.waitForTimeout(300);
       ok("stock: the list's ⋯ Show all groups opens every group, checked", (await listMenu.locator("option[value=all]").innerText()).trim() === "✓ Show all groups" && (await cheese.getAttribute("aria-expanded")) === "true");
       await listMenu.selectOption("all"); await page.waitForTimeout(300);

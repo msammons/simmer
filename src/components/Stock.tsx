@@ -17,7 +17,7 @@ import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet, Ad
  *
  * Nov 16 (Robin's run): common things always show; specialty things show only while they're on the list or answered,
  * and leave after the shop. Things she puts in the same group (Cheese, Yogurt) sit under it: closed, a group shows
- * only what's marked Need; open, all of them; a group shows from its first thing (Sam). The field at the top puts something on
+ * only what's marked Need (and, since Nov 19, a dinner's things); open, all of them; a group shows from its first thing (Sam). The field at the top puts something on
  * the list as Need at once. Called List on screen since Nov 16 (Sam).
  */
 const SECTIONS: { id: Section; name: string }[] = [{ id: "fresh", name: "Fresh" }, { id: "pantry", name: "Pantry" }, { id: "freezer", name: "Freezer" }, { id: "household", name: "Household" }];
@@ -79,38 +79,41 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
         if (!here.length) return null;
         return (
           <Group key={id} header={name}>
-            {linesOf(here).flatMap((l, i, all) => {
+            {linesOf(here).flatMap((l) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
               const isOpen = showAll || open.has(key);
-              const shown = isOpen ? l.rows : l.rows.filter((r) => r.answer === "need");
-              // Nothing to show or hide (every thing in it is Need): the header stays, without its hide/show (Sam, Nov 16).
-              const toggles = !l.rows.every((r) => r.answer === "need");
-              // Right under another group: one line between them, not two.
-              const afterGroup = all[i - 1]?.kind === "group";
-              // A group (Nov 16-17, Sam): full width with nothing indented, a faint colored line around its cells, a lightly tinted header (Nov 17: toned down, "just too bold")
-              // row with the group's name; its ⋯ has Show everything in <group>, checked while open (tapping the header does the same).
+              // Closed, a group shows what's in the cart (Need) and what the planned dinners need (Sam, Nov 19: a dinner's
+              // thing in a group shows by itself); open, everything in it.
+              const wanted = (r: StockRow) => r.answer === "need" || r.meal;
+              const shown = isOpen ? l.rows : l.rows.filter(wanted);
+              // Nothing to show or hide (everything in it already shows): the header stays, without its hide/show (Sam, Nov 16).
+              const toggles = !l.rows.every(wanted);
+              const flip = () => { if (toggles && !showAll) toggle(key); };
+              // A group (Nov 19, Sam): no highlight colour (that's for a dinner's things now), a plain header row with the
+              // group's name and an arrow; tapping it switches between all its items and only cart items, and its ⋯ has both.
               return [
-                <div key={key} data-group={l.name} className="relative divide-y divide-line">
-                  <div className="flex h-[3.25rem] items-center bg-accent/[0.04] pr-2">
-                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={() => toggles && !showAll && toggle(key)}
-                      className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-2 text-left">
-                      <span className="min-w-0 flex-1 truncate t-body font-medium text-accent">{cap(l.name)}</span>
+                <div key={key} data-group={l.name} className="divide-y divide-line">
+                  <div className="flex h-[3.25rem] items-center pr-2">
+                    <button type="button" aria-expanded={toggles ? isOpen : undefined} aria-label={cap(l.name)} onClick={flip}
+                      className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-4 pr-2 text-left">
+                      <span className="min-w-0 truncate t-body font-semibold text-ink">{cap(l.name)}</span>
+                      {toggles && <Icon name="down" className={`size-4 shrink-0 text-muted transition-transform ${isOpen ? "" : "-rotate-90"}`} strokeWidth={2.2} />}
                     </button>
                     {/* The group's own ⋯ (Nov 16, Sam: "remove or rename a category"). */}
                     <label className="relative flex size-9 shrink-0 items-center justify-center text-[22px] leading-none text-muted">
                       <span aria-hidden>⋯</span>
                       <select value="" aria-label={`More for the ${l.name} group`} className="absolute -inset-1 cursor-pointer opacity-0 text-base"
-                        onChange={(e) => { const v = e.target.value; if (v === "all") toggle(key); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
+                        onChange={(e) => { const v = e.target.value; if ((v === "all" && !isOpen) || (v === "cart" && isOpen)) flip(); else if (v === "rename") setRenaming(l.name); else if (v === "remove") setUngrouping(l.name); }}>
                         <option value="" disabled>{cap(l.name)}</option>
                         {toggles && <option value="all" disabled={showAll}>{`${isOpen ? "✓ " : ""}Show all items`}</option>}
+                        {toggles && <option value="cart" disabled={showAll}>{`${isOpen ? "" : "✓ "}Show cart items only`}</option>}
                         <option value="rename">Rename group</option>
                         <option value="remove">Remove group</option>
                       </select>
                     </label>
                   </div>
                   {(toggles ? shown : l.rows).map((r) => item(r))}
-                  <span aria-hidden className={`pointer-events-none absolute inset-0 !border !border-accent/20 ${afterGroup ? "!border-t-0" : ""}`} />
                 </div>,
               ];
             })}
@@ -267,11 +270,11 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
   };
   const menu = r.staple || (r.meal && r.item);
   return (
-    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${fresh ? "sm-flash" : ""}`}>
+    <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${r.meal ? "bg-accent/[0.08]" : ""} ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
       {/* A planned dinner's thing (Sam, Nov 18): how much all the planned dinners need, on its own line under the name;
-          no asterisk. */}
+          no asterisk. Its row has the highlight colour (Nov 19: its ⋯ differs from a kept thing's, so it looks different). */}
       <span className="min-w-0 flex-1">
         <span className="block break-words t-body">{cap(r.name)}</span>
         {r.meal && shownAmount(r.amount) && <span className="block truncate t-foot text-muted">{shownAmount(r.amount)}</span>}
