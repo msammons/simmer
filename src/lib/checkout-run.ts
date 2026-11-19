@@ -7,13 +7,14 @@
 // In its own file rather than checkout.ts because it needs Face ID (passkeys.ts, which itself records through
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
 import { recordTrip } from "./plan";
+import { print as CHECKOUT_PRINT } from "./checkout-print.json";
 import { randomBytes } from "node:crypto";
 import {
   APPROVAL_MS, cartKey, loadSettings, saveSettings, serverOn, pickupOf, readFinal, record, stoppedWords, stops, unusual, windowOf, windowWords,
   type Approval, type CheckoutSettings, type Final,
 } from "./checkout";
 import { AppError } from "./errors";
-import { HELPER_VERSION, cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
+import { cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
 import { doneShopping } from "./groceries";
 import { clearCart } from "./safeway";
 import { json, kv, secs } from "./kv";
@@ -325,7 +326,7 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
     const all = allStops(why, reasons.slice(why.length));
     result = all.length ? { ok: false, reasons: all } : { ok: true, would: `Would place $${(a.totalCents / 100).toFixed(2)} · ${a.windowWords}` };
     // A test run that matched: this helper version may place orders (docs/CHECKOUT.md).
-    if (result.ok) await passedDryRun(HELPER_VERSION);
+    if (result.ok) await passedDryRun(CHECKOUT_PRINT);
   }
   await record("test run", { ...result, approvalId: a.id, jobId, faceId: a.faceId, stopped: reading?.stopped ?? "", chosen: reading?.chosen ?? null, url: reading?.final?.url ?? "" });
   return result;
@@ -333,6 +334,10 @@ export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunRes
 
 // ---- placing the order (phase 3, Sam, Nov 14: "Build it")
 
+/**
+ * What's passed a test run: the helper's checkout fingerprint (Nov 18), so a new helper needs one only when the code
+ * checkout runs changed, never for a search or cart fix. (Version numbers kept from before simply no longer match.)
+ */
 const passedVersions = async () => json<string[]>(await kv().get(DRY_KEY)) ?? [];
 async function passedDryRun(version: string) {
   const all = await passedVersions();
@@ -346,7 +351,7 @@ async function passedDryRun(version: string) {
 export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string }> {
   if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now." };
   if ((await helperStatus()).outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first." };
-  if (!(await passedVersions()).includes(HELPER_VERSION)) return { canOrder: false, orderWhy: "Do a test run first: this helper hasn't done one yet." };
+  if (!(await passedVersions()).includes(CHECKOUT_PRINT)) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed." };
   return { canOrder: true, orderWhy: "" };
 }
 
