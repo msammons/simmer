@@ -3,6 +3,7 @@
 import { prepare, score } from "./safeway-helper.mjs";
 import type { Item, Staple } from "./groceries";
 import type { CartLine, Pick } from "./safeway";
+import { norm } from "./words";
 
 export type Product = { id: string; name: string; price: string; image: string; inCart?: boolean; qty?: number };
 /** One list item to find: what to search for first, how many, and its remembered product. */
@@ -39,8 +40,10 @@ function nextToFind(items: FindItem[], cart: CartLine[], from: number): number {
  * that clearly matches the house's usual product is marked instead. The rest by how well they match, Safeway's own
  * order breaking ties (so a sponsored result that matches no better doesn't jump ahead).
  */
-export function rankResults<P extends Product>(products: P[], wanted: { picked?: { id: string } | null; usual?: string; item: string }): { product: P; usual: boolean }[] {
-  const target = wanted.usual || wanted.item;
+export function rankResults<P extends Product>(products: P[], wanted: { picked?: { id: string } | null; usual?: string; item: string; query?: string }): { product: P; usual: boolean }[] {
+  // Her own search words, when she typed other ones (Nov 18: "Fresh parmesan" still put grated first, as the list said).
+  const typed = wanted.query?.trim() && norm(wanted.query) !== norm(wanted.item) ? wanted.query.trim() : "";
+  const target = typed || wanted.usual || wanted.item;
   const ranked = products.map((p, i) => ({ p, i, s: score(p.name, target) })).sort((a, b) => b.s - a.s || a.i - b.i).map((r) => r.p);
   let usualId = wanted.picked && products.some((p) => p.id === wanted.picked!.id) ? wanted.picked.id : "";
   if (!usualId && wanted.usual && ranked.length) {

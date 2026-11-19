@@ -35,13 +35,12 @@ of her is a cost.
   "Show all" didn't say all of what): **Show all groups** in the list's own ⋯ (above the list, on the
   right), **Show all items** in a group's ⋯ (Sam's words, Nov 17), **Show checked** in Shop's.
 - **A page's own ⋯ sits above its list, on the right**, the same size as a row's; never beside an add field.
-- **No explaining text.** No legends, hints or "here's how this works" lines; a mark (the asterisk on a dinner's thing)
-  or the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").
+- **No explaining text.** No legends, hints or "here's how this works" lines; the control's own words carry it. Words that state the obvious come off ("keeps its things", "(new)").
 - **No chevrons where a tap acts at once** (choices, recipe rows, import choices). A chevron only for a real drill-in
   that a person would otherwise not expect.
 - **Labels in sentence case**, the same small muted style everywhere.
-- **Quiet structure.** Groups get a subtle tint and outline, sections a plain heading; a dinner's thing an accent
-  asterisk, never a tinted row or a second color.
+- **Quiet structure.** Groups get a subtle tint and outline, sections a plain heading; a dinner's thing shows how
+  much the planned dinners need under its name (Sam, Nov 18), never a tinted row or a second color.
 - **Selectors appear only when needed** (Specialty/Common and Group show once she types a new name).
 
 ### Never make her wait or wonder
@@ -85,7 +84,7 @@ Kept against an outside critique that argued the other way:
 - **Confirms, never Undo.** A removal asks first; nothing offers to undo afterwards.
 - **Only the + adds.** The keyboard's Done closes the keyboard.
 - **Dates only** on Meals; the first day is always today.
-- **The asterisk** marks a planned dinner's thing; no label or chip.
+- **A dinner's thing** shows the amount all planned dinners need, under its name; no asterisk, label or chip (Nov 18).
 - **⋯ for row actions**, dinners included (Move to another day, Take off the plan).
 
 Changed:

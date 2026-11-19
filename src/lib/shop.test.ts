@@ -65,3 +65,11 @@ describe("amounts on rows (Nov 14: always shown)", () => {
     expect(shownAmount("")).toBe("");
   });
 });
+
+describe("ranking by her own words (Nov 18)", () => {
+  it("ranks by what she typed when it differs from the list item", () => {
+    const ps = [{ id: "1", name: "Kraft Grated Parmesan Cheese - 8 Oz" }, { id: "2", name: "BelGioioso Fresh Parmesan Wedge - 8 Oz" }] as never[];
+    expect(rankResults(ps, { item: "grated parmesan", query: "Fresh parmesan wedge" })[0].product).toMatchObject({ id: "2" });
+    expect(rankResults(ps, { item: "grated parmesan", query: "grated parmesan" })[0].product).toMatchObject({ id: "1" });
+  });
+});

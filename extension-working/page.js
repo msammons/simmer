@@ -267,7 +267,8 @@ export async function safewayPage(action, arg, P) {
       if (!button) break;
       button.click();
       // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
-      if (before === 1 && P.confirmRemove) {
+      // Only on −: a + from 1 waited 3 s for a question that never comes (Nov 18: every change after Add took ~16 s).
+      if (before === 1 && before > want && P.confirmRemove) {
         for (let t = 0; t < 3000; t += 250) {
           await sleep(250);
           const yes = buttons(document).find((b) => re(P.confirmRemove).test(label(b)));
@@ -442,6 +443,8 @@ export async function safewayPage(action, arg, P) {
       picked: () => pickupEdit(),
       more: () => radios().length > (Number(arg?.count) || 0),
       // The one Place Order, turned on (Nov 15: Safeway keeps it off for a moment after the pickup time is set).
+      // Safeway's order confirmation, once its words fill in (Nov 18).
+      confirmed: () => /thank you|order (?:number|no\.?|#)|order (?:is |has been )?(?:placed|confirmed|received)/i.test(text()),
       placeOn: () => all().filter((b) => label(b).trim() === "Place Order").length === 1 && all().some((b) => label(b).trim() === "Place Order" && on(b)),
     };
     const ok = checks[arg?.until] ?? (() => false);

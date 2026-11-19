@@ -6,6 +6,7 @@
 //
 // In its own file rather than checkout.ts because it needs Face ID (passkeys.ts, which itself records through
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
+import { recordTrip } from "./plan";
 import { randomBytes } from "node:crypto";
 import {
   APPROVAL_MS, cartKey, loadSettings, saveSettings, serverOn, pickupOf, readFinal, record, stoppedWords, stops, unusual, windowOf, windowWords,
@@ -443,6 +444,7 @@ export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderRes
     const lines = await loadCart();
     await doneShopping("safeway", new Set(lines.map((l) => l.itemId).filter(Boolean)));
     await clearCart();
+    await recordTrip("safeway").catch((e) => console.error("couldn't record the trip", e)); // as an emptied cart does (Nov 18)
   } else if (r.pressed) result = unsure;
   else {
     const said = r.stopped === "not pressed" ? `Safeway's page didn't match what you approved (${r.why || "unknown"}).` : stoppedWords(r.stopped ?? "");

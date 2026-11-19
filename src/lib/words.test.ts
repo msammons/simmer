@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bothOf, isSpice } from "./words";
+import { bothOf, isSpice, listName } from "./words";
 import { known } from "./groceries";
 import { parseIngredient } from "./recipes";
 
@@ -62,5 +62,17 @@ describe("what goes on the list (Nov 18)", () => {
     expect(item("Kosher salt (such as Diamond Crystal) and black pepper")).toEqual(["kosher salt", "black pepper"]);
     expect(item("1 cup half and half")).toEqual(["half and half"]);
     expect(item("1 box mac and cheese")).toEqual(["mac and cheese"]);
+  });
+});
+
+describe("one name for one thing (Nov 18)", () => {
+  it("merges a spice with and without ground, and names that mean the same", () => {
+    expect(listName("ground cumin")).toBe("cumin");
+    expect(listName("crushed red pepper")).toBe("red pepper flakes");
+    expect(listName("red chili powder")).toBe("chili powder");
+    expect(listName("kosher salt")).toBe("salt");
+    expect(listName("ground black pepper")).toBe("ground black pepper");
+    expect(listName("ground turkey")).toBe("ground turkey");
+    expect(listName("garlic cloves")).toBe("garlic");
   });
 });

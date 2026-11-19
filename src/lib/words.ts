@@ -79,6 +79,17 @@ export function bothOf(item: string): string[] {
   return m && known(m[1]) && known(m[2]) ? [m[1].trim(), m[2].trim()] : [item];
 }
 
+/**
+ * One name for one thing on the list (Nov 18: cumin and ground cumin, red pepper flakes and crushed red pepper were two
+ * lines each): a spice without "ground", and a few names that mean the same.
+ */
+const SAME: Record<string, string> = { "crushed red pepper": "red pepper flakes", "red chili powder": "chili powder", "kosher salt": "salt", "sea salt": "salt", "garlic cloves": "garlic", "garlic clove": "garlic", "cloves garlic": "garlic", "extra-virgin olive oil": "olive oil", "extra virgin olive oil": "olive oil" };
+export function listName(item: string): string {
+  const n = item.trim().toLowerCase();
+  const plain = isSpice(n) && /^ground\s+/.test(n) && !/pepper$/.test(n) ? n.replace(/^ground\s+/, "") : n;
+  return SAME[plain] ?? plain;
+}
+
 export function parseIngredient(raw: string): Ingredient {
   const line = raw.replace(/[½¼¾⅓⅔⅛]/g, (f) => ` ${FRACTIONS[f]}`).replace(/(\d)\s+(\d\/)/, "$1 $2").replace(/\s+/g, " ").trim()
     // Typed the way people write cards (Nov 18): "Optional: dressing", "a little ginger", "2c cheese".

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { type Item, type Kitchen, type ListState, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
+import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, Row, Sheet, AddField } from "./ui";
 
@@ -269,8 +270,12 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
     <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
           row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
-      {/* A planned dinner's thing (Sam, Nov 16-17): an asterisk in the accent after its name; no tint, color or second line. */}
-      <span className="min-w-0 flex-1 break-words t-body">{cap(r.name)}{r.meal && <><span aria-hidden className="ml-0.5 font-semibold text-accent">*</span><span className="sr-only"> (for a planned dinner)</span></>}</span>
+      {/* A planned dinner's thing (Sam, Nov 18): how much all the planned dinners need, on its own line under the name;
+          no asterisk. */}
+      <span className="min-w-0 flex-1">
+        <span className="block break-words t-body">{cap(r.name)}</span>
+        {r.meal && shownAmount(r.amount) && <span className="block truncate t-foot text-muted">{shownAmount(r.amount)}</span>}
+      </span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">
         {side("have", "Have")}
         {side("need", "Need")}
