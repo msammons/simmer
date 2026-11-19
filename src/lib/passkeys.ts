@@ -3,6 +3,7 @@
 // checks them, single use; nothing here approves or places an order. Every set-up and every check, ok or not, is recorded.
 // Adding a phone (Sam, Nov 12, after the outside review): the passcode alone sets up the first phone; after that a new
 // phone asks, a phone that already has Face ID approves it with Face ID, and only then can the new one set up.
+import { NS } from "./google/redis-tabs";
 import {
   generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse,
   type AuthenticationResponseJSON, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON,
@@ -45,7 +46,7 @@ export function site(req: Request): { rpID: string; origin: string } {
 
 /** A challenge; one for approving a new phone carries that request's token, so it can approve only that one. */
 type Challenge = { purpose: Purpose; created: number; rpID: string; token?: string };
-const CHALLENGE_KEY = "simmer:checkout-challenge:";
+const CHALLENGE_KEY = `${NS}:checkout-challenge:`;
 
 const keepChallenge = (challenge: string, c: Challenge) => kv().set(CHALLENGE_KEY + challenge, JSON.stringify(c), { ex: secs(CHALLENGE_MS) });
 /** The challenge, taken out as it's read: whatever happens next, it can't be used again. */
@@ -134,8 +135,8 @@ const nameNow = (at: Date) => `Face ID on this phone, ${at.toLocaleDateString("e
  * key, by token, so a request replaced while it was being approved can never come back approved.
  */
 type Add = { token: string; code: string; created: number };
-const ADD_KEY = "simmer:checkout-add";
-const APPROVED_KEY = "simmer:checkout-add-approved:";
+const ADD_KEY = `${NS}:checkout-add`;
+const APPROVED_KEY = `${NS}:checkout-add-approved:`;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 const currentAdd = async (now = Date.now()): Promise<Add | null> => {

@@ -32,10 +32,15 @@ export function redis(): TabStore | null {
 /** Tests: a pretend Redis (or none). */
 export const useTabStore = (s: TabStore | null) => { client = s; };
 
-const PREFIX = "simmer:tab:";
+/**
+ * Every key's first part (Nov 19): "simmer" for the household's data; the test copy sets SIMMER_DATA_PREFIX (e.g.
+ * "simmer-test") so it shares the free database without ever touching the real data.
+ */
+export const NS = process.env.SIMMER_DATA_PREFIX || "simmer";
+const PREFIX = `${NS}:tab:`;
 const keyOf = (tab: string) => `${PREFIX}${tab}`;
 /** Each tab's version, counted up by every write (outside the tab prefix, so Copy to Google Sheet leaves it out). */
-const versionOf = (tab: string) => `simmer:tabv:${tab}`;
+const versionOf = (tab: string) => `${NS}:tabv:${tab}`;
 const parse = (v: string | null): string[][] | null => (v == null ? null : (JSON.parse(v) as string[][]));
 const copy = (rows: string[][]) => rows.map((r) => [...r]);
 

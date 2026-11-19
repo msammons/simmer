@@ -1,6 +1,7 @@
 // Ordering from Simmer (Safeway pickup): the rules, as plain code with tests. docs/CHECKOUT.md is the agreement; nothing
 // here may be loosened without Sam's yes. Phase 2 (Nov 12): settings, reading Safeway's final page, and checking it
 // against an approval. Placing for real (phase 3, Nov 14) is in checkout-run.ts; test runs stop one press short.
+import { NS } from "./google/redis-tabs";
 import { readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
 import { redis } from "./google/redis-tabs";
 import { kv } from "./kv";
@@ -160,7 +161,7 @@ export async function saveSettings(s: CheckoutSettings, noted: Record<string, un
  * attempts' worth; Copy to Google Sheet keeps a copy of them).
  */
 const LOG = "Checkout record";
-const RECORD_KEY = "simmer:checkout-record";
+const RECORD_KEY = `${NS}:checkout-record`;
 export const RECORD_KEEP = 5000;
 /**
  * Each entry's detail at most this long (Nov 19, review: 5,000 at 20,000 characters was far past what one Upstash
