@@ -265,20 +265,22 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   }, [sw, store]);
   // The item showing is searched for when it comes up (once; going back to it shows what was found). Its search words
   // are kept from then on, so a pick saved while it shows doesn't start another search.
+  // Only then, and on Search: typing doesn't search (Nov 18: every letter of "lemon juice" went to Safeway, one after
+  // another, and the last answered after 22 s).
   const itemId = it?.id ?? "";
-  const want = it ? (typed[it.id] ?? it.query) : "";
-  const known = Boolean(searches[want]);
+  const fresh = it && !(it.id in typed) ? it.query : "";
+  const known = Boolean(searches[fresh]);
   useEffect(() => {
-    if (!want || known) return;
-    queueMicrotask(() => { setTyped((t) => (itemId in t ? t : { ...t, [itemId]: want })); search(want); });
-  }, [want, known, search, itemId]);
+    if (!fresh) return;
+    queueMicrotask(() => { setTyped((t) => (itemId in t ? t : { ...t, [itemId]: fresh })); if (!known) search(fresh); });
+  }, [fresh, known, search, itemId]);
   useEffect(() => () => ctl.current?.abort(), []);
   // Each search's results, in the order first shown.
   const [shown, setShown] = useState<Record<string, string[]>>({});
   const shownKey = `${itemId}|${query}`;
   const firstOrder = (() => {
     const done = searches[query];
-    return it && done?.state === "done" ? rankResults(done.products, { picked: it.picked, usual: it.usual, item: it.item }).map((r) => r.product.id).join(",") : "";
+    return it && done?.state === "done" ? rankResults(done.products, { picked: it.picked, usual: it.usual, item: it.item, query }).map((r) => r.product.id).join(",") : "";
   })();
   useEffect(() => {
     if (firstOrder) queueMicrotask(() => setShown((m) => (m[shownKey] ? m : { ...m, [shownKey]: firstOrder.split(",") })));
@@ -293,7 +295,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const s = searches[query];
   // Kept in the order first shown: an Add makes that product the remembered pick, and re-ranking then moved another
   // product under the finger (Nov 3).
-  const ranked = s?.state === "done" ? rankResults(s.products, { picked: it.picked, usual: it.usual, item: it.item }) : [];
+  const ranked = s?.state === "done" ? rankResults(s.products, { picked: it.picked, usual: it.usual, item: it.item, query }) : [];
   const order = shown[`${it.id}|${query}`];
   const at = (id: string) => { const i = order?.indexOf(id) ?? -1; return i < 0 ? Infinity : i; };
   const results = order ? [...ranked].sort((a, b) => at(a.product.id) - at(b.product.id)) : ranked;
