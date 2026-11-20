@@ -298,7 +298,7 @@ export default function App() {
   // Boot reads browser-only state (localStorage), which only exists after mount.
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-    applyTheme(store.theme()); // layout.tsx already set it; this also matches the browser bar color
+    applyTheme(store.theme()); // layout.tsx already set it; this keeps React in step
     // When the connection comes back after opening offline, load the household.
     const on = () => { if (!loaded.current && store.passcode()) loadHousehold(); };
     window.addEventListener("online", on);

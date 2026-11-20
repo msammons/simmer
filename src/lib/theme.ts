@@ -14,9 +14,11 @@ export const THEMES = [
 ] as const;
 export type Theme = (typeof THEMES)[number]["id"];
 
-/** Switches the page's theme, and the browser bar color to match. layout.tsx sets the saved one before the first paint. */
+/**
+ * Switches the page's theme (its accent color). layout.tsx sets the saved one before the first paint. The browser bar's
+ * light and dark colors stay as layout.tsx gives them (Nov 19: writing the current background into both froze the bar
+ * in whichever mode the app opened in, so it didn't follow the phone switching).
+ */
 export function applyTheme(t: Theme) {
   document.documentElement.dataset.theme = t;
-  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
-  if (bg) document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", bg));
 }
