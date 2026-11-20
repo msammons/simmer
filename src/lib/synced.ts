@@ -2,8 +2,7 @@
 // Shared data the phone shows (the list, the plan, the recipes, the freezer), kept in step with the server.
 // Every change shows at once and is saved behind it (Nov 11: always responsive), one at a time and in order, so two
 // never cross and a later answer never undoes an earlier tap. No timers (Nov 11): reads happen on open, on coming back,
-// and after changes.
-import { useState, useSyncExternalStore } from "react";
+// and after changes. The app's own stores, and the hooks screens read them with, are in stores.ts.
 
 export type SyncedOptions<T> = {
   /** The server's copy as it is now. */
@@ -120,11 +119,4 @@ export class Synced<T> {
     if (Date.now() - this.readAt < ms) return Promise.resolve();
     return this.refresh();
   }
-}
-
-const none = () => null;
-/** A Synced made once, and its value, re-rendering as it changes. The server renders nothing from it. */
-export function useSynced<T>(make: () => Synced<T>): [T | null, Synced<T>] {
-  const [s] = useState(make);
-  return [useSyncExternalStore(s.subscribe, s.get, none), s];
 }

@@ -1,19 +1,16 @@
 import { after } from "next/server";
-import { AppError } from "@/lib/errors";
-import { friendly } from "@/lib/friendly";
-import { authorized, unauthorized } from "@/lib/auth";
 import { cancelJob, finishJob, returnJob, helperPush, helperStatus, jobStatus, pressJob, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type Job, type JobKind, HELPER_VERSION } from "@/lib/jobs";
 import { record } from "@/lib/checkout";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
+import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
 
 // A job's status can wait for the job to finish (?wait=1, about 20 seconds at most).
 export const maxDuration = 60;
 
-const text = (s: unknown, max = 160) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
+const text = (s: unknown, max = 160) => clean(s, max);
 /** Chrome's push service (the helper runs in Chrome), so Simmer only ever sends its wake-ups there. */
 const pushService = (u: string) => { try { const x = new URL(u); return x.protocol === "https:" && /(^|\.)(googleapis|google)\.com$/.test(x.hostname); } catch { return false; } };
-const noStore = { headers: { "cache-control": "no-store" } };
 /**
  * `answering` is always true (Nov 11: no timer keeps a check-in fresh, so Simmer never guesses from it; a job nobody
  * takes says so, and `away` from helperStatus). Kept in the answers for the screens that still read it.
@@ -27,7 +24,6 @@ const handOff = (job: Job) => {
   const e = job.kind === "checkoutPlace" && job.args.expect && typeof job.args.expect === "object" ? job.args.expect as { deadline?: unknown } : null;
   return e ? { ...job, args: { ...job.args, expect: { ...e, left: Math.max(0, Number(e.deadline) - Date.now()) || 0 } } } : job;
 };
-const failed = (e: unknown) => Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
 
 /** What a job may carry: only these fields, checked and trimmed. */
 function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unknown> | null {
@@ -56,16 +52,13 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
  * GET ?id=…: how a job stands, and whether the helper is answering (&wait=1: once it's finished, or after ~20 s). GET ?recent=1: the panel's activity log. GET with
  * neither: just whether it's answering.
  */
-export async function GET(req: Request) {
-  if (!authorized(req)) return unauthorized();
-  try {
-    const params = new URL(req.url).searchParams;
-    if (params.get("recent")) return Response.json({ jobs: await recentJobs(), ...(await helperStatus()), ...ANSWERING }, noStore);
-    const id = text(params.get("id"), 40);
-    if (!id) return Response.json({ ...(await helperStatus()), ...ANSWERING }, noStore);
-    return Response.json({ job: params.get("wait") ? await waitForJob(id) : await jobStatus(id), ...ANSWERING }, noStore);
-  } catch (e) { return failed(e); }
-}
+export const GET = api(async (req) => {
+  const params = new URL(req.url).searchParams;
+  if (params.get("recent")) return Response.json({ jobs: await recentJobs(), ...(await helperStatus()), ...ANSWERING }, noStore);
+  const id = text(params.get("id"), 40);
+  if (!id) return Response.json({ ...(await helperStatus()), ...ANSWERING }, noStore);
+  return Response.json({ job: params.get("wait") ? await waitForJob(id) : await jobStatus(id), ...ANSWERING }, noStore);
+});
 
 /**
  * POST { op, ... }. From Simmer: queue { kind, from, ...args } → { job, answering }, cancel { id }. From the helper: next
@@ -73,58 +66,55 @@ export async function GET(req: Request) {
  * failed { id, error }, again { id } (handing back a job as it reloads), press { id } (may it press Place Order, Nov 19),
  * push { key, subscription } (1.3: how to wake it when a job is queued).
  */
-export async function POST(req: Request) {
-  if (!authorized(req)) return unauthorized();
-  const b = await req.json().catch(() => null);
-  try {
-    switch (b?.op) {
-      case "queue": {
-        if (!(JOB_KINDS as readonly string[]).includes(b.kind)) return Response.json({ error: "Unknown job." }, { status: 400 });
-        const args = argsFor(b.kind, b);
-        if (!args) return Response.json({ error: "What should it look for?" }, { status: 400 });
-        const job = await queueJob(b.kind, { ...args, from: b.from === "panel" ? "panel" : "app" });
-        // Wakes the helper so it starts at once (Nov 3; it has no timers since 26.11.11).
-        after(() => wakeHelper().catch((e) => console.error("couldn't wake the helper", e)));
-        return Response.json({ job, ...ANSWERING }, noStore);
-      }
-      case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
-      // A placing job's outcome is worked out as it finishes, however it finishes (jobs.ts settlePlacing, Nov 19).
-      case "again": await returnJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
-      // "May I press?" (Nov 19): asked by the helper right before Place Order; only yes moves the job to pressing.
-      case "press": return Response.json({ ok: await pressJob(text(b.id, 40)) }, noStore);
-      case "next": {
-        const job = await takeJob(text(b.version, 20), b.panel === true);
-        // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
-        // `at`: where Simmer would send the push, so a helper whose subscription Chrome dropped (a reload drops it, Nov 12) makes a new one.
-        const key = pushKey(), saved = key ? await helperPush() : null, have = saved?.key === key;
-        // `version`: the helper this Simmer ships, so a helper whose newer files are already on its computer reloads itself (26.11.11).
-        return Response.json({ job: job && { ...handOff(job), page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
-      }
-      case "push": {
-        const s = b.subscription, key = text(b.key, 200);
-        const endpoint = text(s?.endpoint, 1000), p256dh = text(s?.keys?.p256dh, 200), auth = text(s?.keys?.auth, 100);
-        if (!key || key !== pushKey() || !pushService(endpoint) || !p256dh || !auth) {
-          console.error("helper's wake-up subscription turned down", { sameKey: key === pushKey(), host: (() => { try { return new URL(endpoint).hostname; } catch { return ""; } })(), keys: Boolean(p256dh && auth) });
-          return Response.json({ error: "Unknown change." }, { status: 400 });
-        }
-        await savePush({ key, sub: { endpoint, keys: { p256dh, auth } } });
-        return Response.json({ ok: true }, noStore);
-      }
-      case "done": case "failed": {
-        // A failure keeps the helper's reason (Nov 14: a Get ready came back only "failed"), for reading back.
-        const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40), ...(text(b.why, 300) && { why: text(b.why, 300) }) };
-        const job = await finishJob(text(b.id, 40), b.op === "done", result);
-        // A placing report for a job Simmer doesn't have (Nov 19, review: one from before a release) still goes in the
-        // checkout record, so it says what the helper saw.
-        if (!job && result && typeof result === "object" && "pressed" in result) {
-          const r = result as Record<string, unknown>;
-          await record("order report for an unknown job", { jobId: text(b.id, 40), stopped: text(r.stopped, 60), pressed: r.pressed === true ? true : r.pressed === false ? false : "unknown", why: text(r.why, 80), landed: text(r.landed, 300) }).catch((e) => console.error("couldn't record the report", e));
-        }
-        return Response.json({ job }, noStore);
-      }
-      // Something the helper wants seen in Simmer's logs (Nov 12: why it can't be woken).
-      case "note": console.error("helper:", text(b.what, 300)); return Response.json({ ok: true }, noStore);
-      default: return Response.json({ error: "Unknown change." }, { status: 400 });
+export const POST = api(async (req) => {
+  const b = await body(req);
+  switch (b?.op) {
+    case "queue": {
+      if (!(JOB_KINDS as readonly string[]).includes(b.kind)) return refuse("Unknown job.");
+      const args = argsFor(b.kind, b);
+      if (!args) return refuse("What should it look for?");
+      const job = await queueJob(b.kind, { ...args, from: b.from === "panel" ? "panel" : "app" });
+      // Wakes the helper so it starts at once (Nov 3; it has no timers since 26.11.11).
+      after(() => wakeHelper().catch((e) => console.error("couldn't wake the helper", e)));
+      return Response.json({ job, ...ANSWERING }, noStore);
     }
-  } catch (e) { return failed(e); }
-}
+    case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
+    // A placing job's outcome is worked out as it finishes, however it finishes (jobs.ts settlePlacing, Nov 19).
+    case "again": await returnJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
+    // "May I press?" (Nov 19): asked by the helper right before Place Order; only yes moves the job to pressing.
+    case "press": return Response.json({ ok: await pressJob(text(b.id, 40)) }, noStore);
+    case "next": {
+      const job = await takeJob(text(b.version, 20), b.panel === true);
+      // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
+      // `at`: where Simmer would send the push, so a helper whose subscription Chrome dropped (a reload drops it, Nov 12) makes a new one.
+      const key = pushKey(), saved = key ? await helperPush() : null, have = saved?.key === key;
+      // `version`: the helper this Simmer ships, so a helper whose newer files are already on its computer reloads itself (26.11.11).
+      return Response.json({ job: job && { ...handOff(job), page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
+    }
+    case "push": {
+      const s = b.subscription, key = text(b.key, 200);
+      const endpoint = text(s?.endpoint, 1000), p256dh = text(s?.keys?.p256dh, 200), auth = text(s?.keys?.auth, 100);
+      if (!key || key !== pushKey() || !pushService(endpoint) || !p256dh || !auth) {
+        console.error("helper's wake-up subscription turned down", { sameKey: key === pushKey(), host: (() => { try { return new URL(endpoint).hostname; } catch { return ""; } })(), keys: Boolean(p256dh && auth) });
+        return refuse("Unknown change.");
+      }
+      await savePush({ key, sub: { endpoint, keys: { p256dh, auth } } });
+      return Response.json({ ok: true }, noStore);
+    }
+    case "done": case "failed": {
+      // A failure keeps the helper's reason (Nov 14: a Get ready came back only "failed"), for reading back.
+      const result = b.result && typeof b.result === "object" ? b.result : { error: text(b.error, 40), ...(text(b.why, 300) && { why: text(b.why, 300) }) };
+      const job = await finishJob(text(b.id, 40), b.op === "done", result);
+      // A placing report for a job Simmer doesn't have (Nov 19, review: one from before a release) still goes in the
+      // checkout record, so it says what the helper saw.
+      if (!job && result && typeof result === "object" && "pressed" in result) {
+        const r = result as Record<string, unknown>;
+        await record("order report for an unknown job", { jobId: text(b.id, 40), stopped: text(r.stopped, 60), pressed: r.pressed === true ? true : r.pressed === false ? false : "unknown", why: text(r.why, 80), landed: text(r.landed, 300) }).catch((e) => console.error("couldn't record the report", e));
+      }
+      return Response.json({ job }, noStore);
+    }
+    // Something the helper wants seen in Simmer's logs (Nov 12: why it can't be woken).
+    case "note": console.error("helper:", text(b.what, 300)); return Response.json({ ok: true }, noStore);
+    default: return refuse("Unknown change.");
+  }
+});

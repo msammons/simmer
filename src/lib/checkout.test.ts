@@ -130,7 +130,7 @@ describe("ordering's settings", () => {
   it("keep what's set, and note every change", async () => {
     await saveSettings({ on: true, limitCents: 15000, store: "  100 Main St ", card: "4242" });
     expect(await loadSettings()).toEqual({ on: true, limitCents: 15000, store: "100 Main St", card: "4242" });
-    expect(recordedForTests().at(-1)?.[1]).toBe("settings");
+    expect((await recordedForTests()).at(-1)?.[1]).toBe("settings");
   });
 
   it("need Face ID to turn on, raise the limit, or change the store or card; not to turn off or lower the limit", () => {

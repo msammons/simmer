@@ -1,8 +1,8 @@
-// Tabs kept in Redis (Nov 11): read, written, appended to and changed cell by cell as on the Sheet. Since Nov 19 every
+// Tabs kept in Redis (Nov 11): read and written whole, as their rows. Since Nov 19 every
 // change is a transaction: written only if the tabs it read are unchanged, else worked out again from fresh rows.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { describe, expect, it } from "vitest";
-import { allTabs, appendRows, readTab, readTabs, transact, updateRanges, writeTab, type TabStore } from "./redis-tabs";
+import { allTabs, readTab, readTabs, transact, writeTab, type TabStore } from "./tabs";
 import { AppError } from "../errors";
 
 /**
@@ -34,6 +34,13 @@ function pretend(meddle?: (keys: string[]) => Promise<void>): TabStore & { data:
   return s;
 }
 
+/** Rows added after the last row with anything in it, in one transaction (as table.ts append does). */
+const appendRows = (s: TabStore, tab: string, rows: string[][]) => transact(s, async () => {
+  const all = await readTab(s, tab);
+  while (all.length && !all[all.length - 1].some(Boolean)) all.pop();
+  await writeTab(s, tab, [...all, ...rows]);
+});
+
 describe("tabs in Redis", () => {
   it("reads a missing tab as no rows, without writing anything", async () => {
     const s = pretend();
@@ -50,20 +57,14 @@ describe("tabs in Redis", () => {
     expect(await readTabs(s, ["A", "B"])).toEqual([[["x"]], [["y"]]]);
   });
 
-  it("appends after the last row with anything in it", async () => {
+  it("writes each tab once per change, however many times the change writes it", async () => {
     const s = pretend();
-    await writeTab(s, "List", [["id", "item"], ["a", "milk"], ["", ""], []]);
-    await appendRows(s, "List", [["b", "eggs"]]);
-    expect(await readTab(s, "List")).toEqual([["id", "item"], ["a", "milk"], ["b", "eggs"]]);
-  });
-
-  it("writes cells at A1 ranges, each tab written once", async () => {
-    const s = pretend();
-    await writeTab(s, "List", [["id", "item", "quantity"], ["a", "milk", "1"]]);
-    s.sets = 0;
-    await updateRanges(s, [{ range: "List!C2", values: [["2"]] }, { range: "List!A3:C3", values: [["b", "eggs", "12"]] }, { range: "List!A5", values: [["c"]] }]);
+    await transact(s, async () => {
+      await writeTab(s, "List", [["id"], ["a"]]);
+      await writeTab(s, "List", [...(await readTab(s, "List")), ["b"]]);
+    });
     expect(s.sets).toBe(1);
-    expect(await readTab(s, "List")).toEqual([["id", "item", "quantity"], ["a", "milk", "2"], ["b", "eggs", "12"], [], ["c"]]);
+    expect(await readTab(s, "List")).toEqual([["id"], ["a"], ["b"]]);
   });
 
   it("lists every tab for the copy to the Sheet (not their versions)", async () => {
@@ -99,8 +100,8 @@ describe("two changes at once", () => {
     await transact(s, async () => {
       tries++;
       const rows = await readTab(s, "List");
-      const n = rows.findIndex((r) => r[0] === "a") + 1;
-      await updateRanges(s, [{ range: `List!B${n}`, values: [["yes"]] }]);
+      rows[rows.findIndex((r) => r[0] === "a")][1] = "yes";
+      await writeTab(s, "List", rows);
     });
     expect(tries).toBe(2);
     expect(await readTab(s, "List")).toEqual([["id", "checked"], ["new", "no"], ["a", "yes"]]);
@@ -151,7 +152,7 @@ describe("two changes at once", () => {
 
 describe("the grocery list on Redis", () => {
   it("adds, merges and reads back through the app's own list code", async () => {
-    const { useTabStore } = await import("./redis-tabs");
+    const { useTabStore } = await import("./client");
     const s = pretend();
     useTabStore(s);
     try {
@@ -167,7 +168,7 @@ describe("the grocery list on Redis", () => {
   });
 
   it("a tick and an add from two phones at once: neither is lost", async () => {
-    const { useTabStore } = await import("./redis-tabs");
+    const { useTabStore } = await import("./client");
     const g = await import("../groceries");
     let meddling = false;
     const s = pretend(async (ks) => {

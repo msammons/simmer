@@ -1,9 +1,9 @@
-// Where Simmer keeps its data (Nov 11): Upstash Redis, each tab as its rows (redis-tabs.ts). Without Redis (local dev,
-// tests) the app reads data/*.csv instead. The Google Sheet is only the target of Settings → Copy to Google Sheet: it's
-// written there through a service account (no SDK), and never read.
+// Settings → Copy to Google Sheet (now /api/export): every tab, as the app keeps it, written over the Google Sheet's. The
+// Sheet is only this copy's target (the data has lived in Redis since Nov 11): it's written through a service account
+// (no SDK), and never read.
 import { createSign } from "node:crypto";
-import * as R from "./redis-tabs";
-import { redis } from "./redis-tabs";
+import { checkoutRecordRows } from "../checkout";
+import { allTabs } from "../store";
 
 type ServiceAccount = { client_email: string; private_key: string };
 let token: { value: string; expires: number } | null = null;
@@ -12,41 +12,6 @@ let token: { value: string; expires: number } | null = null;
 const SHEET = "1FOQPuSPWntp6VURMw97-olFmd-xFs3LbuK104Eo6uEM";
 const sheetId = () => process.env.SHEET_ID || SHEET;
 const googleConfigured = () => Boolean(sheetId() && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-/** The app keeps its data in Redis (true on Vercel); without it, it reads data/*.csv. */
-export function sheetsConfigured() {
-  return Boolean(redis());
-}
-const store = () => {
-  const r = redis();
-  if (!r) throw new Error("There's nowhere to keep the data.");
-  return r;
-};
-
-// ---- the app's storage (callers check sheetsConfigured() first)
-
-export const readTab = (tab: string) => R.readTab(store(), tab);
-/** A tab's rows, or none when it doesn't exist yet. Kept for older callers: the same as readTab. */
-export const readTabIfAny = readTab;
-export const readTabsIfAny = (tabs: string[]) => R.readTabs(store(), tabs);
-export const appendRows = (tab: string, rows: string[][]) => R.appendRows(store(), tab, rows);
-/** Kept for older callers: nothing to create in Redis, a tab is there once it's written. */
-export async function ensureTab(title: string) { void title; }
-/** Replaces a tab's contents (`before` is accepted for older callers and not needed). */
-export const replaceTab = (title: string, rows: string[][], before?: string[][]) => { void before; return R.writeTab(store(), title, rows); };
-export const updateRanges = (data: { range: string; values: string[][] }[]) => R.updateRanges(store(), data);
-export const updateRange = (range: string, rows: string[][]) => R.updateRanges(store(), [{ range, values: rows }]);
-
-/**
- * A change as one transaction (redis-tabs.ts, Nov 19): what it reads and writes is checked and written together, and
- * it runs again from fresh rows if someone else wrote meanwhile. Without Redis it just runs.
- */
-export const transact = <T>(change: () => Promise<T>): Promise<T> => (redis() ? R.transact(store(), change) : change());
-/** A function whose every call is one transaction. */
-export const atomically = <A extends unknown[], T>(f: (...a: A) => Promise<T>) => (...a: A): Promise<T> => transact(() => f(...a));
-export { memo, outside } from "./redis-tabs";
-
-// ---- Settings → Copy to Google Sheet
 
 function serviceAccount(): ServiceAccount {
   // The whole key file's JSON, pasted into one env var (works locally and on Vercel).
@@ -101,9 +66,8 @@ const a1 = (title: string, cell = "") => `'${title.replace(/'/g, "''")}'${cell &
  */
 export async function exportToSheet(): Promise<number> {
   if (!googleConfigured()) throw new Error("There's no Google Sheet to copy to.");
-  // The checkout record is a list of its own now (Nov 19), sent as its old tab (imported here, not at the top: checkout.ts
-  // imports this file).
-  const tabs = [...(await R.allTabs(store())).filter(([t]) => t !== "Checkout record"), ["Checkout record", await (await import("../checkout")).checkoutRecordRows()] as [string, string[][]]];
+  // The checkout record is a list of its own now (Nov 19), sent as its old tab.
+  const tabs = [...(await allTabs()).filter(([t]) => t !== "Checkout record"), ["Checkout record", await checkoutRecordRows()] as [string, string[][]]];
   if (!tabs.length) return 0;
   const auth = { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" };
   const sheet = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId()}`;

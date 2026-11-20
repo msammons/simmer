@@ -1,5 +1,7 @@
 // Gemini with structured JSON output. Free tier sheds load with 503/429, so: retry, then a lighter model.
 // Measured 2026-10-23: gemini-2.5-flash retired for new keys; 3.8-flash ~73s per call; 3.5-flash ~1.5s.
+import { UpstreamError } from "./errors";
+
 const MODEL = () => process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const FALLBACK = () => process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
 /** Too little time left to be worth another attempt. */
@@ -46,25 +48,25 @@ export async function generateJson<T>(prompt: string, schema: object, opts: { li
     }
     if (r.status >= 500) { last = `${model}: server error ${r.status}`; await r.body?.cancel(); await wait(500); continue; }
     if (r.status === 400 && opts.urls && !schemaInText) { schemaInText = true; last = `${model}: links with a schema refused`; await r.body?.cancel(); continue; }
-    if (!r.ok) throw new Error(`Gemini error ${r.status}: ${(await r.text()).replace(/\s+/g, " ").slice(0, 200)}`);
+    if (!r.ok) throw new UpstreamError("Gemini", r.status, `Gemini error ${r.status}: ${(await r.text()).replace(/\s+/g, " ").slice(0, 200)}`);
     const j = await r.json().catch(() => null);
     const c = j?.candidates?.[0];
     const text = ((c?.content?.parts ?? []) as { text?: string; thought?: boolean }[]).filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
     // Blocked (safety, a recitation): asking the same again won't help.
-    if (!text) throw new Error(`Gemini gave no answer (${j?.promptFeedback?.blockReason ?? c?.finishReason ?? "empty"})`);
+    if (!text) throw new UpstreamError("Gemini", "no answer", `Gemini gave no answer (${j?.promptFeedback?.blockReason ?? c?.finishReason ?? "empty"})`);
     try {
       return { data: JSON.parse(schemaInText ? jsonIn(text) : text) as T, model };
     } catch {
       last = `${model}: unreadable answer (${c?.finishReason ?? "?"})`; // cut off at its length limit, most often
     }
   }
-  throw new Error(`Gemini is busy right now. Try again in a minute. (${last || "out of time"})`);
+  throw new UpstreamError("Gemini", "busy", `Gemini is busy right now. Try again in a minute. (${last || "out of time"})`);
 }
 
 /** The outermost JSON object in a reply that may wrap it in prose or a code fence. */
 export function jsonIn(text: string): string {
   const a = text.indexOf("{"), b = text.lastIndexOf("}");
-  if (a < 0 || b < a) throw new Error("Gemini's reply had no JSON in it");
+  if (a < 0 || b < a) throw new UpstreamError("Gemini", "no JSON", "Gemini's reply had no JSON in it");
   return text.slice(a, b + 1);
 }
 

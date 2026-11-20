@@ -1,0 +1,81 @@
+# Checks every pull request and every push to main: types, lint, tests, a production build, and the browser smoke test
+# against that build. No secrets: the smoke test runs on the sample data with a test passcode and no Redis.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Playwright is installed outside the project (in the runner's temp folder; the smoke script finds it through
+      # NODE_PATH, as on the Mac), so the app's dependencies stay as they are.
+      PLAYWRIGHT_VERSION: "1.62.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # next-env.d.ts and .next are git-ignored: Next's route and layout types (LayoutProps…) are made first.
+      - name: Types
+        run: |
+          npx next typegen
+          npx tsc --noEmit -p .
+
+      - name: Lint
+        run: npx eslint
+
+      - name: Tests
+        run: npx vitest run --dir src
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright (outside the project)
+        run: |
+          PW_DIR="$RUNNER_TEMP/playwright"
+          npm install --prefix "$PW_DIR" --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION"
+          "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Smoke test
+        env:
+          HOUSEHOLD_PASSCODE: test123
+          KV_REST_API_URL: ""
+          KV_REST_API_TOKEN: ""
+          UPSTASH_REDIS_REST_URL: ""
+          UPSTASH_REDIS_REST_TOKEN: ""
+          GOOGLE_SERVICE_ACCOUNT_JSON: ""
+          GEMINI_API_KEY: ""
+        run: |
+          npx next start -p 3202 > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:3202/api/version > /dev/null && break; sleep 1; done
+          NODE_PATH="$RUNNER_TEMP/playwright/node_modules" URL=http://localhost:3202/ node scripts/smoke.cjs
+
+      - name: Server log
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log" || true
+
+      - name: Smoke screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-shots
+          path: .data/shots
+          if-no-files-found: ignore

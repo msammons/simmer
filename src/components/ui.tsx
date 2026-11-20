@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Component, createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
@@ -8,6 +8,25 @@ import { Icon, type IconName } from "./icons";
 // pills for controls, 22px cards (inset grouped lists), 36px sheets, the t-* type scale, one line-icon set.
 
 const PRESS = "transition active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100";
+
+/**
+ * For memo'd rows: the same props, plain data among them compared field by field (a row's item, and what's in it), so a
+ * row handed an equal copy (the server's answer to someone else's tap) isn't drawn again. Functions and elements must
+ * be the same ones.
+ */
+export function sameProps<P extends object>(a: P, b: P): boolean {
+  return same(a, b, 3);
+}
+function same(a: unknown, b: unknown, depth: number): boolean {
+  if (Object.is(a, b)) return true;
+  if (!depth || !a || !b || typeof a !== "object" || typeof b !== "object" || "$$typeof" in a || "$$typeof" in b) return false;
+  const plain = (x: object) => [Object.prototype, Array.prototype, null].includes(Object.getPrototypeOf(x));
+  if (Array.isArray(a) !== Array.isArray(b) || !plain(a) || !plain(b)) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (!Object.hasOwn(b, k) || !same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], depth - 1)) return false;
+  return true;
+}
 
 /** The app's scrolling area (the page itself never scrolls; see globals.css), and moving it. */
 export const scroller = () => document.getElementById("scroller");
@@ -266,13 +285,29 @@ function Dialog({ title, message, children, onDismiss }: { title: string; messag
  * A problem, shown over the page (never a bar that pushes it down): a short headline, the reason, OK. The same in every
  * studio app, so it can be copied across.
  */
-export function Alert({ open, title, message, onClose }: { open: boolean; title: string; message: ReactNode; onClose: () => void }) {
+export function Alert({ open, title, message, onClose, onRetry }: { open: boolean; title: string; message: ReactNode; onClose: () => void; onRetry?: () => void }) {
   if (!open || typeof document === "undefined") return null;
   return (
     <Dialog title={title} message={message} onDismiss={onClose}>
-      <Button className="w-full" onClick={onClose}>OK</Button>
+      {onRetry && <Button className="w-full" onClick={onRetry}>Try again</Button>}
+      <Button variant={onRetry ? "secondary" : undefined} className="w-full" onClick={onClose}>OK</Button>
     </Dialog>
   );
+}
+
+/**
+ * Sheets drawn inside this that fail (a part of the app that didn't load) are closed by `onError`, which says so in the
+ * alert, instead of the whole page giving way to an error screen.
+ */
+export class Contained extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(e: unknown) {
+    console.error("a sheet failed", e);
+    this.props.onError(); // closes the sheets, so the next draw has nothing that fails
+    this.setState({ failed: false });
+  }
+  render() { return this.state.failed ? null : this.props.children; }
 }
 
 /**

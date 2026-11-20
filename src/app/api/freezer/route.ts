@@ -1,34 +1,18 @@
-import { AppError } from "@/lib/errors";
-import { friendly } from "@/lib/friendly";
-import { authorized, unauthorized } from "@/lib/auth";
 import { addFrozen, loadKitchen, takeFrozen } from "@/lib/plan";
-import { transact } from "@/lib/google/sheets";
-
-const clean = (s: unknown, max = 60) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
+import { transact } from "@/lib/store";
+import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
 
 /** GET: what's in the freezer (oldest first). */
-export async function GET(req: Request) {
-  if (!authorized(req)) return unauthorized();
-  try {
-    return Response.json(await loadKitchen(), { headers: { "cache-control": "no-store" } });
-  } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
-  }
-}
+export const GET = api(async () => Response.json(await loadKitchen(), noStore));
 
 /** POST { op: "add", text } ("2 salmon") or { op: "use", id } (one taken out). Answers like GET. */
-export async function POST(req: Request) {
-  if (!authorized(req)) return unauthorized();
-  const b = await req.json().catch(() => null);
-  try {
-    if (b?.op !== "add" && b?.op !== "use") return Response.json({ error: "Unknown change." }, { status: 400 });
-    // The change and the freezer answered, as one transaction (Nov 19).
-    return Response.json(await transact(async () => {
-      if (b.op === "add") await addFrozen(clean(b.text));
-      else await takeFrozen(clean(b.id, 40));
-      return loadKitchen();
-    }), { headers: { "cache-control": "no-store" } });
-  } catch (e) {
-    return Response.json({ error: friendly(e) }, { status: e instanceof AppError ? 400 : 502 });
-  }
-}
+export const POST = api(async (req) => {
+  const b = await body(req);
+  if (b?.op !== "add" && b?.op !== "use") return refuse("Unknown change.");
+  // The change and the freezer answered, as one transaction (Nov 19).
+  return Response.json(await transact(async () => {
+    if (b.op === "add") await addFrozen(clean(b.text, 60));
+    else await takeFrozen(clean(b.id, 40));
+    return loadKitchen();
+  }), noStore);
+});

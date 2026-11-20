@@ -1,13 +1,12 @@
 // Simmer's data, tab by tab, in Upstash Redis (Nov 11): the Google Sheet allowed about 60 reads and 60 writes a minute,
-// and a busy minute ran out ("That didn't go through"). Each tab is kept as its rows, exactly as on the Sheet, so the
-// rest of the app reads and writes the same rows it always did. Everything was copied from the Sheet once (Nov 11); the
-// Sheet is now only an export (Settings → Copy to Google Sheet).
+// and a busy minute ran out ("That didn't go through"). Each tab is kept as its rows, exactly as on the Sheet (a header
+// row, then one row per record); table.ts turns them into typed records. Everything was copied from the Sheet once
+// (Nov 11); the Sheet is now only an export (export/sheet.ts).
 //
 // Changes are transactions (Nov 19): a change reads its tabs, works out the new rows and writes them only if no one else
 // wrote those tabs in between (two phones, or two quick taps, are two server calls at once, and the later write erased
 // the earlier one). If someone did, the change is worked out again from the rows as they are now.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Redis } from "@upstash/redis";
 import { AppError } from "../errors";
 
 /** What this file needs from a Redis client (Upstash's, or a pretend one in tests). */
@@ -16,28 +15,16 @@ export type TabStore = {
   set(key: string, value: string): Promise<unknown>;
   mget(...keys: string[]): Promise<(string | null)[]>;
   keys(pattern: string): Promise<string[]>;
-  /** Upstash's EVAL. Pretend stores in tests leave it out (see setIfUnchanged). */
+  /** Upstash's EVAL (only ever given CAS). Pretend stores in tests may leave it out (see setIfUnchanged). */
   eval?(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
-
-let client: TabStore | null | undefined;
-/** The Redis client, when the app has one (its keys come from Vercel). */
-export function redis(): TabStore | null {
-  if (client !== undefined) return client;
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  client = url && token ? (new Redis({ url, token, automaticDeserialization: false }) as unknown as TabStore) : null;
-  return client;
-}
-/** Tests: a pretend Redis (or none). */
-export const useTabStore = (s: TabStore | null) => { client = s; };
 
 /**
  * Every key's first part (Nov 19): "simmer" for the household's data; the test copy sets SIMMER_DATA_PREFIX (e.g.
  * "simmer-test") so it shares the free database without ever touching the real data.
  */
 export const NS = process.env.SIMMER_DATA_PREFIX || "simmer";
-const PREFIX = `${NS}:tab:`;
+export const PREFIX = `${NS}:tab:`;
 const keyOf = (tab: string) => `${PREFIX}${tab}`;
 /** Each tab's version, counted up by every write (outside the tab prefix, so Copy to Google Sheet leaves it out). */
 const versionOf = (tab: string) => `${NS}:tabv:${tab}`;
@@ -80,7 +67,7 @@ export const memo = (): Map<string, unknown> => current.getStore()?.memo ?? new 
 
 // KEYS: each tab's rows key, then its version key. ARGV[i]: the version read ("!" when it wasn't read); ARGV[n + i]: the
 // new rows ("!" when it isn't written). Nothing is written unless every tab read is still at the version read.
-const CAS = `local n = math.floor(#KEYS / 2)
+export const CAS = `local n = math.floor(#KEYS / 2)
 for i = 1, n do
   if ARGV[i] ~= "!" and (redis.call("GET", KEYS[2 * i]) or "") ~= ARGV[i] then return 0 end
 end
@@ -134,48 +121,6 @@ export async function writeTab(s: TabStore, tab: string, rows: string[][]): Prom
   if (!tx) return transact(s, () => writeTab(s, tab, rows));
   tx.rows.set(tab, copy(rows));
   tx.dirty.add(tab);
-}
-
-export function appendRows(s: TabStore, tab: string, rows: string[][]) {
-  if (!rows.length) return Promise.resolve();
-  return transact(s, async () => {
-    // Google's append goes after the last row with anything in it.
-    const all = await readTab(s, tab);
-    while (all.length && !all[all.length - 1].some(Boolean)) all.pop();
-    await writeTab(s, tab, [...all, ...rows]);
-  });
-}
-
-const colNum = (c: string) => [...c].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
-/** "List!B5:K5" → the tab and where the values start. */
-function parseRange(range: string) {
-  const bang = range.lastIndexOf("!");
-  const tab = (bang < 0 ? range : range.slice(0, bang)).replace(/^'|'$/g, "");
-  const at = bang < 0 ? "A1" : range.slice(bang + 1).split(":")[0];
-  const m = at.match(/^([A-Z]+)(\d+)$/);
-  return { tab, col: m ? colNum(m[1]) : 0, row: m ? Number(m[2]) - 1 : 0 };
-}
-
-/** Cells written at A1 ranges, as Google's values update does: each tab read once and written once, together. */
-export function updateRanges(s: TabStore, data: { range: string; values: string[][] }[]) {
-  if (!data.length) return Promise.resolve();
-  const byTab = new Map<string, { col: number; row: number; values: string[][] }[]>();
-  for (const d of data) {
-    const p = parseRange(d.range);
-    byTab.set(p.tab, [...(byTab.get(p.tab) ?? []), { col: p.col, row: p.row, values: d.values }]);
-  }
-  return transact(s, async () => {
-    for (const [tab, puts] of byTab) {
-      const all = await readTab(s, tab);
-      for (const { col, row, values } of puts) {
-        values.forEach((vals, i) => {
-          const target = (all[row + i] ??= []);
-          vals.forEach((v, j) => { while (target.length < col + j) target.push(""); target[col + j] = v; });
-        });
-      }
-      await writeTab(s, tab, Array.from(all, (r) => r ?? [])); // rows skipped over are empty
-    }
-  });
 }
 
 /** Every tab Redis holds, with its rows: what Copy to Google Sheet sends. */

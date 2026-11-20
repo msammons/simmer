@@ -1,10 +1,8 @@
 // Ordering from Simmer (Safeway pickup): the rules, as plain code with tests. docs/CHECKOUT.md is the agreement; nothing
 // here may be loosened without Sam's yes. Phase 2 (Nov 12): settings, reading Safeway's final page, and checking it
 // against an approval. Placing for real (phase 3, Nov 14) is in checkout-run.ts; test runs stop one press short.
-import { NS } from "./google/redis-tabs";
-import { readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
-import { redis } from "./google/redis-tabs";
-import { kv } from "./kv";
+import { NS, readTab, resetTabs, writeTab } from "./store";
+import { kv, resetKv } from "./kv";
 import type { CheckoutSettings } from "./checkout-rules";
 export { needsFaceId } from "./checkout-rules";
 
@@ -123,7 +121,6 @@ export function unusual(lines: { name: string; qty: number; priceCents: number |
 
 // Settings, kept in the "Checkout" tab as one row: on, limit (cents), store, card.
 const TAB = "Checkout";
-let memory: CheckoutSettings = NO_ORDERING;
 
 /** Settings as they read; missing or unreadable reads as off with a $0 limit (Sam, Nov 12). */
 export function settingsOf(row: string[] | undefined): CheckoutSettings {
@@ -138,8 +135,7 @@ export function settingsOf(row: string[] | undefined): CheckoutSettings {
 }
 
 export async function loadSettings(): Promise<CheckoutSettings> {
-  if (!sheetsConfigured()) return memory;
-  try { return settingsOf((await readTabIfAny(TAB))[1]); } catch { return NO_ORDERING; }
+  try { return settingsOf((await readTab(TAB))[1]); } catch { return NO_ORDERING; }
 }
 
 /** Settings as they'd be saved: anything unreadable as off / $0. */
@@ -148,8 +144,7 @@ export const cleanSettings = (s: CheckoutSettings) => settingsOf([s.on ? "on" : 
 /** `noted` goes in the record with the change (which Face ID check allowed it, Nov 13). */
 export async function saveSettings(s: CheckoutSettings, noted: Record<string, unknown> = {}): Promise<CheckoutSettings> {
   const clean = cleanSettings(s);
-  if (!sheetsConfigured()) memory = clean;
-  else await replaceTab(TAB, [["on", "limit", "store", "card"], [clean.on ? "on" : "off", String(clean.limitCents), clean.store, clean.card]]);
+  await writeTab(TAB, [["on", "limit", "store", "card"], [clean.on ? "on" : "off", String(clean.limitCents), clean.store, clean.card]]);
   await record("settings", { on: clean.on, limitCents: clean.limitCents, store: clean.store, card: clean.card, ...noted });
   return clean;
 }
@@ -169,10 +164,8 @@ export const RECORD_KEEP = 5000;
  */
 export const RECORD_DETAIL = 4000;
 const RECORD_PAGE = 100;
-const memoryLog: string[][] = [];
 export async function record(what: string, detail: Record<string, unknown>): Promise<void> {
   const row = [new Date().toISOString(), what, JSON.stringify(detail).slice(0, RECORD_DETAIL)];
-  if (!redis()) { memoryLog.push(row); return; }
   await kv().rpush(RECORD_KEY, JSON.stringify(row));
   await kv().ltrim(RECORD_KEY, -RECORD_KEEP, -1);
 }
@@ -181,20 +174,22 @@ export async function record(what: string, detail: Record<string, unknown>): Pro
  * until Nov 19 comes first (it's left as it was), then the list.
  */
 export async function checkoutRecordRows(): Promise<string[][]> {
-  if (!redis()) return [["when", "what", "detail"], ...memoryLog];
-  const before = await readTabIfAny(LOG).catch(() => [] as string[][]);
+  const before = await readTab(LOG).catch(() => [] as string[][]);
+  return [["when", "what", "detail"], ...before.filter((r) => r[0] !== "when"), ...(await recordList())];
+}
+/** The list's entries as rows, read a page at a time (an entry kept before the cap is cut to it here). */
+async function recordList(): Promise<string[][]> {
   const list: string[] = [];
   for (let i = 0; i < RECORD_KEEP + RECORD_PAGE; i += RECORD_PAGE) {
     const page = await kv().lrange(RECORD_KEY, i, i + RECORD_PAGE - 1);
     list.push(...page);
     if (page.length < RECORD_PAGE) break;
   }
-  // An entry kept before the cap is cut to it here.
-  const rows = list.flatMap((x) => { try { const r = JSON.parse(x); return Array.isArray(r) ? [r.map((c, i) => (i === 2 ? String(c).slice(0, RECORD_DETAIL) : String(c)))] : []; } catch { return []; } });
-  return [["when", "what", "detail"], ...before.filter((r) => r[0] !== "when"), ...rows];
+  return list.flatMap((x) => { try { const r = JSON.parse(x); return Array.isArray(r) ? [r.map((c, i) => (i === 2 ? String(c).slice(0, RECORD_DETAIL) : String(c)))] : []; } catch { return []; } });
 }
-export const resetCheckout = () => { memory = NO_ORDERING; memoryLog.length = 0; };
-export const recordedForTests = () => memoryLog;
+export const resetCheckout = () => { resetTabs([TAB]); resetKv(RECORD_KEY); };
+/** Tests: the record so far, as rows. */
+export const recordedForTests = recordList;
 
 /**
  * A pickup window as Safeway's checkout lists it (Nov 12): a radio button whose id carries the store, day, date, REGULAR

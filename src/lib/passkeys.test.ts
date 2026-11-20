@@ -9,7 +9,7 @@ vi.mock("@simplewebauthn/server", async (real) => ({
 }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings, type CheckoutSettings } from "./checkout";
-import { useTabStore, type TabStore } from "./google/redis-tabs";
+import { useTabStore, type TabStore } from "./store";
 import {
   ADD_MS, addStatus, addWaiting, changeSettings, approveOptions, askToAdd, CHALLENGE_MS, checkOptions, loadPasskeys, registrationOptions, resetPasskeys, site, verifyApprove,
   verifyCheck, verifyRegistration,
@@ -84,7 +84,7 @@ describe("Face ID for ordering", () => {
     verifyAuth.mockResolvedValueOnce(checked("cred-1", 0));
     expect(await verifyCheck(req(), answer(c.challenge))).toEqual({ ok: true, credentialId: "cred-1" });
     expect(verifyAuth.mock.calls[0][0]).toMatchObject({ expectedChallenge: c.challenge, requireUserVerification: true, credential: { id: "cred-1", counter: 0 } });
-    expect(recordedForTests().map((r) => [r[1], JSON.parse(r[2]).ok])).toEqual([["face id set up", true], ["face id check", true]]);
+    expect((await recordedForTests()).map((r) => [r[1], JSON.parse(r[2]).ok])).toEqual([["face id set up", true], ["face id check", true]]);
   });
 
   it("can't be checked before it's set up", async () => {
@@ -138,7 +138,7 @@ describe("Face ID for ordering", () => {
     verifyAuth.mockResolvedValue(checked("cred-1", 0));
     expect((await verifyCheck(req(), answer(c.challenge))).ok).toBe(false);
     // The library's own words go in the record, not to the phone.
-    expect(JSON.parse(recordedForTests()[1][2])).toMatchObject({ ok: false, error: "Signature did not match" });
+    expect(JSON.parse((await recordedForTests())[1][2])).toMatchObject({ ok: false, error: "Signature did not match" });
   });
 
   it("a challenge for one purpose doesn't pass for the other", async () => {
@@ -226,7 +226,7 @@ describe("Face ID for ordering", () => {
     verifyReg.mockResolvedValueOnce({ verified: true, registrationInfo: { credential: { id: "cred-3", publicKey: new Uint8Array([1]), counter: 0 }, userVerified: false } } as never);
     expect((await verifyRegistration(req(), answer(o.challenge, "cred-3", "webauthn.create"))).ok).toBe(false);
     expect((await loadPasskeys()).map((p) => p.id)).toEqual(["cred-1"]);
-    expect(recordedForTests().filter((r) => r[1] === "face id set up").length).toBe(3);
+    expect((await recordedForTests()).filter((r) => r[1] === "face id set up").length).toBe(3);
   });
 
   it("with Redis: a challenge is taken out in one step, and passkeys are kept in their tab", async () => {
@@ -274,7 +274,7 @@ describe("Face ID for ordering", () => {
       expect(await addWaiting()).toBeNull();
       expect(await setUp("cred-2", 0, token)).toEqual({ ok: true, credentialId: "cred-2" });
       expect((await loadPasskeys()).map((p) => p.id)).toEqual(["cred-1", "cred-2"]);
-      expect(recordedForTests().map((r) => r[1])).toEqual(["face id set up", "face id add asked", "face id add approved", "face id phone added", "face id set up"]);
+      expect((await recordedForTests()).map((r) => r[1])).toEqual(["face id set up", "face id add asked", "face id add approved", "face id phone added", "face id set up"]);
     });
 
     it("no token, a wrong one, or one not approved yet is refused", async () => {
@@ -283,7 +283,7 @@ describe("Face ID for ordering", () => {
       const { token, code } = await askToAdd();
       await expect(registrationOptions(req(), "x".repeat(43))).rejects.toThrow(/Add this phone/);
       await expect(registrationOptions(req(), token)).rejects.toThrow(new RegExp(`other phone first: it shows ${code}`));
-      expect(recordedForTests().filter((r) => r[1] === "face id set up refused").length).toBe(3);
+      expect((await recordedForTests()).filter((r) => r[1] === "face id set up refused").length).toBe(3);
       expect((await loadPasskeys()).length).toBe(1);
     });
 
@@ -330,7 +330,7 @@ describe("Face ID for ordering", () => {
       expect(await verifyApprove(req(), answer(options.challenge))).toMatchObject({ ok: false, why: expect.stringMatching(/replaced/) });
       await expect(registrationOptions(req(), second.token)).rejects.toThrow(/other phone first/);
       await expect(registrationOptions(req(), first.token)).rejects.toThrow(/Add this phone/);
-      expect(JSON.parse(recordedForTests().filter((r) => r[1] === "face id add approved").at(-1)![2])).toMatchObject({ ok: false });
+      expect(JSON.parse((await recordedForTests()).filter((r) => r[1] === "face id add approved").at(-1)![2])).toMatchObject({ ok: false });
       // Approving the second, then asking again: the approved one is gone with it.
       expect((await approve()).ok).toBe(true);
       await askToAdd();
@@ -351,7 +351,7 @@ describe("Face ID for ordering", () => {
       verifyAuth.mockResolvedValueOnce(checked("cred-1", 0));
       expect((await verifyApprove(req(), answer(options.challenge))).ok).toBe(false); // its challenge is used up
       await expect(approveOptions(req())).rejects.toThrow(/no new phone waiting/); // already approved
-      expect(recordedForTests().filter((r) => r[1] === "face id add approved").map((r) => JSON.parse(r[2]).ok)).toEqual([false, false, true, false]);
+      expect((await recordedForTests()).filter((r) => r[1] === "face id add approved").map((r) => JSON.parse(r[2]).ok)).toEqual([false, false, true, false]);
       expect((await setUp("cred-2", 0, token)).ok).toBe(true);
     });
 
@@ -397,7 +397,7 @@ describe("Face ID for ordering", () => {
         expect(await changeSettings(req(), next, null)).toEqual({ ok: false, why: "Set up Face ID first." });
       }
       expect(await loadSettings()).toEqual(set);
-      expect(recordedForTests().filter((r) => r[1] === "settings refused").length).toBe(4);
+      expect((await recordedForTests()).filter((r) => r[1] === "settings refused").length).toBe(4);
     });
 
     it("turning on, raising the limit, or changing the store or card needs a Face ID check", async () => {
@@ -407,7 +407,7 @@ describe("Face ID for ordering", () => {
         expect(await loadSettings()).toEqual(set);
         expect(await changeSettings(req(), next, await faceId())).toEqual({ ok: true, settings: next });
         // The check that allowed it goes in the record with the change.
-        expect(JSON.parse(recordedForTests().filter((r) => r[1] === "settings").at(-1)![2])).toMatchObject({ ...next, faceId: "cred-1" });
+        expect(JSON.parse((await recordedForTests()).filter((r) => r[1] === "settings").at(-1)![2])).toMatchObject({ ...next, faceId: "cred-1" });
         await saveSettings(set);
       }
     });

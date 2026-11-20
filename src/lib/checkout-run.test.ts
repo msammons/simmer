@@ -107,7 +107,7 @@ const approved = async () => {
   if (!a.ok) throw new Error(a.reasons.join(" "));
   return a.approvalId;
 };
-const recorded = (what: string) => recordedForTests().filter((r) => r[1] === what).map((r) => JSON.parse(r[2]));
+const recorded = async (what: string) => (await recordedForTests()).filter((r) => r[1] === what).map((r) => JSON.parse(r[2]));
 
 describe("picking the pickup time (Nov 14)", () => {
   const SAT = { id: "9999SAT20261114REGULARDUG900100-2026-11-14", words: "9 AM - 10 AM price Free" };
@@ -172,7 +172,7 @@ describe("getting ready", () => {
     expect(v).toMatchObject({ store: expect.stringMatching(/^100 Main St/), window: "Fri 6–7 AM", card: "4242", items: 1, totalCents: 694, stops: [] });
     expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", { list: true });
     expect(queueJob).toHaveBeenCalledWith("checkoutPrepare", { windowId: FRI6.id });
-    expect(recorded("test ready")[0]).toMatchObject({ stopped: "ready", totalCents: 694 });
+    expect((await recorded("test ready"))[0]).toMatchObject({ stopped: "ready", totalCents: 694 });
   });
 
   it("leaves Safeway's taxes and fees out when comparing with Simmer's estimate, and shows them (Nov 14)", async () => {
@@ -224,7 +224,7 @@ describe("the approval", () => {
     await ready();
     const a = await approve(req(), await faceId());
     expect(a).toMatchObject({ ok: true, totalCents: 694, window: "Fri 6–7 AM" });
-    expect(recorded("test approval")[0]).toMatchObject({ ok: true, faceId: "cred-1", totalCents: 694, windowId: FRI6.id, slot: { ready: "6 AM - 7 AM", type: "REGULAR", priceCents: 0 } });
+    expect((await recorded("test approval"))[0]).toMatchObject({ ok: true, faceId: "cred-1", totalCents: 694, windowId: FRI6.id, slot: { ready: "6 AM - 7 AM", type: "REGULAR", priceCents: 0 } });
   });
 
   it("the first time, takes the store and card Safeway shows, and remembers them once approved (Nov 14)", async () => {
@@ -293,7 +293,7 @@ describe("the test run", () => {
     const id = await approved();
     expect(await testRun(id)).toEqual({ ok: true, would: "Would place $6.94 · Fri 6–7 AM" });
     expect(queueJob).toHaveBeenLastCalledWith("checkoutDry", { approvalId: id, windowId: FRI6.id, bagsOwn: true });
-    expect(recorded("test run").at(-1)).toMatchObject({ ok: true, faceId: "cred-1", approvalId: id });
+    expect((await recorded("test run")).at(-1)).toMatchObject({ ok: true, faceId: "cred-1", approvalId: id });
   });
 
   it("doesn't count when an older helper ran it (outside review, Nov 18)", async () => {
@@ -361,7 +361,7 @@ describe("the test run", () => {
     const job = (w as { waiting: string }).waiting;
     expect(await followTestRun(job)).toMatchObject({ ok: true });
     await expect(followTestRun(job)).rejects.toThrow(/already reported/);
-    expect(recorded("test run started")[0]).toMatchObject({ approvalId: id, windowId: FRI6.id, faceId: "cred-1" });
+    expect((await recorded("test run started"))[0]).toMatchObject({ approvalId: id, windowId: FRI6.id, faceId: "cred-1" });
   });
 });
 
@@ -525,7 +525,7 @@ describe("placing the order (phase 3, Nov 14)", () => {
     Object.assign(job, { status: "done", pressedAt: new Date().toISOString(), result: { stopped: "pressed", pressed: true, after: { url: "https://x/erums/checkout", text: "Thank you for your order! Order number: 55512345" } } });
     expect(await settleOrder({ ...job })).toMatchObject({ ok: true, number: "55512345" });
     expect(await followOrder(job.id)).toMatchObject({ ok: true, number: "55512345" });
-    expect(recorded("order").map((r) => r.ok)).toEqual([false, true]);
+    expect((await recorded("order")).map((r) => r.ok)).toEqual([false, true]);
     going = false;
     does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "not pressed", pressed: false, why: "total" } as never) : helper(k, a));
     expect(await placeOrder(await approved())).toMatchObject({ ok: false, reasons: [expect.stringMatching(/didn't match/), "Nothing was ordered."] });
@@ -560,7 +560,7 @@ describe("placing the order (phase 3, Nov 14)", () => {
 
   it("following a job Simmer doesn't have says not sure and records it, never \"already reported\" (review, Nov 19)", async () => {
     expect(await followOrder("nosuchjob")).toMatchObject({ ok: false, unsure: true, reasons: [expect.stringMatching(/Not sure/)] });
-    expect(recorded("order").at(-1)).toMatchObject({ unsure: true, jobId: "nosuchjob", why: "job not found" });
+    expect((await recorded("order")).at(-1)).toMatchObject({ unsure: true, jobId: "nosuchjob", why: "job not found" });
   });
 
   it("says plainly when Safeway's cart isn't what was approved", async () => {

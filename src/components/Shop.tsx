@@ -1,11 +1,16 @@
 "use client";
-import { useMemo, useState } from "react";
-import { store, type CartLine, type Item, type ListState, type Store } from "@/lib/client";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { store, type CartLine, type Item, type Store } from "@/lib/client";
+import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
-import { CheckoutSheet } from "./Checkout";
-import { CartPlus, FindView, Stepper, type Safeway } from "./Safeway";
-import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, type MoreOption } from "./ui";
+import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway } from "./Safeway";
+import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
+// Check out isn't loaded on demand (Nov 19): a tap before it arrived opened the sheet late, and it saved only ~3 KB.
+import { CheckoutSheet } from "./Checkout";
+
+// Check out (with ordering and Face ID) loads on its own; App fetches it once the app is showing, so it opens at once.
+
 
 /**
  * Shop (Sam, Nov 12): one page, grouped by store (Safeway, Trader Joe's, Costco; a store with nothing doesn't show).
@@ -105,8 +110,41 @@ function ShopRow({ title, sub, checked, onTick, control, more }: {
 
 const pill = "flex h-8 shrink-0 items-center rounded-full px-3.5 t-sub font-semibold transition active:scale-95";
 
-/** `sw`: the Safeway cart and its jobs, kept by App across tab taps; App reads the cart as Shop opens and comes back. */
-export function ShopScreen({ list, act, sw }: { list: ListState | null; act: ShopActions; sw: Safeway }) {
+/** What a list item's row offers beside its name: − n + (in the cart, or on its way there), Add, Find, or nothing. */
+type Control = "cart" | "wait" | "plus" | "find" | "";
+/** A tap on a row, handed to Shop: tick, a number for − n +, Add, Find (or Pick another), or Get it at another store. */
+type RowTap = { what: "tick" | "plus" | "find" } | { what: "cart" | "wait"; qty: number } | { what: "move"; store: Store };
+
+/**
+ * A list item's row, drawn again only when what it shows changes (a tick redraws its own row, not the list). Everything
+ * it gets is plain data and one tap handler that stays the same.
+ */
+const ShopItemRow = memo(function ShopItemRow({ it, sub, control, qty, inCart, canPick, onTap }: {
+  it: Item; sub?: string; control: Control; qty: number; inCart: number; canPick: boolean; onTap: (it: Item, tap: RowTap) => void;
+}) {
+  const name = cap(it.item);
+  const c = control === "cart" || control === "wait" ? <Stepper compact qty={qty} name={name} onChange={(q) => onTap(it, { what: control, qty: q })} />
+    : control === "plus" ? <CartPlus name={name} onClick={() => onTap(it, { what: "plus" })} />
+    : control === "find" ? <button onClick={() => onTap(it, { what: "find" })} aria-label={`Find ${name} at Safeway`} className={`${pill} glass text-accent`}>Find</button>
+    : null;
+  return (
+    <ShopRow title={name} sub={sub} checked={it.checked} onTick={() => onTap(it, { what: "tick" })} control={c}
+      more={<More name={name} options={moreFor(it, inCart, canPick)} onPick={(v) => onTap(it, v === "pick" ? { what: "find" } : { what: "move", store: v as Store })} />} />
+  );
+}, sameProps);
+
+/** The list comes from its store; the Safeway cart and its jobs from SafewayHost (kept across tab taps). */
+export function ShopScreen({ act }: { act: ShopActions }) {
+  const list = useList();
+  const sw = useSafewayCart();
+  // The Safeway cart is read as Shop opens (each tab tap opens it fresh) and when the app comes back to it.
+  const { look } = sw;
+  useEffect(() => {
+    queueMicrotask(look);
+    const back = () => { if (document.visibilityState === "visible") look(); };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [look]);
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   // Show got (Nov 14): on, ticked things stay, struck through; off, they're hidden. Only the toggle decides; remembered
@@ -165,6 +203,20 @@ export function ShopScreen({ list, act, sw }: { list: ListState | null; act: Sho
   /** The rows shown: what's ticked only with Show got on. */
   const visible = showGot ? items : items.filter((i) => !i.checked);
 
+  /** A row's tap: worked out with what's showing now, through one handler that stays the same for the rows. */
+  const tap = (it: Item, t: RowTap) => {
+    if (t.what === "tick") return tickIt(it, !it.checked);
+    if (t.what === "find") return setFinding(it.id);
+    if (t.what === "move") return act.move(it, t.store);
+    const f = infos.get(it.id), l = lineOf.get(it.id);
+    if (t.what === "cart" && l) void sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, t.qty, l.item || l.name, null, { alt: l.name, on: "cart" });
+    else if (t.what === "wait" && f?.picked) void sw.setQty(product(f.picked), t.qty, f.query, f);
+    else if (t.what === "plus" && f) addUsual(f);
+  };
+  const latestTap = useRef(tap);
+  useLayoutEffect(() => { latestTap.current = tap; });
+  const onTap = useCallback((it: Item, t: RowTap) => latestTap.current(it, t), []);
+
   /** A list item's row. */
   const itemRow = (it: Item) => {
     const n = inCart(it);
@@ -176,18 +228,15 @@ export function ShopScreen({ list, act, sw }: { list: ListState | null; act: Sho
     // Safeway's product and how many under the name (back Nov 17: Sam wanted the product kept, only the extra words gone).
     const name = l?.name ?? f?.picked?.name;
     const sub = it.store === "safeway" && name ? [name, need && `Need ${need}`].filter(Boolean).join(" · ") : need ? (it.store === "safeway" ? `Need ${need}` : need) : undefined;
-    let control: React.ReactNode = null;
+    let control: Control = "", qty = 0;
     if (it.store === "safeway" && live) {
-      if (l) control = <Stepper compact qty={l.qty} name={cap(it.item)} onChange={(q) => sw.setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, q, l.item || l.name, null, { alt: l.name, on: "cart" })} />;
-      else if (f?.picked && waiting > 0) control = <Stepper compact qty={waiting} name={cap(it.item)} onChange={(q) => sw.setQty(product(f.picked!), q, f.query, f)} />;
-      else if (!it.checked && f?.picked) control = <CartPlus name={cap(it.item)} onClick={() => addUsual(f)} />;
-      else if (!it.checked && findable.has(it.id)) control = <button onClick={() => setFinding(it.id)} aria-label={`Find ${cap(it.item)} at Safeway`} className={`${pill} glass text-accent`}>Find</button>;
+      if (l) { control = "cart"; qty = l.qty; }
+      else if (f?.picked && waiting > 0) { control = "wait"; qty = waiting; }
+      else if (!it.checked && f?.picked) control = "plus";
+      else if (!it.checked && findable.has(it.id)) control = "find";
     }
     const canPick = it.store === "safeway" && live && findable.has(it.id) && Boolean(f?.picked || l);
-    return (
-      <ShopRow key={it.id} title={cap(it.item)} sub={sub} checked={it.checked} onTick={() => tickIt(it, !it.checked)} control={control}
-        more={<More name={cap(it.item)} options={moreFor(it, n, canPick)} onPick={(v) => (v === "pick" ? setFinding(it.id) : act.move(it, v as Store))} />} />
-    );
+    return <ShopItemRow key={it.id} it={it} sub={sub} control={control} qty={qty} inCart={n} canPick={canPick} onTap={onTap} />;
   };
 
   const shown = (where === "all" ? STORES : [where]).filter((s) => visible.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));

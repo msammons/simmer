@@ -1,7 +1,7 @@
 // The writers against stored rows (review, Nov 19): rows without an id, columns in any order, and blank cells.
 import { AsyncResource } from "node:async_hooks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useTabStore, type TabStore } from "./google/redis-tabs";
+import { useTabStore, type TabStore } from "./store";
 
 // next/server's after(), as Next runs it: later, in the async context it was called in (that of the change's transaction).
 const later: (() => unknown)[] = [];
@@ -76,7 +76,7 @@ describe("columns by their headers", () => {
 describe("guesses made after the answer (review, Nov 19)", () => {
   it("are written even though after() runs in the add's own context, and a name is asked once", async () => {
     process.env.GEMINI_API_KEY = "test-key";
-    const gemini = await import("./google/gemini");
+    const gemini = await import("./gemini");
     const spy = vi.spyOn(gemini, "generateJson").mockImplementation((async () => ({
       data: { items: [{ name: "zzq sprocket", store: "costco", section: "household" }] }, model: "m", sources: [],
     })) as never);
