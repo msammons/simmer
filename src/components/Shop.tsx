@@ -243,11 +243,16 @@ export function ShopScreen({ act }: { act: ShopActions }) {
 
   return (
     <div className="space-y-5">
-      <BrandBar below={<Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />} />
+      {/* Add pinned with the store switch (Sam, Nov 19): reachable from anywhere in a long list. */}
+      <BrandBar below={(
+        <div className="space-y-3">
+          <Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />
+          <form onSubmit={submit} className="flex gap-2">
+            <AddField value={text} onChange={setText} placeholder="Add item" label="Add item" />
+          </form>
+        </div>
+      )} />
       <h1 className="sr-only">Shop</h1>
-      <form onSubmit={submit} className="flex gap-2">
-        <AddField value={text} onChange={setText} placeholder="Add item" label="Add item" />
-      </form>
 
       {!list ? <Held /> : !here.length && !shown.length ? <EmptyState icon="cart" title={where === "all" ? "Nothing to buy" : `Nothing to buy at ${STORE_NAMES[where]}`} /> : (
         <>
