@@ -62,10 +62,10 @@ export function StockScreen({ act }: { act: StockActions }) {
   const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={seen} />;
   return (
     <div className="space-y-5">
-      <BrandBar />
+      {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once.
+          Pinned in the top bar, as on Shop (Sam, Nov 19). */}
+      <BrandBar below={<AddFields staples={staples} groups={groups} shown={shownNames} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(staples, t, act, more); setAdded(t); }} />} />
       <h1 className="sr-only">List</h1>
-      {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once. */}
-      <AddFields staples={staples} groups={groups} shown={shownNames} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(staples, t, act, more); setAdded(t); }} />
       {/* The list's own ⋯, above the list on the right (Sam, Nov 17: not beside Add), the same as a row's. */}
       {list && rows.length > 0 && (
         <div className="-mb-3 flex justify-end pr-2">
