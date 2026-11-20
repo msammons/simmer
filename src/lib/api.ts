@@ -4,6 +4,7 @@
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { framed, tellPanelQueued } from "./panel";
 import { store } from "./storage";
+import { UNCHANGED, type Unchanged } from "./synced";
 
 export type Person = { key: string; name: string; isAdult?: boolean };
 
@@ -17,17 +18,31 @@ export const SIGNED_OUT = "sm:signed-out";
 export const errorText = (e: unknown) =>
   e instanceof TypeError ? "No connection. Check your signal and try again." : e instanceof Error ? e.message : String(e);
 
+// Each answer's ETag (Nov 19: "nothing changed" answers, src/lib/ops/fresh.ts), kept beside the answer it came with.
+const etags = new WeakMap<object, string>();
+/** The ETag an answer from the server came with, if it had one. */
+export const etagOf = (v: unknown): string | null => (typeof v === "object" && v !== null ? etags.get(v) ?? null : null);
+const tag = <V>(v: V, etag: string | null): V => { if (etag && typeof v === "object" && v !== null) etags.set(v, etag); return v; };
+/** A collection answer's ETag names its recipes too (screens keep the array). */
+const tagRecipes = <R extends { recipes: Recipe[] }>(r: R): R => { tag(r.recipes, etagOf(r)); return r; };
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, {
     ...init,
     headers: { "content-type": "application/json", "x-passcode": store.passcode() ?? "", ...(init.headers ?? {}) },
   });
+  // Only ever an answer to If-None-Match, sent by `since` below.
+  if (r.status === 304) return UNCHANGED as T;
   const body = await r.json().catch(() => ({}));
   if (r.status === 401) { window.dispatchEvent(new Event(SIGNED_OUT)); throw new AuthError(body.error ?? "Wrong passcode."); }
   if (r.status === 429) throw new LockedError(body.error ?? "Too many wrong passcodes. Try again in a few minutes.");
   if (!r.ok) throw new Error(body.error ?? `Something went wrong (${r.status}).`);
-  return body as T;
+  return tag(body, r.headers.get("etag")) as T;
 }
+
+/** A read that answers UNCHANGED when the server's copy is still `etag`, the one this phone has. */
+const since = <T>(path: string, etag: string | null, signal?: AbortSignal) =>
+  call<T | Unchanged>(path, { signal, ...(etag && { headers: { "if-none-match": etag } }) });
 
 import type { Item, Section, Staple, StapleKind, Store } from "./groceries";
 /** Where a recipe's ingredient goes (Nov 17: Freezer too). */
@@ -58,10 +73,15 @@ const passkey = <T>(body: Record<string, unknown>) => call<T>("/api/checkout/pas
 
 export const api = {
   list: (signal?: AbortSignal) => call<ListState>("/api/list", { signal }),
+  /** The four reads made on opening and coming back, answering UNCHANGED when the phone's copy (`etag`) is current. */
+  listSince: (etag: string | null, signal?: AbortSignal) => since<ListState>("/api/list", etag, signal),
+  recipesSince: (etag: string | null, signal?: AbortSignal) => since<{ recipes: Recipe[] }>("/api/recipes", etag, signal).then((r) => (r === UNCHANGED ? r : tagRecipes(r))),
+  planSince: (etag: string | null, signal?: AbortSignal) => since<PlanData>("/api/plan", etag, signal),
+  kitchenSince: (etag: string | null, signal?: AbortSignal) => since<Kitchen>("/api/freezer", etag, signal),
   change: (c: ListChange) => call<ListState>("/api/list", { method: "POST", body: JSON.stringify(c) }),
-  recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }),
-  saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }),
-  recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean } | { op: "delete"; id: string } | { op: "section"; id: string; item: string; section: RecipeSection }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }),
+  recipes: (signal?: AbortSignal) => call<{ recipes: Recipe[] }>("/api/recipes", { signal }).then(tagRecipes),
+  saveRecipes: (recipes: Draft[], duplicates?: "skip" | "replace") => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify({ op: "save", recipes, duplicates }) }).then(tagRecipes),
+  recipeChange: (c: { op: "effort"; id: string; effort: Effort } | { op: "active"; id: string; active: boolean } | { op: "delete"; id: string } | { op: "section"; id: string; item: string; section: RecipeSection }) => call<{ recipes: Recipe[]; saved: string[] }>("/api/recipes", { method: "POST", body: JSON.stringify(c) }).then(tagRecipes),
   readRecipe: (from: { link: string } | { text: string } | { file: { name: string; type: string; data: string } }, signal?: AbortSignal) => call<{ found: Draft[] }>("/api/recipes/read", { method: "POST", body: JSON.stringify(from), signal }),
   /** What's still to make and pack. */
   plan: (signal?: AbortSignal) => call<PlanData>("/api/plan", { signal }),

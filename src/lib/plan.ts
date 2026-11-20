@@ -8,7 +8,7 @@
 // Each change is one transaction (store/tabs.ts), and only the rows it changes are rewritten, so a hand edit anywhere
 // else survives.
 import { append, atomically, change, load, loadAll, save, strings } from "./store";
-import { loadHousehold } from "./data";
+import { loadHousehold, PROFILE_TAB } from "./data";
 import { addItems, dropHighlightsNotFor, emptyLists, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
 import { newId, yes } from "./parse";
@@ -89,6 +89,12 @@ export type PlanData = {
   people: (Taste & { rules: string[] })[];
   freezer: Frozen[];
 };
+
+/**
+ * Every tab loadPlan reads, for its "nothing changed" answers (ops/fresh.ts; a test keeps this in step). Its answer
+ * also depends on the day (the store rhythm), which the answer's version includes.
+ */
+export const PLAN_READS = [PLANNED.tab, OLD_PLAN.tab, MADE.tab, TRIPS.tab, LUNCHES.tab, COUNTS.tab, FREEZER.tab, PROFILE_TAB];
 
 /** The Meals screen: what's still to make and pack, and what planning needs. */
 export async function loadPlan(): Promise<PlanData> {
@@ -322,6 +328,7 @@ export const tidyStock = atomically(async (): Promise<void> => {
 });
 
 /** The freezer, for Stock (Nov 19: the trips it also answered with were read for nothing; nothing shows them). */
+export const KITCHEN_READS = [FREEZER.tab];
 export async function loadKitchen() {
   return { freezer: await loadFreezer() };
 }

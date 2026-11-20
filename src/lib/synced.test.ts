@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Synced } from "./synced";
+import { Synced, UNCHANGED, type Unchanged } from "./synced";
 
 /** A promise answered by hand, to play out the order answers come back in. */
 function later<T>() {
@@ -107,7 +107,7 @@ describe("Synced", () => {
   it("keeps the server's copy, not what's laid over it", async () => {
     const { s, keep } = make();
     await s.change(() => Promise.resolve(["a"]), add("a"));
-    expect(keep).toHaveBeenLastCalledWith(["a"]);
+    expect(keep).toHaveBeenLastCalledWith(["a"], null);
   });
 
   it("tells a failed read whether something is showing", async () => {
@@ -139,5 +139,74 @@ describe("Synced", () => {
     off();
     await s.change(() => Promise.resolve(["a", "b"]));
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Synced: nothing changed answers (Nov 19)", () => {
+  // Answers carry their ETag beside them, as api.ts keeps it.
+  const tags = new WeakMap<object, string>();
+  const tagged = (v: L, etag: string) => { tags.set(v, etag); return v; };
+  const etagOf = (v: L) => tags.get(v) ?? null;
+
+  function make2(initial: L | null, etag: string | null, read: (etag: string | null) => Promise<L | Unchanged>) {
+    const keep = vi.fn(), failed = vi.fn();
+    const s = new Synced<L>(initial, { read, keep, etagOf, failed }, etag);
+    return { s, keep, failed };
+  }
+
+  it("sends the saved copy's ETag and keeps the copy on 'unchanged': no repaint, nothing kept again, read counted as recent", async () => {
+    const saved = ["a"];
+    const read = vi.fn<(etag: string | null) => Promise<L | Unchanged>>(async () => UNCHANGED);
+    const { s, keep } = make2(saved, '"v1"', read);
+    const painted = vi.fn();
+    s.subscribe(painted);
+    await s.refresh();
+    expect(read).toHaveBeenCalledWith('"v1"');
+    expect(s.get()).toBe(saved);
+    expect(painted).not.toHaveBeenCalled();
+    expect(keep).not.toHaveBeenCalled();
+    await s.settled(5_000); // answered just now: no second read
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends no ETag with nothing saved, and the next read sends the ETag of the answer it got", async () => {
+    const read = vi.fn(async (etag: string | null): Promise<L | Unchanged> => (etag === '"v2"' ? UNCHANGED : tagged(["b"], '"v2"')));
+    const { s, keep } = make2(null, '"stale"', read);
+    await s.refresh();
+    expect(read).toHaveBeenLastCalledWith(null);
+    expect(s.get()).toEqual(["b"]);
+    expect(keep).toHaveBeenLastCalledWith(["b"], '"v2"');
+    await s.refresh();
+    expect(read).toHaveBeenLastCalledWith('"v2"');
+    expect(s.get()).toEqual(["b"]);
+  });
+
+  it("a change's answer carries the new ETag, so the read after one's own change is 'unchanged'", async () => {
+    const read = vi.fn(async (etag: string | null): Promise<L | Unchanged> => (etag === '"v3"' ? UNCHANGED : tagged(["x"], '"v9"')));
+    const { s, keep } = make2(["a"], '"v1"', read);
+    await s.change(() => Promise.resolve(tagged(["a", "b"], '"v3"')), add("b"));
+    expect(keep).toHaveBeenLastCalledWith(["a", "b"], '"v3"');
+    await s.refresh();
+    expect(read).toHaveBeenLastCalledWith('"v3"');
+    expect(s.get()).toEqual(["a", "b"]);
+  });
+
+  it("an answer without an ETag forgets the old one (the next read is a full one)", async () => {
+    const read = vi.fn<(etag: string | null) => Promise<L | Unchanged>>(async () => ["z"]);
+    const { s } = make2(["a"], '"v1"', read);
+    await s.change(() => Promise.resolve(["a", "b"]));
+    await s.refresh();
+    expect(read).toHaveBeenLastCalledWith(null);
+    expect(s.get()).toEqual(["z"]);
+  });
+
+  it("an 'unchanged' that answers after a change was made is dropped like any older read", async () => {
+    const r = later<L | Unchanged>();
+    const { s } = make2(["a"], '"v1"', () => r.p);
+    const reading = s.refresh();
+    await s.change(() => Promise.resolve(tagged(["a", "b"], '"v2"')), add("b"));
+    r.ok(UNCHANGED);
+    await reading;
+    expect(s.get()).toEqual(["a", "b"]);
   });
 });
