@@ -8,6 +8,9 @@
  * their one color. Set by data-theme on <html> (see the script in layout.tsx).
  */
 :root {
+  /* Light or dark as the phone is set (Nov 19, Robin: it didn't follow her phone): the browser's own parts (keyboard,
+     scroll bounce, form controls) switch with the page. */
+  color-scheme: light dark;
   --bg: #FAF6F1;
   --card: #FFFFFF;
   --sunk: #EFE7DF;
