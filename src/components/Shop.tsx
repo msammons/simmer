@@ -243,13 +243,14 @@ export function ShopScreen({ act }: { act: ShopActions }) {
 
   return (
     <div className="space-y-5">
-      {/* Add pinned with the store switch (Sam, Nov 19): reachable from anywhere in a long list. */}
+      {/* Add pinned with the store switch (Sam, Nov 19): reachable from anywhere in a long list; above the switch, in
+          the same place as on List. */}
       <BrandBar below={(
         <div className="space-y-3">
-          <Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />
           <form onSubmit={submit} className="flex gap-2">
             <AddField value={text} onChange={setText} placeholder="Add item" label="Add item" />
           </form>
+          <Segmented label="Store" value={where} options={WHERE} onChange={setWhere} />
         </div>
       )} />
       <h1 className="sr-only">Shop</h1>
