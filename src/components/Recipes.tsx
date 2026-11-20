@@ -61,14 +61,18 @@ export function RecipesScreen({ recipes, onOpen, onAdd, freezer = NO_FREEZER }: 
   }, [recipes, freezer]);
   return (
     <div className="space-y-6">
-      <BrandBar />
+      {/* Add recipe pinned in the top bar, the same pill as Add on Shop and List (Sam, Nov 19). */}
+      <BrandBar below={recipes?.length ? (
+        <button type="button" onClick={onAdd} className="relative flex h-[52px] w-full items-center rounded-full bg-card pl-5 pr-14 text-left active:bg-sunk">
+          <span className="t-body text-muted">Add recipe</span>
+          <span aria-hidden className="absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-full text-muted"><Icon name="plus" className="size-6" strokeWidth={2.2} /></span>
+        </button>
+      ) : undefined} />
       <h1 className="sr-only">Recipes</h1>
       {!recipes ? <Held groups={[1, 5, 4]} /> : !recipes.length ? (
         <EmptyState icon="book" title="No recipes yet" action={<Button onClick={onAdd} icon="plus">Add recipe</Button>} />
       ) : (
         <>
-          {/* As a day's Add on Meals (Sam, Nov 17): a grey + and grey words at a row's height. */}
-          <Group><button type="button" onClick={onAdd} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk"><Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add recipe</span></button></Group>
           <Some header="From the freezer" items={lists.fromFreezer} onOpen={onOpen} />
           <Some header="Favorites" items={lists.favorites} onOpen={onOpen} />
           <Some header="Quick" items={lists.quick} onOpen={onOpen} />
