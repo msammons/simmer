@@ -405,21 +405,26 @@ needed on the list.
 - **Leftovers.** A *Leftovers* night choice that remembers what's there.
 - **"What can I make right now?"** From the freezer and a few things on hand, three quick meals from her collection.
 
-### 4.11 New shop in place of New plan (requested Nov 20, not built)
+### 4.11 Done shopping in place of New plan (requested Nov 20, not built)
 
 Sam, Nov 20, after the first real orders: the plan and the shop run on different clocks, so one reset that wipes both
 throws away things still wanted. Proposed, to try after a real week confirms it:
 
-- **New shop** replaces New plan. It marks every dinner now planned as *shopped for*: their groceries are bought and
-  never go back on the list. Nothing is deleted.
-- **Leftovers are a choice on the reset**, shown only when something wasn't bought: "3 things weren't bought: eggs,
-  milk, salad dressing. **Keep them** · **Clear them** · Cancel". Keep comes first.
+- **Done shopping** replaces New plan: it finishes the trip and marks every dinner now planned as *shopped for*
+  (their groceries are bought and never go back on the list). Nothing is deleted.
+- **Where (Sam, Nov 20: "a global thing but also highly sensitive"):** a small **Done** pill beside Settings in the
+  top bar on every screen (the one-action slot New plan uses on Meals today): reachable from anywhere, out of thumb
+  reach, guarded by its confirm. A word, not an icon (no picture says "done shopping" without being misread as save or
+  refresh). Also offered on the "Ordered" screen after a Safeway order. Considered and dropped: the bottom nav (places,
+  not actions; the most-tapped spot), Meals only, Shop only, Settings only.
+- **The confirm:** "Done shopping? 3 things weren't bought: eggs, milk, salad dressing. **Keep them** · **Clear them**"
+  (the choice only when something wasn't bought; Keep first).
 - **Meals opens on today**, past days above (scroll up for past meals), future days below; shopped-for dinners show
   slightly muted on their own days; past days age out after a week or so. No separate archive section.
-- **New dinners** added after the reset feed List and Shop as now.
-- Open questions: how far back past meals stay; whether "made" is still recorded for every shopped-for dinner (today
-  New plan marks all as made, cooked or not); where New shop lives (Meals' top bar now; also offered on the "Ordered"
-  screen after a Safeway order?).
+- **New dinners** added after it feed List and Shop as now.
+- Open: the name ("New shop" felt wrong; "Done shopping" is the current pick); how far back past meals stay; whether
+  "made" is still recorded for every shopped-for dinner (New plan marks all as made today, cooked or not). The same
+  button existed before and was removed Nov 14 when New plan took its job; this one leaves Meals alone.
 
 ---
 
