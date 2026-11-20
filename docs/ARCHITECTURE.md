@@ -11,14 +11,18 @@ shape of the app and the lessons that came from building Head Out, so they don't
 - **No accounts.** One household passcode, typed once per phone and sent as the `x-passcode` header. Every API route
   checks it (`lib/auth.ts`, fails closed). `/api/version` is the exception: it's only a build id.
 - **The data lives in Upstash Redis** (since Nov 11, Sam; the Google Sheet's limit of about 60 reads and writes a minute
-  ran out in a busy minute). Each "tab" is kept as its rows exactly as the Sheet had them (`lib/google/redis-tabs.ts`;
-  `lib/google/sheets.ts` is the storage layer under its old name), so the app still reads and writes rows by header name,
-  in any column order and capitalization, and a bad row is skipped, never fatal (`lib/parse.ts`). The server keeps the last
-  good copy of the Profile for 60 s (`lib/data.ts`). Without Redis (local dev, tests) it reads `data/*.csv`. The Sheet is
-  only an export (`/api/export`, no longer in Settings); nothing reads it, so it isn't edited by hand. The five Morales
-  apps share the one free Redis database, each under its own key prefix.
+  ran out in a busy minute). Everything is in `lib/store/` (Nov 19: one storage path). Each "tab" is kept as its rows
+  exactly as the Sheet had them, under `simmer:tab:<name>` (`tabs.ts`); every change is a transaction that runs again
+  from fresh rows if someone else wrote meanwhile. Domain code never handles rows: each tab is a table of typed records
+  (`table.ts`), read by header name in any column order and capitalization (a row that doesn't read is skipped, never
+  fatal, and kept as it is), and written back with the tab's own headers, unchanged rows exactly as they were. Without
+  Redis keys (local dev, tests, the smoke and helper checks) the same code runs against an in-memory store, each tab
+  starting as its sample in `data/` (`memory.ts`); nothing else asks which store it has. The server keeps the last good
+  copy of the Profile for 60 s (`lib/data.ts`). The Sheet is only an export (`lib/export/sheet.ts`, `/api/export`, no
+  longer in Settings); nothing reads it, so it isn't edited by hand. The five Morales apps share the one free Redis
+  database, each under its own key prefix.
 - **Code owns facts; the model reads and files.** Anything checkable (dates, times, quantities, what's on the list, every
-  amount and name on it) comes from code (`lib/words.ts`, `lib/groceries.ts`). Gemini (`lib/google/gemini.ts`, structured
+  amount and name on it) comes from code (`lib/words.ts`, `lib/groceries.ts`). Gemini (`lib/gemini.ts`, structured
   JSON output, retries, a lighter fallback model) only reads a recipe from a page, photo or file (`lib/recipes.ts`) and
   guesses where a new item is bought and filed (`lib/groceries.ts`); code checks what it returns. In Head Out, people's names were swapped for roles ("Adult A", "Child, 10") before anything was sent to the
   model and swapped back after; keep doing that.
@@ -149,7 +153,7 @@ passcode by message from its parent, only from a Chrome helper page, never from 
 
 ## Running it
 
-- `npm run dev` for local work (no Redis needed: it reads `data/*.csv`).
+- `npm run dev` for local work (no Redis needed: it starts from the samples in `data/`, kept in memory until it stops).
 - `npm test` (vitest), `npm run lint`, `npx tsc --noEmit`.
 - Browser smoke test (any day, sample data; behaviour once at phone size, layout in phone light, phone dark and one
   1000 px wide run): start a server with `HOUSEHOLD_PASSCODE=test123` and blank Redis and Google settings (e.g.
@@ -166,3 +170,34 @@ passcode by message from its parent, only from a Chrome helper page, never from 
    export to a Google Sheet.
    These are secrets: they stay in Vercel (ideally as shared variables linked to every app), never in code, because code
    is copied everywhere and git keeps every version forever. The export Sheet's id isn't a secret, so it lives in code.
+
+## Production
+
+Safety that runs on events, never on a schedule, and shows nothing on screen (Nov 19). The pieces are in `src/lib/ops/`.
+
+- **Routes** share one wrapper (`ops/route.ts`): `api(handler)` checks the passcode, answers a failure the usual way
+  (an `AppError` as written with 400, anything else `friendly()`'s "try again" with 502) and marks answers no-store;
+  `body`, `clean` and `refuse` replace the helpers each route used to copy.
+- **Wrong passcodes** (`ops/lockout.ts`): twenty different wrong passcodes from one address (an IPv6 one by its /64)
+  within 15 minutes and that address gets 429 "Too many wrong passcodes. Try again in a few minutes." for 15 minutes,
+  even with the right one; the app shows it as the alert and never signs out (only a 401 does). Each attempt is counted
+  and judged in one Redis step, so a burst can't have more than twenty guesses judged. The same wrong one again counts
+  once (a saved passcode that changed). A phone that has signed in before carries a device proof (HttpOnly cookie
+  `sm_device`, a keyed hash of the passcode) and is let in with the right passcode even while its address is turned
+  down. Keys `${NS}:lock:<address>…`, all with an expiry.
+- **Daily caps** (`ops/caps.ts`): 200 recipe readings and 2000 filings a day (the household's day), counted under
+  `${NS}:cap:<kind>:<date>` and gone after two days. A reading past the cap gets a plain "try again tomorrow". A request counts once, however many readings it makes.
+- **Errors reach the owner** (`ops/errors.ts`, `src/instrumentation.ts`): unexpected failures (the ones people see as
+  "try again", and anything a route or page throws) go to the newest 200 in `${NS}:errors`: route path, message (the
+  passcode, emails, long numbers and link queries taken out; for a reply that didn't read or Gemini's failures only the
+  kind and status), digest and time; never a request body. Read them with `vercel env pull /tmp/simmer.env
+  --environment=production && node scripts/errors.mjs /tmp/simmer.env` (the file is deleted as it's read).
+- **Backups** (`ops/backup.ts`): New plan, starting the plan over, and Done shopping each keep the tabs as they were
+  before the change (read just before it, written once the answer has gone): one key per tab,
+  `${NS}:backup:<ISO time>:<tab>`, and an index `${NS}:backup:<ISO time>` written last. The newest 7 are kept, older
+  ones deleted entirely; a tab too big for one request is left out (and logged), never the whole backup; the Checkout
+  tabs are never copied. Put one back by hand only: `node scripts/restore.mjs <env file>` lists them, `… <time | latest>`
+  shows what would change, `--apply` writes every tab and counts up its version in one EVAL.
+- **Checks on GitHub** (`.github/workflows/check.yml`): every pull request and push to main runs types, lint, tests, the
+  build and the browser smoke test against `next start` (sample data, test passcode, no Redis, no secrets). Playwright is
+  installed outside the project in CI and found through `NODE_PATH`, as on the Mac, so it isn't a dependency.

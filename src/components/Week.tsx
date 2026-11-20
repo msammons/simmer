@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
+import type { Dish, Kind, ListState, NewDish, PlanData, Recipe } from "@/lib/client";
+import { useStore } from "@/lib/app-data";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
@@ -34,13 +35,13 @@ function dayName(day: string): string {
  * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
  */
-export function MealsScreen({ plan, recipes, dinnerGroceries, onOpen, onRemove, onMove, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, onNewPlan }: {
   plan: PlanData | null; recipes: Recipe[];
-  /** How many lines are on the lists: what New plan empties. */
-  dinnerGroceries: number;
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind | null, day: string) => void; onNewPlan: () => void;
 }) {
   const dishes = useMemo(() => plan?.dishes ?? [], [plan]);
+  // How many lines are on the lists: what New plan empties (only the count, so a tick on Shop doesn't redraw Meals).
+  const dinnerGroceries = useStore<ListState, number>("lists", (l) => l?.items.length ?? 0);
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
   const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"

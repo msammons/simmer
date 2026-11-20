@@ -1,8 +1,8 @@
 // Short-lived things Simmer keeps on the server (Nov 12, moved here Nov 13): Face ID challenges, a new phone's request,
 // and ordering's prepared checkout and approvals. Kept in Redis with an expiry, outside the tabs (so Copy to Google
-// Sheet leaves them out), each under a "simmer:" key (NS in redis-tabs.ts); in memory without Redis (tests, the click-through checks).
+// Sheet leaves them out), each under a "simmer:" key (NS in store/tabs.ts); in memory without Redis (tests, the click-through checks).
 // Since Nov 19 also the helper's jobs (one key each, with a sorted set as their index) and the checkout record (a list).
-import { redis } from "./google/redis-tabs";
+import { redis } from "./store";
 
 /**
  * What Redis needs to give here. Not tabs like the rest of the data (Nov 12): a tab is read, changed and written back,

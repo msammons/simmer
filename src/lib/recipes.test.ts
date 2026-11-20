@@ -74,7 +74,7 @@ describe("the recipe collection", () => {
 
 describe("typed meal ideas", () => {
   it("get an ingredient list each, and are kept without one when the writer fails", async () => {
-    const gemini = await import("./google/gemini");
+    const gemini = await import("./gemini");
     const spy = vi.spyOn(gemini, "generateJson").mockImplementation((async (prompt: string) => {
       if (prompt.includes("ingredient list")) return { data: { ideas: [{ name: "Tacos", ingredients: ["1 lb ground beef", "8 tortillas", ""] }, { name: "Pizza night", ingredients: ["1 pizza dough"] }] }, model: "m", sources: [] };
       return { data: { ideas: [{ name: "Tacos", effort: "quick" }, { name: "Pizza night", effort: "regular" }] }, model: "m", sources: [] };
@@ -128,7 +128,7 @@ describe("review fixes (Nov 19)", () => {
   });
 
   it("reads a .jpg picture", async () => {
-    const gemini = await import("./google/gemini");
+    const gemini = await import("./gemini");
     const spy = vi.spyOn(gemini, "generateJson").mockResolvedValue({ data: { recipes: [] }, model: "m", sources: [] } as never);
     await readRecipeFile({ name: "card.jpg", mimeType: "image/jpg", data: "AAAA" });
     expect((spy.mock.calls[0][2] as { files: { mimeType: string }[] }).files[0].mimeType).toBe("image/jpeg");
@@ -160,7 +160,7 @@ describe("opening a link (review, Nov 19)", () => {
     const f = vi.spyOn(opener, "open")
       .mockResolvedValueOnce(new Response(null, { status: 301, headers: { location: "/soup" } }))
       .mockResolvedValueOnce(new Response(page, { status: 200 }));
-    const gemini = await import("./google/gemini");
+    const gemini = await import("./gemini");
     const spy = vi.spyOn(gemini, "generateJson").mockResolvedValue({ data: { recipes: [{ name: "Soup", ingredients: ["2 cups carrots"], steps: [], effort: "quick" }] }, model: "m", sources: [] } as never);
     const t = Date.now();
     const got = await readLink("https://example.com/r");

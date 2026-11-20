@@ -3,7 +3,7 @@
 // Searches and cart changes are jobs done by the Safeway helper in Chrome on a computer (lib/jobs.ts); the panel at
 // the computer shows this same screen, so it works the same everywhere. Product pictures are Safeway's own, shown from
 // Safeway's addresses (nothing's stored).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
@@ -188,6 +188,20 @@ export function useSafeway() {
   return { cart, picks, away, signedOut, loaded, pending, reading, problem, setProblem, refresh, look, run, setQty, fill, qtyOf, forget };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
+
+const SafewayContext = createContext<Safeway | null>(null);
+/**
+ * Keeps the Safeway cart for the whole visit (App holds it around every screen), so it lasts across tab taps. Only Shop
+ * reads it (`useSafewayCart`), so a cart change redraws Shop, not the app.
+ */
+export function SafewayHost({ children }: { children: ReactNode }) {
+  return <SafewayContext value={useSafeway()}>{children}</SafewayContext>;
+}
+export function useSafewayCart(): Safeway {
+  const sw = useContext(SafewayContext);
+  if (!sw) throw new Error("useSafewayCart outside SafewayHost");
+  return sw;
+}
 
 const searchLink = (q: string) => `${PAGE.site}${PAGE.searchPath}${encodeURIComponent(q)}`;
 const productLink = (id: string) => `${PAGE.site}${PAGE.productPath.replace("{id}", id)}`;

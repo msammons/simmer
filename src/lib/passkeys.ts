@@ -3,7 +3,6 @@
 // checks them, single use; nothing here approves or places an order. Every set-up and every check, ok or not, is recorded.
 // Adding a phone (Sam, Nov 12, after the outside review): the passcode alone sets up the first phone; after that a new
 // phone asks, a phone that already has Face ID approves it with Face ID, and only then can the new one set up.
-import { NS } from "./google/redis-tabs";
 import {
   generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse,
   type AuthenticationResponseJSON, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON,
@@ -12,7 +11,7 @@ import {
 import { randomBytes, randomInt } from "node:crypto";
 import { cleanSettings, loadSettings, needsFaceId, record, saveSettings, type CheckoutSettings } from "./checkout";
 import { AppError } from "./errors";
-import { atomically, readTabIfAny, replaceTab, sheetsConfigured } from "./google/sheets";
+import { atomically, NS, readTab, resetTabs, writeTab } from "./store";
 import { json, kv, resetKv, secs } from "./kv";
 import { TZ } from "./time";
 
@@ -77,11 +76,10 @@ async function goodChallenge(req: Request, response: unknown, purpose: Purpose, 
   return { challenge, token: c.token };
 }
 
-// ---- passkeys, in the "Checkout passkeys" tab (in memory without Redis)
+// ---- passkeys, in the "Checkout passkeys" tab: by position (id, public key, counter, name, created), the header optional
 
 const TAB = "Checkout passkeys";
 const HEADERS = ["id", "public key", "counter", "name", "created"];
-let memoryKeys: Passkey[] = [];
 
 const passkeyOf = (r: string[]): Passkey | null => {
   const counter = Number(r[2]);
@@ -91,8 +89,7 @@ const passkeyOf = (r: string[]): Passkey | null => {
 const rowOf = (p: Passkey) => [p.id, p.publicKey, String(p.counter), p.name, p.created];
 
 export async function loadPasskeys(): Promise<Passkey[]> {
-  if (!sheetsConfigured()) return memoryKeys.map((p) => ({ ...p }));
-  const rows = await readTabIfAny(TAB);
+  const rows = await readTab(TAB);
   return rows.slice(rows[0]?.[0] === "id" ? 1 : 0).map(passkeyOf).filter((p): p is Passkey => p !== null);
 }
 export const passkeyCount = async () => (await loadPasskeys()).length;
@@ -102,10 +99,9 @@ export const passkeyCount = async () => (await loadPasskeys()).length;
  * set-ups at once could drop one). Answers whether it was added.
  */
 const addPasskey = atomically(async (p: Passkey): Promise<boolean> => {
-  if (!sheetsConfigured()) { if (memoryKeys.some((k) => k.id === p.id)) return false; memoryKeys.push({ ...p }); return true; }
-  const rows = await readTabIfAny(TAB);
+  const rows = await readTab(TAB);
   if (rows.slice(1).some((r) => r[0] === p.id)) return false;
-  await replaceTab(TAB, [...(rows.length ? rows : [HEADERS]), rowOf(p)]);
+  await writeTab(TAB, [...(rows.length ? rows : [HEADERS]), rowOf(p)]);
   return true;
 });
 
@@ -118,9 +114,8 @@ const moveCounter = atomically(async (id: string, from: number, counter: number)
   const now = keys.find((k) => k.id === id)?.counter;
   if (now === undefined || now !== from) return false;
   if (counter === from) return true;
-  if (!sheetsConfigured()) { memoryKeys = memoryKeys.map((p) => (p.id === id ? { ...p, counter } : p)); return true; }
-  const rows = await readTabIfAny(TAB);
-  await replaceTab(TAB, rows.map((r, i) => (i > 0 && r[0] === id ? [r[0], r[1], String(counter), ...r.slice(3)] : r)));
+  const rows = await readTab(TAB);
+  await writeTab(TAB, rows.map((r, i) => (i > 0 && r[0] === id ? [r[0], r[1], String(counter), ...r.slice(3)] : r)));
   return true;
 });
 
@@ -355,4 +350,4 @@ function idOf(response: unknown): string {
 const detail = (e: unknown) => ({ error: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
 
 /** For tests. */
-export const resetPasskeys = () => { memoryKeys = []; resetKv(); };
+export const resetPasskeys = () => { resetTabs([TAB]); resetKv(); };

@@ -8,7 +8,7 @@
 // (simmer:job:<id>, dropped by Redis a day after its last change), every status change is made only from the status
 // read, in one step (kv.ts swap), and two sorted sets index them: every job by when it was queued (the panel's log),
 // and the ones still open (the queue).
-import { NS } from "./google/redis-tabs";
+import { NS } from "./store";
 import manifest from "../../extension-working/manifest.json";
 import { clearCart, loadCart, matchCart, savePick, setCartLine, setCartLines } from "./safeway";
 import { imageFor, orderSince } from "./safeway-helper.mjs";

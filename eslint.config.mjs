@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Saved Safeway pages for working on the helper (untracked, about 83 MB).
+    "safeway/**",
+    // Agent worktrees: copies of the repo kept by local tools.
+    ".claude/**",
   ]),
 ]);
 

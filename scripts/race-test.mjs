@@ -69,11 +69,16 @@ l = await list();
 ok(gone.every((id) => !l.items.some((i) => i.id === id)) && ten.slice(7).every((t) => named(l, t).length === 1), "five removes at once: those gone, the rest untouched");
 
 // 5. Plan: two dinners added at once, then both removed at once.
-const recipes = (await call("/api/recipes"))?.recipes ?? [];
+let recipes = (await call("/api/recipes"))?.recipes ?? [];
+// The test copy starts empty: two plain recipes to plan with (kept for later runs).
+if (recipes.length < 2) {
+  const drafts = ["Race test soup", "Race test pasta"].map((name) => ({ name, effort: "quick", minutes: 30, serves: 4, protein: "", ingredients: ["1 onion", "2 carrots"], steps: ["Cook it."], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" }));
+  recipes = (await call("/api/recipes", { op: "save", recipes: drafts, duplicates: "skip" }))?.recipes ?? [];
+}
 if (recipes.length >= 2) {
   const day = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
   const before = (await call("/api/plan")).dishes.length;
-  await Promise.all(recipes.slice(0, 2).map((r) => call("/api/plan", { op: "plan", dishes: [{ kind: "dinner", recipe: r.id, pinned: true, day }], lunches: [], counts: null, by: "Sam" })));
+  await Promise.all(recipes.slice(0, 2).map((r) => call("/api/plan", { op: "plan", dishes: [{ kind: "regular", recipe: r.id, pinned: true, day }], lunches: [], counts: null, by: "Sam" })));
   let p = await call("/api/plan");
   const mine = p.dishes.filter((d) => d.day === day && recipes.slice(0, 2).some((r) => r.id === d.recipe));
   ok(p.dishes.length === before + 2 && mine.length >= 2, `two dinners added at once: both planned (${p.dishes.length - before} added)`);

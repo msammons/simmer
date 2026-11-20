@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type Item, type Kitchen, type ListState, type Section, type Staple, type StapleKind } from "@/lib/client";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Item, type Section, type Staple, type StapleKind } from "@/lib/client";
+import { useKitchen, useList } from "@/lib/app-data";
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { norm } from "@/lib/words";
 import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
-import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField } from "./ui";
+import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField, sameProps } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
@@ -38,7 +39,10 @@ export type StockActions = {
   keepRemove: (s: Staple) => void;
 };
 
-export function StockScreen({ list, kitchen, act }: { list: ListState | null; kitchen: Kitchen | null; act: StockActions }) {
+/** The list and the freezer come from their stores; each row is drawn again only when it changes. */
+export function StockScreen({ act }: { act: StockActions }) {
+  const list = useList();
+  const kitchen = useKitchen();
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   // Groups she opened or closed by hand (Nov 19): kept as she left them, so a group never pops open or shut when its
@@ -54,7 +58,8 @@ export function StockScreen({ list, kitchen, act }: { list: ListState | null; ki
   const staples = useMemo(() => list?.staples ?? [], [list]);
   const groups = useMemo(() => groupsOf(staples), [staples]);
   const shownNames = useMemo(() => new Set(rows.map((r) => norm(r.name))), [rows]);
-  const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={() => setAdded("")} />;
+  const seen = useCallback(() => setAdded(""), []);
+  const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={seen} />;
   return (
     <div className="space-y-5">
       <BrandBar />
@@ -246,8 +251,11 @@ function GroupSheet({ staple, groups, onClose, onSave }: { staple: Staple; group
   );
 }
 
-/** One thing: its name (a meal thing's amount under it), Have | Need (one lit at most; the lit one tapped again clears it), and ⋯. */
-function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void; fresh?: boolean; onSeen?: () => void }) {
+/**
+ * One thing: its name (a meal thing's amount under it), Have | Need (one lit at most; the lit one tapped again clears it),
+ * and ⋯. Drawn again only when its row changes (a Have or Need tap redraws its own row, not the list).
+ */
+const StockItem = memo(function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: StockRow; act: StockActions; onRemove: (s: Staple) => void; onGroup: (s: Staple) => void; fresh?: boolean; onSeen?: () => void }) {
   // Just added (Nov 16): brought into view and lit for a moment, so she sees where it went (no note, nothing moves).
   const own = useRef<HTMLDivElement>(null);
   const seen = useRef(onSeen);
@@ -303,4 +311,4 @@ function StockItem({ r, act, onRemove, onGroup, fresh = false, onSeen }: { r: St
       ) : <span aria-hidden className="size-9 shrink-0" />}
     </div>
   );
-}
+}, sameProps);

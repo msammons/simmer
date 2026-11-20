@@ -1,4 +1,4 @@
-// Turns raw Sheet/CSV rows into typed data. Bad rows are skipped and reported, never fatal.
+// Turns raw rows (a tab, a CSV) into typed data. Bad rows are skipped and reported, never fatal.
 // Columns are matched by header name, so they can be reordered or extended freely.
 import type { IgnoredRow, Person, Profile } from "./types";
 
@@ -31,8 +31,6 @@ export function records(rows: string[][]) {
 
 /** A yes cell ("yes", "y", "true", "1", "x"). */
 export const yes = (s: string) => /^(yes|y|true|1|x)$/i.test(s.trim());
-/** A column's letters from its index (0 → A, 26 → AA). */
-export const col = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : col(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
 /** A new row id: 72 random bits (Nov 19: a few base-36 letters could repeat), after `prefix` when given. */
 export const newId = (prefix = "") => `${prefix}${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
 

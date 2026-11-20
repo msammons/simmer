@@ -9,8 +9,8 @@ describe("the Safeway picks", () => {
     await savePick({ item: "milk", id: "222", name: "Lucerne Milk 2% - 1/2 Gallon" });
     await savePick({ item: "lemon", id: "333", name: "Organic Lemons" });
     expect(await loadPicks()).toEqual([
+      { item: "lemon", id: "333", name: "Organic Lemons" }, // in the first one's place
       { item: "milk", id: "222", name: "Lucerne Milk 2% - 1/2 Gallon" },
-      { item: "lemon", id: "333", name: "Organic Lemons" },
     ]);
   });
 

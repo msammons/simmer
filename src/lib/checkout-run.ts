@@ -7,7 +7,7 @@
 //
 // In its own file rather than checkout.ts because it needs Face ID (passkeys.ts, which itself records through
 // checkout.ts) and the helper's jobs; checkout.ts keeps the rules, and every figure here goes through them.
-import { NS } from "./google/redis-tabs";
+import { NS } from "./store";
 import { recordTrip } from "./plan";
 import { print as CHECKOUT_PRINT } from "./checkout-print.json";
 import { randomBytes } from "node:crypto";

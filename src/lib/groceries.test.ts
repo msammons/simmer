@@ -293,7 +293,7 @@ describe("what a line is for (review, Nov 19)", () => {
 describe("filing new things (review, Nov 19)", () => {
   it("asks once for everything the rules don't know, and never again", async () => {
     process.env.GEMINI_API_KEY = "test-key";
-    const gemini = await import("./google/gemini");
+    const gemini = await import("./gemini");
     const spy = vi.spyOn(gemini, "generateJson").mockImplementation((async () => ({
       data: { items: [{ name: "zzq widget", store: "costco", section: "household" }, { name: "zzq gadget", store: "safeway", section: "pantry" }] }, model: "m", sources: [],
     })) as never);

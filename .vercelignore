@@ -7,5 +7,8 @@ service-account.json
 scripts/*
 !scripts/zip-helper.mjs
 !scripts/checkout-print.mjs
+# Imported by tests that run in the build's type check (Nov 19).
+!scripts/restore.mjs
+!scripts/ops-env.mjs
 node_modules/
 .next/

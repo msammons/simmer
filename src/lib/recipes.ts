@@ -1,21 +1,19 @@
 // The recipe collection: one row per recipe in the Recipes tab (docs/PLAN.md, section 3). Reading is forgiving (headers
-// in any order, a row without a name skipped); saving writes only that recipe's row. Without the Sheet (local dev, tests)
-// the collection lives in memory, seeded from data/recipes.csv.
+// in any order, a row without a name skipped); saving rewrites only that recipe's row.
 import { lookup } from "node:dns/promises";
-import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { pipeline, Readable } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import path from "node:path";
-import { generateJson } from "./google/gemini";
-import { appendRows, atomically, readTab, replaceTab, sheetsConfigured, updateRanges } from "./google/sheets";
+import { generateJson } from "./gemini";
+import { atomically, change, load, table } from "./store";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
 import { savedSections, storeOf, type Section, type Store } from "./groceries";
+import { withinCap } from "./ops/caps";
 import { norm, parseIngredient, plainFractions, UNIT_NAMES } from "./words";
-import { col, newId, parseCsv, records, rowIds, yes } from "./parse";
+import { newId, yes } from "./parse";
 
 export { parseIngredient };
 
@@ -30,9 +28,6 @@ export type Recipe = {
 /** A recipe as it's typed or read in, before it has an id: what the import screens show and the editor sends back. */
 export type Draft = Omit<Recipe, "id" | "ingredients" | "addedAt" | "active"> & { id?: string; ingredients: string[]; active?: boolean };
 
-const TAB = "Recipes";
-const HEADERS = ["id", "name", "effort", "minutes", "serves", "protein", "ingredients", "steps", "store", "season", "for", "kid_ok", "make_ahead", "tags", "source", "rating", "notes", "active", "added_at"];
-
 const num = (s: string) => { const n = parseFloat(s); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
 const words = (s: string) => s.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
 /** A list marker ("- ", "2. ", "3) ") before a line; only with a space after, so "1.5 lb" keeps its amount (Nov 19). */
@@ -44,32 +39,31 @@ const asEffort = (s: string): Effort => (/quick|fast|easy/i.test(s) ? "quick" : 
 const asFor = (s: string): For => (/kid|boy/i.test(s) ? "kids" : /adult|grown/i.test(s) ? "adults" : "everyone");
 const asKidOk = (s: string): Recipe["kidOk"] => (/^(yes|y)$/i.test(s) ? "yes" : /some|one/i.test(s) ? "some" : /^(no|n)$/i.test(s) ? "no" : "");
 
-// ---- reading
+// ---- the tab
 
-let memory: Recipe[] | null = null;
-
-/** Each row's id: its own, or one made from its name for a row without (parse.ts rowIds), the same on every read. */
-const idsOf = (rows: string[][]) => rowIds(records(rows), (get) => get("name"));
-
-function toRecipes(rows: string[][]): Recipe[] {
-  const ids = idsOf(rows);
-  return records(rows).flatMap((r, i) => {
-    const name = r.get("name");
-    if (!name) return [];
-    return [{
-      id: ids[i], name, effort: asEffort(r.get("effort")), minutes: num(r.get("minutes")), serves: num(r.get("serves")),
-      protein: r.get("protein"), ingredients: lines(r.get("ingredients")).map(parseIngredient), steps: lines(r.get("steps")), store: storeOf(r.get("store")),
-      season: words(r.get("season")).map((s) => s.toLowerCase()), for: asFor(r.get("for")), kidOk: asKidOk(r.get("kid_ok")), makeAhead: yes(r.get("make_ahead")),
-      tags: words(r.get("tags")).map((s) => s.toLowerCase()), source: r.get("source"), rating: num(r.get("rating")), notes: r.get("notes"),
-      active: !/^(no|n|false|0)$/i.test(r.get("active")), addedAt: r.get("added_at"),
-    }];
-  });
-}
-
-const local = () => readFile(path.join(process.cwd(), "data", "recipes.csv"), "utf8").then(parseCsv, () => [] as string[][]);
+const RECIPES = table<Recipe>({
+  tab: "Recipes",
+  headers: ["id", "name", "effort", "minutes", "serves", "protein", "ingredients", "steps", "store", "season", "for", "kid_ok", "make_ahead", "tags", "source", "rating", "notes", "active", "added_at"],
+  // A row without an id is shown with one made from its name, the same on every read, and keeps it once it's saved.
+  idFrom: (get) => get("name"),
+  read: (get, id) => (get("name") ? {
+    id, name: get("name"), effort: asEffort(get("effort")), minutes: num(get("minutes")), serves: num(get("serves")),
+    protein: get("protein"), ingredients: lines(get("ingredients")).map(parseIngredient), steps: lines(get("steps")), store: storeOf(get("store")),
+    season: words(get("season")).map((s) => s.toLowerCase()), for: asFor(get("for")), kidOk: asKidOk(get("kid_ok")), makeAhead: yes(get("make_ahead")),
+    tags: words(get("tags")).map((s) => s.toLowerCase()), source: get("source"), rating: num(get("rating")), notes: get("notes"),
+    active: !/^(no|n|false|0)$/i.test(get("active")), addedAt: get("added_at"),
+  } : null),
+  cells: (r) => ({
+    id: r.id, name: r.name, effort: r.effort, minutes: r.minutes ? String(r.minutes) : "", serves: r.serves ? String(r.serves) : "", protein: r.protein,
+    ingredients: r.ingredients.map((i) => i.line).join("\n"), steps: r.steps.join("\n"), store: r.store, season: r.season.join(", "), for: r.for,
+    kid_ok: r.kidOk, make_ahead: r.makeAhead ? "yes" : "", tags: r.tags.join(", "), source: r.source, rating: r.rating ? String(r.rating) : "",
+    notes: r.notes, active: r.active ? "yes" : "no", added_at: r.addedAt,
+  }),
+  key: (r) => r.id,
+});
 
 export async function loadRecipes(): Promise<Recipe[]> {
-  const rs = !sheetsConfigured() ? [...(memory ??= toRecipes(await local()))] : toRecipes(await readTab(TAB));
+  const rs = await load(RECIPES);
   // An ingredient's section as she set it (Nov 16), over the guess: the same place it goes on the list.
   const saved = await savedSections().catch(() => new Map<string, Section>());
   if (!saved.size) return rs;
@@ -81,15 +75,6 @@ export { searchRecipes } from "./search";
 // ---- saving
 
 const recipeId = (name: string) => newId(`${norm(name).replace(/ /g, "-").slice(0, 24) || "recipe"}-`);
-
-function cells(r: Recipe): Record<string, string> {
-  return {
-    id: r.id, name: r.name, effort: r.effort, minutes: r.minutes ? String(r.minutes) : "", serves: r.serves ? String(r.serves) : "", protein: r.protein,
-    ingredients: r.ingredients.map((i) => i.line).join("\n"), steps: r.steps.join("\n"), store: r.store, season: r.season.join(", "), for: r.for,
-    kid_ok: r.kidOk, make_ahead: r.makeAhead ? "yes" : "", tags: r.tags.join(", "), source: r.source, rating: r.rating ? String(r.rating) : "",
-    notes: r.notes, active: r.active ? "yes" : "no", added_at: r.addedAt,
-  };
-}
 
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 const strs = (x: unknown) => (Array.isArray(x) ? x.filter((l): l is string => typeof l === "string") : []);
@@ -115,59 +100,22 @@ export function fromDraft(d: Draft, existing?: Recipe): Recipe {
 export const saveRecipe = async (r: Recipe): Promise<Recipe> => (await saveRecipes([r]))[0];
 
 /**
- * Saves several recipes as saveRecipe does, with one read and at most two writes however many there are (Nov 10: an
- * import of many saved each with its own read and writes, past Google's limit of about 60 a minute).
+ * Saves several recipes as saveRecipe does, in one write however many there are (Nov 10: an import of many saved each
+ * with its own read and writes).
  */
-export const saveRecipes = atomically(async (rs: Recipe[]): Promise<Recipe[]> => {
+export const saveRecipes = async (rs: Recipe[]): Promise<Recipe[]> => {
   if (!rs.length) return rs;
-  if (!sheetsConfigured()) {
-    const m = (memory ??= toRecipes(await local()));
-    for (const r of rs) { const i = m.findIndex((x) => x.id === r.id); if (i >= 0) m[i] = r; else m.push(r); }
-    return rs;
-  }
-  const byId = new Map<string, Recipe>();
-  for (const r of rs) byId.set(r.id, r); // the same recipe twice: the later one, in the first one's place
-  const rows = await readTab(TAB);
-  if (!rows.length) {
-    await appendRows(TAB, [HEADERS, ...[...byId.values()].map((r) => { const c = cells(r); return HEADERS.map((h) => c[h]); })]);
-    return rs;
-  }
-  const headers = rows[0].map((h) => h.trim().toLowerCase());
-  // By the id each row is shown with, so a row that had none is changed in place (and keeps that id from then on).
-  const at = new Map<string, number>();
-  idsOf(rows).forEach((id, i) => { if (!at.has(id)) at.set(id, i + 2); });
-  const fresh = [...byId.values()].filter((r) => !at.has(r.id));
-  // A column the tab doesn't have yet is added at the end, so nothing saved is lost (Nov 19: only a new recipe added it).
-  const width = headers.length;
-  const missing = HEADERS.filter((h) => !headers.includes(h));
-  headers.push(...missing);
-  const data: { range: string; values: string[][] }[] = missing.length ? [{ range: `${TAB}!${col(width)}1:${col(width + missing.length - 1)}1`, values: [missing] }] : [];
-  for (const r of byId.values()) {
-    const n = at.get(r.id);
-    if (!n) continue;
-    const old = rows[n - 1], c = cells(r);
-    data.push({ range: `${TAB}!A${n}:${col(headers.length - 1)}${n}`, values: [headers.map((h, i) => (h in c ? c[h] : old[i] ?? ""))] });
-  }
-  await updateRanges(data);
-  if (fresh.length) await appendRows(TAB, fresh.map((r) => { const c = cells(r); return headers.map((h) => c[h] ?? ""); }));
+  const byId = new Map(rs.map((r) => [r.id, r])); // the same recipe twice: the later one, in the first one's place
+  await change(RECIPES, (all) => [...all.map((r) => byId.get(r.id) ?? r), ...[...byId.values()].filter((r) => !all.some((x) => x.id === r.id))]);
   return rs;
-});
+};
 
 /** Deletes a recipe from the collection (Sam, Nov 14: from its Edit sheet, asked first). Answers whether it was there. */
-export const deleteRecipe = atomically(async (id: string): Promise<boolean> => {
-  if (!sheetsConfigured()) {
-    const m = (memory ??= toRecipes(await local()));
-    const i = m.findIndex((x) => x.id === id);
-    if (i >= 0) m.splice(i, 1);
-    return i >= 0;
-  }
-  const rows = await readTab(TAB);
-  const ids = idsOf(rows);
-  const keep = records(rows).filter((_, i) => ids[i] !== id);
-  if (keep.length === Math.max(0, rows.length - 1)) return false;
-  await replaceTab(TAB, [rows[0], ...keep.map((x) => rows[x.rowNumber - 1])], rows);
-  return true;
-});
+export async function deleteRecipe(id: string): Promise<boolean> {
+  let was = false;
+  await change(RECIPES, (all) => ((was = all.some((r) => r.id === id)) ? all.filter((r) => r.id !== id) : all));
+  return was;
+}
 
 export const updateRecipe = atomically(async (id: string, change: (r: Recipe) => Recipe): Promise<Recipe> => {
   const r = (await loadRecipes()).find((x) => x.id === id);
@@ -539,6 +487,7 @@ export async function guessIdeas(names: string[], src: string): Promise<Draft[]>
  */
 async function ingredientLists(names: string[]): Promise<string[][]> {
   try {
+    if (!(await withinCap("read"))) return names.map(() => []);
     const { text, restore } = await privately(names.join("\n"));
     const { data } = await generateJson<{ ideas: { name: string; ingredients: string[] }[] }>(
       `Each line is a family dinner idea. For each, in the same order and with the name exactly as written, write a short plain ingredient list for a typical family version: 5 to 10 lines, each an amount and an item ("1 lb ground turkey", "2 lemons"), no steps.\n\n${text}`,
@@ -558,6 +507,7 @@ async function guessEffort(names: string[], src: string): Promise<Draft[]> {
     name, effort, minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: forWho, kidOk: "", makeAhead, tags: [], source: src, rating: null, notes: "",
   });
   try {
+    if (!(await withinCap("read"))) return names.map((n) => bare(n, "regular"));
     const { text, restore } = await privately(names.join("\n"));
     const { data } = await generateJson<{ ideas: { name: string; effort: string; make_ahead: boolean; for: string }[] }>(
       `Each line is a family dinner idea. For each, in the same order and with the name exactly as written: effort "quick" (about 30 minutes or less on a weeknight) or "regular"; make_ahead true if it's usually made earlier or the night before; for "kids" if it's a children's dinner (nuggets, mac and cheese), else "everyone".\n\n${text}`,
@@ -574,7 +524,7 @@ async function guessEffort(names: string[], src: string): Promise<Draft[]> {
 
 /** A recipe read from a page without a total time: the model guesses effort from the steps (she corrects it). */
 async function withGuesses(d: Draft, stepsText: string): Promise<Draft> {
-  if (!stepsText) return d;
+  if (!stepsText || !(await withinCap("read"))) return d;
   try {
     const { data } = await generateJson<{ effort: string; make_ahead: boolean }>(
       `A family dinner recipe, "${d.name}". Steps: ${stepsText.slice(0, 4000)}\nIs it "quick" (about 30 minutes or less on a weeknight) or "regular"? Can it be made ahead (earlier in the day or the night before)?`,

@@ -1,14 +1,13 @@
 // The shared grocery list: one row per item in the List tab, the Staples the house always keeps, and the Ingredients tab,
 // the app's memory of which store and section an item goes in. Every change writes only its own row (add a row, set a
-// row's checked cells), so two people changing the list at once can't erase each other's items. Without the Sheet (local
-// dev) the list lives in memory, seeded from data/*.csv.
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+// row's checked cells), so two people changing the list at once can't erase each other's items. Each change is one
+// transaction (store/tabs.ts).
 import { after } from "next/server";
-import { generateJson } from "./google/gemini";
-import { appendRows, atomically, memo, outside, readTab, readTabsIfAny, replaceTab, sheetsConfigured, transact, updateRange, updateRanges } from "./google/sheets";
+import { generateJson } from "./gemini";
+import { append, atomically, change, load, loadAll, memo, outside, save, strings, table, transact } from "./store";
 import { AppError } from "./errors";
-import { col, newId, parseCsv, records, yes } from "./parse";
+import { withinCap } from "./ops/caps";
+import { newId, yes } from "./parse";
 import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
@@ -30,9 +29,6 @@ export type Item = { id: string; item: string; quantity: string; store: Store; s
 export type Staple = { item: string; store: Store; section: Section; quantity: string; product: string; kind: StapleKind; group: string };
 export type StapleKind = "common" | "specialty";
 
-const LIST = "List", STAPLES = "Staples", INGREDIENTS = "Ingredients";
-const LIST_HEADERS = ["id", "item", "quantity", "store", "section", "for", "added_by", "added_at", "checked", "checked_at", "check"];
-
 /** The store a cell names ("Trader Joe's", "TJs", "costco"), or "" for none it knows. */
 export const storeOf = (s: string): Store | "" => {
   const k = s.toLowerCase().replace(/[^a-z]/g, "");
@@ -43,69 +39,68 @@ const asSection = (s: string): Section => (SECTIONS as readonly string[]).includ
 
 export { known, norm, parseEntry };
 
-// ---- reading
+// ---- the tabs
 
-let memory: { list: Item[]; staples: Staple[]; ingredients: Map<string, { store: Store; section: Section }> } | null = null;
-
-async function local(tab: string) {
-  return readFile(path.join(process.cwd(), "data", `${tab.toLowerCase()}.csv`), "utf8").then(parseCsv, () => [] as string[][]);
-}
-// A failed read throws: read as empty, it would show an empty list or Stock, and a change written after it would erase the tab.
-const rowsOf = (tab: string) => (sheetsConfigured() ? readTab(tab) : local(tab));
-
+/** A List row: an item, and when it was ticked (written, never read back). */
+type Line = Item & { checkedAt?: string };
 const haveIt = (v: string) => v.trim().toLowerCase() === "have";
-function toItems(rows: string[][]): Item[] {
-  return records(rows).flatMap((r) => (r.get("id") && r.get("item") ? [{
-    id: r.get("id"), item: r.get("item"), quantity: r.get("quantity"), store: asStore(r.get("store")), section: asSection(r.get("section")),
-    for: r.get("for"), addedBy: r.get("added_by"), addedAt: r.get("added_at"), checked: yes(r.get("checked")), check: yes(r.get("check")) || haveIt(r.get("check")), have: haveIt(r.get("check")),
-  }] : []));
-}
-function toStaples(rows: string[][]): Staple[] {
-  return records(rows).flatMap((r) => (r.get("item") ? [{
-    item: r.get("item"), store: asStore(r.get("store")), section: asSection(r.get("section")), quantity: r.get("usual_quantity"), product: r.get("usual_product"),
-    kind: r.get("kind").trim().toLowerCase() === "specialty" ? "specialty" as const : "common" as const, group: r.get("group").replace(/\s+/g, " ").trim().slice(0, 40),
-  }] : []));
-}
+/** What the check cell holds for an item. */
+const checkCell = (x: Pick<Item, "check" | "have">) => (x.have ? "have" : x.check ? "yes" : "");
 
-async function mem() {
-  if (!memory) {
-    const [l, s, i] = await Promise.all([local(LIST), local(STAPLES), local(INGREDIENTS)]);
-    memory = { list: toItems(l), staples: toStaples(s), ingredients: new Map(records(i).map((r) => [norm(r.get("name")), { store: asStore(r.get("store")), section: asSection(r.get("section")) }])) };
-  }
-  return memory;
-}
+const LIST = table<Line>({
+  tab: "List",
+  headers: ["id", "item", "quantity", "store", "section", "for", "added_by", "added_at", "checked", "checked_at", "check"],
+  read: (get) => (get("id") && get("item") ? {
+    id: get("id"), item: get("item"), quantity: get("quantity"), store: asStore(get("store")), section: asSection(get("section")),
+    for: get("for"), addedBy: get("added_by"), addedAt: get("added_at"), checked: yes(get("checked")), check: yes(get("check")) || haveIt(get("check")), have: haveIt(get("check")),
+  } : null),
+  cells: (x) => ({
+    id: x.id, item: x.item, quantity: x.quantity, store: x.store, section: x.section, for: x.for, added_by: x.addedBy, added_at: x.addedAt,
+    checked: x.checked ? "yes" : "no", checked_at: x.checkedAt, check: checkCell(x), // ticked stays ticked when Undo puts it back
+  }),
+  key: (x) => x.id,
+});
+
+const STAPLES = table<Staple>({
+  tab: "Staples",
+  headers: ["item", "store", "section", "usual_quantity", "usual_product", "kind", "group"],
+  read: (get) => (get("item") ? {
+    item: get("item"), store: asStore(get("store")), section: asSection(get("section")), quantity: get("usual_quantity"), product: get("usual_product"),
+    kind: get("kind").toLowerCase() === "specialty" ? "specialty" : "common", group: get("group").replace(/\s+/g, " ").slice(0, 40),
+  } : null),
+  cells: (s) => ({ item: s.item, store: s.store, section: s.section, usual_quantity: s.quantity, usual_product: s.product, kind: s.kind === "specialty" ? "specialty" : "", group: s.group }),
+  key: (s) => norm(s.item),
+});
+
+type Filing = { store: Store; section: Section };
+/** The app's memory of where things go, one row per name (the first for a name wins). */
+const INGREDIENTS = table<Filing & { name: string }>({
+  tab: "Ingredients",
+  headers: ["name", "section", "store"],
+  read: (get) => (norm(get("name")) ? { name: get("name"), store: asStore(get("store")), section: asSection(get("section")) } : null),
+  cells: (f) => ({ name: f.name, section: f.section, store: f.store }),
+  key: (f) => norm(f.name),
+});
+
+/** Bought history (Nov 3), for whatever looks back later. */
+const BOUGHT = strings("Bought", ["item", "quantity", "store", "date_bought", "for"]);
 
 export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> {
-  if (!sheetsConfigured()) { const m = await mem(); return { items: [...m.list], staples: m.staples }; }
-  const [l, s] = await readTabsIfAny([LIST, STAPLES]); // one read
-  return { items: toItems(l), staples: toStaples(s) };
-}
-
-/**
- * The list's items and, with the Sheet, the List tab's rows as read: read once and passed down, so a change is one read
- * and one write (Nov 10: re-reading the tab for each step ran into Google's limit of about 60 reads a minute).
- */
-async function readList(): Promise<{ items: Item[]; rows?: string[][] }> {
-  if (!sheetsConfigured()) return { items: [...(await mem()).list] };
-  const rows = await rowsOf(LIST);
-  return { items: toItems(rows), rows };
+  const [items, staples] = await loadAll(LIST, STAPLES); // one read
+  return { items, staples };
 }
 
 // ---- filing: which store and section an item goes in
 
-type Filing = { store: Store; section: Section };
 /** Where a thing goes until it's known: most things are Safeway's, and fresh is where she looks first. */
 const DEFAULT: Filing = { store: "safeway", section: "fresh" };
-const INGREDIENT_HEADERS = ["name", "section", "store"];
 
-/** The Ingredients tab by name (the first row for a name wins) and its row number. */
-function byName(rows: string[][]) {
-  const out = new Map<string, Filing & { row: number }>();
-  for (const r of records(rows)) { const n = norm(r.get("name")); if (n && !out.has(n)) out.set(n, { store: asStore(r.get("store")), section: asSection(r.get("section")), row: r.rowNumber }); }
+/** Where things go, as remembered (the Ingredients tab), by name. */
+async function savedFilings(): Promise<Map<string, Filing>> {
+  const out = new Map<string, Filing>();
+  for (const f of await load(INGREDIENTS)) if (!out.has(norm(f.name))) out.set(norm(f.name), { store: f.store, section: f.section });
   return out;
 }
-/** Where things go, as remembered (the Ingredients tab), by name. */
-const savedFilings = async (): Promise<Map<string, Filing>> => (sheetsConfigured() ? byName(await rowsOf(INGREDIENTS)) : (await mem()).ingredients);
 
 /** Where an item goes by the rules: as remembered, then common knowledge, else the default. */
 export async function file(name: string): Promise<Filing> {
@@ -132,7 +127,7 @@ async function fileAll(names: { name: string; store?: Store }[]): Promise<{ fili
  * Things the rules don't know are guessed once the answer has gone (Nov 19: an add waited on Gemini, one call per
  * thing): one question for all of them, remembered, so no name is asked twice, and their lines (and kept things) still
  * in the default place move to where they go. Outside a request (tests, scripts) it's done now. A change worked out
- * again (redis-tabs.ts) doesn't ask again.
+ * again (store/tabs.ts) doesn't ask again.
  */
 function guessLater(names: { name: string; store?: Store }[]): Promise<void> | void {
   const asked = memo();
@@ -149,6 +144,7 @@ async function guessFilings(names: { name: string; store?: Store }[]) {
   const saved = await savedFilings(); // remembered meanwhile (she moved it, or another add asked): not asked again
   const ask = [...new Map(names.filter((x) => !saved.has(norm(x.name))).map((x) => [norm(x.name), x])).values()].slice(0, 80);
   if (!ask.length) return;
+  if (!(await withinCap("filing"))) return;
   const { data } = await generateJson<{ items: { name: string; store: string; section: string }[] }>(
     `Family grocery list items, one per line. For each, with its name exactly as written: which store they would usually buy it at, and which part of the list it is. Stores: safeway (most things; the default), trader-joes (only Trader Joe's own products, like their frozen meals or dressings), costco (bulk household things like toilet paper). Sections: fresh (produce, dairy, meat, bread), pantry (shelf-stable food), freezer, household (not food).\n\n${ask.map((x) => x.name).join("\n")}`,
     { type: "OBJECT", properties: { items: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, store: { type: "STRING", enum: [...STORES] }, section: { type: "STRING", enum: [...SECTIONS] } }, required: ["name", "store", "section"] } } }, required: ["items"] },
@@ -169,16 +165,13 @@ async function refile(guessed: { name: string; kept: boolean; f: Filing }[]) {
   const by = new Map(guessed.filter((g) => !now.has(norm(g.name))).map((g) => [norm(g.name), g]));
   if (!by.size) return;
   await rememberFilings([...by.values()]);
-  const { items, rows } = await readList();
-  const moved: CellChanges = items.flatMap((x) => {
+  await editList((await load(LIST)).flatMap((x) => {
     const g = !x.checked && x.section === DEFAULT.section ? by.get(norm(x.item)) : undefined;
     return g ? [[x.id, { section: g.f.section, ...(!g.kept && x.store === DEFAULT.store && { store: g.f.store }) }]] : [];
-  });
-  await setManyCells(moved, false, rows);
-  const { staples } = await loadList();
-  if (staples.some((s) => s.section === DEFAULT.section && by.has(norm(s.item)))) {
-    await writeStaples((all) => all.map((s) => { const g = s.section === DEFAULT.section ? by.get(norm(s.item)) : undefined; return g ? { ...s, section: g.f.section } : s; }));
-  }
+  }));
+  await change(STAPLES, (all) => (all.some((s) => s.section === DEFAULT.section && by.has(norm(s.item)))
+    ? all.map((s) => { const g = s.section === DEFAULT.section ? by.get(norm(s.item)) : undefined; return g ? { ...s, section: g.f.section } : s; })
+    : all));
 }
 
 /** The sections remembered for items by name (the Ingredients tab), for recipes to show what she set (Nov 16). */
@@ -191,32 +184,22 @@ export const fileSection = atomically(async (name: string, section: Section): Pr
   // Its store as remembered or commonly known; no guess is asked for (she's only moving its section).
   const store = (await savedFilings()).get(norm(name))?.store ?? known(name)?.store ?? DEFAULT.store;
   await rememberFilings([{ name, f: { store, section } }]);
-  const { items, rows } = await readList();
-  const same = items.filter((x) => norm(x.item) === norm(name) && x.section !== section && (section === "fresh" || section === "pantry"));
-  if (same.length) await setManyCells(same.map((x) => [x.id, { section }]), false, rows);
+  if (section !== "fresh" && section !== "pantry") return;
+  await editList((await load(LIST)).filter((x) => norm(x.item) === norm(name) && x.section !== section).map((x) => [x.id, { section }]));
 });
 
-/**
- * Remembers where things go: a row already there for the name is changed, the rest added, in one write, by the tab's
- * own headers (a missing column joins the end).
- */
-const rememberFilings = atomically(async (list: { name: string; f: Filing }[]) => {
+/** Remembers where things go: the row already there for a name is changed (the first, if there are two), the rest added. */
+async function rememberFilings(list: { name: string; f: Filing }[]) {
   if (!list.length) return;
-  if (!sheetsConfigured()) { const m = await mem(); for (const { name, f } of list) m.ingredients.set(norm(name), f); return; }
-  const rows = await rowsOf(INGREDIENTS);
-  const own = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
-  const headers = [...own, ...INGREDIENT_HEADERS.filter((h) => !own.includes(h))];
-  const next = [headers, ...rows.slice(1).map((r) => [...r])];
-  const at = byName(rows);
-  for (const { name, f } of new Map(list.map((x) => [norm(x.name), x])).values()) { // the same name twice: the later one
-    const cells: Record<string, string> = { name, section: f.section, store: f.store };
-    const n = at.get(norm(name))?.row;
-    if (!n) { next.push(headers.map((h) => cells[h] ?? "")); continue; }
-    const row = next[n - 1];
-    headers.forEach((h, i) => { if (h in cells) { while (row.length < i) row.push(""); row[i] = cells[h]; } });
-  }
-  await replaceTab(INGREDIENTS, next, rows);
-});
+  await change(INGREDIENTS, (all) => {
+    const next = [...all];
+    for (const { name, f } of new Map(list.map((x) => [norm(x.name), x])).values()) { // the same name twice: the later one
+      const at = next.findIndex((x) => norm(x.name) === norm(name));
+      if (at < 0) next.push({ name, ...f }); else next[at] = { name, ...f };
+    }
+    return next;
+  });
+}
 
 // ---- changing
 
@@ -230,40 +213,19 @@ export const addItem = atomically(async (text: string, by: string, forWhat: stri
   const parsed = parseEntry(text);
   const { item, quantity } = amount === undefined ? parsed : { item: text.trim(), quantity: amount.trim() };
   if (!item) throw new AppError("Type what to add.");
-  const { items, rows } = await readList();
-  const same = items.find((x) => !x.checked && norm(x.item) === norm(item));
+  const same = (await load(LIST)).find((x) => !x.checked && norm(x.item) === norm(item));
   if (same) {
     const q = addUp(same.quantity, quantity);
     // Added by hand onto a dinner's line: it says so, so taking the dinner off leaves it.
     const f = forWhat ? joinFor(same.for, forWhat) : same.for && !forOf(same.for).includes(BY_HAND) ? [BY_HAND, ...forOf(same.for)].join(", ") : same.for;
-    if (q !== same.quantity || f !== same.for) await setManyCells([[same.id, { quantity: q, for: f }]], true, rows);
+    if (q !== same.quantity || f !== same.for) await editList([[same.id, { quantity: q, for: f }]], new Set(), true);
     return { ...same, quantity: q, for: f };
   }
   const { filings: [f], unknown } = filing?.section ? { filings: [{ store: filing.store, section: filing.section }], unknown: [] } : await fileAll([{ name: item, store: filing?.store }]);
   const row: Item = { id: newId(), item, quantity, store: f.store, section: f.section, for: forWhat, addedBy: by, addedAt: stamp(), checked: false, check: false };
-  await appendItems([row], rows);
+  await append(LIST, [row]);
   await guessLater(unknown);
   return row;
-});
-
-const cellsOf = (row: Item): Record<string, string> => ({
-  id: row.id, item: row.item, quantity: row.quantity, store: row.store, section: row.section, for: row.for, added_by: row.addedBy, added_at: row.addedAt,
-  checked: row.checked ? "yes" : "no", checked_at: "", check: checkCell(row), // ticked stays ticked when Undo puts it back
-});
-
-/** New rows at the end of the List tab, written by its own headers (a missing column is added first). `existing`: the tab as just read. */
-const appendItems = atomically(async (rows: Item[], existing?: string[][]) => {
-  if (!rows.length) return;
-  if (!sheetsConfigured()) { (await mem()).list.push(...rows); return; }
-  existing ??= await rowsOf(LIST);
-  if (!existing.length) { await appendRows(LIST, [LIST_HEADERS, ...rows.map((r) => LIST_HEADERS.map((h) => cellsOf(r)[h]))]); return; }
-  const headers = existing[0].map((h) => h.trim().toLowerCase());
-  const missing = LIST_HEADERS.filter((h) => !headers.includes(h));
-  if (missing.length) {
-    await updateRange(`${LIST}!${col(headers.length)}1:${col(headers.length + missing.length - 1)}1`, [missing]);
-    headers.push(...missing);
-  }
-  await appendRows(LIST, rows.map((r) => headers.map((h) => cellsOf(r)[h] ?? "")));
 });
 
 // ---- adding amounts up
@@ -361,7 +323,7 @@ const joinFor = (now: string, what: string) => {
  */
 export const takeOffFor = atomically(async (needs: { item: string; quantity: string; for: string; stay?: boolean }[], held: Set<string> = new Set()): Promise<number> => {
   if (!needs.length) return 0;
-  const { items, rows } = await readList();
+  const items = await load(LIST);
   // Each dinner's helpings of a thing together: planned twice and taken off, both amounts come off.
   const helpings = new Map<string, { key: string; for: string; amounts: string[]; stay: boolean }>();
   for (const n of needs) {
@@ -388,32 +350,20 @@ export const takeOffFor = atomically(async (needs: { item: string; quantity: str
     }
     cut.set(it.id, { quantity, for: others.join(", ") });
   }
-  const cuts: CellChanges = [...cut].map(([id, c]) => [id, { quantity: c.quantity, for: c.for }]);
-  if (rows && drop.size) {
-    // Cut back and taken off in one write: the tab as read, with the cuts made and the dropped rows gone.
-    const next = withCells(rows, cuts);
-    const recs = records(next);
-    await replaceTab(LIST, [next[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r.get("id"))).map((r) => next[r.rowNumber - 1])], rows);
-    return drop.size;
-  }
-  await setManyCells(cuts, false, rows);
-  if (drop.size) await removeItems([...drop]);
+  await editList([...cut], drop); // cut back and taken off in one write
   return drop.size;
 });
-
 
 /**
  * New plan (Nov 11, Sam: "I would expect the whole app to reset"): every list is emptied in one write, except what's in
  * the Safeway cart (`held`), which stays so the cart and the list agree. Answers how many came off.
  */
 export const emptyLists = atomically(async (held: Set<string> = new Set()): Promise<number> => {
-  const { items, rows } = await readList();
-  const off = items.filter((x) => !held.has(x.id));
+  const off = (await load(LIST)).filter((x) => !held.has(x.id));
   // What was ticked as got is written down as bought first (Nov 14: Done shopping is gone, so this is where it's noted).
   await recordBought(off.filter((x) => x.checked));
-  const ids = off.map((x) => x.id);
-  if (ids.length) await removeItems(ids, rows);
-  return ids.length;
+  await editList([], new Set(off.map((x) => x.id)));
+  return off.length;
 });
 
 /**
@@ -422,7 +372,7 @@ export const emptyLists = atomically(async (held: Set<string> = new Set()): Prom
  * check: pantry items for "Check you have these"; an item already on the list for real stays there.
  */
 export const addItems = atomically(async (entries: { item: string; quantity: string; for: string; check?: boolean }[], by: string): Promise<number> => {
-  const [{ items, rows }, staples] = await Promise.all([readList(), sheetsConfigured() ? rowsOf(STAPLES).then(toStaples) : mem().then((m) => m.staples)]);
+  const { items, staples } = await loadList();
   // What the house keeps (Stock) is only highlighted there, to check; so is everything a dinner needs, fresh too (Sam,
   // Nov 14: Shop had every fresh thing she'd never said Need to); the rest goes on a list.
   const kept = new Set(staples.map((s) => norm(s.item)));
@@ -449,8 +399,8 @@ export const addItems = atomically(async (entries: { item: string; quantity: str
   // Filed together by the rules; the few they don't know are guessed together once the answer's gone.
   const { filings, unknown } = await fileAll(fresh.map((x) => ({ name: x.item })));
   fresh.forEach((x, i) => Object.assign(x, filings[i], { check: kept.has(norm(x.item)) || x.check }));
-  await setManyCells([...merged].map((x) => [x.id, { quantity: x.quantity, for: x.for, check: checkCell(x) }]), false, rows);
-  await appendItems(fresh, rows);
+  await editList([...merged].map((x) => [x.id, { quantity: x.quantity, for: x.for, check: x.check }]));
+  await append(LIST, fresh);
   await guessLater(unknown);
   // How many rows changed, waiting on Stock or on a list (Nov 14: a dinner's things all wait on Stock, and the screens
   // read the list again whenever this isn't 0).
@@ -458,152 +408,65 @@ export const addItems = atomically(async (entries: { item: string; quantity: str
 });
 
 /** "Check you have these": she needs this one (it joins the list), or has the rest (they come off). */
-export const needItem = (id: string) => setCells(id, { check: "" });
+export const needItem = (id: string) => setItem(id, { check: false, have: false });
 /** Checked in the cupboard and there (Have): off every list, shown as Have in "For this plan". */
-export const haveItem = (id: string) => setCells(id, { check: "have" });
-/** What the check cell holds for an item. */
-const checkCell = (x: Pick<Item, "check" | "have">) => (x.have ? "have" : x.check ? "yes" : "");
+export const haveItem = (id: string) => setItem(id, { check: true, have: true });
 /** Unticked on Stock after all (Nov 11): a dinner's pantry thing goes back to highlighted, not off the list for good. */
-export const unneedItem = (id: string) => setCells(id, { check: "yes" });
-export const haveTheRest = atomically(async (): Promise<void> => {
-  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !(x.check && !x.checked)); return; }
-  const rows = await rowsOf(LIST);
-  const recs = records(rows);
-  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !(yes(r.get("check")) && !yes(r.get("checked")))).map((r) => rows[r.rowNumber - 1])], rows);
+export const unneedItem = (id: string) => setItem(id, { check: true, have: false });
+/** The rest of "Check you have these" is there: what's waiting (not Have, not ticked) comes off. */
+export const haveTheRest = async () => { await change(LIST, (all) => all.filter((x) => !(x.check && !x.have && !x.checked))); };
+export const checkItem = (id: string, checked: boolean) => setItem(id, { checked, checkedAt: checked ? stamp() : "" });
+/** One item changed; it must still be on the list. */
+const setItem = async (id: string, c: Changes[number][1]) => { await editList([[id, c]], new Set(), true); };
+
+type Changes = [string, Partial<Pick<Line, "quantity" | "store" | "section" | "for" | "checked" | "checkedAt" | "check" | "have">>][];
+
+/**
+ * Some items changed and some taken off, in one write (`strict`: a change to an item no longer there is an error;
+ * otherwise it's skipped). Answers what came off.
+ */
+const editList = atomically(async (changes: Changes, drop: Set<string> = new Set(), strict: boolean = false): Promise<Item[]> => {
+  if (!changes.length && !drop.size) return [];
+  const all = await load(LIST);
+  const by = new Map<string, Changes[number][1]>();
+  for (const [id, c] of changes) by.set(id, { ...by.get(id), ...c });
+  if (strict && [...by.keys()].some((id) => !all.some((x) => x.id === id))) throw new AppError("That item isn't on the list anymore.");
+  await save(LIST, all.filter((x) => !drop.has(x.id)).map((x) => (by.has(x.id) ? { ...x, ...by.get(x.id) } : x)));
+  return all.filter((x) => drop.has(x.id));
 });
-
-const COLS: Record<string, string> = { quantity: "quantity", store: "store", section: "section", checked: "checked", checkedAt: "checked_at", for: "for", check: "check" };
-
-/** Changes some of one row's cells, found by its id (the columns by their headers, so hand edits to the order are fine). */
-async function setCells(id: string, change: Partial<Record<keyof typeof COLS, string>>) {
-  await setManyCells([[id, change]], true);
-}
-
-type CellChanges = [string, Partial<Record<keyof typeof COLS, string>>][];
-
-/** The List tab's rows with some items' cells changed (a missing item is skipped). */
-function withCells(rows: string[][], changes: CellChanges): string[][] {
-  const next = rows.map((r) => [...r]);
-  const headers = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
-  const at = new Map(records(rows).map((r) => [r.get("id"), r.rowNumber]));
-  for (const [id, change] of changes) {
-    const n = at.get(id);
-    if (!n) continue;
-    for (const [k, v] of Object.entries(change)) {
-      const i = headers.indexOf(COLS[k as keyof typeof COLS]);
-      if (i >= 0 && v !== undefined) { const row = next[n - 1]; while (row.length < i) row.push(""); row[i] = v; }
-    }
-  }
-  return next;
-}
-
-/** Several items' cells changed with one read and one write (`strict`: a missing item is an error; `rows`: the tab as just read). */
-const setManyCells = atomically(async (changes: CellChanges, strict: boolean = false, rows?: string[][]) => {
-  if (!changes.length) return;
-  if (!sheetsConfigured()) {
-    const m = await mem();
-    for (const [id, change] of changes) {
-      const it = m.list.find((x) => x.id === id);
-      if (!it) { if (strict) throw new AppError("That item isn't on the list anymore."); continue; }
-      Object.assign(it, { ...(change.quantity !== undefined && { quantity: change.quantity }), ...(change.store && { store: asStore(change.store) }), ...(change.section && { section: asSection(change.section) }), ...(change.checked !== undefined && { checked: yes(change.checked) }), ...(change.for !== undefined && { for: change.for }), ...(change.check !== undefined && { check: yes(change.check) || haveIt(change.check), have: haveIt(change.check) }) });
-    }
-    return;
-  }
-  rows ??= await rowsOf(LIST);
-  const headers = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
-  const at = new Map(records(rows).map((r) => [r.get("id"), r.rowNumber]));
-  const data: { range: string; values: string[][] }[] = [];
-  for (const [id, change] of changes) {
-    const n = at.get(id);
-    if (!n) { if (strict) throw new AppError("That item isn't on the list anymore."); continue; }
-    for (const [k, v] of Object.entries(change)) {
-      const i = headers.indexOf(COLS[k as keyof typeof COLS]);
-      if (i >= 0 && v !== undefined) data.push({ range: `${LIST}!${col(i)}${n}`, values: [[v]] });
-    }
-  }
-  await updateRanges(data);
-});
-
-export const checkItem = (id: string, checked: boolean) => setCells(id, { checked: checked ? "yes" : "no", checkedAt: checked ? stamp() : "" });
 
 /** Moves an item to another store or section, and remembers that's where it goes. */
 export const moveItem = atomically(async (id: string, to: { store?: Store; section?: Section }) => {
-  const { items, rows } = await readList();
-  const it = items.find((x) => x.id === id);
+  const it = (await load(LIST)).find((x) => x.id === id);
   if (!it) throw new AppError("That item isn't on the list anymore.");
-  await setManyCells([[id, { ...(to.store && { store: to.store }), ...(to.section && { section: to.section }) }]], true, rows);
+  await editList([[id, { ...(to.store && { store: to.store }), ...(to.section && { section: to.section }) }]]);
   await rememberFilings([{ name: it.item, f: { store: to.store ?? it.store, section: to.section ?? it.section } }]).catch((e) => console.error("couldn't remember filing", e));
 });
 
-const BOUGHT = "Bought";
-const BOUGHT_HEADERS = ["item", "quantity", "store", "date_bought", "for"];
-const boughtRow = (x: Item) => [x.item, x.quantity, x.store, stamp().slice(0, 10), x.for];
-
 /**
- * Bought history (Nov 3), kept in the Bought tab for whatever looks back later (local dev keeps none): what's coming
- * off the list is written down first, so the rows only go once the note is safely made.
+ * Bought history: what's coming off the list is written down first, so the rows only go once the note is safely made.
  */
-const recordBought = atomically(async (gone: Item[]) => {
-  if (!gone.length || !sheetsConfigured()) return;
-  const existing = await readTab(BOUGHT);
-  await appendRows(BOUGHT, [...(existing.length ? [] : [BOUGHT_HEADERS]), ...gone.map(boughtRow)]);
-});
+const recordBought = (gone: Item[]) => append(BOUGHT, gone.map((x) => ({ item: x.item, quantity: x.quantity, store: x.store, date_bought: stamp().slice(0, 10), for: x.for })));
 
 /**
  * Finishing a trip: the store's checked items come off the list, and `alsoIds` (for Safeway, what's in the cart);
  * everything else stays, other stores' too.
  */
 export const doneShopping = atomically(async (store: Store, alsoIds: Set<string> = new Set()): Promise<number> => {
-  const off = (x: Item) => x.store === store && (x.checked || alsoIds.has(x.id));
-  if (!sheetsConfigured()) {
-    const m = await mem();
-    const gone = m.list.filter(off);
-    await recordBought(gone);
-    m.list = m.list.filter((x) => !off(x));
-    return gone.length;
-  }
-  const rows = await rowsOf(LIST);
-  const recs = records(rows);
-  const goneRecs = recs.filter((r) => asStore(r.get("store")) === store && (yes(r.get("checked")) || alsoIds.has(r.get("id"))));
-  await recordBought(toItems([rows[0] ?? LIST_HEADERS, ...goneRecs.map((r) => rows[r.rowNumber - 1])]));
-  const drop = new Set(goneRecs);
-  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r)).map((r) => rows[r.rowNumber - 1])], rows);
-  return goneRecs.length;
+  const gone = (await load(LIST)).filter((x) => x.store === store && (x.checked || alsoIds.has(x.id)));
+  await recordBought(gone);
+  await editList([], new Set(gone.map((x) => x.id)));
+  return gone.length;
 });
 
-export const removeItem = atomically(async (id: string) => {
-  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => x.id !== id); return; }
-  const rows = await rowsOf(LIST);
-  const recs = records(rows);
-  await replaceTab(LIST, [rows[0] ?? LIST_HEADERS, ...recs.filter((r) => r.get("id") !== id).map((r) => rows[r.rowNumber - 1])], rows);
-});
+export const removeItem = async (id: string) => { await editList([], new Set([id])); };
 
-/** Several items off at once (one write). Answers with what came off. `rows`: the tab as just read. */
-export const removeItems = atomically(async (ids: string[], rows?: string[][]): Promise<Item[]> => {
-  const drop = new Set(ids);
-  if (!sheetsConfigured()) { const m = await mem(); const gone = m.list.filter((x) => drop.has(x.id)); m.list = m.list.filter((x) => !drop.has(x.id)); return gone; }
-  const all = rows ?? (await rowsOf(LIST));
-  const recs = records(all);
-  const gone = toItems([all[0] ?? LIST_HEADERS, ...recs.filter((r) => drop.has(r.get("id"))).map((r) => all[r.rowNumber - 1])]);
-  await replaceTab(LIST, [all[0] ?? LIST_HEADERS, ...recs.filter((r) => !drop.has(r.get("id"))).map((r) => all[r.rowNumber - 1])], all);
-  return gone;
-});
+/** Several items off at once (one write). Answers with what came off. */
+export const removeItems = (ids: string[]): Promise<Item[]> => editList([], new Set(ids));
 
 // ---- Stock: the things the house keeps (the Staples tab)
 
-const STAPLE_HEADERS = ["item", "store", "section", "usual_quantity", "usual_product", "kind", "group"];
-const stapleRow = (s: Staple) => [s.item, s.store, s.section, s.quantity, s.product, s.kind === "specialty" ? "specialty" : "", s.group];
-
-const writeStaples = atomically(async (change: (all: Staple[]) => Staple[]) => {
-  if (!sheetsConfigured()) { const m = await mem(); m.staples = change(m.staples); return; }
-  const rows = await rowsOf(STAPLES);
-  const own = (rows[0] ?? STAPLE_HEADERS).map((h) => h.trim().toLowerCase());
-  const headers = [...own, ...STAPLE_HEADERS.filter((h) => !own.includes(h))]; // a column Simmer added since joins the end
-  const next = change(toStaples(rows.length ? rows : [STAPLE_HEADERS]));
-  // Written by the tab's own headers, so a column added by hand keeps its place (its cells start blank).
-  const cells = (s: Staple) => headers.map((h) => { const i = STAPLE_HEADERS.indexOf(h); return i < 0 ? "" : stapleRow(s)[i]; });
-  await replaceTab(STAPLES, [headers, ...next.map(cells)], rows); // one write (a missing tab is made first)
-});
+const writeStaples = async (f: (all: Staple[]) => Staple[]) => { await change(STAPLES, f); };
 
 /**
  * A new thing the house keeps, in the section given or guessed. The same name again keeps it, changing only the kind
@@ -639,8 +502,5 @@ export const dropHighlightsNotFor = atomically(async (planned: string[]) => {
   const forDinner = (x: Item) => Boolean(x.for.trim()) && x.for.trim().toLowerCase() !== "every week" && !forOf(x.for).includes(BY_HAND);
   // By whole names (Nov 19: "soup" planned kept chicken soup's rows).
   const stale = (x: Item) => x.check && !x.checked && forDinner(x) && !forOf(x.for).some((f) => names.has(norm(f)));
-  if (!sheetsConfigured()) { const m = await mem(); m.list = m.list.filter((x) => !stale(x)); return; }
-  const { items, rows } = await readList();
-  const ids = items.filter(stale).map((x) => x.id);
-  if (ids.length) await removeItems(ids, rows);
+  await editList([], new Set((await load(LIST)).filter(stale).map((x) => x.id)));
 });
