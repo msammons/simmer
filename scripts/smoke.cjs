@@ -598,14 +598,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabBar.getByRole("button", { name: "Recipes" }).tap(); await page.waitForTimeout(500);
       await lookForBusy("Recipes");
       ok("recipes: Recipes lit", (await tabBar.getByRole("button", { name: "Recipes" }).getAttribute("aria-current")) === "page");
-      // None of the old things are back on Recipes: a search tab, a plus button at the top, add-to-list buttons on rows.
+      // None of the old things are back on Recipes: a search tab, add-to-list buttons on rows. (Add recipe at the top is
+      // back on purpose, Nov 19: pinned with the brand bar, as Add on Shop and List.)
       {
         const old = [];
         if (await page.getByRole("search").count()) old.push("search");
-        if (await page.locator("header, .fixed.max-w-md").getByRole("button", { name: "Add recipe" }).count()) old.push("plus button at the top");
         if (await page.getByRole("button", { name: /^Add .+ to the list$/ }).count()) old.push("add-to-list buttons on rows");
         ok("recipes: none of the old things are back", !old.length, old.join(", "));
       }
+      ok("recipes: Add recipe stays at the top while the list scrolls", await page.getByRole("button", { name: "Add recipe" }).first().evaluate((el) => { for (let e = el; e && e !== document.body; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === "fixed" || p === "sticky") return true; } return false; }));
       // Rows only open the recipe; a recipe has no Add to the list (Nov 14): groceries come only through the plan.
       const chiliRow = page.getByRole("button", { name: /^Turkey chili/ }).first();
       for (const all of await page.getByRole("button", { name: /^All \d+/ }).all()) { if (await chiliRow.isVisible()) break; await all.tap(); await page.waitForTimeout(200); }
