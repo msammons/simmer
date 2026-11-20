@@ -10,7 +10,7 @@ import { generateJson } from "./gemini";
 import { atomically, change, load, table } from "./store";
 import { loadHousehold } from "./data";
 import { AppError } from "./errors";
-import { savedSections, storeOf, type Section, type Store } from "./groceries";
+import { SECTION_READS, savedSections, storeOf, type Section, type Store } from "./groceries";
 import { withinCap } from "./ops/caps";
 import { norm, parseIngredient, plainFractions, UNIT_NAMES } from "./words";
 import { newId, yes } from "./parse";
@@ -61,6 +61,9 @@ const RECIPES = table<Recipe>({
   }),
   key: (r) => r.id,
 });
+
+/** Every tab loadRecipes reads, for its "nothing changed" answers (ops/fresh.ts; a test keeps this in step). */
+export const RECIPES_READS = [RECIPES.tab, ...SECTION_READS];
 
 export async function loadRecipes(): Promise<Recipe[]> {
   const rs = await load(RECIPES);

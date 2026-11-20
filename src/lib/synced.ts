@@ -4,11 +4,20 @@
 // never cross and a later answer never undoes an earlier tap. No timers (Nov 11): reads happen on open, on coming back,
 // and after changes. The app's own stores, and the hooks screens read them with, are in stores.ts.
 
+/** A read's answer when the server's copy is still the one this phone has (a 304: nothing changed). */
+export const UNCHANGED: unique symbol = Symbol("unchanged");
+export type Unchanged = typeof UNCHANGED;
+
 export type SyncedOptions<T> = {
-  /** The server's copy as it is now. */
-  read: () => Promise<T>;
-  /** Keeps the server's latest copy on this phone, for opening offline. */
-  keep?: (v: T) => void;
+  /**
+   * The server's copy as it is now, or UNCHANGED when it's still the copy named by `etag` (the ETag of the copy this
+   * phone has; null when it has none).
+   */
+  read: (etag: string | null) => Promise<T | Unchanged>;
+  /** Keeps the server's latest copy (and its ETag) on this phone, for opening offline. */
+  keep?: (v: T, etag: string | null) => void;
+  /** The ETag an answer came with (Nov 19: "nothing changed" answers), if any. */
+  etagOf?: (v: T) => string | null | undefined;
   /** A change didn't go through: said once the changes on their way are done, then the newest copy is read. */
   failed: (e: unknown) => void;
   /** A read didn't come back; `showing`: something (last time's copy or fresh) is on screen anyway. */
@@ -25,6 +34,8 @@ type Pending<T> = { show?: (v: T) => T };
  */
 export class Synced<T> {
   private base: T | null;
+  /** The ETag of `base`, the server's copy this phone has: sent with reads, so an unchanged one answers with no body. */
+  private etag: string | null;
   private shown: T | null;
   private pending: Pending<T>[] = [];
   private tail: Promise<unknown> = Promise.resolve();
@@ -38,8 +49,16 @@ export class Synced<T> {
   private stale = false;
   private listeners = new Set<() => void>();
 
-  constructor(initial: T | null, private o: SyncedOptions<T>) {
+  constructor(initial: T | null, private o: SyncedOptions<T>, etag: string | null = null) {
     this.base = this.shown = initial;
+    this.etag = initial === null ? null : etag;
+  }
+
+  /** The server's copy and its ETag, kept together. */
+  private take(v: T) {
+    this.base = v;
+    this.etag = this.o.etagOf?.(v) ?? null;
+    this.o.keep?.(v, this.etag);
   }
 
   /** For useSyncExternalStore: the same value until something changes. */
@@ -66,9 +85,7 @@ export class Synced<T> {
     const run = this.tail.then(async () => {
       let out: { error: unknown } | undefined;
       try {
-        const v = await send();
-        this.base = v;
-        this.o.keep?.(v);
+        this.take(await send());
       } catch (e) {
         out = { error: e };
         this.problem = { e };
@@ -95,12 +112,13 @@ export class Synced<T> {
   /** Reads the server's copy now. */
   refresh(): Promise<void> {
     const at = this.changes, mine = ++this.reads;
-    const p = this.o.read().then((v) => {
+    const p = this.o.read(this.base === null ? null : this.etag).then((v) => {
       if (this.pending.length) { this.stale = true; return; }
       if (at !== this.changes || mine < this.readApplied) return;
       this.readApplied = mine;
-      this.base = v;
-      this.o.keep?.(v);
+      // Nothing changed since the copy showing (asked for when nothing has changed here since the read began): no repaint.
+      if (v === UNCHANGED) return;
+      this.take(v);
       this.paint();
     }, (e) => this.o.readFailed?.(e, this.base !== null)).finally(() => {
       this.readAt = Date.now();

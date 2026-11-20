@@ -47,13 +47,39 @@ const TRIES = 12;
  */
 export async function transact<T>(s: TabStore, change: () => Promise<T>): Promise<T> {
   if (current.getStore()) return change();
+  return (await run(s, change)).out;
+}
+
+async function run<T>(s: TabStore, change: () => Promise<T>): Promise<{ out: T; tx: Tx }> {
   const memo = new Map<string, unknown>(); // kept across tries (a guess asked of Gemini isn't asked again)
   for (let i = 0; i < TRIES; i++) {
     const tx: Tx = { s, rows: new Map(), seen: new Map(), loading: new Map(), dirty: new Set(), memo };
     const out = await current.run(tx, change);
-    if (!tx.dirty.size || (await commit(tx))) return out;
+    if (!tx.dirty.size || (await commit(tx))) return { out, tx };
   }
   throw new AppError("Someone changed that at the same moment. Try again.");
+}
+
+// ---- versions (Nov 19: "nothing changed" answers, ops/fresh.ts)
+
+/** A version as read: a tab never written has none, read as "0" (every write counts up from there). */
+const asVersion = (v: unknown) => String(Number(v ?? 0) || 0);
+
+/** These tabs' versions as they are now: one MGET of the version keys alone. */
+export async function versions(s: TabStore, tabs: string[]): Promise<string[]> {
+  if (!tabs.length) return [];
+  return (await s.mget(...tabs.map(versionOf))).map(asVersion);
+}
+
+/**
+ * A transaction that also answers the versions of `tabs` its answer goes with: they're read first, rows and versions
+ * in the one MGET (so the versions are exactly those of the rows the answer was made from), and a tab it writes is
+ * answered at the version its write made. Not inside another transaction (versions: null there).
+ */
+export async function transactAt<T>(s: TabStore, tabs: string[], change: () => Promise<T>): Promise<{ out: T; versions: string[] | null }> {
+  if (current.getStore()) return { out: await change(), versions: null };
+  const { out, tx } = await run(s, async () => { await readTabs(s, tabs); return change(); });
+  return { out, versions: tabs.map((t) => (tx.dirty.has(t) ? String(Number(asVersion(tx.seen.get(t))) + 1) : asVersion(tx.seen.get(t)))) };
 }
 
 /**
@@ -64,6 +90,8 @@ export const outside = <T>(fn: () => T): T => current.exit(fn);
 
 /** Something worked out once per change, kept if the change runs again (a Gemini guess). */
 export const memo = (): Map<string, unknown> => current.getStore()?.memo ?? new Map();
+/** Whether a transaction is running here (its reads are already loaded, and must be what an answer is built from). */
+export const inTransaction = (): boolean => Boolean(current.getStore());
 
 // KEYS: each tab's rows key, then its version key. ARGV[i]: the version read ("!" when it wasn't read); ARGV[n + i]: the
 // new rows ("!" when it isn't written). Nothing is written unless every tab read is still at the version read.

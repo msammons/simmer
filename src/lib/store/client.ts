@@ -36,5 +36,9 @@ export const allTabs = () => T.allTabs(store());
  * again from fresh rows if someone else wrote meanwhile.
  */
 export const transact = <R>(change: () => Promise<R>): Promise<R> => T.transact(store(), change);
+/** A transaction answered with the versions of `tabs` its answer was made from (tabs.ts). */
+export const transactAt = <R>(tabs: string[], change: () => Promise<R>) => T.transactAt(store(), tabs, change);
+/** These tabs' versions now: one small read. */
+export const tabVersions = (tabs: string[]) => T.versions(store(), tabs);
 /** A function whose every call is one transaction. */
 export const atomically = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => (...a: A): Promise<R> => transact(() => f(...a));

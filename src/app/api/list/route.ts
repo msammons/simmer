@@ -2,17 +2,17 @@ import { AppError } from "@/lib/errors";
 import { recordTrip } from "@/lib/plan";
 import { clearCart, loadCart } from "@/lib/safeway";
 import { addItem, addItems, addStaple, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, removeItem, removeStaple, renameGroup, setStaple, SECTIONS, STORES, type Section, type StapleKind, type Store } from "@/lib/groceries";
-import { transact } from "@/lib/store";
 import { norm } from "@/lib/words";
 import { backUpAfter, before } from "@/lib/ops/backup";
-import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
+import { api, body, clean, refuse } from "@/lib/ops/route";
+import { freshChange, freshRead, LIST, withEtag } from "@/lib/ops/fresh";
 
 const isStore = (s: unknown): s is Store => typeof s === "string" && (STORES as readonly string[]).includes(s);
 const isSection = (s: unknown): s is Section => typeof s === "string" && (SECTIONS as readonly string[]).includes(s);
 const isKind = (s: unknown): s is StapleKind => s === "common" || s === "specialty";
 
-/** GET: the shared list and the staples. */
-export const GET = api(async () => Response.json(await loadList(), noStore));
+/** GET: the shared list and the staples; 304 when the phone's copy (If-None-Match) is current (ops/fresh.ts). */
+export const GET = api((req) => freshRead(req, LIST, loadList));
 
 /**
  * POST { op, ... }: add { text, by }, many { items: { item, quantity, check? }[], for, by }, need { id }, have {}, check { id, checked }, move { id, store?, section? }, remove { id },
@@ -26,7 +26,7 @@ export const POST = api(async (req) => {
   // Done shopping: the tabs as they were are kept as a backup (Nov 19), read before the change and written once the
   // answer has gone (the newest 7 kept).
   const kept = b?.op === "done" && isStore(b.store) ? await before("done shopping") : null;
-  const list = await transact(async () => {
+  const { out: list, etag } = await freshChange(LIST, async () => {
     switch (b?.op) {
       case "add": {
         // A store alone (added on that store's list): the section is still Simmer's to work out, if it's a new line.
@@ -80,5 +80,5 @@ export const POST = api(async (req) => {
   });
   if (!list) return refuse("Unknown change.");
   backUpAfter(kept, "done shopping");
-  return Response.json(list, noStore);
+  return withEtag(list, etag);
 });

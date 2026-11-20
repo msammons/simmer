@@ -169,7 +169,8 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
    server's switch (`CHECKOUT_ENABLED`, off until Sam turns it on):
    - **Place order · $X** shows beside Test run only when the server allows it and this helper version has passed a
      test run on the account, kept by the helper's checkout fingerprint (Sam, Nov 18): a hash of the helper's
-     code, its manifest and the page details Simmer sends it (`src/lib/safeway-helper.mjs`), with only the parts marked
+     code, its manifest (without its version number: Sam, Nov 19, "I don't want constant test runs") and the page details
+     Simmer sends it (`src/lib/safeway-helper.mjs`), with only the parts marked
      `not-checkout` (whole marker lines; a test pins what each part may hold and that they come after every checkout
      action) (searching, adding, quantities, the Purchases page, samples) left out,
      so an update that touches anything checkout runs, or anything it shares, needs a new test run, and a search or cart

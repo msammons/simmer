@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkoutPrint, covered, split } from "../../scripts/checkout-print.mjs";
+import { checkoutPrint, covered, split, withoutVersion } from "../../scripts/checkout-print.mjs";
 import saved from "./checkout-print.json";
 
 const parts = (name: string): string[] => split(covered().find(([n]: string[]) => n === name)![1], name).parts;
@@ -8,6 +8,13 @@ const braces = (s: string) => [...s].reduce((n, c) => n + (c === "{" ? 1 : c ===
 describe("the helper's checkout fingerprint", () => {
   it("is in step with the helper's code (run node scripts/checkout-print.mjs after changing it)", () => {
     expect(saved.print).toBe(checkoutPrint());
+  });
+
+  it("leaves the helper's version out, and nothing else in its manifest", () => {
+    const a = withoutVersion(JSON.stringify({ version: "26.11.19", permissions: ["tabs"] }));
+    expect(a).toBe(withoutVersion(JSON.stringify({ version: "26.12.1", permissions: ["tabs"] })));
+    expect(a).not.toBe(withoutVersion(JSON.stringify({ version: "26.11.19", permissions: ["tabs", "cookies"] })));
+    expect(covered().find(([n]: string[]) => n === "extension-working/manifest.json")![1]).not.toContain('"version"');
   });
 
   it("marks only whole marker lines, and stops on nested, unclosed or stray markers", () => {

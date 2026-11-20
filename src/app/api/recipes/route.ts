@@ -2,11 +2,11 @@ import { AppError } from "@/lib/errors";
 import { deleteRecipe, fromDraft, loadRecipes, saveRecipes, sameName, updateRecipe, type Draft, type Recipe } from "@/lib/recipes";
 import { removeRecipeFromPlan } from "@/lib/plan";
 import { fileSection } from "@/lib/groceries";
-import { transact } from "@/lib/store";
-import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
+import { api, body, clean, refuse } from "@/lib/ops/route";
+import { freshChange, freshRead, RECIPES, withEtag } from "@/lib/ops/fresh";
 
 /** GET: the whole collection (it's small: a family's recipes). */
-export const GET = api(async () => Response.json({ recipes: await loadRecipes() }, noStore));
+export const GET = api((req) => freshRead(req, RECIPES, async () => ({ recipes: await loadRecipes() })));
 
 /**
  * POST { op, ... }: save { recipes: Draft[], duplicates?: "skip" | "replace" } (new ones, or edits by id; a new one
@@ -18,7 +18,7 @@ export const POST = api(async (req) => {
   const b = await body(req);
   // A draft that can't be saved is answered as a problem after the ones read before it are kept (so it isn't thrown
   // inside the transaction, which would keep nothing).
-  const out = await transact(async () => {
+  const { out, etag } = await freshChange(RECIPES, async () => {
     let saved: string[] = [], problem: unknown = null;
     switch (b?.op) {
       case "save": {
@@ -65,5 +65,5 @@ export const POST = api(async (req) => {
   });
   if (!out) return refuse("Unknown change.");
   if (out.problem) throw out.problem;
-  return Response.json({ recipes: out.recipes, saved: out.saved }, noStore);
+  return withEtag({ recipes: out.recipes, saved: out.saved }, etag);
 });

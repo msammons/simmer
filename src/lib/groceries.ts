@@ -85,6 +85,11 @@ const INGREDIENTS = table<Filing & { name: string }>({
 /** Bought history (Nov 3), for whatever looks back later. */
 const BOUGHT = strings("Bought", ["item", "quantity", "store", "date_bought", "for"]);
 
+/** Every tab loadList reads, for its "nothing changed" answers (ops/fresh.ts; a test keeps this in step). */
+export const LIST_READS = [LIST.tab, STAPLES.tab];
+/** The tab savedSections reads. */
+export const SECTION_READS = [INGREDIENTS.tab];
+
 export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> {
   const [items, staples] = await loadAll(LIST, STAPLES); // one read
   return { items, staples };

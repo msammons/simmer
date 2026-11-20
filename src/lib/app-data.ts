@@ -3,9 +3,9 @@
 // (synced.ts), made once for the app. Screens subscribe to just what they show, so a tap on Shop or List re-renders that
 // screen (and the one row it changed), not the whole app.
 import { useSyncExternalStore } from "react";
-import { api, AuthError, errorText, type Kitchen, type ListState, type PlanData, type Recipe } from "./api";
+import { api, AuthError, errorText, etagOf, type Kitchen, type ListState, type PlanData, type Recipe } from "./api";
 import { store } from "./storage";
-import { Synced } from "./synced";
+import { Synced, UNCHANGED } from "./synced";
 
 type Problem = { title: string; message: string };
 let report: (p: Problem) => void = () => {};
@@ -25,13 +25,15 @@ const notLoaded = (e: unknown, showing: boolean) => { if (!(e instanceof AuthErr
 function make() {
   return {
     // The shared list (last time's at first, for opening offline): read when Shop or List opens and when the app comes back.
-    lists: new Synced<ListState>(store.list(), { read: () => api.list(), keep: store.setList, failed, readFailed: notLoaded }),
+    // Each read sends the ETag of the copy it has (kept with last time's copy too), and an answer of "nothing changed"
+    // (Nov 19, ops/fresh.ts) keeps that copy, with nothing sent but the headers.
+    lists: new Synced<ListState>(store.list(), { read: api.listSince, keep: store.setList, etagOf, failed, readFailed: notLoaded }, store.listEtag()),
     // The collection: read when Recipes, a recipe or Meals opens (Meals shows meal names).
-    recipes: new Synced<Recipe[]>(store.recipes(), { read: () => api.recipes().then((r) => r.recipes), keep: store.setRecipes, failed, readFailed: notLoaded }),
+    recipes: new Synced<Recipe[]>(store.recipes(), { read: (etag) => api.recipesSince(etag).then((r) => (r === UNCHANGED ? r : r.recipes)), keep: store.setRecipes, etagOf, failed, readFailed: notLoaded }, store.recipesEtag()),
     // What's planned: read when Meals or a recipe opens (a recipe offers Add to the plan only when it isn't planned).
-    plans: new Synced<PlanData>(store.plan(), { read: () => api.plan(), keep: store.setPlan, failed, readFailed: notLoaded }),
+    plans: new Synced<PlanData>(store.plan(), { read: api.planSince, keep: store.setPlan, etagOf, failed, readFailed: notLoaded }, store.planEtag()),
     // The freezer: only List shows it.
-    kitchens: new Synced<Kitchen>(null, { read: () => api.kitchen(), failed }),
+    kitchens: new Synced<Kitchen>(null, { read: api.kitchenSince, etagOf, failed }),
   };
 }
 export type Stores = ReturnType<typeof make>;

@@ -30,9 +30,16 @@ export function split(text, name = "file") {
   return { kept: kept.join("\n"), parts };
 }
 
+/**
+ * The manifest without its version (Sam, Nov 19: "I don't want constant test runs"): a new helper version alone doesn't
+ * need a test run; its permissions, scripts and everything else still count.
+ */
+export const withoutVersion = (text) => { const m = JSON.parse(text); delete m.version; return JSON.stringify(m, null, 2); };
+
 /** The files the fingerprint covers, by name, with their text. */
 export function covered() {
-  const files = readdirSync(dir).filter((f) => /\.(js|html)$/.test(f) || f === "manifest.json").sort().map((f) => [`extension-working/${f}`, readFileSync(path.join(dir, f), "utf8")]);
+  const read = (f) => { const t = readFileSync(path.join(dir, f), "utf8"); return f === "manifest.json" ? withoutVersion(t) : t; };
+  const files = readdirSync(dir).filter((f) => /\.(js|html)$/.test(f) || f === "manifest.json").sort().map((f) => [`extension-working/${f}`, read(f)]);
   return [...files, ["src/lib/safeway-helper.mjs", readFileSync(path.join(root, "src/lib/safeway-helper.mjs"), "utf8")]];
 }
 

@@ -1,8 +1,8 @@
 import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount, tidyStock } from "@/lib/plan";
-import { transact } from "@/lib/store";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 import { backUpAfter, before } from "@/lib/ops/backup";
-import { api, body, clean as text, noStore, refuse } from "@/lib/ops/route";
+import { api, body, clean as text, refuse } from "@/lib/ops/route";
+import { freshChange, freshRead, PLAN, withEtag } from "@/lib/ops/fresh";
 
 const isKind = (s: unknown): s is Kind => typeof s === "string" && (KINDS as readonly string[]).includes(s);
 const isPart = (s: unknown): s is LunchPart => typeof s === "string" && (LUNCH_PARTS as readonly string[]).includes(s);
@@ -23,7 +23,7 @@ function counts(x: Record<string, unknown> | null | undefined): Counts | null {
 }
 
 /** GET: what's still to make and pack, and what planning needs (see loadPlan). */
-export const GET = api(async () => Response.json(await loadPlan(), noStore));
+export const GET = api((req) => freshRead(req, PLAN, loadPlan));
 
 /**
  * POST { op: "plan", dishes, lunches, counts, by }: more to make and pack, on top of what's there.
@@ -36,7 +36,7 @@ export const POST = api(async (req) => {
   // New plan, and starting the plan over (counts given): the tabs as they were are kept as a backup (Nov 19), read
   // before the change and written once the answer has gone (the newest 7 kept).
   const kept = b?.op === "clear" || (b?.op === "plan" && counts(b.counts)) ? await before(b.op === "clear" ? "new plan" : "start over") : null;
-  const out = await transact(async () => {
+  const { out, etag } = await freshChange(PLAN, async () => {
     let added = 0, removed = 0;
     const id = text(b?.id, 40);
     if (b?.op === "plan") {
@@ -56,5 +56,5 @@ export const POST = api(async (req) => {
   });
   if (!out) return refuse("Unknown change.");
   backUpAfter(kept, b?.op === "clear" ? "new plan" : "start over");
-  return Response.json(out, noStore);
+  return withEtag(out, etag);
 });
