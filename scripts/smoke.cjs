@@ -47,7 +47,8 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
      * for Milk, Eggs and a long-named thing, and the helper doing each cart change (1.5 s later with `helperSlow`).
      * `away`: a job went unanswered, so Shop is a plain checklist.
      */
-    const fakeSafeway = async ({ helperSlow = false, away = false, signedOut = false } = {}) => {
+    const fakeSafeway = async ({ helperSlow = false, away = false, signedOut: startOut = false } = {}) => {
+      let signedOut = startOut;
       const cart = [{ cart: "safeway", productId: "p-loose", name: "Safeway Kitchens Sparkling Water Lime Flavored 12 Pack 12 Fl Oz Cans", price: "$5.99", image: "", qty: 1, itemId: "", item: "", updated: "" }];
       const picks = [
         { item: "Milk", id: "p-milk", name: "Lucerne 2% Reduced Fat Milk - 1 Gallon" },
@@ -71,7 +72,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       };
       await page.route("**/api/safeway/cart", onCart);
       await page.route("**/api/safeway/jobs**", onJobs);
-      return { cart, stop: async () => { await page.unroute("**/api/safeway/cart", onCart); await page.unroute("**/api/safeway/jobs**", onJobs); } };
+      return { cart, signIn: () => { signedOut = false; }, stop: async () => { await page.unroute("**/api/safeway/cart", onCart); await page.unroute("**/api/safeway/jobs**", onJobs); } };
     };
     const settingsHere = async (where) => {
       await lookForBusy(where);
@@ -581,12 +582,17 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       const outFake = await fakeSafeway({ signedOut: true });
       await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
-      ok("shop: with Safeway signed out, the cart is greyed and empty", (await page.getByRole("button", { name: "Signed out" }).isDisabled())
+      const signedOutButton = page.getByRole("button", { name: /^Signed out/ });
+      ok("shop: with Safeway signed out, the cart is greyed and empty", (await signedOutButton.count()) === 1
         && (await page.getByRole("button", { name: "Check out" }).count()) === 0
         && (await page.getByText(/Sparkling Water/).count()) === 0
         && (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway)$/ }).count()) === 0
         && (await page.getByRole("button", { name: /Ordered\?/ }).count()) === 0);
       await page.screenshot({ path: `${dir}/5d-shop-signed-out.png`, fullPage: true });
+      // Signed in on the computer meanwhile (Nov 21, Sam): tapping Signed out looks again, and the cart comes back.
+      outFake.signIn();
+      await signedOutButton.tap(); await page.waitForTimeout(800);
+      ok("shop: tapping Signed out after signing in looks again and shows the cart", (await signedOutButton.count()) === 0 && (await page.getByText(/Sparkling Water/).count()) > 0);
       await outFake.stop();
       await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(800);
       await needOf("Milk").tap(); await page.waitForTimeout(1500);
