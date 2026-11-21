@@ -63,8 +63,9 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 /**
  * One line above the list, with something in the Safeway cart: its price and a Check out button with a cart. (Show
  * checked moved to the ⋯ by Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) With Safeway signed out on the computer (Nov 16) the cart is greyed: no
- * price, and the button says Signed out and can't be pressed. While the cart is changing or being read (Nov 16, Sam:
- * no checking out while things are in progress), Check out is greyed too.
+ * price, and the button says Signed out; pressing it looks again (Nov 21, Sam: signed in on the computer, Shop still said
+ * Signed out, since nothing tells an open screen). While the cart is changing or being read (Nov 16, Sam: no checking out
+ * while things are in progress), the button is greyed and can't be pressed.
  */
 function TopLine({ cart, menu }: { cart: { price: string; onCheckOut: () => void; off?: boolean; busy?: boolean } | null; menu: React.ReactNode }) {
   return (
@@ -73,7 +74,8 @@ function TopLine({ cart, menu }: { cart: { price: string; onCheckOut: () => void
       {cart && (
         <span className="flex min-w-0 flex-row-reverse items-center justify-end gap-2.5">
           {cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
-          <button onClick={cart.onCheckOut} disabled={cart.off || cart.busy} className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.off || cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>
+          <button type="button" onClick={cart.onCheckOut} disabled={cart.busy} aria-label={cart.off ? "Signed out of Safeway. Check again" : undefined}
+            className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold ${cart.busy ? "bg-sunk text-muted" : cart.off ? "bg-sunk text-ink active:scale-95" : "bg-accent text-on-accent active:scale-95"}`}>
             <Icon name="cart" className="size-[18px]" strokeWidth={2} />{cart.off ? "Signed out" : "Check out"}
           </button>
         </span>
@@ -265,7 +267,7 @@ export function ShopScreen({ act }: { act: ShopActions }) {
           </MoreMenu>
           )}
             cart={where !== "all" && where !== "safeway" ? null
-              : signedOut ? { price: "", onCheckOut: () => {}, off: true }
+              : signedOut ? { price: "", onCheckOut: () => sw.look(), off: true, busy: sw.reading }
               : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 } : null} />
           {!shown.length && <EmptyState icon="cart" title="Everything's got" />}
           {shown.map((s) => (
