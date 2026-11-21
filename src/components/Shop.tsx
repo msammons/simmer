@@ -61,7 +61,7 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * One line above the list, with something in the Safeway cart: its price and a Check out button with a cart. (Show
+ * One line above the list: the Safeway cart's price and a Check out button with a cart (greyed while the cart is empty). (Show
  * checked moved to the ⋯ by Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) With Safeway signed out on the computer (Nov 16) the cart is greyed: no
  * price, and the button says Signed out; pressing it looks again (Nov 21, Sam: signed in on the computer, Shop still said
  * Signed out, since nothing tells an open screen). While the cart is changing or being read (Nov 16, Sam: no checking out
@@ -268,7 +268,10 @@ export function ShopScreen({ act }: { act: ShopActions }) {
           )}
             cart={where !== "all" && where !== "safeway" ? null
               : signedOut ? { price: "", onCheckOut: () => sw.look(), off: true, busy: sw.reading }
-              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 } : null} />
+              : live && count > 0 ? { price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 }
+              // Nothing in the cart yet: Check out shows greyed in its place (Sam, Nov 21: with no button, Safeway looked
+              // not connected).
+              : live ? { price: "", onCheckOut: () => {}, busy: true } : null} />
           {!shown.length && <EmptyState icon="cart" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">

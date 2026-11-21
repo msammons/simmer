@@ -562,12 +562,13 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       ok("shop: and it stays off on coming back", (await showCheckedText()) === "Show checked" && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
       await shopMenu.selectOption("checked");
       ok("shop: Show brings them back within 150 ms", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
-      // An empty cart: no Check out.
+      // An empty cart: Check out shows greyed, and can't be pressed (Sam, Nov 21).
       {
         const kept = fake.cart.splice(0);
         await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
         await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
-        ok("shop: Check out shows only with something in the cart", (await page.getByRole("button", { name: "Check out" }).count()) === 0);
+        const greyCo = page.getByRole("button", { name: "Check out" });
+        ok("shop: with an empty cart, Check out shows greyed and can't be pressed", (await greyCo.count()) === 1 && (await greyCo.isDisabled()));
         fake.cart.push(...kept);
       }
       // Safeway out of reach: no Safeway controls, nothing extra in its header; its rows are a plain checklist.
