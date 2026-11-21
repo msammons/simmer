@@ -28,6 +28,7 @@ order Face ID approved, once, when the page says exactly what was approved.
   count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
   minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
   tab moved to) for Simmer to judge. It never presses again, whatever comes back.
+- **Never stuck on one job (26.11.21).** Every step on the Safeway page has a time limit, and a page check that throws counts as "not yet", so one page that never answers can't hold the helper and leave every later job "not answering" (Nov 21: a cart read hung for 10 minutes).
 - **Asks before pressing, keeps its reports, no pauses left (26.11.19).** Right before Place Order it asks Simmer
   "may I press?" (`press`), and presses only on a yes; Simmer then never calls that order failed. It holds to the earlier
   of the approval's deadline and the time Simmer said was left when it handed the job over. A report that can't be sent
