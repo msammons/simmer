@@ -69,11 +69,19 @@ function go(tabId, url) {
   });
 }
 
+/**
+ * Runs one action on the Safeway page, never for longer than its limit (Nov 21: a page that never answered held the
+ * helper on one job for good, and every job behind it was given up). A watch gets its own time plus 10 s; anything
+ * else 30 s. No answer in time is no answer (null), as when the page can't be reached.
+ */
 async function onPage(tabId, action, arg, page) {
+  const limit = (action === "waitFor" ? Math.min(Number(arg?.ms) || 15000, 30000) : 20000) + 10000;
+  let t;
+  const late = new Promise((done) => { t = setTimeout(() => done(null), limit); });
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: safewayPage, args: [action, arg, page] });
-    return r?.result ?? null;
-  } catch { return null; }
+    const run = chrome.scripting.executeScript({ target: { tabId }, func: safewayPage, args: [action, arg, page] }).then(([r]) => r?.result ?? null, () => null);
+    return await Promise.race([run, late]);
+  } finally { clearTimeout(t); }
 }
 
 /**

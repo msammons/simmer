@@ -81,12 +81,15 @@ export async function safewayPage(action, arg, P) {
         const wait = 50 - (Date.now() - last);
         if (wait > 0) { if (!later) later = setTimeout(() => { later = null; run(); }, wait); return; }
         last = Date.now();
-        shadowRoots().forEach(observe);
-        const v = check(soon);
+        // A check that throws on a page it doesn't expect counts as "not yet" (Nov 21: one threw at the limit on the real
+        // cart page, the watch never finished, and the helper sat on that job for good).
+        let v = false;
+        try { shadowRoots().forEach(observe); v = check(soon); } catch { v = false; }
         if (v) finish(v);
       }
       observe(document);
-      const limit = setTimeout(() => finish(check(() => {}) || null), Math.min(Number(ms) || 15000, 30000));
+      const last_ = () => { try { return check(() => {}) || null; } catch { return null; } };
+      const limit = setTimeout(() => finish(last_()), Math.min(Number(ms) || 15000, 30000));
       run();
     });
   }
