@@ -113,7 +113,9 @@ are shown from Safeway, never stored). The helper's last check-in (each time it 
 too. A job is judged by what happened, not how long it's been (Nov 23, Sam): while the helper works on a job, every job
 behind it waits and the app keeps following; a job is "not answering" only when nothing has come from the helper since it
 was queued and it's working on nothing (the 20 s pickup window is how long that silence is waited for); a job taken and
-never reported is given up after a five-minute backstop. A job the helper doesn't pick up drops Shop's Safeway controls,
+never reported is given up after a five-minute backstop, unless the same helper asks for work again without it and
+without a report kept for it (Chrome stopped it mid-job): then it's "lost" at once and never done again (not checkout's
+jobs, which keep their own rules). A job the helper doesn't pick up drops Shop's Safeway controls,
 and the Safeway rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be

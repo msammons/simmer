@@ -59,10 +59,15 @@ async function safewayTab(windowId) {
   }
 }
 
+/**
+ * Opens `url` in the tab and waits for it to load. Only a load that started after asking counts (Nov 23: when Safeway was
+ * already taking the tab to another page, that page finishing was taken as this one loaded, and the job read the wrong page).
+ */
 function go(tabId, url) {
   return new Promise((resolve) => {
+    let started = false;
     const done = () => { chrome.tabs.onUpdated.removeListener(on); clearTimeout(t); resolve(); };
-    const on = (id, info) => { if (id === tabId && info.status === "complete") done(); };
+    const on = (id, info) => { if (id !== tabId) return; if (info.status === "loading") started = true; else if (info.status === "complete" && started) done(); };
     const t = setTimeout(done, 30_000);
     chrome.tabs.onUpdated.addListener(on);
     chrome.tabs.update(tabId, { url });
@@ -90,14 +95,31 @@ async function onPage(tabId, action, arg, page) {
  * with the page's header not yet there), so "none" counts only once it has stayed that way for `noResultsHold`.
  */
 async function open(tabId, url, page, settings, tries = settings.resultsTries ?? 25) {
-  await go(tabId, url);
-  return waitForProducts(tabId, page, settings, tries);
+  // Safeway can take the tab somewhere else while its page builds (to its home page, say): then it's opened once more.
+  // Reads only, so opening again changes nothing on Safeway.
+  for (let i = 0; i < 2; i++) {
+    await go(tabId, url);
+    const r = await waitForProducts(tabId, page, settings, tries);
+    if (r || !(await movedOff(tabId, url))) return r;
+  }
+  return null;
+}
+/** Whether the tab is now on another page than `url` (by its address without the part after #). */
+async function movedOff(tabId, url) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab?.url) return false;
+  const [a, b] = [new URL(tab.url), new URL(url)];
+  return a.origin + a.pathname + a.search !== b.origin + b.pathname + b.search;
 }
 /**
  * Watches the page for its products (Nov 19: it read the page again every 800 ms), up to `tries` × `resultsWait`. On the
  * cart page only what's in the cart counts: an empty cart lists past purchases, each with Add, under "Your shopping cart
  * is empty" (Nov 16: 40 of them kept Simmer's copy of a cart Safeway no longer had). `held`: it said "none" for the
  * whole hold, so it means it (the cart page's "cart is empty" counts on this).
+ *
+ * What's answered is the page as the watch read it when it decided (Nov 23): its products, "none" held, or Sign In held
+ * (signed out). A page that never got there (it never finished building, or kept changing pages) is null, "didn't load",
+ * never an empty search, an empty cart or a sign-out read in passing.
  */
 async function waitForProducts(tabId, page, settings, tries = settings.resultsTries ?? 25) {
   // The cart page watched 10 s at least (Nov 19, review: placing's cart read could give up early and stop "cart changed").
@@ -106,8 +128,8 @@ async function waitForProducts(tabId, page, settings, tries = settings.resultsTr
   const watch = () => onPage(tabId, "waitFor", { until: "products", onlyInCart: Boolean(page.onlyInCart), hold: settings.noResultsHold ?? 4000, outHold, ms: Math.max(ms, outHold + 2000) }, page);
   // No answer: the page moved on under the watch (Nov 19, review), so it's watched once more on the page it moved to.
   const w = (await watch()) ?? (await watch());
-  const last = await onPage(tabId, "read", null, page);
-  return last && w?.held ? { ...last, held: true } : last;
+  if (!w?.page) return null;
+  return w.held ? { ...w.page, held: true } : w.page;
 }
 const searchUrl = (query, page) => `${page.site}${page.searchPath}${encodeURIComponent(query)}`;
 const search = (tabId, query, page, settings) => open(tabId, searchUrl(query, page), page, settings);
@@ -224,7 +246,8 @@ async function doJob(job, tabId) {
       if (!r) continue;
       loaded = true;
       if (r.signedIn === false) return { ok: false, error: "signed-out" };
-      if (!r.products.some((x) => x.id === args.productId)) continue;
+      // On the page: read, or a tile whose buttons Safeway builds once it's scrolled to (page.js scrolls to it).
+      if (!r.products.some((x) => x.id === args.productId) && !(args.productId in (r.tiles ?? {}))) continue;
       let x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
       if (!x || (!x.ok && x.why === "not-found")) continue;
       // Safeway said its session expired instead of taking the Add (Nov 23): signed out, said so, nothing pressed again.

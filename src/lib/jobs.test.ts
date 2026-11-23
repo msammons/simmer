@@ -78,6 +78,36 @@ describe("jobs for the Safeway helper", () => {
     expect((await jobStatus(j.id))?.status).toBe("working");
   });
 
+  it("says at once when the helper asks again without a job it took (Chrome stopped it mid-job), and never does it again", async () => {
+    const me = { helper: "h1", pending: [] as string[] };
+    const a = await queueJob("setQty", { ...milk, qty: 1 });
+    const b = await queueJob("search", { query: "eggs" });
+    expect((await takeJob("1.0.0", false, me))?.id).toBe(a.id);
+    // Another helper asking, or an older one that doesn't say, leaves it alone.
+    expect((await takeJob("1.0.0", false, { helper: "h2", pending: [] }))?.id).toBe(b.id);
+    expect((await jobStatus(a.id))?.status).toBe("working");
+    await finishJob(b.id, true, { products: [], signedIn: true });
+    expect(await takeJob("1.0.0", false)).toBeNull();
+    expect((await jobStatus(a.id))?.status).toBe("working");
+    // Its report kept to send again: still the helper's.
+    expect(await takeJob("1.0.0", false, { helper: "h1", pending: [a.id] })).toBeNull();
+    expect((await jobStatus(a.id))?.status).toBe("working");
+    // Asking with neither the job nor its report: dropped, said at once, not taken as the computer being away.
+    expect(await takeJob("1.0.0", false, me)).toBeNull();
+    expect(await jobStatus(a.id)).toMatchObject({ status: "failed", result: { error: "lost" } });
+    expect((await helperStatus()).away).toBe(false);
+    // A late report for it changes nothing.
+    await finishJob(a.id, true, { ok: true, qty: 1, name: milk.name });
+    expect(await loadCart()).toEqual([]);
+  });
+
+  it("leaves checkout's jobs to their own rules when the helper asks again without them", async () => {
+    const j = await queueJob("checkoutLook", {});
+    expect((await takeJob("1.0.0", false, { helper: "h1", pending: [] }))?.id).toBe(j.id);
+    expect(await takeJob("1.0.0", false, { helper: "h1", pending: [] })).toBeNull();
+    expect((await jobStatus(j.id))?.status).toBe("working");
+  });
+
   it("takes back a job the helper hands back as it reloads, for the reloaded helper to take", async () => {
     const j = await queueJob("checkoutLook", {});
     expect((await takeJob("1.0.0", false))?.id).toBe(j.id);

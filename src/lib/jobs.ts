@@ -351,7 +351,16 @@ export const helperPush = async (): Promise<{ key: string; sub: PushSub } | null
  * can win (Nov 19, for every kind; outside review, Nov 14, for placing): it moves from waiting to working only if it's
  * still waiting, so two helpers asking at once can't both have it.
  */
-export async function takeJob(version: string, panel: boolean): Promise<Job | null> {
+/**
+ * A job a helper took and dropped (26.11.23.2): when that same helper asks for the next job, it isn't doing anything (it
+ * asks only between jobs), so a job it took that's still marked working, and that it holds no report for, was dropped
+ * mid-way (Chrome stopped its background, Nov 23). It's said at once ("lost"), never done again (an Add may have been
+ * pressed), and not taken as the computer being away. Checkout's jobs are left to their own rules (docs/CHECKOUT.md).
+ */
+const dropped = (j: Job, asker: { helper: string; pending: string[] | null }) =>
+  j.status === "working" && !j.kind.startsWith("checkout") && Boolean(asker.helper) && j.args.took === asker.helper && Array.isArray(asker.pending) && !asker.pending.includes(j.id);
+
+export async function takeJob(version: string, panel: boolean, asker: { helper: string; pending: string[] | null } = { helper: "", pending: null }): Promise<Job | null> {
   const [before, open] = await Promise.all([checkIn(version, panel), openJobs()]);
   // A helper checking in as a new version has just reloaded, so a job the old one was in the middle of was dropped: it
   // goes back to waiting for this one (Nov 13: the hand-back the old helper sends as it reloads didn't always arrive).
@@ -364,6 +373,7 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
   for (const o of open) {
     const j = o.job;
     if (overdue(j, q)) { await giveUp(j.id, q, o); continue; }
+    if (!reloaded && dropped(j, asker)) { await change(j.id, (x) => (dropped(x, asker) ? { ...x, status: "failed", result: { error: "lost" } } : null), o); continue; }
     if (reloaded && (j.status === "working" || j.status === "pressing")) {
       const back = await change(j.id, (x) => (x.status !== "working" && x.status !== "pressing" ? null : x.kind === "checkoutPlace" ? unsure(x) : { ...x, status: "waiting", created: now() }), o);
       if (back?.status === "waiting") waiting.push({ job: back, raw: JSON.stringify(back) });
@@ -379,7 +389,8 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
     if (w.job.kind === "checkoutPlace" && (await kv().set(`${NS}:claimed:${w.job.id}`, "1", { ex: 24 * 3600, nx: true })) !== "OK") continue;
     let took = false;
     // Which helper took it (outside review, Nov 18): a test run counts only for the helper Simmer ships.
-    const job = await change(w.job.id, (j) => { took = j.status === "waiting"; return took ? { ...j, status: "working", args: { ...j.args, by: str(version, 40) } } : null; });
+    // `took`: which helper (its own name, 26.11.23.2), so a job it drops can be told when it next asks.
+    const job = await change(w.job.id, (j) => { took = j.status === "waiting"; return took ? { ...j, status: "working", args: { ...j.args, by: str(version, 40), ...(asker.helper && { took: str(asker.helper, 60) }) } } : null; });
     if (job && took) return job;
   }
   return null;
