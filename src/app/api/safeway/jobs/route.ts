@@ -62,7 +62,7 @@ export const GET = api(async (req) => {
 
 /**
  * POST { op, ... }. From Simmer: queue { kind, from, ...args } → { job, answering }, cancel { id }. From the helper: next
- * { version, panel } → { job (with Simmer's page details and settings) | null, push: { key, have } }, done { id, result },
+ * { version, panel, helper, pending } → { job (with Simmer's page details and settings) | null, push: { key, have } }, done { id, result },
  * failed { id, error }, again { id } (handing back a job as it reloads), press { id } (may it press Place Order, Nov 19),
  * push { key, subscription } (1.3: how to wake it when a job is queued).
  */
@@ -84,7 +84,10 @@ export const POST = api(async (req) => {
     // "May I press?" (Nov 19): asked by the helper right before Place Order; only yes moves the job to pressing.
     case "press": return Response.json({ ok: await pressJob(text(b.id, 40)) }, noStore);
     case "next": {
-      const job = await takeJob(text(b.version, 20), b.panel === true);
+      // `helper` and `pending` (26.11.23.2): which helper is asking, and the jobs it still has reports for, so a job it
+      // took and dropped (Chrome stopped it mid-job) is said at once. An older helper sends neither.
+      const pending = Array.isArray(b.pending) ? b.pending.slice(0, 50).map((x: unknown) => text(x, 40)) : null;
+      const job = await takeJob(text(b.version, 20), b.panel === true, { helper: text(b.helper, 60), pending });
       // The key to subscribe with, and whether Simmer already has a subscription made with it (none without keys).
       // `at`: where Simmer would send the push, so a helper whose subscription Chrome dropped (a reload drops it, Nov 12) makes a new one.
       const key = pushKey(), saved = key ? await helperPush() : null, have = saved?.key === key;

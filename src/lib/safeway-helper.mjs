@@ -50,7 +50,9 @@ export const PAGE = {
   // `data-src` ("//images.albertsons-media.com/is/image/ABS/<id>?..."); every product's picture is also at `image`.
   imageAttrs: ["currentSrc", "src", "data-src", "data-srcset", "srcset"],
   image: "https://images.albertsons-media.com/is/image/ABS/{id}?$grid-product-card-desktop$&defaultImage=Not_Available",
-  add: { label: "^add\\b", not: "list|note|coupon|clip" },
+  // `not`: Adds that aren't a product's, by their first words ("Add Note <product>" on the cart page): only the start of
+  // the label is looked at, so a product whose name says "list", "note" or "clip" still has its Add (Nov 23).
+  add: { label: "^add\\b", not: "^add\\s+(?:(?:to|a|my)\\s+)*(?:list|note|coupon|clip)" },
   // Taking the last product out of the cart asks "Empty Safeway cart ... Are you sure?" with "No, don't remove" / "Yes,
   // remove" (seen Oct 31). The helper answers yes only right after its own − at one, which Sam asked for with the trash.
   confirmRemove: "^yes,?\\s+remove$",
@@ -64,8 +66,10 @@ export const PAGE = {
     signedOut: "session (is |has )?expired|sign in to continue|please sign in",
     fine: "\\badded\\b|has been updated",
   },
-  plus: "increase|increment|add one|add another|plus|^[+＋]$",
-  minus: "decrease|decrement|remove one|remove quantity|minus|^[-−–]$",
+  // + and −, by the first words of the button ("Increase Quantity 1 unit of <product>", "Decrease quantity"), so a
+  // product named "… Plus" can't make its Decrease look like + (Nov 23).
+  plus: "^(?:increase|increment|add one|add another|plus)\\b|^[+＋]$",
+  minus: "^(?:decrease|decrement|remove one|remove quantity|minus)\\b|^[-−–]$",
   inCartText: "(\\d+)\\s+in\\s+cart",
   cart: { selector: "header a, header button, [aria-label*='cart' i], [data-qa*='cart' i]", label: "cart", links: "[aria-label*='cart' i], [data-qa*='cart' i], a[href*='cart']" },
   signIn: "^sign in$",

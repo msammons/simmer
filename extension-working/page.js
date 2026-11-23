@@ -198,9 +198,13 @@ export async function safewayPage(action, arg, P) {
     return [...seen.values()];
   }
 
-  /** The number on the cart at the top of the page, or null if there isn't one to read. */
+  /**
+   * The number on the cart at the top of the page, or null if there isn't one to read. Only a short label counts ("Shopping
+   * Cart 5"): Safeway's cart page labels its whole cart "safeway Cart", whose words hold the pickup store's address and
+   * prices (a saved copy of the real page read its street number as the count, Nov 23).
+   */
   function cartCount() {
-    const top = deepAll(document, P.cart.selector).filter(visible);
+    const top = deepAll(document, P.cart.selector).filter(visible).filter((el) => label(el).length <= 40);
     const counts = top.filter((el) => re(P.cart.label).test(label(el) + " " + (el.getAttribute("data-qa") ?? ""))).map((el) => label(el).match(/\b(\d{1,3})\b/)?.[1]).filter(Boolean).map(Number);
     return counts.length ? Math.max(...counts) : null;
   }
@@ -412,22 +416,24 @@ export async function safewayPage(action, arg, P) {
       // hold, which it says for a moment while building (Oct 31).
       // Signed out counts only once Safeway's Sign In has stayed for `outHold` (Nov 23): it shows for a moment while the
       // page builds, and right after the computer woke (Nov 21 and 23) one read said signed out, the next signed in.
+      // The answer carries the page as read at that moment (`page`), so what's decided and what's reported are one
+      // reading (Nov 23: a read made a moment after could catch Sign In again while the page built).
       products: (soon) => {
         const r = readPage();
         if (r.signedIn === false) {
           noneSince = 0;
           outSince ||= Date.now();
           const hold = Number(arg?.outHold) || 8000;
-          if (Date.now() - outSince >= hold) return { ok: true };
+          if (Date.now() - outSince >= hold) return { ok: true, out: true, page: r };
           soon(Math.max(50, hold - (Date.now() - outSince))); // once, when the hold is up; else only a change runs it
           return false;
         }
         outSince = 0;
-        if (arg?.onlyInCart ? r.products.some((x) => x.inCart) : r.products.length) return { ok: true };
+        if (arg?.onlyInCart ? r.products.some((x) => x.inCart) : r.products.length) return { ok: true, page: r };
         if (!r.noResults) { noneSince = 0; return false; }
         noneSince ||= Date.now();
         const hold = Number(arg?.hold) || 4000;
-        if (Date.now() - noneSince >= hold) return { ok: true, held: true };
+        if (Date.now() - noneSince >= hold) return { ok: true, held: true, page: r };
         soon(Math.max(50, hold - (Date.now() - noneSince))); // once, when the hold is up; else only a change runs it
         return false;
       },
@@ -471,6 +477,12 @@ export async function safewayPage(action, arg, P) {
     const { id, qty: want, wait = 10000 } = arg;
     const find = () => products().find((p) => p.id === id);
     let p = find();
+    // A tile further down the page whose buttons Safeway hasn't built yet (it builds them as they're scrolled to; a
+    // saved copy of the real search page had six such tiles): scrolled to, and its buttons watched for.
+    if (!p) {
+      const tile = cardOf(id);
+      if (tile) { tile.scrollIntoView({ block: "center" }); await watch(() => (p = find()), wait); }
+    }
     if (!p) return { ok: false, why: "not-found" };
     p.card.scrollIntoView({ block: "center" });
     // Each change waited for by watching the page (Nov 19: it looked again every 400 ms), up to `wait`.
@@ -482,9 +494,10 @@ export async function safewayPage(action, arg, P) {
       const out = new Map();
       for (const el of deepAll(document, P.addProblem?.selector ?? "[role=dialog], [role=alertdialog], [aria-modal=true]")) {
         if (!visible(el)) continue;
-        // Each piece of words apart ("Sorry, we're having issues." and the line under it), buttons and links left out.
+        // Each piece of words apart ("Sorry, we're having issues." and the line under it), buttons, links and words not
+        // showing left out (the real box keeps another message in it, hidden).
         const parts = [], walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        for (let n = walk.nextNode(); n; n = walk.nextNode()) if (!n.parentElement?.closest("button, [role=button], a, script, style")) parts.push(n.textContent);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.parentElement && visible(n.parentElement) && !n.parentElement.closest("button, [role=button], a, script, style")) parts.push(n.textContent);
         const w = parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
         if (w && !(P.addProblem?.fine && re(P.addProblem.fine).test(w))) out.set(el, w);
       }

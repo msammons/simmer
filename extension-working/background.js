@@ -47,13 +47,26 @@ async function sendReports() {
   }
 }
 
+/**
+ * This helper's own name, made once and kept on this computer: Simmer notes it on each job it hands over, so that when
+ * the helper asks again with a job it took neither done nor kept to report, Simmer knows that job was dropped (Chrome
+ * stopped the helper mid-job) and says so at once, instead of after its five-minute backstop. Never done again.
+ */
+async function helperId() {
+  let id = await store.get("helperId", "");
+  if (!id) { id = crypto.randomUUID(); await store.set("helperId", id); }
+  return id;
+}
+
 async function check() {
   if (running || !(await store.get("address", "")) || !(await store.get("passcode", ""))) return;
   running = true;
   try {
     await sendReports();
     for (;;) {
-      const r = await simmer("POST", { op: "next", version: VERSION, panel: Boolean(await panelWindow()) }, "/api/safeway/jobs");
+      // `pending`: the jobs whose reports are kept to send again; any other job this helper took is no longer being done.
+      const pending = (await store.get(PENDING, [])).map((x) => x.id);
+      const r = await simmer("POST", { op: "next", version: VERSION, panel: Boolean(await panelWindow()), helper: await helperId(), pending }, "/api/safeway/jobs");
       const job = r?.job;
       if (r?.settings) pace = { ...pace, ...r.settings }; // Simmer's pace, even with nothing to do (1.2 on)
       // A newer helper in Simmer: reload, which picks up newer files if they're already in this folder (release-helper).

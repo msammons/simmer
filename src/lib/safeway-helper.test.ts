@@ -118,6 +118,25 @@ describe("prepare", () => {
     expect("Add Pop-Tarts Frosted".replace(full, "")).toBe("Pop-Tarts Frosted");
   });
 
+  it("tells Add, + and − by their first words, whatever the product is called (Nov 23)", () => {
+    const [add, not, plus, minus] = [PAGE.add.label, PAGE.add.not, PAGE.plus, PAGE.minus].map((p) => new RegExp(p, "i"));
+    const isAdd = (l: string) => add.test(l) && !not.test(l);
+    expect(isAdd("Add 1 unit of Post-it Notes Super Sticky - 6 Count Add")).toBe(true);
+    expect(isAdd("Add 1 unit of Ziploc Slider Clip Bags - 20 Count")).toBe(true);
+    expect(isAdd("Add Note Keebler Ready Crust 10-Inch Premade Graham Cracker Pie Crust")).toBe(false);
+    expect(isAdd("Add to list")).toBe(false);
+    expect(plus.test("Increase Quantity 1 unit of Advil Plus Acetaminophen")).toBe(true);
+    expect(plus.test("Decrease Quantity 1 unit of Advil Plus Acetaminophen")).toBe(false);
+    expect(plus.test("Remove Quantity 1 unit of Gatorade Plus")).toBe(false);
+    expect(plus.test("Increase quantity +")).toBe(true);
+    expect(plus.test("+")).toBe(true);
+    expect(minus.test("Decrease Quantity 1 unit of Advil Plus Acetaminophen")).toBe(true);
+    expect(minus.test("Remove Quantity 1 unit of Gatorade Plus")).toBe(true);
+    expect(minus.test("Increase Quantity 1 unit of Lucerne Decrease-Free Milk")).toBe(false);
+    expect(minus.test("Decrease quantity -")).toBe(true);
+    expect(minus.test(" Remove Keebler Ready Crust".trim())).toBe(false);
+  });
+
   it("reads the search page's count from its stepper's middle button (real page, Oct 31)", () => {
     expect(PAGE.qtyBox.split(",")[0].trim()).toBe('[data-qa="qty-stppr-qtymsg"]');
   });

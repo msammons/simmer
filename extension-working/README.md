@@ -28,6 +28,18 @@ order Face ID approved, once, when the page says exactly what was approved.
   count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
   minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
   tab moved to) for Simmer to judge. It never presses again, whatever comes back.
+- **Hardened against a misbehaving Safeway (26.11.23.2).** Tested offline against saved copies of Safeway's real pages
+  (`scripts/real-pages-test.mjs`) and against a stand-in Safeway that misbehaves on purpose (`scripts/extension-test.mjs`).
+  What changed: a search or cart read answers the page exactly as the watch read it when it decided (products, "none"
+  held, or Sign In held), and a page that never finishes building is "didn't load", never an empty search, an empty cart
+  or a sign-out caught in passing; a page Safeway takes elsewhere while it builds is opened once more; a page load is
+  waited for only once Chrome has started loading it (a load already under way finishing was taken as the new page);
+  the cart count reads only short labels (the real cart page's whole-cart label held the store's street number); Add,
+  + and − are told by their first words (a product named "… Plus" could make its Decrease look like +; one named "…
+  Notes" lost its Add); a product further down whose buttons Safeway hasn't built yet is scrolled to; Safeway's boxes
+  are read only in the words they show. And the helper tells Simmer which reports it still holds when it asks for work,
+  so a job Chrome stopped it in the middle of is said at once ("lost", never done again) instead of after five minutes.
+  Shared with checkout, so this needs a test run.
 - **An Add Safeway won't take says why (26.11.23.1).** Nov 23, an Add on a real tile left it as it was for 10 s, twice, and the phone heard only 0. Safeway's search page keeps a "Session Expired" box and a "Sorry, we're having issues" box ready for an Add it won't take (`addProblem`): one that shows after the Add now ends the wait, Session Expired counts as signed out, and anything else comes to the phone in Safeway's own words (or "nothing changed on its page"). Nothing on the box is pressed. And a sign-out can be wrong (Safeway's own sign-in page sends a signed-in tab on to its home page): the first search, cart read or Add after the helper parks the tab on the sign-in page looks at Safeway once more, unless a field there has the focus; signed out again, the tab stays there until Sam signs in. That's shared with checkout, so this needs a test run.
 - **Signed out only when it stays (26.11.23).** Safeway shows Sign In for a moment while a page builds, and right after the computer woke (Nov 21 and 23) one cart read said signed out, the helper opened the sign-in page, and the next read said signed in. Signed out now counts only once Sign In has stayed for 8 s (`signedOutHold`). Checkout reads the cart the same way, so this needs a test run.
 - **Never stuck on one job (26.11.21).** Every step on the Safeway page has a time limit, and a page check that throws counts as "not yet", so one page that never answers can't hold the helper and leave every later job "not answering" (Nov 21: a cart read hung for 10 minutes).
@@ -107,7 +119,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.1.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.2.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
@@ -123,7 +135,29 @@ YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as ev
 - `page.js`: what runs inside safeway.com: reads the products on screen, presses Add / + / −, using Simmer's page details.
 - `panel.html`, `panel.css`, `panel.js`: setup, then Simmer in a frame.
 - `../scripts/extension-test.mjs`: the whole thing against a real local Simmer and a stand-in Safeway
-  (`node scripts/extension-test.mjs`). It can't tell whether the real Safeway pages still match.
+  (`node scripts/extension-test.mjs`), including a Safeway that misbehaves: slow pages, Sign In shown a moment or for
+  good, a page that never stops changing or never finishes building, checks that throw, an Add answered by a box to
+  choose from, an error box or a toast, the tab sent elsewhere mid-job, an empty cart listing past purchases, several
+  jobs at once behind a slow one, and the helper stopped mid-job. It can't tell whether the real Safeway pages still match.
+- `../scripts/real-pages-test.mjs`: page.js's reading against saved copies of Safeway's real pages, offline, on Sam's Mac
+  only (they're in `safeway/`, never committed; without it the script skips). Save a new copy (Chrome's "Save Page As…,
+  complete") of a search, the cart and the empty cart when Safeway changes, and run it.
+- `../scripts/live-check.mjs`: the live check below.
+
+## Before a release: the live check (by hand, read only)
+
+The tests above can't see today's safeway.com. Before releasing a helper change, on the Safeway computer, with Chrome
+signed in to Safeway and nobody using Simmer for a minute:
+
+1. In this repo: `node scripts/live-check.mjs | pbcopy` (add words to search for instead of milk, if wanted).
+2. In Chrome, open Simmer's side panel, right-click inside it, **Inspect**, then the **Console** tab. The first time,
+   Chrome asks you to type `allow pasting` before it takes pasted code.
+3. Paste and press Return. It opens one Safeway tab behind, loads the search and then the cart page, reads each with
+   the helper's own reading, prints what it read, says "Live check: the helper reads Safeway right." or lists the
+   problems, and closes the tab. Compare the two tables with what Safeway shows.
+
+It presses nothing (no Add, +, −, Checkout, nothing on the sign-in page), types nothing, queues no job in Simmer and
+sends nothing anywhere. If it says the page reads signed out, sign in to Safeway yourself and run it again.
 
 ## What's been seen on the real safeway.com, and what hasn't
 
