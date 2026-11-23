@@ -9,8 +9,9 @@ Pickup only, at the household's usual store. Delivery may come later (a Pickup /
 
 ## The flow
 
-1. Shop → **Check out**, on the line above the list (only with something in the Safeway cart; greyed while a cart change
-   is on its way or the cart is being read, and "Signed out" when Safeway was last seen signed out). Until ordering is
+1. Shop → **Check out**, on the line above the list (it opens only with something in the Safeway cart: greyed with an
+   empty cart, while a cart change is on its way or the cart is being read; "Signed out" when Safeway was last seen
+   signed out and "Not connected" when the computer isn't answering, both greyed, a press looking again). Until ordering is
    set up and on in Settings → Ordering, the sheet says so and offers nothing else.
 2. A sheet: what Simmer knows at once (how many things in the cart and Simmer's estimate), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a

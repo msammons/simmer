@@ -380,7 +380,7 @@ export async function safewayPage(action, arg, P) {
     const text = () => document.body?.innerText ?? document.body?.textContent ?? "";
     const totalNow = () => (text().replace(/\s+/g, " ").match(/Estimated total \$[\d,]+\.\d\d/) ?? [""])[0];
     // `products` and `settled` keep a little state between runs: since when "no results", and the total last seen.
-    let noneSince = 0, total = null, totalSince = 0;
+    let noneSince = 0, outSince = 0, total = null, totalSince = 0;
     const checks = {
       cart: () => said(/check\s*out/i).length > 0 || /sign back in|sign in to continue|cart is empty/i.test(text()),
       suggestions: () => said(/continue/i).length > 0,
@@ -410,9 +410,20 @@ export async function safewayPage(action, arg, P) {
       },
       // A page's products (on the cart page only what's in the cart), Safeway signed out, or "no results" for the whole
       // hold, which it says for a moment while building (Oct 31).
+      // Signed out counts only once Safeway's Sign In has stayed for `outHold` (Nov 23): it shows for a moment while the
+      // page builds, and right after the computer woke (Nov 21 and 23) one read said signed out, the next signed in.
       products: (soon) => {
         const r = readPage();
-        if (r.signedIn === false || (arg?.onlyInCart ? r.products.some((x) => x.inCart) : r.products.length)) return { ok: true };
+        if (r.signedIn === false) {
+          noneSince = 0;
+          outSince ||= Date.now();
+          const hold = Number(arg?.outHold) || 8000;
+          if (Date.now() - outSince >= hold) return { ok: true };
+          soon(Math.max(50, hold - (Date.now() - outSince))); // once, when the hold is up; else only a change runs it
+          return false;
+        }
+        outSince = 0;
+        if (arg?.onlyInCart ? r.products.some((x) => x.inCart) : r.products.length) return { ok: true };
         if (!r.noResults) { noneSince = 0; return false; }
         noneSince ||= Date.now();
         const hold = Number(arg?.hold) || 4000;

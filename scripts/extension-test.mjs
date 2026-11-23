@@ -19,7 +19,8 @@ const PASS = "test123";
 
 const fails = [];
 const expect = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"} ${what}`); if (!ok) fails.push(what); };
-const until = async (ok, ms = 30_000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (await ok()) return true; return false; };
+// A check that throws (a page navigating under it, Nov 23) counts as "not yet".
+const until = async (ok, ms = 30_000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (await Promise.resolve().then(ok).catch(() => false)) return true; return false; };
 
 // ---- Simmer, started here unless one's given
 // A production build: the dev server's page waits on its live-reload connection, which can't be reached through the
