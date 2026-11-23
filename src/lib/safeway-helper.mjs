@@ -54,6 +54,16 @@ export const PAGE = {
   // Taking the last product out of the cart asks "Empty Safeway cart ... Are you sure?" with "No, don't remove" / "Yes,
   // remove" (seen Oct 31). The helper answers yes only right after its own − at one, which Sam asked for with the trash.
   confirmRemove: "^yes,?\\s+remove$",
+  // Safeway's messages that can come up instead of an Add taking (read from the real search page, Nov 23, where they
+  // sit hidden): a "Session Expired … Please sign in to continue" box (#sessionTimeoutModal), a "Sorry, we're having
+  // issues. We cannot complete your request at this time." box (#errorModal), and a toast (#toastMessage). A box or
+  // toast that shows after the Add is reported in Safeway's words (`fine`: words that mean it took, not counted);
+  // `signedOut`: words that mean Safeway signed out.
+  addProblem: {
+    selector: "#sessionTimeoutModal, #errorModal, #toastMessage, [role=dialog], [role=alertdialog], [aria-modal=true]",
+    signedOut: "session (is |has )?expired|sign in to continue|please sign in",
+    fine: "\\badded\\b|has been updated",
+  },
   plus: "increase|increment|add one|add another|plus|^[+＋]$",
   minus: "decrease|decrement|remove one|remove quantity|minus|^[-−–]$",
   inCartText: "(\\d+)\\s+in\\s+cart",

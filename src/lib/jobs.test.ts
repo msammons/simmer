@@ -99,6 +99,26 @@ describe("jobs for the Safeway helper", () => {
     expect(await loadCart()).toEqual([]);
   });
 
+  it("says why an Add didn't take: Safeway's words, or nothing changed; an expired session is signed out (Nov 23)", async () => {
+    const a = await queueJob("setQty", { ...milk, qty: 1 });
+    await takeJob("1.0.0", false);
+    await finishJob(a.id, true, { ok: false, qty: 0, why: "said", said: "Sorry, we're having issues. We cannot complete your request at this time." });
+    expect((await jobStatus(a.id))?.result).toEqual({ qty: 0, reached: false, why: "said", said: "Sorry, we're having issues. We cannot complete your request at this time." });
+    const b = await queueJob("setQty", { ...milk, qty: 1 });
+    await takeJob("1.0.0", false);
+    await finishJob(b.id, true, { ok: false, qty: 0, why: "not-added", said: "ignored" });
+    expect((await jobStatus(b.id))?.result).toEqual({ qty: 0, reached: false, why: "not-added" });
+    const c = await queueJob("setQty", { ...milk, qty: 1 });
+    await takeJob("1.0.0", false);
+    await finishJob(c.id, true, { ok: true, qty: 1, why: "said", said: "x" });
+    expect((await jobStatus(c.id))?.result).toEqual({ qty: 1, reached: true });
+    expect(await safewaySignedOut()).toBe(false);
+    const d = await queueJob("setQty", { ...milk, qty: 2 });
+    await takeJob("1.0.0", false);
+    await finishJob(d.id, false, { error: "signed-out" });
+    expect(await safewaySignedOut()).toBe(true);
+  });
+
   it("turns quick taps on the same product into one trip", async () => {
     const a = await queueJob("setQty", { ...milk, qty: 1 });
     const b = await queueJob("setQty", { ...milk, qty: 3 });

@@ -22,6 +22,18 @@ function problemText(error: string): string {
   return "That didn't go through on Safeway. Try again.";
 }
 
+/**
+ * Plain words for a change Safeway didn't take (Nov 23: an Add left the cart as it was and the phone said only that it
+ * didn't take all): Safeway's own words when it said something, or that nothing changed.
+ */
+function notTaken(result: Record<string, unknown>): string {
+  const said = typeof result.said === "string" ? result.said.trim() : "";
+  if (result.why === "said" && said) return `Safeway didn't add it. It said: “${said}”`;
+  if (result.why === "not-added") return "Safeway didn't add it: nothing changed on its page. Look at the Safeway tab on the computer, then try again.";
+  if (result.why === "no-add") return "Safeway shows no Add for that just now. Try again in a minute.";
+  return "Safeway didn't take all of that. The cart shows what's there now.";
+}
+
 /** The hook is still there (its life's controller set and not stopped). */
 const isAlive = (life: React.RefObject<AbortController | null>) => Boolean(life.current && !life.current.signal.aborted);
 
@@ -174,7 +186,7 @@ export function useSafeway() {
         if (at) return c.map((l) => (l.productId === p.id ? { ...l, qty: now } : l));
         return [...c, { cart: "safeway", productId: p.id, name: p.name, price: p.price, image: p.image, qty: now, itemId: forItem?.id ?? "", item: forItem?.item ?? "", updated: "" }];
       });
-      if (r.result.reached === false) setProblem("Safeway didn't take all of that. The cart shows what's there now.");
+      if (r.result.reached === false) setProblem(notTaken(r.result));
     } else if (r.problem) setProblem(r.problem);
     settle();
   }, [run, settle]);
