@@ -157,14 +157,10 @@ const ShopItemRow = memo(function ShopItemRow({ it, sub, control, qty, inCart, c
 export function ShopScreen({ act }: { act: ShopActions }) {
   const list = useList();
   const sw = useSafewayCart();
-  // The Safeway cart is read as Shop opens (each tab tap opens it fresh) and when the app comes back to it.
+  // The Safeway cart is read as Shop opens (each tab tap opens it fresh); the app also looks as it opens and comes back
+  // to the front, on any tab (SafewayHost), within the same minute's rule.
   const { look } = sw;
-  useEffect(() => {
-    queueMicrotask(look);
-    const back = () => { if (document.visibilityState === "visible") look(); };
-    document.addEventListener("visibilitychange", back);
-    return () => document.removeEventListener("visibilitychange", back);
-  }, [look]);
+  useEffect(() => { queueMicrotask(look); }, [look]);
   const [text, setText] = useState("");
   const [finding, setFinding] = useState<string | null>(null); // the Safeway item whose choices are open, by id
   // Show got (Nov 14): on, ticked things stay, struck through; off, they're hidden. Only the toggle decides; remembered

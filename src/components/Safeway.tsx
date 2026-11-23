@@ -35,6 +35,8 @@ export type CartWant = { p: Product; qty: number; query: string; forItem?: { id:
  * coming back after signing in on the computer, or after it wakes, should show the cart.
  */
 const CART_FRESH = 60_000;
+/** How long the app follows one job at most: a backstop only, past every limit Simmer judges a job by (lib/jobs.ts JOB_TIMES). */
+const FOLLOW_MOST = 10 * 60_000;
 
 /**
  * The Safeway cart as Simmer knows it, whether the computer's answering, and doing jobs there. Kept by App, so it lasts
@@ -75,7 +77,9 @@ export function useSafeway() {
 
   /**
    * Queues a job and follows it. Each answer about it comes once the job's finished, or after about 20 seconds while it's
-   * still going (the server waits, Nov 11: no timer in the app); a job nobody takes is given up by Simmer after 20 seconds.
+   * still going (the server waits, Nov 11: no timer in the app). Simmer gives a job up only from what happened (Nov 23):
+   * nothing heard from the computer since it was queued, or a job there never reported. While the computer is working
+   * on another job, this one waits behind it and the app keeps following. Ten minutes is only a backstop.
    */
   const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal): Promise<JobOutcome> => {
     if (signal?.aborted || !isAlive(life)) return { ok: false, problem: "" };
@@ -83,7 +87,7 @@ export function useSafeway() {
     try {
       job = (await api.queueJob(kind, args)).job;
     } catch (e) { return { ok: false, problem: e instanceof AuthError ? "" : errorText(e) }; }
-    for (const end = Date.now() + 150_000; Date.now() < end;) {
+    for (const end = Date.now() + FOLLOW_MOST; Date.now() < end;) {
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
         const s = await api.job(job.id, signal);
@@ -101,17 +105,21 @@ export function useSafeway() {
         return { ok: false, problem: errorText(e) };
       }
     }
+    api.cancelJob(job.id).catch(() => {});
     return { ok: false, problem: NOT_ANSWERING };
   }, [setAway]);
 
   /**
-   * Shop opened, or the app came back to it: Simmer's copy of the cart, and Safeway's own cart read on the computer
-   * (Nov 14: only the helper's panel did, so on the phone the copy went stale: 6 in the cart here, 4 on Safeway). One
-   * reading on its way, or one done within CART_FRESH, is enough; signed out, it always looks again.
+   * The app opened or came back to the front (on any tab, Nov 23, Sam: "why wait for the shop tab to connect with
+   * Safeway?"), or Shop opened: Simmer's copy of the cart, and Safeway's own cart read on the computer (Nov 14: only the
+   * helper's panel did, so on the phone the copy went stale: 6 in the cart here, 4 on Safeway). One reading on its way,
+   * or one done within CART_FRESH, is enough; signed out, it always looks again. Simmer's copy is asked for once at a
+   * time (coming back to the front can say so twice).
    */
   const lastRead = useRef({ busy: false, at: -Infinity });
+  const copying = useRef(false);
   const look = useCallback(() => {
-    void refresh();
+    if (!copying.current) { copying.current = true; void refresh().finally(() => { copying.current = false; }); }
     const r = lastRead.current;
     // Signed out or not answering, it always looks again (Nov 23: Not connected, pressed, looks again too).
     if (r.busy || (!out.current && !gone.current && Date.now() - r.at < CART_FRESH)) return;
@@ -197,8 +205,21 @@ const SafewayContext = createContext<Safeway | null>(null);
  * Keeps the Safeway cart for the whole visit (App holds it around every screen), so it lasts across tab taps. Only Shop
  * reads it (`useSafewayCart`), so a cart change redraws Shop, not the app.
  */
-export function SafewayHost({ children }: { children: ReactNode }) {
-  return <SafewayContext value={useSafeway()}>{children}</SafewayContext>;
+export function SafewayHost({ active, children }: { active: boolean; children: ReactNode }) {
+  const sw = useSafeway();
+  // Looks at Safeway when the app opens (once the passcode's in) and whenever it comes back to the front, on any tab,
+  // so Shop already knows when it's opened (Nov 23). No timer: only those moments.
+  const { look } = sw;
+  useEffect(() => {
+    if (!active) return;
+    queueMicrotask(look);
+    const back = () => { if (document.visibilityState === "visible") look(); };
+    document.addEventListener("visibilitychange", back);
+    // The helper's panel can stay showing for days: clicking into it counts as coming back.
+    window.addEventListener("focus", back);
+    return () => { document.removeEventListener("visibilitychange", back); window.removeEventListener("focus", back); };
+  }, [active, look]);
+  return <SafewayContext value={sw}>{children}</SafewayContext>;
 }
 export function useSafewayCart(): Safeway {
   const sw = useContext(SafewayContext);

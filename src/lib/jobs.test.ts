@@ -337,8 +337,10 @@ describe("a placing job is never handed out twice (phase 3, Nov 14)", () => {
       await takeJob(HELPER_VERSION, false);
       vi.setSystemTime(Date.now() + 2000);
       expect(await pressJob(late.id)).toBe(false); // past the deadline by Simmer's clock
-      // Taken, not pressed: stuck only a minute after the deadline (and two after it was taken).
+      // Taken, not pressed: stuck only a minute after the deadline (and the backstop after it was taken, Nov 23: five minutes).
       vi.setSystemTime(Date.now() + 119_000);
+      expect(await jobStatus(late.id)).toMatchObject({ status: "working" });
+      vi.setSystemTime(Date.now() + 3 * 60_000);
       expect(await jobStatus(late.id)).toMatchObject({ status: "failed", result: { error: "stuck" } });
     } finally { vi.useRealTimers(); }
   });
@@ -416,5 +418,82 @@ describe("review, Nov 19", () => {
     await queueJob("search", { query: "bananas", from: "app" });
     for (let i = 0; i < 90; i++) await queueJob("snapshot", { query: "x", productId: "1" });
     expect((await recentJobs()).map((j) => j.what)).toEqual(["bananas"]);
+  });
+});
+
+describe("judged from what happened, not how long it's been (Nov 23)", () => {
+  beforeEach(() => { resetJobs(); resetSafeway(); resetKv(); });
+  const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
+
+  it("keeps a search waiting while the helper reads the cart, however long that takes, then hands it over", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const cart = await queueJob("cart", {});
+      expect((await takeJob("26.11.23", false))?.id).toBe(cart.id);
+      later(11_000);
+      const find = await queueJob("search", { query: "milk" });
+      later(25_000); // the cart read is at 36 s, the search has waited 25 s
+      expect(await jobStatus(find.id)).toMatchObject({ status: "waiting" });
+      expect((await recentJobs()).find((a) => a.id === find.id)).toMatchObject({ status: "waiting", error: "" });
+      expect((await helperStatus()).away).toBe(false);
+      await finishJob(cart.id, true, { products: [], signedIn: true });
+      later(1500); // the helper's pause between jobs: its report counts as hearing from it
+      expect(await jobStatus(find.id)).toMatchObject({ status: "waiting" });
+      expect((await takeJob("26.11.23", false))?.id).toBe(find.id);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("keeps a quantity change behind a busy helper counted as on its way, and merges taps into it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await queueJob("cart", {});
+      await takeJob("26.11.23", false);
+      const a = await queueJob("setQty", { ...milk, qty: 1 });
+      later(60_000);
+      expect(await cartChanging()).toBe(true);
+      expect((await queueJob("setQty", { ...milk, qty: 2 })).id).toBe(a.id);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("is not answering when nothing has come from the helper since the job was queued and it's working on nothing", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await takeJob("26.11.23", false)).toBeNull(); // checked in, then the computer slept
+      later(1000);
+      const find = await queueJob("search", { query: "milk" });
+      later(15_000);
+      expect(await jobStatus(find.id)).toMatchObject({ status: "waiting" });
+      later(10_000);
+      expect(await jobStatus(find.id)).toMatchObject({ status: "failed", result: { error: "not-answering" } });
+      expect((await helperStatus()).away).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("stops waiting behind a job the helper never reports once that job is past its backstop", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const cart = await queueJob("cart", {});
+      await takeJob("26.11.23", false); // the computer slept mid-job
+      later(1000);
+      const find = await queueJob("search", { query: "milk" });
+      later(4 * 60_000);
+      expect(await jobStatus(find.id)).toMatchObject({ status: "waiting" });
+      later(60_000 + 1);
+      expect(await jobStatus(find.id)).toMatchObject({ status: "failed", result: { error: "not-answering" } });
+      expect(await jobStatus(cart.id)).toMatchObject({ status: "failed", result: { error: "stuck" } });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("gives up a job a helper that's answering doesn't take only past the backstop", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const dry = await queueJob("checkoutDry", { windowId: "w" });
+      later(1000);
+      expect(await takeJob("26.11.1", false)).toBeNull(); // an older helper: here, but doesn't take test runs
+      later(2 * 60_000);
+      expect(await jobStatus(dry.id)).toMatchObject({ status: "waiting" });
+      later(60_000);
+      expect(await jobStatus(dry.id)).toMatchObject({ status: "failed", result: { error: "not-answering" } });
+    } finally { vi.useRealTimers(); }
   });
 });
