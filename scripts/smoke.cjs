@@ -72,7 +72,7 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       };
       await page.route("**/api/safeway/cart", onCart);
       await page.route("**/api/safeway/jobs**", onJobs);
-      return { cart, signIn: () => { signedOut = false; }, stop: async () => { await page.unroute("**/api/safeway/cart", onCart); await page.unroute("**/api/safeway/jobs**", onJobs); } };
+      return { cart, signIn: () => { signedOut = false; }, back: () => { away = false; }, stop: async () => { await page.unroute("**/api/safeway/cart", onCart); await page.unroute("**/api/safeway/jobs**", onJobs); } };
     };
     const settingsHere = async (where) => {
       await lookForBusy(where);
@@ -577,7 +577,15 @@ const within150 = async (fn) => { const end = Date.now() + 150; do { if (await f
       await tabBar.getByRole("button", { name: "List" }).tap(); await page.waitForTimeout(400);
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await page.waitForTimeout(1000);
       ok("shop: with Safeway out of reach, its rows are a plain checklist", (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway|One more .*)$/ }).count()) === 0 && (await swGroup.locator("h2 + *").count()) === 0 && (await tick("Milk").count()) === 1);
+      // Not answering (Sam, Nov 23): the button says Not connected, greyed but pressable, never Check out or the price.
+      const awayButton = page.getByRole("button", { name: /^Safeway not connected/ });
+      ok("shop: with Safeway out of reach, the button says Not connected", (await awayButton.count()) === 1 && (await awayButton.innerText()).trim() === "Not connected"
+        && !(await awayButton.isDisabled()) && (await page.getByRole("button", { name: "Check out" }).count()) === 0);
       await page.screenshot({ path: `${dir}/5c-shop-away.png`, fullPage: true });
+      // Answering again: tapping Not connected looks again, and Check out comes back.
+      awayFake.back();
+      await awayButton.tap(); await page.waitForTimeout(800);
+      ok("shop: tapping Not connected looks again and Check out comes back", (await awayButton.count()) === 0 && (await page.getByRole("button", { name: "Check out" }).count()) === 1);
       await awayFake.stop();
       // Safeway signed out on the computer (Nov 16): the cart is greyed, says so, and shows nothing that's in it.
       const outFake = await fakeSafeway({ signedOut: true });

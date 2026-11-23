@@ -102,7 +102,8 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
 async function waitForProducts(tabId, page, settings, tries = settings.resultsTries ?? 25) {
   // The cart page watched 10 s at least (Nov 19, review: placing's cart read could give up early and stop "cart changed").
   const ms = Math.max(tries * (settings.resultsWait ?? 800), page.onlyInCart ? 10_000 : 0);
-  const watch = () => onPage(tabId, "waitFor", { until: "products", onlyInCart: Boolean(page.onlyInCart), hold: settings.noResultsHold ?? 4000, ms }, page);
+  const outHold = settings.signedOutHold ?? 8000;
+  const watch = () => onPage(tabId, "waitFor", { until: "products", onlyInCart: Boolean(page.onlyInCart), hold: settings.noResultsHold ?? 4000, outHold, ms: Math.max(ms, outHold + 2000) }, page);
   // No answer: the page moved on under the watch (Nov 19, review), so it's watched once more on the page it moved to.
   const w = (await watch()) ?? (await watch());
   const last = await onPage(tabId, "read", null, page);

@@ -12,7 +12,7 @@
  * and these only set its limit. `noResultsHold`: how long Safeway must keep saying "no results" before a search counts
  * as finding nothing (it says so for a moment while loading).
  */
-export const SETTINGS = { pause: 1500, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, stepWait: 10_000, cartTries: 8, noResultsHold: 4000 };
+export const SETTINGS = { pause: 1500, resultsTries: 25, resultsWait: 800, usualClear: 0.8, usualGap: 0.2, mostOfOne: 12, stepWait: 10_000, cartTries: 8, noResultsHold: 4000, signedOutHold: 8000 };
 
 /**
  * Safeway's pages, as data the helper reads them with (patterns are matched without regard to case). Safeway's pages

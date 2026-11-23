@@ -31,8 +31,8 @@ export type CartWant = { p: Product; qty: number; query: string; forItem?: { id:
 
 /**
  * Reading Safeway's own cart sends the computer to Safeway's cart page, so opening Shop again within a minute of the last
- * reading (tab taps while shopping) takes Simmer's copy as it is. Signed out, it always looks again: coming back after
- * signing in on the computer should show the cart.
+ * reading (tab taps while shopping) takes Simmer's copy as it is. Signed out or not answering, it always looks again:
+ * coming back after signing in on the computer, or after it wakes, should show the cart.
  */
 const CART_FRESH = 60_000;
 
@@ -45,7 +45,9 @@ export function useSafeway() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   // A job the helper didn't pick up: Shop drops its Safeway controls and the Safeway rows are a plain checklist (Nov 3).
-  const [away, setAway] = useState(false);
+  const [away, setAwayState] = useState(false);
+  const gone = useRef(false); // not answering, as the last job or read said
+  const setAway = useCallback((v: boolean) => { gone.current = v; setAwayState(v); }, []);
   // Safeway signed out on the computer (Nov 16): Shop greys the cart and hides what's in it, since it may not be right.
   const [signedOut, setSignedOut] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -69,7 +71,7 @@ export function useSafeway() {
       out.current = r.signedOut === true;
       setCart(r.cart); setPicks(r.picks); setAway(r.away === true); setSignedOut(out.current); setLoaded(true);
     } catch (e) { if (!(e instanceof AuthError) && isAlive(life)) setLoaded(true); }
-  }, []);
+  }, [setAway]);
 
   /**
    * Queues a job and follows it. Each answer about it comes once the job's finished, or after about 20 seconds while it's
@@ -100,7 +102,7 @@ export function useSafeway() {
       }
     }
     return { ok: false, problem: NOT_ANSWERING };
-  }, []);
+  }, [setAway]);
 
   /**
    * Shop opened, or the app came back to it: Simmer's copy of the cart, and Safeway's own cart read on the computer
@@ -111,7 +113,8 @@ export function useSafeway() {
   const look = useCallback(() => {
     void refresh();
     const r = lastRead.current;
-    if (r.busy || (!out.current && Date.now() - r.at < CART_FRESH)) return;
+    // Signed out or not answering, it always looks again (Nov 23: Not connected, pressed, looks again too).
+    if (r.busy || (!out.current && !gone.current && Date.now() - r.at < CART_FRESH)) return;
     r.busy = true;
     setReading(true);
     run("cart", {}, life.current?.signal).then((x) => {
