@@ -434,7 +434,10 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind === "setQty") {
     const a = j.args;
     const qty = Math.max(0, Math.min(99, Math.round(Number(raw.qty) || 0)));
-    result = { qty, reached: raw.ok !== false && qty === Number(a.qty) };
+    const reached = raw.ok !== false && qty === Number(a.qty);
+    // Why Safeway didn't take it (Nov 23): it said something (its words kept), nothing changed, or no Add showed.
+    const why = reached ? "" : ["said", "not-added", "no-add"].find((w) => w === raw.why) ?? "";
+    result = { qty, reached, ...(why && { why }), ...(why === "said" && str(raw.said, 200) && { said: str(raw.said, 200) }) };
     const name = str(raw.name, 160) || str(a.name, 160), image = imageFor(str(a.productId, 20), str(raw.image, 500) || str(a.image, 500));
     await setCartLine({ productId: str(a.productId, 20), qty, name, price: str(raw.price, 40) || str(a.price, 40), image, itemId: str(a.itemId, 40), item: str(a.item, 80) });
     if (qty > 0 && str(a.item, 80)) await savePick({ item: str(a.item, 80), id: str(a.productId, 20), name, image }).catch((e) => console.error("couldn't keep the pick", e));
@@ -470,6 +473,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   }
   if (ok && j.kind.startsWith("checkout") && raw.stopped === "signed out") await noteSignedIn(false);
+  // An Add Safeway answered with its session expired (Nov 23): signed out, as a cart read seeing it would note.
+  if (!ok && j.kind === "setQty" && raw.error === "signed-out") await noteSignedIn(false);
   if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
     const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;
     const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;

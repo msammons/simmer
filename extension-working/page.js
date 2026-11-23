@@ -477,13 +477,41 @@ export async function safewayPage(action, arg, P) {
     const settle = async (changed) => Boolean(await watch(() => { p = find(); return changed(p); }, wait));
     const now = () => (p?.inCart ? p.qty || 1 : 0);
     const about = { name: p.name, price: p.price, image: p.image };
+    /** Safeway's messages showing now (a box over the page, a toast), each with its words, without its buttons' words. */
+    const messages = () => {
+      const out = new Map();
+      for (const el of deepAll(document, P.addProblem?.selector ?? "[role=dialog], [role=alertdialog], [aria-modal=true]")) {
+        if (!visible(el)) continue;
+        // Each piece of words apart ("Sorry, we're having issues." and the line under it), buttons and links left out.
+        const parts = [], walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) if (!n.parentElement?.closest("button, [role=button], a, script, style")) parts.push(n.textContent);
+        const w = parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
+        if (w && !(P.addProblem?.fine && re(P.addProblem.fine).test(w))) out.set(el, w);
+      }
+      return out;
+    };
     if (!p.inCart && want > 0) {
       const add = addButton(p.card);
       if (!add) return { ok: false, why: "no-add", qty: 0, ...about };
       const count = cartCount();
+      // Safeway's own messages showing before the press, so only one that comes after it counts (Nov 23: an Add on the
+      // real page left the tile as it was for 10 s, twice, and the job said only 0; the page keeps a "Session Expired"
+      // box and a "Sorry, we're having issues" box ready, hidden, for an Add Safeway won't take).
+      const before = messages();
+      let said = "";
       add.click();
-      await settle((x) => x?.inCart || (count !== null && (cartCount() ?? 0) > count));
-      if (!p?.inCart) return { ok: false, why: "not-added", qty: 0, ...about };
+      await settle((x) => {
+        if (x?.inCart || (count !== null && (cartCount() ?? 0) > count)) return true;
+        said = [...messages()].find(([el, w]) => before.get(el) !== w)?.[1] ?? "";
+        return Boolean(said);
+      });
+      // A message came up: the tile watched a moment more, in case it was only Safeway saying it took it.
+      if (said && !p?.inCart) await settle((x) => x?.inCart);
+      if (!p?.inCart) {
+        // Nothing is pressed on Safeway's message: it stays for Sam to see in the Safeway tab.
+        if (said) return { ok: false, why: re(P.addProblem?.signedOut ?? "session (is |has )?expired|sign in to continue").test(said) ? "signed-out" : "said", said, qty: 0, ...about };
+        return { ok: false, why: "not-added", qty: 0, ...about };
+      }
     }
     for (let n = 0; n < 40 && p && now() !== want; n++) {
       const before = now();

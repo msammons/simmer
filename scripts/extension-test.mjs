@@ -43,10 +43,14 @@ const list = await api("/api/list");
 const milkId = list.items.find((i) => i.item === "milk")?.id;
 
 // ---- the stand-in Safeway
+const BREAD = "Daves Killer Bread 21 Whole Grains & Seeds Thin-Sliced Whole Grain Organic Bread - 20.5 Oz";
 const CATALOG = {
   milk: [["960001", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", "$3.49"], ["960002", "Lucerne Milk Reduced Fat 2% - 1 Gallon", "$5.29"]],
   // Safeway shortens long titles on screen; the whole name is in the buttons' labels.
   bananas: [["960010", "Bananas", "$0.29 each"], ["960011", "Organic Bananas", "$0.39 each"]],
+  // As the real tile an Add didn't take on (Nov 23): a long name shortened on screen, "Add 1 unit of …", a clipped
+  // coupon's button beside it, Schedule & Save words.
+  bread: [["960050", BREAD, "$7.49 each"]],
 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const shown = (name) => (name.length > 36 ? `${name.slice(0, 24)}...${name.slice(-8)}` : name);
@@ -63,11 +67,14 @@ function searchPage(q, signedIn) {
       <div id="pg${id}Img" data-bpn="${id}"><picture><img data-qa="prd-itm-img" class="ab-lazy" alt="${name}" data-src="//www.safeway.com/img/${id}.png"${i === 0 ? ` src="https://www.safeway.com/img/${id}.png"` : ""} width="40" height="40"></picture></div>
       <quantity-stepper-al-v2 class="cta" id="pg${id}-qty"></quantity-stepper-al-v2>
       <span data-qa="prd-itm-prc" id="pg${id}price"><span class="sr-only"> Your Price ${price}</span><span aria-hidden="true"> ${price.split(" ")[0]}</span></span>
-      <a data-qa="prd-itm-pttl" tabindex="-1" id="pg${id}" aria-label="${name}" href="/shop/pd/item/${id}">${id === "960002" ? shown(name) : name}</a>
+      <a data-qa="prd-itm-pttl" tabindex="-1" id="pg${id}" aria-label="${name}" href="/shop/pd/item/${id}">${id === "960002" || id === "960050" ? shown(name) : name}</a>
+      ${id === "960050" ? `<span>Schedule &amp; Save 5%</span><button class="border-0" aria-label="$1.00 off Bakery Item coupon clipped for ${name} clipped, view deals">$1.00 off</button>` : ""}
     </div></product-item-al-v2>`).join("");
   return `<!doctype html><html><body>
     <header><a href="/">Safeway</a> ${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"} <a href="/cart" id="cart" aria-label="Cart">Cart</a></header>
     <main id="grid"></main>
+    <div id="sessionTimeoutModal" class="modal fade" role="dialog" style="display:none"><div class="modal-dialog"><h2>Session Expired</h2><p>Your session is expired. Please sign in to continue.</p><button>Sign In</button><button>Got It</button></div></div>
+    <div id="errorModal" class="modal fade" role="dialog" style="display:none"><div class="modal-dialog"><h4>Sorry, we're having issues.</h4><p>We cannot complete your request at this time. Please try again later.</p><button>Close</button></div></div>
     <script>
       const cart = () => JSON.parse(localStorage.getItem("cart") || "{}");
       const put = (id, n) => { const c = cart(); if (n > 0) c[id] = n; else delete c[id]; localStorage.setItem("cart", JSON.stringify(c)); };
@@ -82,6 +89,9 @@ function searchPage(q, signedIn) {
         cta.querySelectorAll("button").forEach((b) => b.onclick = () => setTimeout(() => {
           const l = b.getAttribute("aria-label");
           if (/units of/.test(l)) return;
+          // As the real page holds ready for an Add Safeway won't take (Nov 23): its box shows, the tile stays.
+          const fails = localStorage.getItem("fails");
+          if (fails && /^Add/.test(l)) { document.querySelectorAll(".modal").forEach((m) => { m.style.display = "none"; }); document.getElementById(fails === "expired" ? "sessionTimeoutModal" : "errorModal").style.display = "block"; return; }
           put(id, /^Add|^Increase/.test(l) ? n + 1 : n - 1); draw(tile);
         }, 250));
       };
@@ -152,12 +162,15 @@ const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpd
   args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
 });
 let signedIn = true;
+let sessionGone = false; // Safeway's session expired: its sign-in page stays (signed in, it sends the tab home)
 await ctx.route("https://www.safeway.com/**", (route) => {
   const u = new URL(route.request().url());
   if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
   if (u.pathname === "/erums/cart") return route.fulfill({ contentType: "text/html", body: cartPage(signedIn) });
   if (u.pathname === "/order-account/orders") return route.fulfill({ contentType: "text/html", body: ordersPage(signedIn) });
+  // As Safeway's (seen Nov 23): signed in, its sign-in page sends the tab on to its home page by itself.
+  if (u.pathname === "/account/sign-in.html") return route.fulfill({ contentType: "text/html", body: `<html><body><h1>Sign in</h1><input id="user"><button>Sign in</button>${signedIn && !sessionGone ? '<script>setTimeout(() => location.replace("/"), 300)</script>' : ""}</body></html>` });
   return route.fulfill({ contentType: "text/html", body: `<html><body><header>${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</header><h1>Safeway</h1></body></html>` });
 });
 // The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
@@ -301,6 +314,39 @@ await safeway.evaluate(() => localStorage.removeItem("cart"));
 ordered = true;
 await cartJob();
 expect(await until(async () => !(await bananasOnList()), 60_000) && !(await bananaInCart()), "an emptied Safeway cart with an order placed today takes the cart's things off the list");
+
+// An Add Safeway won't take (Nov 23, a real tile): the job says why, in Safeway's words, instead of a silent 0.
+const queueBread = async (qty = 1) => { const r = await api("/api/safeway/jobs", { op: "queue", kind: "setQty", productId: "960050", qty, query: "bread", name: BREAD }); void nudge(); return r?.job?.id; };
+const finished = async (jid) => { let j = null; await until(async () => { j = (await api(`/api/safeway/jobs?id=${jid}`)).job; return j && (j.status === "done" || j.status === "failed"); }, 90_000); return j; };
+const refuseAdd = (v) => safeway.evaluate((x) => (x ? localStorage.setItem("fails", x) : localStorage.removeItem("fails")), v);
+const onSignIn = () => ctx.pages().some((p) => p.url().includes("/account/sign-in"));
+await refuseAdd("error");
+let bj = await finished(await queueBread());
+expect(bj?.status === "done" && bj.result?.reached === false && bj.result?.why === "said" && /having issues\. We cannot/.test(bj.result?.said ?? "") && !/Close/.test(bj.result?.said ?? ""), `an Add Safeway answers with its error box says so in Safeway's words (${JSON.stringify(bj?.result)})`);
+expect(await safewayQty("960050") === 0 && await cartQty("960050") === 0, "and nothing went into either cart");
+await refuseAdd("expired");
+sessionGone = true;
+bj = await finished(await queueBread());
+expect(bj?.status === "failed" && bj.result?.error === "signed-out" && (await api("/api/safeway/cart")).signedOut === true, `an Add answered with Safeway's Session Expired box says signed out (${JSON.stringify(bj?.result)})`);
+expect(await until(onSignIn, 15_000), "and the Safeway tab waits on the sign-in page");
+// The sign-out wasn't (Safeway was fine after all): the next Add looks at Safeway again instead of saying signed out.
+await refuseAdd(null);
+sessionGone = false;
+bj = await finished(await queueBread());
+expect(bj?.status === "done" && bj.result?.reached === true && await safewayQty("960050") === 1, `after a sign-out that wasn't, the next Add looks at Safeway once more and takes (${JSON.stringify(bj?.result ?? bj)})`);
+// Really signed out: the first job after parking looks once, and the one after it leaves the sign-in page alone.
+signedIn = false;
+sessionGone = true;
+await safeway.reload();
+await finished(await queueBread(2));
+expect(await until(onSignIn, 15_000), "signed out: the tab waits on the sign-in page");
+bj = await finished(await queueBread(2));
+expect(bj?.status === "failed" && bj.result?.error === "signed-out", "the first Add after it looks once more and says signed out");
+const searchesNow = queries.length;
+bj = await finished(await queueBread(2));
+expect(bj?.status === "failed" && bj.result?.error === "signed-out" && queries.length === searchesNow && onSignIn(), "the next one says signed out without leaving the sign-in page");
+signedIn = true;
+sessionGone = false;
 
 // Framing: another site can't show Simmer.
 const other = await ctx.newPage();

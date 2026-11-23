@@ -162,14 +162,34 @@ export async function runJob(job, windowId) {
   // Signed out (Sam, Nov 17: "why does the app not open the page?"): the Safeway tab waits on Safeway's sign-in page for
   // him, and jobs leave it alone there, so nothing reloads it while he types. Signing in takes Safeway off that page,
   // and the jobs carry on. It only opens the page; it never types or presses anything on it.
+  // A sign-out can be wrong (Nov 23: a read said signed out, the helper parked the tab here, Safeway itself sent the tab
+  // on to its home page, signed in, and a job in between said signed out without looking). So the first search, cart
+  // read or Add after the helper parks the tab looks at Safeway once more, on its own page, as it always does, unless
+  // Sam is typing on the sign-in page. Signed out again, the tab goes back here and stays until he signs in.
   const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const looks = job.kind === "search" || job.kind === "cart" || job.kind === "setQty";
+  const parked = await store.get("parked", "");
+  let again = false;
   if (tab?.url?.startsWith(SIGN_IN)) {
-    return job.kind === "search" || job.kind === "cart" ? { ok: true, result: { products: [], signedIn: false, ...(job.kind === "cart" && { empty: false }) } } : { ok: false, error: "signed-out" };
-  }
+    again = looks && parked === "fresh" && !(await typing(tabId));
+    if (!again) return job.kind === "search" || job.kind === "cart" ? { ok: true, result: { products: [], signedIn: false, ...(job.kind === "cart" && { empty: false }) } } : { ok: false, error: "signed-out" };
+    await store.set("parked", "looked");
+  } else if (parked) await store.set("parked", "");
   const r = await doJob(job, tabId);
   const out = r.error === "signed-out" || r.result?.signedIn === false;
-  if (out && (job.kind === "search" || job.kind === "cart" || job.kind === "setQty")) await go(tabId, SIGN_IN);
+  if (out && looks) { await go(tabId, SIGN_IN); await store.set("parked", again ? "looked" : "fresh"); }
   return r;
+}
+
+/** Whether Sam is typing on the page: a field has the focus in the window he's using. Reads only. */
+async function typing(tabId) {
+  let t;
+  const late = new Promise((done) => { t = setTimeout(() => done(true), 10_000); }); // no answer: left alone, as if typing
+  try {
+    const run = chrome.scripting.executeScript({ target: { tabId }, func: () => document.hasFocus() && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "") })
+      .then(([r]) => r?.result === true, () => false);
+    return await Promise.race([run, late]);
+  } finally { clearTimeout(t); }
 }
 
 async function doJob(job, tabId) {
@@ -207,6 +227,8 @@ async function doJob(job, tabId) {
       if (!r.products.some((x) => x.id === args.productId)) continue;
       let x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
       if (!x || (!x.ok && x.why === "not-found")) continue;
+      // Safeway said its session expired instead of taking the Add (Nov 23): signed out, said so, nothing pressed again.
+      if (!x.ok && x.why === "signed-out") return { ok: false, error: "signed-out" };
       // The count may not have caught up on screen (Oct 31: + took on Safeway, the page still read 1): read the cart
       // once more, fresh, before saying it didn't take. Never press again from a search page after a press here.
       if (t.cart && !x.ok) {
@@ -223,7 +245,9 @@ async function doJob(job, tabId) {
       break;
     }
     if (!done) return { ok: false, error: loaded ? "not-found" : "not-loaded" };
-    return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image } };
+    // Why it didn't take, when it didn't (Nov 23: the phone heard only 0): Safeway's own words when it said something.
+    const why = !done.ok && done.why ? { why: String(done.why), ...(done.said && { said: String(done.said).slice(0, 200) }) } : {};
+    return { ok: true, result: { ok: done.ok, qty: done.qty, name: done.name, price: done.price, image: done.image, ...why } };
   }
   if (job.kind === "checkoutLook") return { ok: true, result: await checkoutLook(tabId, page) };
   // Getting ready (Nov 14): first the free times to pick from (`list`), then the one picked (`windowId`).
