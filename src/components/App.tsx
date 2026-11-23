@@ -143,7 +143,7 @@ export default function App() {
       else void recipeList.settled(15_000);
       if (on === "week" || on === "recipe") void plans.settled(5_000);
       if (on === "stock" && opening) void kitchens.settled(30_000);
-      // Shop reads the Safeway cart itself as it opens and comes back (Shop.tsx).
+      // The Safeway cart is looked at by SafewayHost as the app opens and comes back, and by Shop as it opens.
     };
     queueMicrotask(() => read(true));
     const back = () => { if (document.visibilityState === "visible") read(false); };
@@ -367,7 +367,7 @@ export default function App() {
   const panel = usePanelActivity(phase === "app" && framed());
 
   return (
-    <SafewayHost>
+    <SafewayHost active={phase === "app"}>
     <div id="scroller" className="h-full overflow-y-auto overscroll-y-contain">
     <main className="mx-auto min-h-[calc(100%+1px)] w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
       {phase === "boot" && <Splash />}

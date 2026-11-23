@@ -94,7 +94,8 @@ Safeway header has Add usuals (N); and things put in the cart on Safeway's own s
 with something in the cart, Check out and the cart's price sit on the left and Shop's ⋯ on the right: Show checked (on
 unless this phone turned it off: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought
 (for when Simmer can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
-Opening Shop reads Safeway's own cart, so Simmer's copy matches it. A change to something already in the cart (a −, a +
+Opening the app, bringing it back to the front (on any tab, Nov 23) and opening Shop read Safeway's own cart (at most once
+a minute unless signed out or not connected), so Simmer's copy matches it and Shop already knows when it opens. A change to something already in the cart (a −, a +
 or taking it out) is made on Safeway's cart page first, where the product is listed, from Shop's rows and from Find alike;
 only adding something new goes through a search. Find searches when an item comes up and on Search, never on each letter
 typed, ranks results by her own words, and starts each item at the top of the screen. Old `?open=lists` addresses land on
@@ -108,9 +109,12 @@ pruned as it goes), the helper takes it, does it on safeway.com and reports back
 time that the server answers once the job's finished, or after about 20 s: `waitForJob`, no timer in the app); a quantity set on Safeway goes into
 Simmer's cart ("Safeway cart" rows, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway rows, now with the product's picture address; pictures
-are shown from Safeway, never stored). The helper's last check-in is kept too, so when the computer isn't answering
-Find says so at once rather than waiting; a job the helper doesn't pick up drops Shop's Safeway controls, and the Safeway
-rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
+are shown from Safeway, never stored). The helper's last check-in (each time it asks for jobs or reports one) is kept
+too. A job is judged by what happened, not how long it's been (Nov 23, Sam): while the helper works on a job, every job
+behind it waits and the app keeps following; a job is "not answering" only when nothing has come from the helper since it
+was queued and it's working on nothing (the 20 s pickup window is how long that silence is waited for); a job taken and
+never reported is given up after a five-minute backstop. A job the helper doesn't pick up drops Shop's Safeway controls,
+and the Safeway rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be
 framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the

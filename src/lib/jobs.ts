@@ -38,12 +38,19 @@ export type JobFrom = "panel" | "app";
 export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatus; from: JobFrom; what: string; qty: number | null; error: string; signedIn: boolean; created: string; updated: string };
 
 /**
- * How long things take. `pickup`: a job nobody's taken by then is given up (a minute for checkout's, Nov 14: a wake-up
- * came late, and the phone wakes it again as it follows). `stuck`: a job taken but not reported by then failed (a
- * placing job counts from its approval's deadline instead, below). `seenEvery`: how often the helper's check-in is
- * written down. `keep`: how long Redis keeps a job after its last change.
+ * The limits left (Nov 23, Sam: "don't timers fail consistently?"). What decides is what happened: the helper asking for
+ * jobs or reporting one (its check-in), and a job it's working on. While it works on one, everything behind it waits.
+ * - `pickup`: how long a new job waits for the helper's first sign after it was queued (its wake-up is a push, answered
+ *   in a second or two when the computer's awake). Only when nothing at all has come from the helper since the job was
+ *   queued, and it isn't working on anything, is the job "not answering": silence can only be seen by waiting for it. A
+ *   minute for checkout's (Nov 14: a wake-up came late, and the phone wakes it again as it follows).
+ * - `stuck`: a backstop for a job taken and never reported (the computer slept mid-job, or a page never loaded; the
+ *   helper's own steps each have a limit, so a helper that's running always reports). Five minutes: longer than the
+ *   longest job runs. A placing job counts from its approval's deadline instead, below.
+ * - `unclaimed`: a backstop for a job the helper has seen but doesn't take (an older helper doesn't take test runs).
+ * - `keep`: how long Redis keeps a job after its last change.
  */
-export const JOB_TIMES = { pickup: 20_000, checkoutPickup: 60_000, stuck: 120_000, seenEvery: 20_000, keep: 24 * 3600_000 };
+export const JOB_TIMES = { pickup: 20_000, checkoutPickup: 60_000, stuck: 5 * 60_000, unclaimed: 3 * 60_000, keep: 24 * 3600_000 };
 /**
  * A placing job taken by the helper is stuck only a minute after its approval ran out (Nov 19): the press may come right
  * at the deadline, and Safeway's confirmation can take ~45 s after it. Once the helper has asked to press (`pressing`)
@@ -135,8 +142,31 @@ const stuckAt = (j: Job) => {
   const deadline = Number((j.args.expect as { deadline?: unknown } | undefined)?.deadline);
   return j.kind === "checkoutPlace" && Number.isFinite(deadline) ? Math.max(taken, deadline + PLACE_AFTER_DEADLINE) : taken;
 };
-/** Jobs left too long: waiting with nobody taking them, or taken and never reported. Never one that's pressing. */
-const overdue = (j: Job) => (j.status === "waiting" && age(j.created) > pickupFor(j)) || (j.status === "working" && Date.now() > stuckAt(j));
+/**
+ * Where the helper stands, for judging a waiting job (Nov 23: a search queued while the helper read the cart for 33 s
+ * was given up "not answering" at 20 s). `busy`: it's working on a job (taken, not past its backstop). `seen`: when
+ * anything last came from it (asking for jobs, or a report).
+ */
+export type Queue = { busy: boolean; seen: number };
+const stuck = (j: Job) => j.status === "working" && Date.now() > stuckAt(j);
+const queueOf = (open: Job[], helper: Helper | null): Queue => ({
+  busy: open.some((j) => j.status === "pressing" || (j.status === "working" && !stuck(j))),
+  seen: Date.parse(helper?.seen || "1970-01-01") || 0,
+});
+async function queueNow(open?: Job[]): Promise<Queue> {
+  const [jobs, helper] = await Promise.all([open ? Promise.resolve(open) : openJobs().then((o) => o.map((x) => x.job)), loadHelper()]);
+  return queueOf(jobs, helper);
+}
+/**
+ * Jobs left too long, judged from what happened. Waiting: given up only when the helper is working on nothing and nothing
+ * has come from it since the job was queued (past the pickup window); one it has seen since is given up only past the
+ * `unclaimed` backstop. Taken: past its backstop. Never one that's pressing.
+ */
+export const overdue = (j: Job, q: Queue) => {
+  if (j.status === "working") return stuck(j);
+  if (j.status !== "waiting" || age(j.created) <= pickupFor(j) || q.busy) return false;
+  return q.seen > Date.parse(j.created) ? age(j.created) > JOB_TIMES.unclaimed : true;
+};
 const lateError = (j: Job) => (j.status === "waiting" ? "not-answering" : "stuck");
 /**
  * Whether the computer looks away (Nov 19, for Shop's plain checklist): set when a job is given up as not answering or
@@ -144,8 +174,8 @@ const lateError = (j: Job) => (j.status === "waiting" ? "not-answering" : "stuck
  */
 const AWAY_KEY = `${NS}:helper-away`;
 /** An overdue job, given up: failed, with why (only if it's still as it was read). */
-async function giveUp(id: string, read?: { job: Job; raw: string }): Promise<Job | null> {
-  const j = await change(id, (x) => (overdue(x) ? { ...x, status: "failed", result: { error: lateError(x) } } : null), read);
+async function giveUp(id: string, q: Queue, read?: { job: Job; raw: string }): Promise<Job | null> {
+  const j = await change(id, (x) => (overdue(x, q) ? { ...x, status: "failed", result: { error: lateError(x) } } : null), read);
   if (j?.status === "failed" && (j.result?.error === "not-answering" || j.result?.error === "stuck")) await kv().set(AWAY_KEY, now(), { ex: 30 * 24 * 3600 });
   return j;
 }
@@ -155,7 +185,9 @@ async function giveUp(id: string, read?: { job: Job; raw: string }): Promise<Job
  * a quantity change waiting for the helper or being made. One left too long doesn't count.
  */
 export async function cartChanging(): Promise<boolean> {
-  return (await openJobs()).some(({ job: j }) => j.kind === "setQty" && !overdue(j));
+  const open = (await openJobs()).map((o) => o.job);
+  const q = await queueNow(open);
+  return open.some((j) => j.kind === "setQty" && !overdue(j, q));
 }
 
 /** The helper's version as this Simmer ships it (extension-working/manifest.json). */
@@ -184,8 +216,8 @@ export const safewaySignedOut = async (): Promise<boolean> => Boolean(await kv()
 
 const loadHelper = async (): Promise<Helper | null> => json<Helper>(await kv().get(HELPER_KEY));
 /**
- * When the helper last checked in and whether it needs updating. No timer keeps a check-in fresh (Nov 11), so Simmer
- * never guesses from it whether the computer is answering: a job nobody takes says so.
+ * When the helper last checked in and whether it needs updating. No timer keeps a check-in fresh (Nov 11), so an old
+ * check-in alone never says the computer's away: a job nobody takes says so (`overdue`).
  */
 export async function helperStatus(): Promise<{ seen: string; outdated: boolean; away: boolean }> {
   const [helper, away] = await Promise.all([loadHelper(), kv().get(AWAY_KEY)]);
@@ -199,8 +231,9 @@ export async function helperStatus(): Promise<{ seen: string; outdated: boolean;
 export async function queueJob(kind: JobKind, args: Record<string, unknown>): Promise<Job> {
   if (kind === "setQty" || kind === "cart") {
     const open = await openJobs();
+    const q = await queueNow(open.map((o) => o.job));
     if (kind === "setQty") {
-      const same = open.find(({ job: j }) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j));
+      const same = open.find(({ job: j }) => j.kind === "setQty" && j.status === "waiting" && j.args.productId === args.productId && !overdue(j, q));
       // Only while it's still waiting: one taken meanwhile stays as it is, and this one is queued after it.
       const merged = same && (await change(same.job.id, (j) => (j.status === "waiting" ? { ...j, args: { ...j.args, ...args } } : null), same));
       if (merged && merged.status === "waiting" && merged.args.qty === args.qty) return merged;
@@ -208,7 +241,7 @@ export async function queueJob(kind: JobKind, args: Record<string, unknown>): Pr
     // Showing the cart: one waiting is enough. While Simmer's copy has something in it, an empty Safeway cart also means
     // reading the Purchases page, to see whether the order went through (Nov 3).
     if (kind === "cart") {
-      const same = open.find(({ job: j }) => j.kind === "cart" && j.status === "waiting" && !overdue(j));
+      const same = open.find(({ job: j }) => j.kind === "cart" && j.status === "waiting" && !overdue(j, q));
       if (same) return same.job;
       args = { ...args, orders: (await loadCart()).length > 0 };
     }
@@ -217,12 +250,18 @@ export async function queueJob(kind: JobKind, args: Record<string, unknown>): Pr
   return add({ id: newId(), kind, status: "waiting", args, result: null, created: now(), updated: now() });
 }
 
-/** Simmer: how a job stands (one read). One left waiting too long is given up, so the app can say so instead of waiting on. */
+/**
+ * Simmer: how a job stands (one read). One the helper isn't going to do is given up, so the app can say so instead of
+ * waiting on. Where the helper stands is read only once the job could be overdue at all (past its pickup window, or taken).
+ */
 export async function jobStatus(id: string): Promise<Job | null> {
   const raw = /^[a-z0-9]{1,40}$/.test(id) ? await kv().get(JOB(id)) : null;
   const j = json<Job>(raw);
-  if (j && raw && overdue(j)) return giveUp(id, { job: j, raw });
-  return j;
+  if (!j || !raw) return j;
+  const could = j.status === "working" ? stuck(j) : j.status === "waiting" && age(j.created) > pickupFor(j);
+  if (!could) return j;
+  const q = await queueNow();
+  return overdue(j, q) ? giveUp(id, q, { job: j, raw }) : j;
 }
 
 /**
@@ -279,15 +318,19 @@ export async function pressJob(id: string): Promise<boolean> {
 }
 
 /**
- * The helper's check-in, written at most every 20 seconds, or when the panel opens or closes or the version changes.
- * Kept under its own key, as the wake-up subscription is.
+ * The helper's check-in, written each time it asks for jobs (Nov 23: it's what says the helper is answering, so it's
+ * never left a few seconds old; the helper asks only when woken or after a job, never on a timer). Kept under its own
+ * key, as the wake-up subscription is. Answers the check-in before this one.
  */
 async function checkIn(version: string, panel: boolean): Promise<Helper | null> {
   const helper = await loadHelper();
-  if (!(helper && age(helper.seen) < JOB_TIMES.seenEvery && helper.panel === panel && helper.version === version)) {
-    await kv().set(HELPER_KEY, JSON.stringify({ seen: now(), version, panel } satisfies Helper), { ex: 400 * 24 * 3600 });
-  }
+  await kv().set(HELPER_KEY, JSON.stringify({ seen: now(), version, panel } satisfies Helper), { ex: 400 * 24 * 3600 });
   return helper;
+}
+/** A report from the helper counts as a check-in too (it pauses a moment before asking for the next job). */
+async function seenNow(): Promise<void> {
+  const helper = await loadHelper();
+  if (helper) await kv().set(HELPER_KEY, JSON.stringify({ ...helper, seen: now() } satisfies Helper), { ex: 400 * 24 * 3600 });
 }
 
 /**
@@ -315,10 +358,12 @@ export async function takeJob(version: string, panel: boolean): Promise<Job | nu
   // Never an order (phase 3): a placing job the old helper had taken may already have pressed, so it's never handed out
   // again; it's marked unsure, and Simmer says to check Safeway.
   const reloaded = Boolean(before?.version && version && before.version !== version);
+  // The helper is here now: nothing waiting is given up as not answering while it asks (Nov 23).
+  const q: Queue = { ...queueOf(open.map((o) => o.job), null), seen: Date.now() };
   const waiting: { job: Job; raw: string }[] = [];
   for (const o of open) {
     const j = o.job;
-    if (overdue(j)) { await giveUp(j.id, o); continue; }
+    if (overdue(j, q)) { await giveUp(j.id, q, o); continue; }
     if (reloaded && (j.status === "working" || j.status === "pressing")) {
       const back = await change(j.id, (x) => (x.status !== "working" && x.status !== "pressing" ? null : x.kind === "checkoutPlace" ? unsure(x) : { ...x, status: "waiting", created: now() }), o);
       if (back?.status === "waiting") waiting.push({ job: back, raw: JSON.stringify(back) });
@@ -363,6 +408,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   const at = now();
   let mine = false;
   const j = await change(id, (x) => { mine = takesReport(x, reported) && !(x.reporting && age(x.reporting) < REPORT_HOLD); return mine ? { ...x, reporting: at } : null; });
+  await seenNow();
   if (!j || !mine) return j;
   // Taking out a product Safeway no longer has is done: a second tap on the trash, or it was taken out on Safeway
   // already (Oct 31: the eggs went, a second removal a second later came back "not found").
@@ -484,9 +530,10 @@ export async function recentJobs(limit = 20): Promise<Activity[]> {
   const [lately, last] = await Promise.all([kv().zrange(INDEX, Date.now() - RECENT_MS, "+inf", { byScore: true }), kv().zrange(INDEX, -80, -1)]);
   const ids = (lately.length > last.length ? lately : last).slice(-400);
   const jobs = (await readJobs(ids)).map((f) => f.job);
+  const q = await queueNow(jobs.filter((j) => going(j.status)));
   return jobs.flatMap((j): Activity[] => {
     if (j.kind !== "search" && j.kind !== "setQty") return [];
-    const late = overdue(j), r = j.result ?? {};
+    const late = overdue(j, q), r = j.result ?? {};
     return [{
       id: j.id, kind: j.kind, status: late ? "failed" : j.status, from: j.args.from === "panel" ? "panel" : "app",
       what: str(j.args.name, 160) || str(j.args.query, 120), qty: j.kind === "setQty" ? Number(r.qty ?? j.args.qty) || 0 : null,
