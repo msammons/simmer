@@ -240,8 +240,11 @@ export default function App() {
       // Shown at once as a stand-in row (Nov 11: always responsive); one already on the list adds up there, on the server.
       add: (text, store) => {
         const e = parseEntry(text), temp = standInItem(e.item, e.quantity, {}, store);
-        return change({ op: "add", text, by: "", ...(store && { store }) }, (l) => (l.items.some((x) => !x.checked && !x.check && norm(x.item) === norm(e.item) && (!store || x.store === store))
-          ? l : { ...l, items: [...l.items, temp] }));
+        // The same thing already there unticked: it shows as wanted at once (a dinner's thing waiting on Have or Need, or
+        // answered Have, becomes Need, as the server makes it; Nov 24: "eggs" showed a moment and went).
+        const same = (x: Item) => !x.checked && norm(x.item) === norm(e.item) && (!store || x.store === store);
+        return change({ op: "add", text, by: "", ...(store && { store }) }, (l) => (l.items.some(same)
+          ? { ...l, items: l.items.map((x) => (same(x) && x.check ? { ...x, check: false, have: false } : x)) } : { ...l, items: [...l.items, temp] }));
       },
       check: (it, checked) => isStandIn(it.id) ? undefined : void change({ op: "check", id: it.id, checked }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, checked } : x)) })),
       move: (it, to) => isStandIn(it.id) ? undefined : void change({ op: "move", id: it.id, store: to }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, store: to } : x)) })),

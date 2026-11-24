@@ -209,10 +209,11 @@ function TestRun() {
         ) : <Row icon="refresh" title="Get ready" subtitle="Shows Safeway's pickup days and free times." onClick={() => getTimes()} />}
       </Group>
       )}
-      {view && (view.stops.length > 0 || view.highlights.length > 0) && (
+      {/* What stops ordering stays here. The "Check: …" notes are on Place order's confirm sheet only (Sam, Nov 24: get
+          rid of the text above Place order); docs/CHECKOUT.md's highlights are unchanged there. */}
+      {view && view.stops.length > 0 && (
         <div className="space-y-1 px-4">
           {view.stops.map((s) => <p key={s} className="t-sub text-alert">{s}</p>)}
-          {view.highlights.map((h) => <p key={h} className="t-sub text-muted">Check: {h}</p>)}
         </div>
       )}
       {run.stage === "ready" && run.view.canOrder && (

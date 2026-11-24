@@ -21,6 +21,14 @@ describe("the grocery list", () => {
     expect(n).toBe(2);
     await removeItems((await loadList()).items.filter((x) => x.item.startsWith("count-test")).map((x) => x.id));
   });
+  it("a dinner's thing waiting on Have or Need, typed in by hand, becomes Need (Nov 24: \"eggs\" showed a moment and went)", async () => {
+    await addItems([{ item: "need-test eggs", quantity: "2", for: "Friday's frittata", check: true }], "Robin");
+    const added = await addItem("need-test eggs", "Sam");
+    expect(added).toMatchObject({ check: false, have: false });
+    const row = (await loadList()).items.find((x) => x.item === "need-test eggs")!;
+    expect(row).toMatchObject({ check: false, have: false, checked: false });
+    await removeItems([row.id]);
+  });
   it("files common things without asking", async () => {
     expect(await file("bananas")).toEqual({ store: "safeway", section: "fresh" });
     expect(await file("toilet paper")).toEqual({ store: "costco", section: "household" });
