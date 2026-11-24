@@ -94,7 +94,7 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 6.4 | Shop's ⋯ | "Show checked" with a ✓ when on (remembered on this phone); "Mark the Safeway cart bought" only with something in the cart | L |
 | 6.5 | A row's ⋯ | Pick another (Safeway rows with a product), Get it at Trader Joe's / Costco / Safeway; a thing in the cart can't move | L |
 | 6.6 | Add item on Shop | The row appears on its store with a guessed section; the same thing twice joins one row | L |
-| 6.7 | Safeway rows with known products | A + on each; an "Add favorites" button (no number, the same look as the row +) in the Safeway header with more than one; one tap puts them all in the cart and every row shows its count at once | R |
+| 6.7 | Safeway rows with known products | A + on each; an "Add favorites" button (no number, the same look as the row +) on the line above the list, just left of the ⋯ and centred with it and Check out, with more than one; at 375 and 390 wide the line fits whole (Check out, price, Add favorites, ⋯; status words cut short first); one tap puts them all in the cart and every row shows its count at once | R |
 | 6.8 | A Safeway row with nothing remembered | A "Find" button; Find opens Safeway's choices in a sheet, one item at a time ("3 of 8"), each starting at the top of the sheet | R |
 | 6.9 | Find | It searches when the item comes up and when Search is tapped, never on each letter typed; "Your favorite" first, then the best matches to her own words; wide screens show a grid | R |
 | 6.10 | Add in Find | The Add becomes − n +; Skip becomes "Next: <item>" in place in the bar at the bottom (nothing moves under the finger); Skip goes on without adding; ‹ goes back | R |

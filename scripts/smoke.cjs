@@ -622,7 +622,7 @@ const began = Date.now();
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
       const swGroup = page.locator("main section").filter({ has: page.getByRole("heading", { name: "Safeway", exact: true }) });
-      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add favorites stays by Safeway.
+      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add favorites sits left of the ⋯ (Sam, Nov 24).
       const checkOut = page.getByRole("button", { name: "Check out" });
       const shopMenu = page.getByLabel("More for Shop");
       {
@@ -631,14 +631,37 @@ const began = Date.now();
         ok("shop: Check out sits on the left, away from the ⋯ (Nov 17)", Boolean(add && menu && co) && co.x - add.x < 24 && menu.x - (co.x + co.width) > 80);
       }
       const showCheckedText = async () => (await shopMenu.locator("option[value=checked]").innerText()).trim();
-      ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add favorites by Safeway, a button with no number", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
-        && /^Add favorites$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add favorites on that line, a button with no number, nothing beside Safeway's heading", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
+        && (await swGroup.locator("h2 + *").count()) === 0 && (await page.getByRole("button", { name: "Add favorites" }).count()) === 1 && (await page.getByText(/in the cart/).count()) === 0);
       {
         // Add favorites (Sam, Nov 24): a real button, button-sized, with the row +'s own fill and text colour.
-        const fav = swGroup.getByRole("button", { name: "Add favorites" }), plus = page.getByRole("button", { name: /^Add .* to the cart$/ }).first();
+        const fav = page.getByRole("button", { name: "Add favorites" }), plus = page.getByRole("button", { name: /^Add .* to the cart$/ }).first();
         const look = (l) => l.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.color, c.backdropFilter].join("|"); });
         const box = await fav.boundingBox();
         ok("shop: Add favorites is a button with the row +'s fill and text, button-sized", (await fav.count()) === 1 && (await look(fav)) === (await look(plus)) && Boolean(box) && box.height >= 32, `${await look(fav).catch(() => "")} vs ${await look(plus).catch(() => "")}`);
+        // On the line above the list, just left of Shop's ⋯, centred with it and Check out; at 390 and 375 wide everything
+        // fits whole with the longest status words beside the price (the words give way, never a button).
+        const lineFits = async () => {
+          await page.evaluate(() => { const st = document.querySelector("[data-cart-status]"); st.dataset.was = st.textContent; st.textContent = "Reading your Safeway cart and checking every price…"; });
+          await frames();
+          const r = await page.evaluate(() => {
+            const box = (el) => el.getBoundingClientRect(), btns = [...document.querySelectorAll("button")];
+            const fav = box(btns.find((x) => x.textContent === "Add favorites")), co = box(btns.find((x) => x.textContent.endsWith("Check out")));
+            const menu = box(document.querySelector("[aria-label='More for Shop']").parentElement), st = document.querySelector("[data-cart-status]");
+            const price = st.previousElementSibling && !st.previousElementSibling.matches("button") ? box(st.previousElementSibling) : co;
+            const mid = (b) => b.top + b.height / 2;
+            const ok = fav.right <= menu.left + 0.5 && menu.left - fav.right <= 12 && Math.abs(mid(fav) - mid(menu)) <= 1.5 && Math.abs(mid(fav) - mid(co)) <= 1.5
+              && price.right <= fav.left - 4 && box(st).right <= fav.left + 0.5 && fav.height <= 40 && co.height <= 40 && document.documentElement.scrollWidth <= innerWidth;
+            st.textContent = st.dataset.was;
+            return ok;
+          });
+          return r;
+        };
+        ok("shop: Add favorites sits just left of the ⋯, centred with it and Check out, the line whole at 390 wide", await lineFits());
+        const vp = page.viewportSize();
+        await page.setViewportSize({ width: 375, height: 667 }); await frames();
+        ok("shop: and at 375 wide", await lineFits());
+        await page.setViewportSize(vp); await frames();
       }
       // Check out (Nov 14): the order only; set-up is in Settings, and until it's done Check out says so in one line.
       {

@@ -19,7 +19,7 @@ import { CheckoutSheet } from "./Checkout";
  * Every row is the same: a tick (got it, in the store or delivered), the household's name for the thing, and one small
  * line under it (Safeway's product and how much is needed, or just the amount). While Safeway can be reached, a Safeway
  * row also has Add (its usual product into the cart), Find (Safeway's choices, in a sheet) or − n + once it's in the
- * cart; the Safeway header has what's in the cart and Add favorites (Sam, Nov 24: a button, no count), and cart things added on Safeway's own site end the
+ * cart; Add favorites (Sam, Nov 24: a button, no count) sits left of Shop's ⋯ on the line above the list, and cart things added on Safeway's own site end the
  * group. When Safeway can't be reached (a job the helper didn't pick up), its rows are a plain checklist. One Done
  * shopping (confirmed first) takes what's ticked off in every store. No Clear here (Nov 11): New plan on Meals is the
  * one fresh start, and it empties the list.
@@ -98,15 +98,18 @@ function statusWords(cart: CartButton | null): string {
     : off ? (off.busy ? off.words || "Looking…" : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
 }
 
-function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNode }) {
-  const base = "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold";
-  const icon = <Icon name="cart" className="size-[18px]" strokeWidth={2} />;
+function TopLine({ cart, menu, add }: { cart: CartButton | null; menu: React.ReactNode; add?: React.ReactNode }) {
+  // With Add favorites beside the ⋯, a narrow phone (under 400 px) has no room for Check out's cart picture: it goes and
+  // the button's sides come in a little, so Check out, the price, Add favorites and the ⋯ all fit on one line whole.
+  const tight = Boolean(add);
+  const base = `flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold${tight ? " max-[399px]:px-3" : ""}`;
+  const icon = <Icon name="cart" className={`size-[18px]${tight ? " max-[399px]:hidden" : ""}`} strokeWidth={2} />;
   const status = statusWords(cart);
   return (
     // Above the list (Sam, Nov 17): Check out and the cart's price on the left, away from Shop's own ⋯ on the right.
-    <div className="flex min-h-10 items-center gap-2.5 pl-1 pr-2">
+    <div className="flex min-h-10 items-center gap-2 pl-1 pr-2">
       {cart && (
-        <span className="flex min-w-0 items-center gap-2.5">
+        <span className="flex min-w-0 items-center gap-2">
           {cart.state === "ready" ? (
             <button type="button" onClick={cart.onCheckOut} disabled={cart.busy} aria-label={cart.busy && cart.words ? `Check out. ${cart.words}` : undefined}
               className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>{icon}Check out</button>
@@ -117,10 +120,11 @@ function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNod
               className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}Check out</button>
           )}
           {cart.state === "ready" && cart.price && <span className="shrink-0 t-sub text-muted">{cart.price}</span>}
-          <span data-cart-status aria-hidden="true" className="min-w-0 truncate t-foot text-muted">{status}</span>
+          <span data-cart-status aria-hidden="true" className="min-w-0 truncate t-foot text-muted empty:hidden">{status}</span>
         </span>
       )}
-      <span className="ml-auto">{menu}</span>
+      {/* Add favorites sits just left of the ⋯ (Sam, Nov 24): the buttons never shrink; the status words give way first. */}
+      <span className="ml-auto flex shrink-0 items-center gap-1">{add}{menu}</span>
     </div>
   );
 }
@@ -321,13 +325,14 @@ export function ShopScreen({ act }: { act: ShopActions }) {
             {lines.length > 0 && <option value="bought">Mark the Safeway cart bought</option>}
           </MoreMenu>
           )}
-            cart={where !== "all" && where !== "safeway" ? null : cartButton} />
+            cart={where !== "all" && where !== "safeway" ? null : cartButton}
+            add={(where === "all" || where === "safeway") && live && usual.length > 1 && (
+              <button type="button" onClick={() => void sw.fill(usual.map(want))} className={`${pill} glass !px-3 text-accent`}>Add favorites</button>
+            )} />
           {!shown.length && <EmptyState icon="cart" title="Everything's got" />}
           {shown.map((s) => (
             <div key={s} className="space-y-2">
-            <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (
-              <button type="button" onClick={() => void sw.fill(usual.map(want))} className={`${pill} glass -my-2 -translate-y-1 text-accent`}>Add favorites</button>
-            )}>
+            <Group header={STORE_NAMES[s]}>
               {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}
               {s === "safeway" && loose.map((l) => (
