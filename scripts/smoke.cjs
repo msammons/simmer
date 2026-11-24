@@ -359,6 +359,10 @@ const began = Date.now();
         ok("feedback: a long press on Settings opens Feedback, not Settings, the box focused and Send waiting for words",
           (await page.getByRole("dialog", { name: "Settings" }).count()) === 0 && await field.evaluate((el) => el === document.activeElement)
           && await fb.getByRole("button", { name: "Send" }).isDisabled() && (await field.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))) >= 16);
+        // Nothing behind it fades (Sam, Nov 24), and a tap outside does nothing: it stays, and the page under it doesn't react.
+        ok("feedback: the page behind isn't dimmed or blurred", await fb.evaluate((el) => { const st = getComputedStyle(el.parentElement); return st.backgroundColor === "rgba(0, 0, 0, 0)" && (st.backdropFilter === "none" || !st.backdropFilter); }));
+        await page.touchscreen.tap(10, height - 140); await frames();
+        ok("feedback: a tap outside leaves it open and reaches nothing underneath", (await fb.isVisible()) && (await page.getByRole("dialog").count()) === 1);
         await field.fill("Smoke: from Meals");
         let req = sent();
         await fb.getByRole("button", { name: "Send" }).tap();
