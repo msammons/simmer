@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromDraft, type Draft, type Recipe } from "./recipes";
-import { firstCounts, kindOf, lunchShopping, type LunchOption } from "./week";
+import { firstCounts, isOld, kindOf, lunchShopping, type LunchOption } from "./week";
 
 const base: Draft = { name: "", effort: "quick", minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" };
 const r = (id: string, p: Partial<Draft>): Recipe => fromDraft({ ...base, name: id, id, ...p });
@@ -57,5 +57,24 @@ describe("the boys' lunches", () => {
     const need = lunchShopping([lunch("Theo", "Bean and cheese burrito", "Grapes", "Goldfish", "Cheese and crackers"), lunch("Theo", "Bean and cheese burrito", "Raspberries"), lunch("Leo", "Hummus roll-up", "Strawberries")], options);
     expect(need.filter((x) => x === "tortillas")).toHaveLength(1);
     expect(need).toEqual(expect.arrayContaining(["refried beans", "hummus", "Strawberries", "crackers"]));
+  });
+});
+
+describe("old meals, kept and dimmed (Nov 24)", () => {
+  const today = "2026-11-24";
+  it("dims a meal once it's shopped for, whatever its day", () => {
+    expect(isOld({ made: "2026-11-20", day: "2026-11-28", added: "2026-11-20" }, today)).toBe(true);
+    expect(isOld({ made: "2026-10-01" }, today)).toBe(true);
+  });
+  it("dims a meal whose day has passed, but not today's or a later one", () => {
+    expect(isOld({ day: "2026-11-23", added: "2026-11-20" }, today)).toBe(true);
+    expect(isOld({ day: "2026-11-23", added: "2026-11-23" }, today)).toBe(true);
+    expect(isOld({ day: today, added: "2026-11-20" }, today)).toBe(false);
+    expect(isOld({ day: "2026-11-30", added: "2026-11-20" }, today)).toBe(false);
+  });
+  it("keeps on a meal put on a past day, or switched back on, until it's shopped for", () => {
+    expect(isOld({ day: "2026-11-20", added: today }, today)).toBe(false);
+    expect(isOld({ day: "2026-11-20", added: "2026-11-21" }, today)).toBe(false);
+    expect(isOld({ day: "", added: "2026-11-01" }, today)).toBe(false);
   });
 });

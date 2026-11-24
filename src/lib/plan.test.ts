@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { addItem, addItems, addStaple, loadList, removeItem } from "./groceries";
-import { addFrozen, changePlanned, removeRecipeFromPlan, clearPlanned, setCount, loadFreezer, loadPlan, markMade, removePlanned, savePlan } from "./plan";
-import { todayIn } from "./time";
+import { addItem, addItems, addStaple, checkItem, loadList, removeItem } from "./groceries";
+import { addFrozen, changePlanned, removeRecipeFromPlan, clearPlanned, setCount, loadFreezer, loadPlan, markMade, removePlanned, savePlan, switchOn, tidyStock } from "./plan";
+import { addDays, todayIn } from "./time";
 import type { LunchOption } from "./week";
 
 /** That many lunches for one boy, from his first option for each part (Simmer no longer plans lunches; Nov 14). */
@@ -223,5 +223,77 @@ describe("review fixes (Nov 19)", () => {
     await addItems([{ item: "ground turkey", quantity: "1 lb", for: "share-test burgers", check: false }], "Sam");
     await removeRecipeFromPlan("turkey-chili-1");
     expect((await loadList()).items.find((i) => i.item === "ground turkey" && !i.checked)).toMatchObject({ quantity: "1 lb", for: "share-test burgers" });
+  });
+});
+
+describe("old meal plans kept (Nov 24)", () => {
+  const forChili = () => loadList().then((l) => l.items.filter((i) => i.for.split(",").map((x) => x.trim()).includes("turkey chili") && !i.checked));
+
+  it("New plan keeps every dinner, dimmed, logged as made; nothing comes off Meals", async () => {
+    await clearPlanned();
+    const later = addDays(todayIn(), 3);
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: later }], [], null, "Sam");
+    const id = (await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")!.id;
+    await clearPlanned(true);
+    const p = await loadPlan();
+    expect(p.dishes.some((d) => d.id === id)).toBe(false);
+    expect(p.old.find((d) => d.id === id)).toMatchObject({ recipe: "turkey-chili-1", day: later });
+    expect(p.lastMade["turkey-chili-1"]).toBe(todayIn()); // its day is still to come: made today
+  });
+
+  it("Keep leaves what wasn't bought on the list; ticked things and Stock's waiting things go; Clear takes the rest", async () => {
+    await clearPlanned();
+    await addItem("keep-test eggs", "Robin");
+    await addItem("keep-test milk", "Robin");
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true }], [], null, "Sam");
+    const milk = (await loadList()).items.find((i) => i.item === "keep-test milk")!;
+    await checkItem(milk.id, true);
+    await clearPlanned(true);
+    const left = (await loadList()).items;
+    expect(left.map((i) => i.item)).toEqual(["keep-test eggs"]); // the chili's things waited on Stock: gone
+    await clearPlanned(false);
+    expect((await loadList()).items).toEqual([]);
+  });
+
+  it("a dimmed meal switched back on is on again on its day, and its things go on the list", async () => {
+    await clearPlanned();
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: todayIn() }], [], null, "Sam");
+    await clearPlanned();
+    const old = (await loadPlan()).old.find((d) => d.recipe === "turkey-chili-1" && d.day === todayIn())!;
+    expect(await forChili()).toEqual([]);
+    const { added } = await switchOn(old.id, "Robin");
+    expect(added).toBeGreaterThan(3);
+    const p = await loadPlan();
+    expect(p.dishes.find((d) => d.id === old.id)).toMatchObject({ day: todayIn() });
+    expect(p.old.some((d) => d.id === old.id)).toBe(false);
+    expect((await forChili()).length).toBe(added);
+  });
+
+  it("a meal's day passing dims it; switching it on keeps it on, and Stock keeps its things", async () => {
+    await clearPlanned();
+    const then = addDays(todayIn(), -5);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${then}T20:00:00Z`));
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: then }], [], null, "Sam");
+    vi.useRealTimers();
+    const p = await loadPlan();
+    const d = p.old.find((x) => x.recipe === "turkey-chili-1" && x.day === then)!;
+    expect(d).toBeTruthy();
+    expect(p.dishes.some((x) => x.id === d.id)).toBe(false);
+    await tidyStock(); // a passed day's things waiting on Stock go
+    expect(await forChili()).toEqual([]);
+    await switchOn(d.id, "Robin");
+    await tidyStock();
+    expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ day: then });
+    expect((await forChili()).length).toBeGreaterThan(3);
+  });
+
+  it("a new meal on a day that's passed goes on, with its things, and stays there", async () => {
+    await clearPlanned(false);
+    const then = addDays(todayIn(), -3);
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: then }], [], null, "Sam");
+    await tidyStock();
+    expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day: then });
+    expect((await forChili()).length).toBeGreaterThan(3);
   });
 });

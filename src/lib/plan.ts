@@ -9,13 +9,13 @@
 // else survives.
 import { append, atomically, change, load, loadAll, save, strings } from "./store";
 import { loadHousehold, PROFILE_TAB } from "./data";
-import { addItems, dropHighlightsNotFor, emptyLists, takeOffFor, type Store } from "./groceries";
+import { addItems, dropHighlightsNotFor, finishShop, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
 import { newId, yes } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
-import { addDays, todayIn } from "./time";
+import { todayIn } from "./time";
 import { bothOf, listName, norm } from "./words";
-import { firstCounts, freezerMatch, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
+import { firstCounts, freezerMatch, isOld, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
 const PLANNED = strings("Planned", ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned", "day"]);
 type PlannedRow = ReturnType<typeof PLANNED.row>;
@@ -45,17 +45,27 @@ const toOptions = (all: ReturnType<typeof LUNCHES.row>[]): LunchOption[] => all.
   return part && r.kid && r.item ? [{ kid: r.kid, part, item: r.item, ingredients: r.ingredients.split(/[,\n]/).map((x) => x.trim()).filter(Boolean) }] : [];
 });
 
-/** The Planned tab: what's still to make or pack (no made date), and what was made when. */
-function toPlanned(all: PlannedRow[]) {
-  const dishes: Dish[] = [], lunches: Lunch[] = [], done: { recipe: string; date: string }[] = [];
+/**
+ * The Planned tab: what's on (still to make or pack), the old meals kept and dimmed (Sam, Nov 24: shopped for, or their
+ * day passed; see isOld), and what was made when. An old meal from before days existed shows on the day it was made.
+ */
+function toPlanned(all: PlannedRow[], today = todayIn()) {
+  const dishes: Dish[] = [], old: Dish[] = [], lunches: Lunch[] = [], done: { recipe: string; date: string }[] = [];
   for (const r of all) {
     const kind = asKind(r.kind);
     if (!kind || !r.id) continue;
-    if (r.made) { if (kind !== "lunch") done.push({ recipe: r.recipe, date: r.made }); continue; }
-    if (kind === "lunch") { if (r.kid) lunches.push({ id: r.id, kid: r.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, r[p]])) as Record<LunchPart, string> }); }
-    else if (r.recipe) dishes.push({ id: r.id, kind, recipe: r.recipe, pinned: yes(r.pinned), added: r.added, day: DATE.test(r.day) ? r.day : "" });
+    if (kind === "lunch") {
+      if (!r.made && r.kid) lunches.push({ id: r.id, kid: r.kid, ...Object.fromEntries(LUNCH_PARTS.map((p) => [p, r[p]])) as Record<LunchPart, string> });
+      continue;
+    }
+    if (r.made) done.push({ recipe: r.recipe, date: r.made });
+    if (!r.recipe) continue;
+    const day = DATE.test(r.day) ? r.day : "";
+    const d: Dish = { id: r.id, kind, recipe: r.recipe, pinned: yes(r.pinned), added: r.added, day };
+    if (isOld({ made: r.made, day, added: r.added }, today)) old.push({ ...d, day: day || [r.made, r.added].find((x) => DATE.test(x)) || "" });
+    else dishes.push(d);
   }
-  return { dishes, lunches, done };
+  return { dishes, old, lunches, done };
 }
 
 /** When each recipe was last made: from the Made log, the Planned tab's made dates, and nights marked made in the old Plan tab. */
@@ -79,6 +89,8 @@ function tripsDue(trips: ReturnType<typeof TRIPS.row>[], today: string) {
 export type PlanData = {
   /** Still to make, oldest first. */
   dishes: Dish[];
+  /** Old meals, kept and dimmed on Meals (Nov 24): shopped for, or their day has passed. Kept for good. */
+  old: Dish[];
   /** Still to pack, oldest first. */
   lunches: Lunch[];
   /** What was asked for last time, to start from. */
@@ -104,7 +116,7 @@ export async function loadPlan(): Promise<PlanData> {
   const lunchOptions = toOptions(options);
   const kids = hh.profile.people.filter((x) => !x.isAdult && lunchOptions.some((o) => norm(o.kid) === norm(x.name))).map((x) => x.name);
   return {
-    dishes: p.dishes, lunches: p.lunches,
+    dishes: p.dishes, old: p.old, lunches: p.lunches,
     counts: countsFrom(counts, kids),
     lastMade: lastMadeFrom(made, p.done, plan),
     trips: tripsDue(trips, todayIn()),
@@ -179,11 +191,10 @@ export const savePlan = atomically(async (dishes: NewDish[], lunches: NewLunch[]
     const week = toPlanned(before);
     // Starting over (Nov 10): what only the old dinners needed, and isn't bought yet, comes off the list first.
     removed = await takeOffDishes(week.dishes.map((d) => d.recipe), new Set(), { recipes, freezer });
-    // This week's dinners marked made on the day they were planned, lunches gone, and what was made more than 60 days
-    // ago dropped (so the tab doesn't grow for ever), with the new ones at the end: one write to Planned.
+    // This week's dinners marked made on the day they were planned, lunches gone, with the new ones at the end: one
+    // write to Planned. Old meals are kept for good (Sam, Nov 24: "keep meal history indefinitely").
     const made = new Map(week.dishes.map((d) => [d.id, d.added || today]));
-    const long = addDays(today, -60);
-    planned = [...before.map((r) => (made.has(r.id) ? { ...r, made: made.get(r.id)! } : r)).filter((r) => !((r.kind === "lunch" && !r.made) || (r.made && r.made < long))), ...fresh];
+    planned = [...before.map((r) => (made.has(r.id) ? { ...r, made: made.get(r.id)! } : r)).filter((r) => !(r.kind === "lunch" && !r.made)), ...fresh];
     await save(PLANNED, planned);
     await append(MADE, week.dishes.map((d) => ({ date: made.get(d.id)!, recipe: d.recipe })));
     const want = [...KINDS.map((k) => ({ what: k, count: String(counts[k]) })), ...Object.entries(counts.lunches).map(([kid, n]) => ({ what: `lunches:${kid}`, count: String(n) }))];
@@ -251,21 +262,38 @@ export const markMade = atomically(async (id: string) => {
 });
 
 /**
- * New plan: a fresh start for the whole app (Nov 11). Every dinner comes off, logged as made on the day it was planned
- * (nothing is ticked off), so "last made" stays true; every list is emptied, except what's in the Safeway cart. Answers
- * how many list lines came off.
+ * New plan (Sam, Nov 24: old meal plans are kept). Every dinner still on is shopped for: it stays on Meals, dimmed, with
+ * a made date (its day, or today for one still to come) and a line in the Made log, so "last made" stays true. The
+ * list: what was ticked comes off as bought, Stock's answers go, the Safeway cart's things stay, and what wasn't bought
+ * stays with `keep` (she's asked first) or goes. Answers how many list lines came off.
  */
-export const clearPlanned = atomically(async (): Promise<{ removed: number }> => {
+export const clearPlanned = atomically(async (keep = false): Promise<{ removed: number }> => {
   const today = todayIn();
-  const dishes = toPlanned(await load(PLANNED)).dishes;
-  const cart = await loadCart(); // can't be read: nothing is emptied, rather than the cart's things too
-  const held = new Set(cart.map((l) => l.itemId).filter(Boolean));
-  const removed = await emptyLists(held);
-  if (!dishes.length) return { removed };
-  const made = new Map(dishes.map((d) => [d.id, d.added || today]));
-  await change(PLANNED, (all) => all.map((r) => (made.has(r.id) ? { ...r, made: made.get(r.id)! } : r)));
-  await append(MADE, dishes.map((d) => ({ date: made.get(d.id)!, recipe: d.recipe })));
+  const all = await load(PLANNED);
+  const cart = await loadCart(); // can't be read: nothing changes, rather than the cart's things coming off too
+  const removed = await finishShop(new Set(cart.map((l) => l.itemId).filter(Boolean)), keep);
+  // Every dinner without a made date, including ones dimmed only because their day passed.
+  const open = all.filter((r) => r.id && r.recipe && !r.made && asKind(r.kind) && asKind(r.kind) !== "lunch");
+  if (!open.length) return { removed };
+  const made = new Map(open.map((r) => [r.id, DATE.test(r.day) && r.day <= today ? r.day : today]));
+  await change(PLANNED, (rows) => rows.map((r) => (made.has(r.id) ? { ...r, made: made.get(r.id)! } : r)));
+  await append(MADE, open.map((r) => ({ date: made.get(r.id)!, recipe: r.recipe })));
   return { removed };
+});
+
+/**
+ * An old meal switched back on (Sam, Nov 24): it's on again on its own day, past or not, until the next New plan, and
+ * everything it needs goes on the list as a new meal's things do. Answers how many things went on.
+ */
+export const switchOn = atomically(async (id: string, by: string): Promise<{ added: number }> => {
+  const today = todayIn();
+  const d = toPlanned(await load(PLANNED), today).old.find((x) => x.id === id);
+  if (!d) return { added: 0 };
+  // Added again today: a day that's passed no longer dims it (isOld).
+  await setPlanned(id, { made: "", added: today, day: d.day ?? "" });
+  const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
+  const r = recipes.find((x) => x.id === d.recipe);
+  return { added: r ? await addItems(needFor(r, freezer), by) : 0 };
 });
 
 /**
@@ -321,10 +349,8 @@ export const tidyStock = atomically(async (): Promise<void> => {
   const [planned, recipes] = await Promise.all([load(PLANNED), loadRecipes()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
-  // A dinner on a day before today is done with (Nov 16: days drop off by themselves).
-  const today = todayIn();
-  const current = now.dishes.filter((d) => !d.day || d.day >= today);
-  await dropHighlightsNotFor([...current.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
+  // Only what's on: an old meal (shopped for, or its day passed) is done with (Nov 24, isOld).
+  await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
 });
 
 /** The freezer, for Stock (Nov 19: the trips it also answered with were read for nothing; nothing shows them). */

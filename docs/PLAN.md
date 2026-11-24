@@ -405,7 +405,7 @@ needed on the list.
 - **Leftovers.** A *Leftovers* night choice that remembers what's there.
 - **"What can I make right now?"** From the freezer and a few things on hand, three quick meals from her collection.
 
-### 4.11 Done shopping in place of New plan (requested Nov 20; refined Nov 24, next to build)
+### 4.11 Done shopping in place of New plan (requested Nov 20; refined Nov 24; built Nov 24 as keep-and-dim New plan)
 
 Sam, Nov 20, after the first real orders: the plan and the shop run on different clocks, so one reset that wipes both
 throws away things still wanted. Proposed, to try after a real week confirms it:
@@ -429,6 +429,13 @@ throws away things still wanted. Proposed, to try after a real week confirms it:
   dimmed. A dimmed meal can be switched back on, which puts its things on the list again. Any new meal goes on the list
   whatever its day, past or future. New plan now sits in every screen's top bar (shipped Nov 24); this work changes what
   it does (keep and dim, not wipe).
+- **Built Nov 24, with Sam's answers to the open points:** the name stays **New plan** (in every top bar). Meal history
+  is kept for good (no pruning), and Meals opens scrolled to today with every past day that has a meal above. "Made" is
+  still logged for every dinner New plan dims (its day, or today for one still to come). The confirm names what wasn't
+  bought, **Keep them** first or **Clear them**, and is a single New plan button when everything was bought. Ticked
+  things come off as bought, Stock's answers and a dinner's waiting things go, the Safeway cart stays. A meal put on a
+  day that's passed, or switched back on, stays on (not dimmed) until the next New plan. Not done from the Nov 20 idea:
+  the button on the "Ordered" screen.
 
 ---
 

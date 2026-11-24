@@ -58,7 +58,8 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 4.8 | A dinner's ⋯ → Move to another day | The day sheet; the dinner moves, groceries unchanged | L |
 | 4.9 | A dinner's ⋯ → Take off the plan | Asks "Take X off the plan?" ("What only it needed comes off the list."; Take it off in red, Cancel); no Undo after | L |
 | 4.10 | Dinners past the 7 or 14 days, or with no day | Under "Later" and "Not on a day" | L |
-| 4.11 | New plan | Asks "Start a new plan?" (all N dinners come off, the list empties, the Safeway cart stays; New plan in red, Cancel); then every dinner is gone and logged as made, the List is empty; Cancel changes nothing | L |
+| 4.11 | New plan | Asks "Start a new plan?" (the N dinners stay on Meals, dimmed; ticked things come off; the Safeway cart stays; what wasn't bought named, Keep them first, Clear them, Cancel; one New plan button when everything was bought); then every dinner is dimmed and logged as made; Keep leaves the unbought things, Clear empties the list; Cancel changes nothing | L |
+| 4.11a | Old meals | Past days with meals sit above today and Meals opens on today; a dimmed meal's ⋯ has only Switch back on, which undims it at once and puts its things on the list; a meal added to a past day goes on with its things | L |
 | 4.12 | A save that fails | The dinner comes back off and an alert over the page says why (OK); nothing moves | L |
 | 4.13 | Two recipes sharing a thing ("1 lb" + "1½ lb" ground turkey) | One List row, amounts added up ("2½ lb"); different units keep the newer amount | L |
 

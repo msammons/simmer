@@ -2,16 +2,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityScreen, PhoneNote, usePanelActivity } from "./Activity";
 import { type RecipeSection, api, applyTheme, AuthError, framed, LockedError, passcodeFromPanel, SIGNED_OUT, store, tellPanelSignedOut, type Draft, type Frozen, type Ingredient, type Item, type Kind, type Kitchen, type ListChange, type ListState, type Section, type Store, type NewDish, type PlanChange, type PlanData, type Recipe, type Theme } from "@/lib/client";
-import { onProblem, stores, usePlan, useRecipes, useStore } from "@/lib/app-data";
+import { onProblem, stores, useList, usePlan, useRecipes, useStore } from "@/lib/app-data";
 import { PasscodeScreen } from "./PasscodeScreen";
-import { SafewayHost } from "./Safeway";
+import { SafewayHost, useSafewayCart } from "./Safeway";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
-import { Alert, ConfirmSheet, Contained, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
+import { Alert, Button, Contained, Dialog, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
+import { todayIn } from "@/lib/time";
 
 // Settings (with ordering) loads on its own, after the app is up (see `preload`), not with the first screen. A load that
 // fails (offline) is said in the shared alert, with Try again, and is tried afresh next time.
@@ -222,17 +223,23 @@ export default function App() {
     const temp = { ...d, id: standInId("adding"), added: "" };
     plans.change(() => api.savePlan([d], [], null, "").then(planned), (p) => ({ ...p, dishes: [...p.dishes, temp] }));
   }
-  /** One planned thing changed (moved to another day, or taken off), or a new plan: shown at once, before the answer. */
-  function changePlan(c: PlanChange) {
+  /**
+   * One planned thing changed (moved to another day, taken off, or an old meal switched back on), or a new plan: shown
+   * at once, before the answer. `cart`: for New plan, the list items in the Safeway cart, which stay on the list.
+   */
+  function changePlan(c: PlanChange, cart: string[] = []) {
     const done = plans.change(() => api.planChange(c, "").then(planned), (p) => {
-      if (c.op === "clear") return { ...p, dishes: [] };
+      const old = p.old ?? [];
+      // New plan keeps every meal, dimmed (Nov 24); one with no day shows on today, as the server files it.
+      if (c.op === "clear") return { ...p, dishes: [], old: [...old, ...p.dishes.map((d) => ({ ...d, day: d.day || todayIn() }))] };
+      if (c.op === "on") { const d = old.find((x) => x.id === c.id); return d ? { ...p, old: old.filter((x) => x.id !== c.id), dishes: [...p.dishes, { ...d, added: todayIn() }] } : p; }
       if (c.op === "made" || c.op === "remove") return { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) };
       if (c.op === "change" && "day" in c) return { ...p, dishes: p.dishes.map((d) => (d.id === c.id ? { ...d, day: c.day } : d)) };
       return p;
     });
-    // A new plan empties the list too (what's in the Safeway cart comes back with the server's list), read in turn
-    // once the plan's answer is in.
-    if (c.op === "clear") lists.change(() => done.then(() => api.list()), (l) => ({ ...l, items: [] }));
+    // New plan finishes the shop on the list too: what was ticked and Stock's answers go, the Safeway cart's things stay,
+    // and what wasn't bought stays only with Keep; read in turn once the plan's answer is in.
+    if (c.op === "clear") lists.change(() => done.then(() => api.list()), (l) => ({ ...l, items: l.items.filter((x) => cart.includes(x.id) || (c.keep && !x.checked && !x.check)) }));
   }
 
   // Made once (the stores never change), so List's and Shop's rows, given the same actions, aren't drawn again.
@@ -393,7 +400,8 @@ export default function App() {
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
           onRemove={(d) => changePlan({ op: "remove", id: d.id })}
-          onMove={(d, day) => changePlan({ op: "change", id: d.id, day })} />
+          onMove={(d, day) => changePlan({ op: "change", id: d.id, day })}
+          onSwitchOn={(d) => changePlan({ op: "on", id: d.id })} />
       )}
       {phase === "app" && top.kind === "stock" && <StockScreen key={visit} act={stock} />}
       {phase === "app" && top.kind === "shop" && <ShopScreen key={visit} act={shop} />}
@@ -408,13 +416,9 @@ export default function App() {
       )}
       </StartPlan.Provider>
       </OpenSettings.Provider>
-      {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
-      <ConfirmSheet open={startingPlan} title="Start a new plan?" confirm="New plan" danger
-        message={`${[
-          plan?.dishes.length ? (plan.dishes.length === 1 ? "The dinner comes off" : `All ${plan.dishes.length} dinners come off`) : "",
-          listLines ? `${plan?.dishes.length ? "the" : "The"} list empties` : "",
-        ].filter(Boolean).join(" and ")}. The Safeway cart stays.`}
-        onConfirm={() => { void changePlan({ op: "clear" }); setStartingPlan(false); }} onCancel={() => setStartingPlan(false)} />
+      {/* A new plan asks first (Nov 24): meals stay, dimmed; what wasn't bought is Keep or Clear. */}
+      {startingPlan && plan && <NewPlanSheet dinners={plan.dishes.length} onCancel={() => setStartingPlan(false)}
+        onConfirm={(keep, cart) => { changePlan({ op: "clear", keep }, cart); setStartingPlan(false); }} />}
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {/* A sheet that fails to draw closes with the alert, never Next's error page. */}
       <Contained onError={() => { setSettings(false); setSheet(null); setAddingOne(null); setPickingDay(null); setProblem({ title: "Something went wrong", message: "That didn't open. Try again." }); }}>
@@ -436,5 +440,38 @@ export default function App() {
     </main>
     </div>
     </SafewayHost>
+  );
+}
+
+/** The things on a list that weren't bought: not ticked, not waiting on Stock, not in the Safeway cart. */
+const unbought = (items: Item[], cart: Set<string>) => items.filter((x) => !x.checked && !x.check && !cart.has(x.id));
+
+/**
+ * New plan's question (Sam, Nov 24: old meal plans are kept). The dinners stay on Meals, dimmed; what was ticked comes
+ * off; the Safeway cart stays. When something on a list wasn't bought, it's named and she picks Keep them (first) or
+ * Clear them (docs/PLAN.md 4.11); otherwise one New plan button.
+ */
+function NewPlanSheet({ dinners, onConfirm, onCancel }: { dinners: number; onConfirm: (keep: boolean, cart: string[]) => void; onCancel: () => void }) {
+  const list = useList();
+  const { cart: lines } = useSafewayCart();
+  const cart = useMemo(() => lines.map((l) => l.itemId).filter(Boolean), [lines]);
+  const left = useMemo(() => unbought(list?.items ?? [], new Set(cart)), [list, cart]);
+  const names = left.slice(0, 4).map((x) => x.item);
+  const more = left.length - names.length;
+  const said = [
+    dinners ? (dinners === 1 ? "The dinner stays on Meals, dimmed." : `The ${dinners} dinners stay on Meals, dimmed.`) : "",
+    "What's ticked comes off the list; the Safeway cart stays.",
+    left.length ? `${left.length === 1 ? "1 thing wasn't" : `${left.length} things weren't`} bought: ${names.join(", ")}${more ? `, and ${more} more` : ""}.` : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <Dialog title="Start a new plan?" message={said} onDismiss={onCancel}>
+      {left.length ? (
+        <>
+          <Button className="w-full" onClick={() => onConfirm(true, cart)}>Keep them</Button>
+          <Button variant="secondary" className="w-full" onClick={() => onConfirm(false, cart)}>Clear them</Button>
+        </>
+      ) : <Button className="w-full" onClick={() => onConfirm(false, cart)}>New plan</Button>}
+      <Button variant="secondary" className="w-full" onClick={onCancel}>Cancel</Button>
+    </Dialog>
   );
 }

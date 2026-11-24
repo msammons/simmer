@@ -62,10 +62,14 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 
 ## The screens
 
-- **Meals** (`Week.tsx`): days from today (7, or 14 with Show more days), each with its meals and, last, one Add meal row.
-  Add meal opens a sheet of her recipes (search, a pill for each kind with All first, every kind under its heading); a
-  meal's ⋯ moves it to another day or takes it off (asking first). New plan, in the top bar, asks first, empties every
-  list and logs the dinners as made (the Safeway cart stays). Simmer never picks meals. Rules in `lib/week.ts`, `lib/plan.ts`.
+- **Meals** (`Week.tsx`): opens on today; days from today (7, or 14 with Show more days), each with its meals and, last,
+  one Add meal row; every past day with a meal sits above, kept for good (Nov 24). Add meal opens a sheet of her recipes
+  (search, a pill for each kind with All first, every kind under its heading); a meal's ⋯ moves it to another day or
+  takes it off (asking first). A meal shopped for, or whose day has passed, is dimmed (`isOld` in `lib/week.ts`); its ⋯
+  switches it back on, putting its things on the list again. Any new meal goes on, with its things, whatever its day.
+  New plan, in the top bar, asks first: every dinner stays, dimmed, and is logged as made; ticked things and Stock's
+  answers come off; the Safeway cart stays; what wasn't bought is named, Keep them or Clear them. Simmer never picks
+  meals. Rules in `lib/week.ts`, `lib/plan.ts`.
 - **List** (`Stock.tsx`, `lib/stock-rows.ts`): what the house keeps, by section (Fresh, Pantry, Freezer, Household), A to Z.
   Every row is answered Have (✓) or Need (a cart): Need puts it on its store's list, Have checks it, the lit side tapped
   again clears it. Common things always show; specialty things only while they're on the list or answered. What the
