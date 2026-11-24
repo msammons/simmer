@@ -286,6 +286,46 @@ export async function safewayPage(action, arg, P) {
   // a visible, enabled button whose every word is one of `words` and that says "checkout" or "continue", only when
   // there's exactly one, pressed once. Simmer's helper asks for the cart page's Checkout ("Safeway Checkout Checkout")
   // then the suggestions page's Continue, then the checkout page's Order info Continue. Anything else: nothing is pressed.
+  // Switching Safeway to Pickup at the household's store (Sam, Nov 23: "i want this process to be automated. ideally i
+  // never touch safeway while building testing or running"; docs/CHECKOUT.md). Only Safeway's own controls, each pressed
+  // only when exactly one fits: the header's Delivery/Pickup button (when the box isn't already open), the box's Pickup
+  // tab (when it isn't already chosen), and the one store card whose street is the household's (`arg.street`, from the
+  // pickup store checkout learned) with its "Select". Never Delivery, In Store or another store. A card already
+  // "Selected" isn't pressed. Answers what it did and what Safeway's note says afterwards.
+  if (action === "choosePickup") {
+    const C = P.pickupBox;
+    const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const want = norm(arg?.store);
+    if (!C || !want) return { done: false, why: "no store" };
+    const shown = (sel, root = document) => deepAll(root, sel).filter(visible);
+    let box = shown(C.box)[0];
+    if (!box) {
+      const open = shown(C.open);
+      if (open.length !== 1) return { done: false, why: "no box button", found: open.length };
+      open[0].click();
+      box = await watch(() => shown(C.box)[0], 8000);
+      if (!box) return { done: false, why: "box didn't open" };
+    }
+    const close = () => { const x = shown(C.close); if (x.length === 1) x[0].click(); };
+    const tab = shown(C.tab, box);
+    if (tab.length !== 1) { close(); return { done: false, why: "no pickup tab", found: tab.length }; }
+    if (tab[0].getAttribute("aria-selected") !== "true") tab[0].click();
+    const pane = await watch(() => { const p = shown(C.pane, box)[0]; return p && shown(C.card, p).length ? p : null; }, 8000);
+    if (!pane) { close(); return { done: false, why: "no stores" }; }
+    const street = (card) => (card.innerText ?? card.textContent ?? "").split(/\n+/).map((l) => l.trim()).find((l) => /^\d+\s+\S/.test(l)) ?? "";
+    const mine = shown(C.card, pane).filter((c) => { const s = norm(street(c)); return s.length > 4 && ` ${want} `.includes(` ${s} `); });
+    if (mine.length !== 1) { close(); return { done: false, why: "store not found", found: mine.length }; }
+    const btns = buttons(mine[0]).concat(deepAll(mine[0], "a[role=button]").filter(visible)).filter((b, i, all) => all.indexOf(b) === i);
+    const said = (b) => (b.innerText ?? b.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (btns.some((b) => /^selected$/i.test(said(b))) && !btns.some((b) => /^select$/i.test(said(b)))) { close(); return { done: false, why: "already selected", mode: session()?.mode ?? "" }; }
+    const select = btns.filter((b) => /^select$/i.test(said(b)) && b.getAttribute("aria-disabled") !== "true" && !b.disabled);
+    if (select.length !== 1) { close(); return { done: false, why: "no select", found: select.length }; }
+    select[0].click();
+    // Safeway saves the choice and closes the box (or reloads the page, which ends this script; the helper reads again).
+    const after = await watch(() => !visible(box) || Boolean(P.session && session()?.mode === P.session.pickup), 10000);
+    return { done: true, pressed: "select", mode: session()?.mode ?? "", closed: !visible(box), seen: Boolean(after) };
+  }
+
   if (action === "pressCheckout") {
     const allowed = new Set((arg?.words ?? []).map((w) => String(w).toLowerCase()));
     if (!arg?.path || location.pathname !== arg.path) return { pressed: false, found: 0, label: "", why: "not that page" };

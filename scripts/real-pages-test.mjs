@@ -89,6 +89,31 @@ async function run(page, action, arg, P, after = "") {
   })()`);
 }
 
+/**
+ * Safeway's Delivery-or-Pickup box, saved open on its Pickup tab (file name "pickup box…", Nov 23): switching to Pickup
+ * (page.js "choosePickup") presses only that store card's Select, never Delivery, In Store or another store. The streets
+ * come from the saved page itself, so no address is in this file.
+ */
+async function pickupBox(page, f) {
+  seen.add("pickup box");
+  const streets = await page.evaluate((C) => [...document.querySelectorAll(`${C.pane} ${C.card}`)].map((c) => ({
+    street: (c.innerText ?? "").split(/\n+/).map((l) => l.trim()).find((l) => /^\d+\s+\S/.test(l)) ?? "",
+    selected: /\bselected\b/i.test(c.innerText ?? ""),
+  })), PAGE.pickupBox);
+  const mine = streets.find((s) => s.selected), other = streets.find((s) => !s.selected && s.street);
+  expect(streets.length > 1 && Boolean(mine?.street) && Boolean(other), `pickup box (${f}): store cards read, each with its street (${streets.length})`);
+  if (!mine || !other) return;
+  const hide = `(el) => { if (/^select$/i.test((el.innerText ?? "").trim())) document.querySelector(${JSON.stringify(PAGE.pickupBox.box)}).style.display = "none"; }`;
+  const a = await run(page, "choosePickup", { store: `Safeway ${other.street} Somewhere, CA 00000` }, PAGE, hide);
+  expect(a.result?.done === true && a.clicked.length === 1 && /^select$/i.test(a.clicked[0].replace(/^.*?\s(?=Select$)/i, "")), `pickup box (${f}): switching presses that store's Select, once, and nothing else (${a.clicked.join(" | ")})`);
+  await page.reload({ waitUntil: "load" });
+  const b = await run(page, "choosePickup", { store: `Safeway ${mine.street} Somewhere, CA 00000` }, PAGE);
+  expect(b.result?.why === "already selected" && !b.clicked.some((c) => /select/i.test(c)), `pickup box (${f}): the store already Selected isn't pressed (${b.result?.why}; ${b.clicked.join(" | ")})`);
+  await page.reload({ waitUntil: "load" });
+  const c = await run(page, "choosePickup", { store: "Safeway 1 Nowhere Lane Somewhere, CA 00000" }, PAGE);
+  expect(c.result?.why === "store not found" && !c.clicked.some((x) => /select/i.test(x)), `pickup box (${f}): a store not listed presses no Select (${c.result?.why})`);
+}
+
 /** What kind of page Chrome saved: Safeway's search results, its cart page with things in it, or its empty cart. */
 const kindOf = (page) => page.evaluate(() => {
   const text = document.body?.innerText ?? "";
@@ -148,6 +173,7 @@ for (const f of pages) {
   const page = await ctx.newPage();
   await page.goto(`${origin}${SIGNED_OUT.get(f) ?? `/${encodeURIComponent(f)}`}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
   if (SIGNED_OUT.has(f)) { await signedOut(page, f); await page.close(); continue; }
+  if (/^pickup box/i.test(f)) { await pickupBox(page, f); await page.close(); continue; }
   const kind = await kindOf(page);
   seen.add(kind);
   const P = kind === "search" ? PAGE : CART;

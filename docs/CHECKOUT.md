@@ -7,8 +7,14 @@ change to checkout code follows this file; if a change would weaken a rule here,
 
 Pickup only, at the household's usual store. Delivery may come later (a Pickup / Delivery switch and a tip row).
 Safeway set to delivery, or signed in with Pickup not chosen, stops every checkout step before any press (Nov 23,
-helper 26.11.23.4): "Safeway is set to delivery. Switch it to Pickup on Safeway, then try again." The helper never
-switches it.
+helper 26.11.23.4): "Safeway is set to delivery. Switch it to Pickup on Safeway, then try again."
+Since helper 26.11.23.5 the helper switches Safeway to Pickup itself first, once per job (Sam, Nov 23, approving these
+presses: "i want this process to be automated. ideally i never touch safeway while building testing or running"):
+on Safeway's home page, the header's Delivery/Pickup button, the box's Pickup tab, and the "Select" of the one store
+card whose street is the household's pickup store (the one checkout learned; Simmer sends it with each job). Each only
+when exactly one fits; never Delivery, In Store or another store; a store already "Selected" isn't pressed; no store
+known, no switch. Searches, cart reads, Adds, getting ready and test runs switch; placing never does (it stops as before,
+on exactly what Face ID approved). Only if the switch doesn't take does Simmer show the words above.
 
 ## The flow
 

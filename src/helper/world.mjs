@@ -353,6 +353,41 @@ function serve(u) {
   // Signed in, Safeway's sign-in page sends the tab on to its home page by itself (seen Nov 23).
   if (p === "/account/sign-in.html") return { html: '<h1>Sign in</h1><input id="user"><button>Sign in</button>', run: (t) => { if (shop.signedIn && !shop.sessionGone) t.after(300, () => t.go("/")); } };
   // The home page signed out as on Nov 23: the name it remembers, Sign In there but hidden.
-  if (shop.cartGone) return { html: '<div class="menu-nav"><a href="/erums/cart" aria-label="Cart">Cart</a> <button aria-label="Account menu">Hi, Sam</button><div style="display:none"><a href="/account/sign-in.html">Sign In</a></div></div><h1>Safeway</h1>' };
-  return { html: `<div class="menu-nav">${shop.signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</div><h1>Safeway</h1>` };
+  if (shop.cartGone) return withBox(shop, { html: '<div class="menu-nav"><a href="/erums/cart" aria-label="Cart">Cart</a> <button aria-label="Account menu">Hi, Sam</button><div style="display:none"><a href="/account/sign-in.html">Sign In</a></div></div><h1>Safeway</h1>' });
+  return withBox(shop, { html: `<div class="menu-nav">${shop.signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</div><h1>Safeway</h1>` });
+}
+
+/**
+ * Safeway's Delivery-or-Pickup box on its home page (`shop.box`), as on the real site Nov 23 (safeway/pickup box.html):
+ * the header button opens it; the Pickup tab shows store cards (street first, then "Select" or "Selected"). Select saves
+ * Pickup there: the note says "Dug" and the cart works again. `shop.box.stores`: the streets; `selected`: the one chosen.
+ * `shop.box.noTake`: Select does nothing (Safeway didn't take it).
+ */
+export const OUR_STREET = "100 Main St", OTHER_STREET = "200 Oak Ave";
+function withBox(shop, page) {
+  const b = shop.box;
+  if (!b) return page;
+  const stores = b.stores ?? [OUR_STREET, OTHER_STREET];
+  const card = (st) => `<div class="card-store row"><div class="caption"><p>${st}</p><p>Petaluma, CA 00000</p></div><div class="caption">${st === b.selected
+    ? '<a href="#" role="button" aria-disabled="true" class="card-store-btn-disabled">Selected</a>'
+    : `<a href="#" role="button" class="card-store-btn" data-street="${st}">Select</a>`}</div></div>`;
+  const html = `<button id="openFulfillmentModalButton">${b.mode === "Delivery" ? "Delivery to 00000" : "Pickup at somewhere"}</button>${page.html}
+    <div id="storeFulfillmentModal" role="dialog" style="display:none"><button id="closeFulfillmentModalButton" aria-label="Close">x</button>
+      <a id="modal-tab-delivery-btn" role="tab" aria-selected="${b.mode === "Delivery"}">Delivery</a>
+      <a id="modal-tab-pickup-btn" role="tab" aria-selected="false">Pickup</a>
+      <div id="fulfilmentDelivery" style="display:${b.mode === "Delivery" ? "block" : "none"}"><p>Deliver to 00000</p></div>
+      <div id="fulfilmentPickup" style="display:none">${stores.map(card).join("")}</div></div>`;
+  return { ...page, html, run: (t) => {
+    page.run?.(t);
+    const box = doc.getElementById("storeFulfillmentModal");
+    doc.getElementById("openFulfillmentModalButton").onclick = () => { press(shop, "box"); box.style.display = "block"; };
+    doc.getElementById("closeFulfillmentModalButton").onclick = () => { press(shop, "close"); box.style.display = "none"; };
+    doc.getElementById("modal-tab-delivery-btn").onclick = () => press(shop, "delivery tab");
+    doc.getElementById("modal-tab-pickup-btn").onclick = (e) => { press(shop, "pickup tab"); e.target.setAttribute("aria-selected", "true"); doc.getElementById("fulfilmentDelivery").style.display = "none"; t.after(300, () => { doc.getElementById("fulfilmentPickup").style.display = "block"; }); };
+    for (const a of doc.querySelectorAll("#fulfilmentPickup a[data-street]")) a.onclick = () => {
+      press(shop, `select ${a.dataset.street}`);
+      if (b.noTake) return;
+      t.after(400, () => { b.selected = a.dataset.street; b.mode = "Dug"; shop.cartGone = false; current.note({ userType: "C", preference: "Dug" }); box.style.display = "none"; });
+    };
+  } };
 }
