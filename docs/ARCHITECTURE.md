@@ -167,7 +167,16 @@ passcode by message from its parent, only from a Chrome helper page, never from 
 - `npm test` (vitest), `npm run lint`, `npx tsc --noEmit`.
 - Browser smoke test (any day, sample data; behaviour once at phone size, layout in phone light, phone dark and one
   1000 px wide run): start a server with `HOUSEHOLD_PASSCODE=test123` and blank Redis and Google settings (e.g.
-  `npx next start -p 3202`), then `URL=http://localhost:3202/ node scripts/smoke.cjs`.
+  `npx next start -p 3202`), then `URL=http://localhost:3202/ node scripts/smoke.cjs`. With three servers (3202–3204)
+  and `URL=http://localhost:3202/,http://localhost:3203/,http://localhost:3204/` the three setups run at once (about 40 s
+  in place of two minutes), as CI does. It has no fixed pauses: each step waits for what it stands for, with a limit;
+  the few timed waits left measure something on purpose and say so.
+- **Shipping** a branch: `node scripts/ship.mjs --title "…" --body <file>` (the body ends with the Claude Code line).
+  It pushes the branch (never forced), opens its pull request if there's none, waits for the "check" run on the pushed
+  commit to appear and pass (stops on a failure), merges it with a merge commit, checks out and pulls main
+  (fast-forward only), waits for Vercel's production deployment of that commit to be Ready, and runs
+  `scripts/release-helper.mjs` when extension-working/'s helper version differs from extension/'s. Each step prints
+  its time.
 - After changing `public/icon.svg`: `npm run icons`.
 
 ## Setting up production
@@ -202,6 +211,12 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
   passcode, emails, long numbers and link queries taken out; for a reply that didn't read or Gemini's failures only the
   kind and status), digest and time; never a request body. Read them with `vercel env pull /tmp/simmer.env
   --environment=production && node scripts/errors.mjs /tmp/simmer.env` (the file is deleted as it's read).
+- **The helper's state** (read-only, Nov 23): `vercel env pull /tmp/simmer.env --environment=production && node
+  scripts/helper-status.mjs /tmp/simmer.env [N]` prints the helper's check-in (version against the one Simmer ships, when,
+  panel open), the open jobs, the last N jobs (default 15: kind, status, when, how long, a short result: errors, stops,
+  signed in or not, Pickup, how many products; no product names or addresses), how long each kind of job takes from
+  `${NS}:job-times` (count, median, max, failures by reason; the last 500 finished jobs, kept 90 days, written by
+  `finishJob`), and whether this checkout's fingerprint (`src/lib/checkout-print.json`) is among the passed test runs.
 - **Backups** (`ops/backup.ts`): New plan, starting the plan over, and Done shopping each keep the tabs as they were
   before the change (read just before it, written once the answer has gone): one key per tab,
   `${NS}:backup:<ISO time>:<tab>`, and an index `${NS}:backup:<ISO time>` written last. The newest 7 are kept, older
@@ -210,7 +225,11 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
   shows what would change, `--apply` writes every tab and counts up its version in one EVAL.
 - **Checks on GitHub** (`.github/workflows/check.yml`): every pull request and push to main runs types, lint, tests, the
   build and the browser smoke test against `next start` (sample data, test passcode, no Redis, no secrets). Playwright is
-  installed outside the project in CI and found through `NODE_PATH`, as on the Mac, so it isn't a dependency.
+  installed outside the project in CI and found through `NODE_PATH`, as on the Mac, so it isn't a dependency. Quick
+  (Nov 23): node_modules is kept between runs by the lock file and Node version (npm ci only when either changes),
+  Playwright and its Chromium by Playwright's version (Chromium's system libraries installed only if the runner lacks
+  one), and Next's build cache; types, lint and tests run side by side, each one's output shown whole; the smoke test's
+  three setups run side by side, one `next start` each (3202–3204), so their data never mixes.
 - **Checks for a helper change** (Nov 23, Sam: "be efficient with tests. And intelligent. Not too much or little."): one
   command, `npm run helper-check` (`scripts/helper-check.mjs`), about a minute. First the helper's decisions, fast
   (`src/helper/helper.test.mjs`, also in `npm test` and CI): the helper's own files, loaded unchanged as text, against a

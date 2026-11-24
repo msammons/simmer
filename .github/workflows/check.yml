@@ -1,5 +1,7 @@
 # Checks every pull request and every push to main: types, lint, tests, a production build, and the browser smoke test
 # against that build. No secrets: the smoke test runs on the sample data with a test passcode and no Redis.
+# Quick (Nov 23): node_modules, Playwright with its browser, and Next's build cache are kept between runs; types, lint
+# and tests run side by side; the smoke test's three setups run side by side, each on its own server.
 name: Check
 
 on:
@@ -20,40 +22,83 @@ jobs:
     timeout-minutes: 30
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      # Playwright is installed outside the project (in the runner's temp folder; the smoke script finds it through
-      # NODE_PATH, as on the Mac), so the app's dependencies stay as they are.
+      # Playwright is installed outside the project (in a folder of its own; the smoke script finds it through NODE_PATH,
+      # as on the Mac), so the app's dependencies stay as they are.
       PLAYWRIGHT_VERSION: "1.62.1"
+      PW_DIR: /home/runner/.cache/simmer-playwright
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
+        id: node
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      # node_modules itself, keyed on the lock file and the exact Node version: a hit skips npm ci altogether.
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
 
-      # next-env.d.ts and .next are git-ignored: Next's route and layout types (LayoutProps…) are made first.
-      - name: Types
+      - name: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      # Types, lint and tests side by side; each one's output is shown whole, one after another, and any that failed
+      # fails the step. next-env.d.ts and .next are git-ignored: Next's route and layout types (LayoutProps…) are made
+      # first.
+      - name: Types, lint and tests
         run: |
-          npx next typegen
-          npx tsc --noEmit -p .
+          mkdir -p "$RUNNER_TEMP/checks"
+          ( npx next typegen && npx tsc --noEmit -p . ) > "$RUNNER_TEMP/checks/Types" 2>&1 & types=$!
+          npx eslint > "$RUNNER_TEMP/checks/Lint" 2>&1 & lint=$!
+          npx vitest run --dir src > "$RUNNER_TEMP/checks/Tests" 2>&1 & tests=$!
+          failed=""
+          for check in Types:$types Lint:$lint Tests:$tests; do
+            name=${check%%:*}
+            if wait "${check##*:}"; then echo "::group::$name passed"; cat "$RUNNER_TEMP/checks/$name"; echo "::endgroup::"
+            else failed="$failed $name"; echo "::error::$name failed"; echo "===== $name ====="; cat "$RUNNER_TEMP/checks/$name"; fi
+          done
+          [ -z "$failed" ] || { echo "Failed:$failed"; exit 1; }
 
-      - name: Lint
-        run: npx eslint
-
-      - name: Tests
-        run: npx vitest run --dir src
+      # Next's own build cache (compiled modules), keyed on the lock file and the source; an older one still helps.
+      - name: Restore Next's build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**', 'next.config.ts', 'extension-working/**') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            next-${{ runner.os }}-
 
       - name: Build
         run: npm run build
 
+      - name: Restore Playwright
+        id: playwright
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PW_DIR }}
+            ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+
       - name: Install Playwright (outside the project)
         run: |
-          PW_DIR="$RUNNER_TEMP/playwright"
-          npm install --prefix "$PW_DIR" --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION"
-          "$PW_DIR/node_modules/.bin/playwright" install --with-deps chromium
+          if [ "${{ steps.playwright.outputs.cache-hit }}" != "true" ]; then
+            npm install --prefix "$PW_DIR" --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION"
+            "$PW_DIR/node_modules/.bin/playwright" install chromium
+          fi
+          # The system libraries Chromium needs, only when the runner lacks one of them.
+          shell=$(find ~/.cache/ms-playwright -type f -name chrome-headless-shell | head -1)
+          if [ -z "$shell" ] || ldd "$shell" | grep -q "not found"; then
+            echo "Installing Chromium's system libraries"
+            "$PW_DIR/node_modules/.bin/playwright" install-deps chromium
+          fi
 
+      # One server per setup (phone light, phone dark, wide), each with its own data in memory, so the three run at once.
       - name: Smoke test
         env:
           HOUSEHOLD_PASSCODE: test123
@@ -64,13 +109,20 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ""
           GEMINI_API_KEY: ""
         run: |
-          npx next start -p 3202 > "$RUNNER_TEMP/server.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:3202/api/version > /dev/null && break; sleep 1; done
-          NODE_PATH="$RUNNER_TEMP/playwright/node_modules" URL=http://localhost:3202/ node scripts/smoke.cjs
+          urls=""
+          for port in 3202 3203 3204; do
+            npx next start -p $port > "$RUNNER_TEMP/server-$port.log" 2>&1 &
+            urls="$urls${urls:+,}http://localhost:$port/"
+          done
+          for port in 3202 3203 3204; do
+            for i in $(seq 1 60); do curl -sf http://localhost:$port/api/version > /dev/null && break; sleep 1; done
+          done
+          NODE_PATH="$PW_DIR/node_modules" URL="$urls" node scripts/smoke.cjs
 
       - name: Server log
         if: failure()
-        run: cat "$RUNNER_TEMP/server.log" || true
+        run: |
+          for log in "$RUNNER_TEMP"/server-*.log; do echo "===== $log"; cat "$log"; done || true
 
       - name: Smoke screenshots
         if: failure()

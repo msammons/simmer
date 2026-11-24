@@ -197,6 +197,27 @@ describe("jobs for the Safeway helper", () => {
     expect(await takeJob("1.0.0", false)).toBeNull();
   });
 
+  it("keeps how long each finished job took, by kind, once per job (Nov 23)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { kv } = await import("./kv");
+      const a = await queueJob("search", { query: "milk" });
+      await takeJob("1.0.0", false);
+      vi.setSystemTime(Date.now() + 12_340);
+      await finishJob(a.id, true, { products: [], signedIn: true });
+      await finishJob(a.id, true, { products: [], signedIn: true }); // the same report sent twice counts once
+      const b = await queueJob("setQty", { ...milk, qty: 1 });
+      await takeJob("1.0.0", false);
+      vi.setSystemTime(Date.now() + 3_000);
+      await finishJob(b.id, false, { error: "signed-out" });
+      const times = (await kv().lrange("simmer:job-times", 0, -1)).map((t) => JSON.parse(t));
+      expect(times).toEqual([
+        { at: expect.any(String), kind: "search", s: 12.3, ok: true },
+        { at: expect.any(String), kind: "setQty", s: 3, ok: false, why: "signed-out" },
+      ]);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("a search can raise a quantity but never takes a product out (search results miss what's in the cart)", async () => {
     await setCartLine({ ...milk, qty: 2 });
     await setCartLine({ productId: "5", qty: 1, name: "Bread" });
