@@ -9,6 +9,12 @@
 // cart page's products and counts, signed in, "no results", an empty cart that lists past purchases, the cart count,
 // which button Add / + / − would press, Safeway's own boxes after an Add, and a page reached instead of the one asked
 // for. Presses go nowhere: the page's click is replaced by a note of what would have been pressed. Exits 1 on a failure.
+//
+// A saved page whose file name starts with "signed out" is one saved after Safeway's session ended (Nov 23): copied in
+// the page itself, with what was hidden on screen given `display:none`, and a first line `<!-- saved from URL -->`. It's
+// served at that address (the helper judges a page by its address), and must read as the helper would act on it: signed
+// out, nothing in the cart, told promptly and never "didn't load"; or, for Safeway's home page reached instead of the
+// cart, sent away.
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -20,7 +26,7 @@ if (!existsSync(dir) || !statSync(dir).isDirectory()) {
   process.exit(0);
 }
 const { chromium } = createRequire(import.meta.url)("playwright");
-const { PAGE } = await import("../src/lib/safeway-helper.mjs");
+const { PAGE, SETTINGS } = await import("../src/lib/safeway-helper.mjs");
 // page.js as the helper runs it, without its `export` (it's a function Chrome copies into the page).
 const PAGE_JS = readFileSync(path.resolve("extension-working/page.js"), "utf8").replace(/^export async function safewayPage/m, "async function safewayPage");
 // The cart page is read with the search page's details and these over them, as safeway.js does (`cartPage`).
@@ -35,8 +41,19 @@ const quiet = (html) => html
   .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
   .replace(/<meta[^>]+http-equiv=["']?(?:refresh|content-security-policy)[^>]*>/gi, "")
   .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*')/gi, "");
+// Signed-out pages, by the address in their "saved from" line (served there; the helper judges a page by its address).
+const SIGNED_OUT = new Map();
+for (const f of readdirSync(dir).filter((f) => /^signed out.*\.html?$/i.test(f))) {
+  const from = readFileSync(path.join(dir, f), "utf8").slice(0, 2000).match(/<!--\s*saved from\s+(\S+?)\s*-->/i)?.[1];
+  let at = null;
+  try { at = from ? new URL(from).pathname : null; } catch {}
+  // Two can share an address (Safeway's home page, saved twice): `?saved=` says which, and the helper reads only the path.
+  SIGNED_OUT.set(f, `${at ?? `/${encodeURIComponent(f)}`}?saved=${encodeURIComponent(f)}`);
+}
 const server = createServer((req, res) => {
-  const file = path.join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname));
+  const u = new URL(req.url, "http://x");
+  const saved = u.searchParams.get("saved");
+  const file = path.join(dir, saved && SIGNED_OUT.has(saved) ? saved : decodeURIComponent(u.pathname));
   if (!file.startsWith(dir + path.sep) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404).end(); return; }
   const ext = path.extname(file).toLowerCase();
   const type = TYPES[ext] ?? (/^[^.]+$/.test(path.basename(file)) ? "image/jpeg" : "");
@@ -81,12 +98,56 @@ const kindOf = (page) => page.evaluate(() => {
   return "other";
 });
 
+/**
+ * A page saved signed out, read as the helper would act on it (safeway.js `open` and `waitForProducts`). Safeway's cart
+ * page with its "sign back in" box: not signed in, nothing in the cart, not an empty cart, and the watch answers signed
+ * out once Sign In has held, with the helper's own hold and limit too, never "didn't load". Safeway's home page (reached
+ * instead of the cart): the watch for the cart answers "sent away" at once, which the helper takes as signed out once
+ * it happens again.
+ */
+async function signedOut(page, f) {
+  const here = new URL(page.url()).pathname, AWAY = ["/", "/home.html", "/account/sign-in.html"];
+  const home = AWAY.includes(here);
+  const tag = `signed out ${home ? "home" : "cart"} (${f}, at ${here})`;
+  seen.add(home ? "signed out home" : "signed out cart");
+  const read = (await run(page, "read", null, CART)).result;
+  const products = read?.products ?? [];
+  console.log(`\n${tag}: signed in ${read?.signedIn}, ${products.length} products, ${products.filter((p) => p.inCart).length} in the cart, "none" ${read?.noResults}, cart count ${read?.cartCount}`);
+  expect(!products.some((p) => p.inCart), `${tag}: no product counts as in the cart`);
+  const watchFor = async (path, outHold, ms) => {
+    const t = Date.now();
+    const r = (await run(page, "waitFor", { until: "products", onlyInCart: true, hold: 400, outHold, path, away: AWAY, ms }, CART)).result;
+    return { r, took: Date.now() - t };
+  };
+  if (home) {
+    // Its Sign In links and Session Expired box are hidden: page.js may read it signed in; the address is what tells.
+    const { r, took } = await watchFor("/erums/cart", 400, 3000);
+    expect(r?.ok === true && r.away === true && took < 1500, `${tag}: watching for the cart answers "sent away" at once (${took} ms; the helper's second time there is signed out)`);
+    // A search sent here too: "sent away" before any of the home page's own products count as the search's.
+    const t = Date.now();
+    const s = (await run(page, "waitFor", { until: "products", onlyInCart: false, hold: 400, outHold: 400, path: new URL(PAGE.searchPath, "https://x").pathname, away: AWAY, ms: 3000 }, PAGE)).result;
+    expect(s?.ok === true && s.away === true && Date.now() - t < 1500, `${tag}: watching for a search's products answers "sent away" at once, not with the home page's products`);
+  } else {
+    expect(read && read.signedIn === false, `${tag}: reads not signed in`);
+    expect(read && read.noResults !== true, `${tag}: doesn't read as an empty cart`);
+    const { r, took } = await watchFor(here, 400, 3000);
+    expect(r?.ok === true && r.out === true && !r.away && !r.held && r.page?.signedIn === false && !r.page.products.some((p) => p.inCart) && took < 1500, `${tag}: watching for the cart's products answers signed out once Sign In has held (${took} ms), not "sent away", not empty`);
+    // With the helper's own numbers (safeway.js waitForProducts on the cart page): signed out inside the limit.
+    const outHold = SETTINGS.signedOutHold ?? 8000;
+    const ms = Math.max(Math.max((SETTINGS.resultsTries ?? 25) * (SETTINGS.resultsWait ?? 800), 10_000), outHold + 2000);
+    const real = await watchFor(here, outHold, ms);
+    expect(real.r?.ok === true && real.r.out === true && real.took < outHold + 1500, `${tag}: with the helper's hold (${outHold} ms) and limit (${ms} ms), it answers signed out in ${real.took} ms, not "didn't load"`);
+  }
+  expect(typeof (await run(page, "sample", null, CART)).result === "string", `${tag}: a sample reads it`);
+}
+
 const pages = readdirSync(dir).filter((f) => /\.html?$/i.test(f)).sort();
 expect(pages.length > 0, `saved pages found (${pages.length})`);
 const seen = new Set();
 for (const f of pages) {
   const page = await ctx.newPage();
-  await page.goto(`${origin}/${encodeURIComponent(f)}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
+  await page.goto(`${origin}${SIGNED_OUT.get(f) ?? `/${encodeURIComponent(f)}`}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
+  if (SIGNED_OUT.has(f)) { await signedOut(page, f); await page.close(); continue; }
   const kind = await kindOf(page);
   seen.add(kind);
   const P = kind === "search" ? PAGE : CART;
@@ -168,7 +229,7 @@ for (const f of pages) {
   expect(typeof (await run(page, "sample", null, P)).result === "string", `${tag}: a sample reads it`);
   await page.close();
 }
-for (const k of ["search", "cart", "empty cart"]) if (!seen.has(k)) console.log(`(no saved ${k} page)`);
+for (const k of ["search", "cart", "empty cart", "signed out cart", "signed out home"]) if (!seen.has(k)) console.log(`(no saved ${k} page)`);
 
 await browser.close();
 server.close();
