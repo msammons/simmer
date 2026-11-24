@@ -23,6 +23,7 @@ function ago(iso: string): string {
 function why(error: string): string {
   if (error === "not-answering" || error === "stuck") return "Safeway couldn't be reached";
   if (error === "signed-out") return "Safeway isn't signed in";
+  if (error === "no-pickup") return "Pickup isn't chosen on Safeway";
   if (error === "not-found") return "it didn't come up on Safeway";
   if (error === "not-loaded") return "Safeway didn't load";
   return "Safeway didn't take it";
@@ -122,7 +123,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
           <Group header="Recent">
             {done.map((j) => (
               <Row key={j.id} title={<span className={j.status === "failed" || (j.kind === "search" && !j.signedIn) ? "text-warn-ink" : ""}>{describe(j)}</span>}
-                subtitle={[j.from === "app" ? "From the phone" : "From here", ago(j.updated), j.status === "failed" ? why(j.error) : j.kind === "search" && !j.signedIn ? why("signed-out") : ""].filter(Boolean).join(" · ")} />
+                subtitle={[j.from === "app" ? "From the phone" : "From here", ago(j.updated), j.status === "failed" ? why(j.error) : j.kind === "search" && !j.signedIn ? why(j.noPickup ? "no-pickup" : "signed-out") : ""].filter(Boolean).join(" · ")} />
             ))}
           </Group>
         ) : (

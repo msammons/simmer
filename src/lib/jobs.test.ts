@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetKv } from "./kv";
 import { addItem, loadList, removeItem } from "./groceries";
-import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, pressJob, queueJob, recentJobs, resetJobs, safewaySignedOut, cartChanging, savePush, takeJob } from "./jobs";
+import { cancelJob, finishJob, returnJob, HELPER_VERSION, helperOutdated, helperPush, olderVersion, helperStatus, jobStatus, pressJob, queueJob, recentJobs, resetJobs, safewayNoPickup, safewaySignedOut, cartChanging, savePush, takeJob } from "./jobs";
 import { loadCart, loadPicks, resetSafeway, setCartLine } from "./safeway";
 
 const milk = { productId: "960001", query: "milk", name: "Lucerne Milk 2% - 1/2 Gallon", price: "$3.49", image: "https://images.example/milk.jpg", itemId: "m", item: "milk" };
@@ -32,6 +32,36 @@ describe("jobs for the Safeway helper", () => {
     expect(await safewaySignedOut()).toBe(false);
     await finish("checkoutPrepare", { stopped: "signed out", chosen: null, final: null });
     expect(await safewaySignedOut()).toBe(true);
+  });
+
+  it("keeps signed in with Pickup not chosen apart from signed out, and leaves the cart alone (Nov 23)", async () => {
+    await setCartLine({ ...milk, qty: 1 });
+    const finish = async (kind: "cart" | "search" | "setQty" | "checkoutPrepare", raw: Record<string, unknown>, ok = true) => {
+      const j = await queueJob(kind, kind === "search" ? { query: "milk" } : kind === "setQty" ? { productId: milk.productId, qty: 2 } : {});
+      await takeJob("1.0.0", true); return finishJob(j.id, ok, raw);
+    };
+    const seen = async () => [await safewaySignedOut(), await safewayNoPickup()];
+    let j = await finish("cart", { products: [], signedIn: false, noPickup: true });
+    expect(j?.result).toMatchObject({ signedIn: false, noPickup: true, products: [] });
+    expect(await seen()).toEqual([false, true]);
+    expect((await loadCart()).map((l) => l.productId)).toEqual([milk.productId]);
+    // Signed out after: one or the other, never both.
+    await finish("cart", { products: [], signedIn: false });
+    expect(await seen()).toEqual([true, false]);
+    j = await finish("search", { products: [{ id: "1", name: "x", price: "", image: "", inCart: true, qty: 3 }], signedIn: false, noPickup: true });
+    expect(j?.result).toMatchObject({ signedIn: false, noPickup: true, products: [] });
+    expect(await seen()).toEqual([false, true]);
+    await finish("cart", { products: [{ id: milk.productId, name: milk.name, price: milk.price, image: "", inCart: true, qty: 1 }], signedIn: true });
+    expect(await seen()).toEqual([false, false]);
+    await finish("setQty", { error: "no-pickup" }, false);
+    expect(await seen()).toEqual([false, true]);
+    await finish("cart", { products: [{ id: milk.productId, name: milk.name, price: milk.price, image: "", inCart: true, qty: 1 }], signedIn: true });
+    await finish("checkoutPrepare", { stopped: "no pickup chosen", chosen: null, final: null });
+    expect(await seen()).toEqual([false, true]);
+    // Set to delivery isn't a sign-in state: nothing noted.
+    await finish("cart", { products: [{ id: milk.productId, name: milk.name, price: milk.price, image: "", inCart: true, qty: 1 }], signedIn: true });
+    await finish("checkoutPrepare", { stopped: "delivery", chosen: null, final: null });
+    expect(await seen()).toEqual([false, false]);
   });
 
   it("never guesses the helper's away from when it last checked in (Nov 11: no timer keeps that fresh)", async () => {

@@ -28,6 +28,16 @@ order Face ID approved, once, when the page says exactly what was approved.
   count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
   minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
   tab moved to) for Simmer to judge. It never presses again, whatever comes back.
+- **Signed in with Pickup not chosen, and delivery, said as such (26.11.23.4).** Nov 23, after Sam signed in again
+  Safeway had forgotten Pickup, sent every page home (the cart too, with a "Please Select Delivery or Pickup" box), and
+  the helper said signed out. Safeway keeps a session note the page can read (`PAGE.session`: a cookie whose userType
+  was "C", a signed-in customer, and preference "Dug", pickup; what it holds otherwise isn't seen). A search, cart read
+  or Add sent home twice reads it: signed in with a choice that isn't pickup is `noPickup` ("no-pickup" for an Add),
+  and the tab stays where Safeway put it, not on the sign-in page; Simmer says "Choose Pickup on Safeway". Missing,
+  unreadable, or any other user: signed out, as before. Checkout (Simmer orders pickup only) stops, before any press,
+  "no pickup chosen" when the cart is sent home that way, and "delivery" when the note names another choice or the
+  checkout page names delivery and no pickup (it said "pickup times couldn't be reopened"). The mode is never switched
+  by the helper. Shared with checkout, so this needs a test run.
 - **Signed out when Safeway sends its pages home (26.11.23.3).** Nov 23, Safeway's sign-in ran out on the Mac: signed
   out, Safeway sends its cart address to its home page, which shows the name it remembers and no Sign In (its Sign In
   links and its Session Expired box are there, hidden, as on every page). 26.11.23.2 watched that page for the cart,
@@ -126,7 +136,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.3.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.4.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

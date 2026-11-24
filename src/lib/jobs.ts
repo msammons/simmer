@@ -35,7 +35,7 @@ export type Helper = { seen: string; version: string; panel: boolean };
 /** Where a job was asked for: Simmer in the helper's panel, or anywhere else (the phone, mostly). */
 export type JobFrom = "panel" | "app";
 /** A job as the panel's activity log tells it. */
-export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatus; from: JobFrom; what: string; qty: number | null; error: string; signedIn: boolean; created: string; updated: string };
+export type Activity = { id: string; kind: "search" | "setQty"; status: JobStatus; from: JobFrom; what: string; qty: number | null; error: string; signedIn: boolean; noPickup?: boolean; created: string; updated: string };
 
 /**
  * The limits left (Nov 23, Sam: "don't timers fail consistently?"). What decides is what happened: the helper asking for
@@ -208,11 +208,24 @@ export const helperOutdated = (h: Helper | null) => Boolean(h?.version) && older
  * that stopped "signed out"; only a cart read that sees Safeway signed in clears it (and puts the cart right). Kept under its own key, so a check-in never writes over it.
  */
 const SIGNED_OUT_KEY = `${NS}:safeway-signed-out`;
-async function noteSignedIn(signedIn: boolean): Promise<void> {
-  if (signedIn) await kv().del(SIGNED_OUT_KEY);
-  else await kv().set(SIGNED_OUT_KEY, now(), { ex: 30 * 24 * 3600 });
+/**
+ * Signed in with Pickup not chosen on Safeway (Nov 23: after signing in again Safeway had forgotten Pickup and sent every
+ * page home, the cart too, and Simmer said signed out while Sam was signed in). Set by a cart read, search, Add or
+ * checkout step that saw it; like signed out, only a cart read that sees Safeway's cart clears it. Its own key too.
+ */
+const NO_PICKUP_KEY = `${NS}:safeway-no-pickup`;
+/** How Safeway was last seen on the computer: signed in, signed out, or signed in with Pickup not chosen. */
+export type SafewaySeen = "in" | "out" | "no-pickup";
+async function noteSafeway(seen: SafewaySeen): Promise<void> {
+  const keep = { ex: 30 * 24 * 3600 };
+  if (seen === "in") await Promise.all([kv().del(SIGNED_OUT_KEY), kv().del(NO_PICKUP_KEY)]);
+  else if (seen === "out") await Promise.all([kv().set(SIGNED_OUT_KEY, now(), keep), kv().del(NO_PICKUP_KEY)]);
+  else await Promise.all([kv().set(NO_PICKUP_KEY, now(), keep), kv().del(SIGNED_OUT_KEY)]);
 }
+const noteSignedIn = (signedIn: boolean) => noteSafeway(signedIn ? "in" : "out");
 export const safewaySignedOut = async (): Promise<boolean> => Boolean(await kv().get(SIGNED_OUT_KEY));
+/** Whether Safeway was last seen signed in with Pickup not chosen. */
+export const safewayNoPickup = async (): Promise<boolean> => Boolean(await kv().get(NO_PICKUP_KEY));
 
 const loadHelper = async (): Promise<Helper | null> => json<Helper>(await kv().get(HELPER_KEY));
 /**
@@ -428,9 +441,11 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   const raw: Record<string, unknown> = gone ? { ok: true, qty: 0 } : reportedRaw;
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
-    result = { products: productsOf(raw), signedIn: raw.signedIn !== false, noResults: raw.noResults === true };
-    // Signed out, noted; signed in leaves it to the cart page, which also puts the cart right.
-    if (!result.signedIn) await noteSignedIn(false);
+    const noPickup = raw.noPickup === true;
+    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, noResults: raw.noResults === true, ...(noPickup && { noPickup }) };
+    // Signed out (or Pickup not chosen), noted; signed in leaves it to the cart page, which also puts the cart right.
+    if (noPickup) await noteSafeway("no-pickup");
+    else if (!result.signedIn) await noteSignedIn(false);
     // Safeway's search results don't reliably show what's in the cart (a product in it came back "not in the cart",
     // Oct 31), so a search only ever brings Simmer's quantity up; the cart page (kind "cart") decides what's gone.
     // All of them in one save (one read, and one write only when a quantity went up).
@@ -455,8 +470,10 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   }
   if (ok && j.kind === "cart") {
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
-    result = { products: productsOf(raw), signedIn: raw.signedIn !== false };
-    await noteSignedIn(result.signedIn === true);
+    // Signed in with Pickup not chosen (Nov 23): Safeway showed no cart, so Simmer's copy stays as it is.
+    const noPickup = raw.noPickup === true;
+    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, ...(noPickup && { noPickup }) };
+    await noteSafeway(noPickup ? "no-pickup" : result.signedIn === true ? "in" : "out");
     if (result.signedIn && raw.empty === true) result = { ...result, ...(await emptied(raw.orders)) };
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
   }
@@ -484,8 +501,10 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
       : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   }
   if (ok && j.kind.startsWith("checkout") && raw.stopped === "signed out") await noteSignedIn(false);
+  if (ok && j.kind.startsWith("checkout") && raw.stopped === "no pickup chosen") await noteSafeway("no-pickup");
   // An Add Safeway answered with its session expired (Nov 23): signed out, as a cart read seeing it would note.
   if (!ok && j.kind === "setQty" && raw.error === "signed-out") await noteSignedIn(false);
+  if (!ok && j.kind === "setQty" && raw.error === "no-pickup") await noteSafeway("no-pickup");
   if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
     const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;
     const f = raw.final && typeof raw.final === "object" ? raw.final as Record<string, unknown> : null;
@@ -553,7 +572,7 @@ export async function recentJobs(limit = 20): Promise<Activity[]> {
     return [{
       id: j.id, kind: j.kind, status: late ? "failed" : j.status, from: j.args.from === "panel" ? "panel" : "app",
       what: str(j.args.name, 160) || str(j.args.query, 120), qty: j.kind === "setQty" ? Number(r.qty ?? j.args.qty) || 0 : null,
-      error: late ? lateError(j) : str(r.error, 40), signedIn: r.signedIn !== false,
+      error: late ? lateError(j) : str(r.error, 40), signedIn: r.signedIn !== false, ...(r.noPickup === true && { noPickup: true }),
       created: j.created, updated: j.updated,
     }];
   }).sort((a, b) => b.created.localeCompare(a.created)).filter((a, i) => i < limit || age(a.created) < RECENT_MS);

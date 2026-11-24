@@ -124,7 +124,7 @@ export const api = {
    * The Safeway cart as Simmer knows it, the exact product picked before for each item, whether a job went unanswered
    * (`away`), and whether Safeway is signed out on the computer.
    */
-  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; away?: boolean; signedOut?: boolean }>("/api/safeway/cart", { signal }),
+  cart: (signal?: AbortSignal) => call<{ cart: CartLine[]; picks: Pick[]; away?: boolean; signedOut?: boolean; noPickup?: boolean }>("/api/safeway/cart", { signal }),
   /** A job for the Safeway helper on the computer: queue it, follow it, or call it off. */
   // Queued from the helper's panel: the panel is told too, so the helper looks at once (Nov 12: it doesn't wait on the push).
   queueJob: (kind: JobKind, args: Record<string, unknown>) => call<{ job: Job; answering: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "queue", kind, ...args, from: framed() ? "panel" : "app" }) })

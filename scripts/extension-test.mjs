@@ -11,6 +11,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtempSync } from "node:fs";
 import { liveCheck } from "./live-check.mjs";
+import { PAGE, SETTINGS } from "../src/lib/safeway-helper.mjs";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
 const ext = path.resolve("extension-working");
@@ -152,6 +153,7 @@ function searchPage(q, signedIn) {
 }
 
 // Safeway's cart page, as a stand-in: each product a row linking to its page, with − / quantity / + (not search tiles).
+let checkoutButton = false; // the cart page shows Safeway's Checkout (for the checkout cases below), counted when pressed
 function cartPage(signedIn) {
   const names = Object.fromEntries(Object.values(CATALOG).flat().map(([id, name, price]) => [id, [name, price]]));
   // An empty cart lists past purchases under Safeway's words, each with Add (Nov 16); none of them is in the cart.
@@ -159,6 +161,7 @@ function cartPage(signedIn) {
   return `<!doctype html><html><body>
     ${top(signedIn, '<a href="/erums/cart" id="cart" aria-label="Cart">Cart</a>')}
     <main id="rows"></main>
+    ${checkoutButton ? `<button id="checkout" onclick="${counted("checkout")}location.href='/erums/checkout'">Checkout</button>` : ""}
     <script>
       const names = ${JSON.stringify(names)};
       const cart = () => JSON.parse(localStorage.getItem("cart") || "{}");
@@ -188,6 +191,17 @@ function cartPage(signedIn) {
       setTimeout(draw, 400);
     </script></body></html>`;
 }
+
+/** A press counted on the stand-in's storage under `key` (inline, for an onclick). */
+const counted = (key) => `{ const c = JSON.parse(localStorage.getItem('presses') || '{}'); c['${key}'] = (c['${key}'] || 0) + 1; localStorage.setItem('presses', JSON.stringify(c)); }`;
+/**
+ * Safeway's checkout page set for delivery, as a stand-in (Nov 23): Order info with its Continue, a delivery step with
+ * its Edit, Place Order turned off, and no pickup anywhere. Every button counts its presses.
+ */
+const deliveryCheckout = () => `<!doctype html><html><body>${top(true, '<a href="/erums/cart" id="cart" aria-label="Cart">Cart</a>')}
+  <main><h1>Checkout</h1><section><h2>Order info</h2><button onclick="${counted("continue")}">Continue</button></section>
+  <section><h2>Delivery date &amp; time</h2><button onclick="${counted("edit")}">Delivery date &amp; time Edit</button><p>Delivery to your address</p></section>
+  <button disabled onclick="${counted("place")}">Place Order</button></main></body></html>`;
 
 // Safeway's Purchases page, as a stand-in (1.3): an In-store tab showing first, and an Online tab that shows either the
 // words Safeway shows with no orders (seen Nov 3) or, once `ordered`, an order placed today (a guess at its shape).
@@ -222,8 +236,9 @@ await ctx.route("https://www.safeway.com/**", async (route) => {
   if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (chaos.slow && (u.pathname.startsWith("/shop/search-results") || u.pathname === "/erums/cart")) await new Promise((r) => setTimeout(r, chaos.slow));
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
-  if (u.pathname === "/erums/cart" && cartGone) return route.fulfill({ contentType: "text/html", body: '<html><body><p>Loading…</p><script>setTimeout(() => location.replace("/"), 150)</script></body></html>' });
+  if ((u.pathname === "/erums/cart" || u.pathname === "/erums/checkout") && cartGone) return route.fulfill({ contentType: "text/html", body: '<html><body><p>Loading…</p><script>setTimeout(() => location.replace("/"), 150)</script></body></html>' });
   if (u.pathname === "/erums/cart") return route.fulfill({ contentType: "text/html", body: cartPage(signedIn) });
+  if (u.pathname === "/erums/checkout") return route.fulfill({ contentType: "text/html", body: deliveryCheckout() });
   if (u.pathname === "/order-account/orders") return route.fulfill({ contentType: "text/html", body: ordersPage(signedIn) });
   // As Safeway's (seen Nov 23): signed in, its sign-in page sends the tab on to its home page by itself.
   if (u.pathname === "/account/sign-in.html") return route.fulfill({ contentType: "text/html", body: `<html><body><h1>Sign in</h1><input id="user"><button>Sign in</button>${signedIn && !sessionGone ? '<script>setTimeout(() => location.replace("/"), 300)</script>' : ""}</body></html>` });
@@ -234,8 +249,16 @@ await ctx.route("https://www.safeway.com/**", async (route) => {
 // The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
 // `dropReports`: the helper's reports don't get through (a dropped connection), so it keeps them to send again.
 let dropReports = false, dropped = 0;
+// A job handed to the helper by this test instead of Simmer (`inject`: checkout's steps can only be asked for by
+// Simmer's own checkout, behind Face ID), and its report, kept here (`injected`), never sent to Simmer.
+let inject = null, injected = null;
 await ctx.route(`${ADDRESS}/**`, async (route) => {
   const req = route.request();
+  if (req.method() === "POST") {
+    const b = (() => { try { return JSON.parse(req.postData() ?? "{}"); } catch { return {}; } })();
+    if (inject && b.op === "next") { const job = inject; inject = null; return route.fulfill({ json: { job: { ...job, page: PAGE, settings: SETTINGS }, settings: SETTINGS } }); }
+    if ((b.op === "done" || b.op === "failed") && String(b.id).startsWith("test-")) { injected = b; return route.fulfill({ json: { job: null } }); }
+  }
   const { origin: _o, referer: _r, host: _h, ...headers } = req.headers();
   void _o; void _r; void _h;
   if (dropReports && req.method() === "POST" && /"op":"(done|failed)"/.test(req.postData() ?? "")) { dropped++; return route.abort(); }
@@ -537,6 +560,74 @@ sessionGone = false;
 for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
 cj = await run({ kind: "cart" });
 expect(cj?.status === "done" && cj.result?.signedIn === true && !onSignIn(), `…signed in again, the next cart read works (${say(cj)})`);
+
+// Signed in with Pickup not chosen (Nov 23: after signing in again Safeway had forgotten Pickup and sent every page
+// home, and the helper said signed out). Safeway's session note says signed in ("C"), nothing chosen: the cart read
+// says so, not signed out, and the tab stays where Safeway put it. The phone says "Choose Pickup on Safeway"; pressed,
+// it says "Looking…", then that it's still not chosen. A guest's note keeps the signed-out path.
+const note = (common) => ctx.addCookies([{ name: PAGE.session.cookie, value: encodeURIComponent(JSON.stringify({ COMMON: common })), domain: "www.safeway.com", path: "/" }]);
+const noNote = () => ctx.clearCookies({ name: PAGE.session.cookie });
+await note({ userType: "C", preference: "" });
+cartGone = true;
+// Off the cart page first: a cart read where the tab already shows it reads it there without loading it again.
+for (const p of ctx.pages()) if (p.url().startsWith("https://www.safeway.com/")) await p.goto("https://www.safeway.com/").catch(() => {});
+t3 = Date.now();
+cj = await run({ kind: "cart" });
+took = Math.round((Date.now() - t3) / 1000);
+const nowState = async () => { const c = await api("/api/safeway/cart"); return [c.signedOut, c.noPickup]; };
+expect(cj?.status === "done" && cj.result?.noPickup === true && !(cj.result.products ?? []).length && !onSignIn() && took < 30,
+  `signed in with Pickup not chosen, the cart sent home: Pickup not chosen in ${took} s, not signed out, and the tab isn't sent to sign in (${say(cj)})`);
+expect(JSON.stringify(await nowState()) === "[false,true]", `…and Simmer keeps it apart from signed out (${JSON.stringify(await nowState())})`);
+await phone.reload();
+await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
+const pickBtn = phone.getByRole("button", { name: "Pickup isn't chosen on Safeway. Check again" });
+expect(await pickBtn.waitFor({ timeout: 90_000 }).then(() => true, () => false) && (await pickBtn.innerText()).includes("Choose Pickup on Safeway"), "…Shop's button says Choose Pickup on Safeway");
+await pickBtn.click();
+expect(await phone.getByRole("button", { name: "Looking at Safeway" }).waitFor({ timeout: 2000 }).then(() => true, () => false), "…pressed, it says Looking… at once");
+const stillBtn = phone.getByRole("button", { name: "Pickup still not chosen. Check again" });
+expect(await stillBtn.waitFor({ timeout: 90_000 }).then(() => true, () => false) && (await stillBtn.innerText()).includes("Pickup still not chosen"), "…and when the reading ends the same, says it's still not chosen");
+await note({ userType: "G", preference: "" });
+cj = await run({ kind: "cart" });
+expect(cj?.status === "done" && cj.result?.signedIn === false && cj.result.noPickup !== true && await until(onSignIn, 15_000), `…a guest's note sent home: signed out, as before (${say(cj)})`);
+await noNote();
+cartGone = false;
+for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
+cj = await run({ kind: "cart" });
+expect(cj?.status === "done" && cj.result?.signedIn === true && JSON.stringify(await nowState()) === "[false,false]", `…Pickup chosen again, the next cart read works and clears it (${say(cj)})`);
+
+// Checkout with Safeway set to delivery (Simmer orders pickup only, Nov 23: it said the pickup times couldn't be
+// reopened): stopped "delivery" with no press, from the session note, or with only the cart's Checkout from the
+// checkout page's own words; and "no pickup chosen" when the cart is sent home that way. The mode is never switched.
+const checkoutRun = async (id) => {
+  injected = null;
+  inject = { id, kind: "checkoutPrepare", args: { list: true }, created: new Date().toISOString() };
+  await nudge();
+  await until(() => injected, 90_000);
+  return injected;
+};
+const allPresses = async () => JSON.parse(await onSafeway(() => localStorage.getItem("presses") || "{}"));
+await onSafeway(() => localStorage.setItem("cart", JSON.stringify({ "960001": 1 })));
+checkoutButton = true;
+let before = await allPresses();
+await note({ userType: "C", preference: "Delivery" });
+let co = await checkoutRun("test-delivery-note");
+let after = await allPresses();
+expect(co?.op === "done" && co.result?.stopped === "delivery" && JSON.stringify(after) === JSON.stringify(before), `checkout, Safeway set to delivery by its note: stopped "delivery", nothing pressed (${JSON.stringify(co?.result ?? co).slice(0, 200)})`);
+await noNote();
+co = await checkoutRun("test-delivery-page");
+after = await allPresses();
+expect(co?.op === "done" && co.result?.stopped === "delivery" && (after.checkout ?? 0) === (before.checkout ?? 0) + 1 && !after.continue && !after.edit && !after.place,
+  `checkout, no note and the checkout page set for delivery: stopped "delivery", only the cart's Checkout pressed (${JSON.stringify(co?.result ?? co).slice(0, 200)}, presses ${JSON.stringify(after)})`);
+before = after;
+await note({ userType: "C", preference: "" });
+cartGone = true;
+co = await checkoutRun("test-no-pickup");
+after = await allPresses();
+expect(co?.op === "done" && co.result?.stopped === "no pickup chosen" && JSON.stringify(after) === JSON.stringify(before), `checkout, signed in with Pickup not chosen: stopped "no pickup chosen", nothing pressed (${JSON.stringify(co?.result ?? co).slice(0, 200)})`);
+await noNote();
+cartGone = false;
+checkoutButton = false;
+for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
 
 // Really signed out: Sign In stays, so it is; the tab waits on the sign-in page; signing in, the next search works.
 signedIn = false;

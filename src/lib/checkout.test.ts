@@ -209,6 +209,8 @@ describe("the pickup time on the final page, from the window chosen (Nov 13)", (
   it("puts where the helper stopped into plain words", () => {
     expect(stoppedWords("signed out")).toBe("Safeway is signed out on the computer.");
     expect(stoppedWords("no free pickup time")).toBe("No free pickup time in the next week.");
+    expect(stoppedWords("delivery")).toBe("Safeway is set to delivery. Switch it to Pickup on Safeway, then try again.");
+    expect(stoppedWords("no pickup chosen")).toBe("Pickup isn't chosen on Safeway. Choose Pickup on Safeway, then try again.");
     expect(stoppedWords("something new")).toBe("Safeway's checkout didn't go as expected.");
   });
 });
