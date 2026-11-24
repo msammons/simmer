@@ -488,7 +488,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
           {/* Without the computer: the usual product, and Safeway's own search, to add it there; then tick it off here. */}
           <Group header={`Add it on ${store} instead`} footer={`Opens ${store}. Once it's in the cart there, tap Got it.`}>
             {it.picked && (
-              <ProductRow p={{ name: it.picked.name, image: it.picked.image }} sub={<span className="font-semibold text-accent">Your usual</span>}
+              <ProductRow p={{ name: it.picked.name, image: it.picked.image }} sub={<span className="font-semibold text-accent">Your favorite</span>}
                 control={<a href={productLink(it.picked.id)} target="_blank" rel="noreferrer" className="glass flex h-10 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent">Open</a>} />
             )}
             <a href={searchLink(query || it.item)} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-4 py-3 active:bg-sunk">
@@ -506,7 +506,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             // For the item showing, unless other words were typed and this is plainly something else.
             const forIt = addedFor(p, it, query);
             return (
-              <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your usual</span>}</>}
+              <FindProduct key={p.id} p={p} sub={<>{p.price}{usual && <span className="font-semibold text-accent">{p.price ? " · " : ""}Your favorite</span>}</>}
                 control={qty > 0
                   ? <Stepper qty={qty} name={p.name} onChange={(n) => sw.setQty(p, n, query, forIt, { on: "cart" })} />
                   : <Button size="md" variant={usual ? "primary" : "secondary"} className="shrink-0 min-[640px]:w-full" disabled={!s.signedIn} onClick={() => sw.setQty(p, 1, query, forIt)}>Add</Button>} />

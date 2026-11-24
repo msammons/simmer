@@ -86,7 +86,7 @@ const began = Date.now();
      */
     const fakeSafeway = async ({ helperSlow = false, away = false, signedOut: startOut = false } = {}) => {
       let signedOut = startOut;
-      const cart = [{ cart: "safeway", productId: "p-loose", name: "Safeway Kitchens Sparkling Water Lime Flavored 12 Pack 12 Fl Oz Cans", price: "$5.99", image: "", qty: 1, itemId: "", item: "", updated: "" }];
+      const cart = [{ cart: "safeway", productId: "p-loose", name: "Safeway Kitchens Sparkling Water Lime Flavored Zero Calorie Variety Value 12 Pack 12 Fl Oz Cans", price: "$5.99", image: "", qty: 1, itemId: "", item: "", updated: "" }];
       const picks = [
         { item: "Milk", id: "p-milk", name: "Lucerne 2% Reduced Fat Milk - 1 Gallon" },
         { item: "Eggs", id: "p-eggs", name: "Lucerne Large Eggs - 12 Count" },
@@ -781,8 +781,8 @@ const began = Date.now();
       await page.getByRole("button", { name: "One more Milk" }).tap();
       ok("shop: + shows within 150 ms", await within150(() => page.getByLabel("2 in the cart").first().isVisible()));
       await idle();
-      ok("shop: and Safeway has them: Auto-fill gone with one usual left", await until(async () => (await page.getByRole("button", { name: "Add favorites" }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
-      ok("shop: Find on a row with no usual", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
+      ok("shop: and Safeway has them: Add favorites gone with one favorite left", await until(async () => (await page.getByRole("button", { name: "Add favorites" }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
+      ok("shop: Find on a row with no favorite", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
       // Find's Back, place and Skip or Next float at the bottom of its sheet (Sam, Nov 24: "It needs to float somehow"):
       // in view however far the results are scrolled, and after the last product once at the end, never over it.
       {
@@ -1034,7 +1034,8 @@ const began = Date.now();
     ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => gs.length > 3 && gs.every((g) => { const n = g.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });
     // Enough rows on Shop for its layout checks, in every setup (each may start from the samples, with an empty list).
-    for (const [text, store] of [["Extra large organic heirloom tomatoes for the big salad", "safeway"], ["Milk", "safeway"], ["Eggs", "safeway"], ["Coffee", "costco"], ["Salad dressing", "trader-joes"]]) await postList({ op: "add", text, by: "Sam", store });
+    for (const [text, store] of [["Extra large organic heirloom tomatoes for the big salad", "safeway"], ["Milk", "safeway"], ["Eggs", "safeway"], ["Coffee", "costco"], ["Salad dressing", "trader-joes"],
+      ["Organic unsweetened vanilla almond beverage, the big shelf-stable cartons for the week", "trader-joes"], ["Kirkland Signature extra virgin olive oil two liter twin pack for the pantry", "costco"]]) await postList({ op: "add", text, by: "Sam", store });
     await page.reload(); await seen(page.getByRole("heading", { name: "Meals" }), 8000); // what was just loaded would otherwise be kept
     const layoutFake = await fakeSafeway();
     await tabs.getByRole("button", { name: "Shop" }).tap(); await page.getByLabel("Add item", { exact: true }).waitFor(); await idle();
@@ -1045,6 +1046,16 @@ const began = Date.now();
       ok(`${tag}: no thumbnails on Shop rows`, (await page.locator("[data-shop-row] img").count()) === 0);
       // A long name is cut short, never pushing the control or ⋯ off the row.
       ok(`${tag}: long names truncate and every row's controls stay on it`, await rows.evaluateAll((rs) => rs.every((r) => { const b = r.getBoundingClientRect(); return r.scrollWidth <= r.clientWidth && [...r.children].every((c) => c.getBoundingClientRect().right <= b.right + 0.5); })));
+      // Every row's words fit inside it (Nov 24: a long Safeway-site cart name wrapped to three lines and hid its price):
+      // the name on one line, cut short, and the line under it (product, amount or price) wholly inside the row.
+      ok(`${tag}: every Shop row's name is one line and the line under it shows whole`, await rows.evaluateAll((rs) => rs.every((r) => {
+        const b = r.getBoundingClientRect(), name = r.querySelector("[data-row-name]"), under = r.querySelector("[data-row-sub]");
+        const n = name.getBoundingClientRect(), u = under?.getBoundingClientRect();
+        return n.height <= parseFloat(getComputedStyle(name).lineHeight) + 1 && n.top >= b.top - 0.5 && (!u || (u.top >= n.bottom - 0.5 && u.bottom <= b.bottom + 0.5));
+      })), await rows.evaluateAll((rs) => rs.map((r) => `${Math.round(r.getBoundingClientRect().height)}:${r.innerText.replace(/\s+/g, " ").slice(0, 40)}`).join(" | ")));
+      const loose = rows.filter({ hasText: "Sparkling Water" });
+      ok(`${tag}: a long-named cart thing from Safeway's site keeps the row's height and shows its price`, (await loose.count()) === 1 && await loose.getByText("$5.99", { exact: true }).isVisible()
+        && Math.round((await loose.boundingBox()).height) === Math.round((await rows.first().boundingBox()).height));
       ok(`${tag}: a long-named Safeway row keeps its control`, await page.getByRole("button", { name: /^(Add|Find) Extra large organic/ }).isVisible());
       const co = await page.getByRole("button", { name: "Check out" }).boundingBox();
       ok(`${tag}: Check out sits above the list`, Boolean(co) && co.y < (await rows.first().boundingBox()).y, JSON.stringify(co));
