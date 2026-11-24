@@ -279,14 +279,13 @@ const began = Date.now();
       // every dinner stays on Meals, dimmed; Keep leaves the unbought things on the list, and a dinner's waiting things go.
       const listNow = () => page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => (l?.items ?? []).filter((x) => !x.checked).map((x) => ({ item: x.item, for: x.for, check: x.check }))).catch(() => []));
       await page.evaluate(() => fetch("/api/list", { method: "POST", headers: { "content-type": "application/json", "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") }, body: JSON.stringify({ op: "add", text: "new-plan hand-added bread", by: "Sam" }) }).then((r) => r.text()));
-      // The list as the phone has it now (the bread was added behind its back).
-      await page.locator("nav button", { hasText: "List" }).tap(); await idle();
-      await page.locator("nav button", { hasText: "Meals" }).tap(); await idle();
       const dimmed = () => page.locator('[data-old="yes"]');
       const onMeals = async () => (await mealMenus(page).count()) - (await dimmed().count());
       const mealsBefore = await onMeals();
       await page.getByRole("button", { name: "New plan", exact: true }).tap();
       const fresh = page.getByRole("dialog", { name: "Start a new plan?" });
+      // The bread was added behind the phone's back: New plan reads the list again as it asks.
+      await seen(fresh.getByText(/new-plan hand-added bread/), 5000);
       ok("new plan: asks first: the dinners stay, dimmed; the cart stays; what wasn't bought is named, Keep them first", (await seen(fresh, 2000)) && mealsBefore > 0
         && (await fresh.getByText(/stays? on Meals, dimmed/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/new-plan hand-added bread/).isVisible())
         && (await fresh.getByRole("button").allInnerTexts()).join() === "Keep them,Clear them,Cancel", `${mealsBefore} on`);

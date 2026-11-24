@@ -90,6 +90,8 @@ export default function App() {
   // New plan, in every screen's top bar (Sam, Nov 24; only the count is read, so a tick doesn't redraw the app): shown when there's a plan or a list to clear; it asks first.
   const listLines = useStore<ListState, number>("lists", (l) => l?.items.length ?? 0);
   const [startingPlan, setStartingPlan] = useState(false);
+  // The list is read again as New plan asks (Nov 24): the question names what wasn't bought, as it is now.
+  const openNewPlan = useCallback(() => { void stores().lists.refresh(); setStartingPlan(true); }, []);
   const openSettings = useCallback(function open() {
     loadSettings().then((C) => { setSettingsSheet(() => C); setSettings(true); }, () => setProblem({ ...NO_SETTINGS, retry: open }));
   }, []);
@@ -395,7 +397,7 @@ export default function App() {
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? openSettings : null}>
-      <StartPlan.Provider value={phase === "app" && plan && ((plan.dishes.length ?? 0) > 0 || listLines > 0) ? () => setStartingPlan(true) : null}>
+      <StartPlan.Provider value={phase === "app" && plan && ((plan.dishes.length ?? 0) > 0 || listLines > 0) ? openNewPlan : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
