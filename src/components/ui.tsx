@@ -3,6 +3,7 @@ import { Component, createContext, useContext, useEffect, useLayoutEffect, useRe
 import { createPortal } from "react-dom";
 import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
+import { noteAlert, useNote } from "@/lib/feedback";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
 // pills for controls, 22px cards (inset grouped lists), 36px sheets, the t-* type scale, one line-icon set.
@@ -181,7 +182,9 @@ export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: Re
         <Brand />
         <div className="flex gap-2">{trailing}
           {startPlan && <button type="button" onClick={startPlan} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>}
-          {settings && <IconButton icon="gear" label="Settings" onClick={settings} />}</div>
+          {/* A long press opens Feedback instead (FeedbackHost, Nov 24): the phone's own callout and selection stay off it. */}
+          {settings && <button type="button" data-settings onClick={settings} onContextMenu={(e) => e.preventDefault()} aria-label="Settings"
+            className={`glass flex size-11 shrink-0 select-none items-center justify-center rounded-full text-ink [-webkit-touch-callout:none] ${PRESS}`}><Icon name="gear" strokeWidth={2} /></button>}</div>
       </div>
       {below && <div className="pb-2 pt-3">{below}</div>}
     </PinnedBar>
@@ -262,6 +265,7 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
 export function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
+  useNote("popup", title, typeof message === "string" ? message : "");
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; });
   useEffect(() => {
@@ -291,6 +295,8 @@ export function Dialog({ title, message, children, onDismiss }: { title: string;
  * studio app, so it can be copied across.
  */
 export function Alert({ open, title, message, onClose, onRetry }: { open: boolean; title: string; message: ReactNode; onClose: () => void; onRetry?: () => void }) {
+  // The last few alerts go with any feedback (Nov 24).
+  useEffect(() => { if (open) noteAlert(title, message); }, [open, title, message]);
   if (!open || typeof document === "undefined") return null;
   return (
     <Dialog title={title} message={message} onDismiss={onClose}>
@@ -508,12 +514,15 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
  */
 let openSheets = 0; // sheets open right now (see Sheet: the page behind stays still while any is)
-export function Sheet({ children, onClose, label, title, footer, wide, tall }: {
+export function Sheet({ children, onClose, label, title, footer, wide, tall, note, above }: {
   children: ReactNode; onClose: () => void; label: string; footer?: ReactNode;
   wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
   tall?: boolean; // full height whatever it holds: a search keeps its box in one place while the results change
   title?: ReactNode; // a centered heading under the grabber, for picker sheets
+  note?: string; // what it shows, in one line, for feedback (lib/feedback.ts); a written title is used when there's none
+  above?: boolean; // over everything, pop-ups too (Feedback, Nov 24)
 }) {
+  useNote("sheet", label, note ?? (typeof title === "string" && title !== label ? title : ""));
   // Once per open: re-running on every new onClose would save "hidden" as the value to restore.
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; });
@@ -603,7 +612,7 @@ export function Sheet({ children, onClose, label, title, footer, wide, tall }: {
     };
   }, []);
   return (
-    <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
+    <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className={`fixed inset-0 ${above ? "z-[60]" : "z-20"} flex items-end`} role="dialog" aria-modal="true" aria-label={label}>
       {/* The dimmed area closes it by touch; the × below is the Close a screen reader or keyboard finds. */}
       <button type="button" aria-hidden tabIndex={-1} onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}

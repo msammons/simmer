@@ -86,6 +86,13 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - **Recipes** (`Recipes.tsx`): Add recipe (from a link, photo, file or typed), then the collection. A recipe's page has
   Add to the plan (which asks for a day), its ingredients, steps and notes.
 - **Settings** (`Settings.tsx`, `Ordering.tsx`): the look, Ordering and the release.
+- **Feedback** (`Feedback.tsx`, `lib/feedback.ts`; Sam, Nov 24): holding Settings for half a second opens a Feedback sheet
+  (one box, Send and Cancel) over anything open. The hold is watched on the whole page by where the Settings button is
+  (press to release, no timer; a move cancels it), so it works through a sheet's or pop-up's dimmed area; the tap that
+  would follow is swallowed, so whatever was open stays as it was, and a short press is a tap as before. What was on
+  screen at the press goes with the words: each tab, screen (`useNote`), sheet (every `Sheet` notes its label and title,
+  or its `note`) and pop-up notes itself while it shows, Shop and Safeway add a line of state, and the last five alerts
+  are kept. A new sheet needs nothing, or one `note`.
 
 ## Shop and Safeway
 
@@ -225,6 +232,13 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
   passcode, emails, long numbers and link queries taken out; for a reply that didn't read or Gemini's failures only the
   kind and status), digest and time; never a request body. Read them with `vercel env pull /tmp/simmer.env
   --environment=production && node scripts/errors.mjs /tmp/simmer.env` (the file is deleted as it's read).
+- **Feedback** (Nov 24): each Send is one entry at the front of `${NS}:feedback` (the newest 500 kept; `ops/feedback.ts`,
+  `/api/feedback` through `api()`): the time, the words, the release, the tab, the screens, the open sheets and pop-ups
+  with what they showed, Shop's and Safeway's state, the last few alerts, online, theme, size and the browser's own
+  description, plus the server's side: the release live, the helper's last check-in and version, and whether ordering is
+  on in Settings and on the server. Never the passcode, a card number, the limit, store or Face ID. Read with `vercel
+  env pull /tmp/simmer.env --environment=production && node scripts/feedback.mjs /tmp/simmer.env [N]` (newest first,
+  default 10; the file is deleted as it's read).
 - **The helper's state** (read-only, Nov 23): `vercel env pull /tmp/simmer.env --environment=production && node
   scripts/helper-status.mjs /tmp/simmer.env [N]` prints the helper's check-in (version against the one Simmer ships, when,
   panel open), the open jobs, the last N jobs (default 15: kind, status, when, how long, a short result: errors, stops,

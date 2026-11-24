@@ -1,4 +1,5 @@
 "use client";
+import { useNote } from "@/lib/feedback";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
@@ -90,13 +91,17 @@ const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
   "not-connected": ["Not connected", "Safeway not connected. Check again", "Still not connected"],
 };
 
+/** What's going on, in words, beside the price (never on the button). */
+function statusWords(cart: CartButton | null): string {
+  const off = cart && cart.state !== "ready" && cart.state !== "empty" ? cart : null;
+  return !cart ? "" : cart.state === "ready" ? (cart.busy && cart.words) || ""
+    : off ? (off.busy ? off.words || "Looking…" : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
+}
+
 function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNode }) {
   const base = "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold";
   const icon = <Icon name="cart" className="size-[18px]" strokeWidth={2} />;
-  const off = cart && cart.state !== "ready" && cart.state !== "empty" ? cart : null;
-  /** What's going on, in words, beside the price (never on the button). */
-  const status = !cart ? "" : cart.state === "ready" ? (cart.busy && cart.words) || ""
-    : off ? (off.busy ? off.words || "Looking…" : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
+  const status = statusWords(cart);
   return (
     // Above the list (Sam, Nov 17): Check out and the cart's price on the left, away from Shop's own ⋯ on the right.
     <div className="flex min-h-10 items-center gap-2.5 pl-1 pr-2">
@@ -283,6 +288,12 @@ export function ShopScreen({ act }: { act: ShopActions }) {
     : count > 0 ? { state: "ready", price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0, words: sw.reading ? readingWords : undefined }
     : { state: "empty" };
 
+  // Feedback's note of Shop (lib/feedback.ts): the store showing, the cart, and the status line's words.
+  const status = statusWords(cartButton);
+  useNote("state", "Shop", [`showing ${WHERE.find((w) => w.value === where)?.label ?? where}`,
+    !cartButton ? "cart not read yet" : cartButton.state === "ready" ? `cart ${count}, ${cartButton.price}` : cartButton.state === "empty" ? "cart empty" : `Check out: ${cartButton.state}`,
+    status && `status "${status}"`, !live && sw.loaded && "Safeway rows are a plain checklist"].filter(Boolean).join("; "));
+
   const shown = (where === "all" ? STORES : [where]).filter((s) => visible.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));
 
   return (
@@ -327,7 +338,7 @@ export function ShopScreen({ act }: { act: ShopActions }) {
         </>
       )}
       {finding && findable.has(finding) && (
-        <Sheet label="Safeway's choices" wide onClose={() => setFinding(null)}>
+        <Sheet label="Safeway's choices" note={items.find((i) => i.id === finding)?.item} wide onClose={() => setFinding(null)}>
           <FindSheet sw={sw} items={toFind} id={finding} onId={setFinding} onGot={(id) => { const x = items.find((i) => i.id === id); if (x) tickIt(x, true); }} />
         </Sheet>
       )}

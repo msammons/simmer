@@ -57,6 +57,7 @@ import type { Activity, Job, JobKind } from "./jobs";
 import type { Choices, OrderResult, ReadyView, RunResult, TimesView, Waiting } from "./checkout-run";
 export type { Choices, OrderResult, ReadyView, RunResult, TimesView, Waiting };
 export type { Activity, Job, JobKind };
+import type { FeedbackContext } from "./feedback";
 import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
 export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
 export type Kitchen = { freezer: Frozen[] };
@@ -123,6 +124,8 @@ export const api = {
   checkoutTestRun: (by: { approvalId: string } | { jobId: string; since?: string }, signal?: AbortSignal) => call<RunResult | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),
   /** Turning on, raising the limit, or changing the store or card needs `faceId`, a Face ID answer (Nov 13). */
   saveCheckout: (s: CheckoutSettings, faceId?: unknown) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify({ ...s, faceId }) }),
+  /** The long press on Settings' feedback (Nov 24): the text with what was showing (lib/feedback.ts). */
+  feedback: (f: { text: string } & FeedbackContext) => call<{ ok: true }>("/api/feedback", { method: "POST", body: JSON.stringify(f) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
   household: (signal?: AbortSignal) => call<{ people: Person[]; stale: boolean }>("/api/household", { signal }),
   /**

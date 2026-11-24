@@ -1,4 +1,5 @@
 "use client";
+import { useNote } from "@/lib/feedback";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type RecipeSection, api, errorText, fileToSend, type Draft, type Frozen, type Effort, type Ingredient, type Recipe } from "@/lib/client";
 import { freezerMatch } from "@/lib/week";
@@ -97,6 +98,7 @@ export function RecipeScreen({ r, onBack, backLabel, onEdit, planned, onAddToWee
    */
   onAddToWeek?: () => void;
 }) {
+  useNote("screen", "Recipe", r.name);
   const screen = useRef<HTMLDivElement>(null);
   useSwipe(screen, { onRight: onBack }); // swipe right to go back
   useEffect(() => {

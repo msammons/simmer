@@ -247,9 +247,9 @@ const loadHelper = async (): Promise<Helper | null> => json<Helper>(await kv().g
  * When the helper last checked in and whether it needs updating. No timer keeps a check-in fresh (Nov 11), so an old
  * check-in alone never says the computer's away: a job nobody takes says so (`overdue`).
  */
-export async function helperStatus(): Promise<{ seen: string; outdated: boolean; away: boolean }> {
+export async function helperStatus(): Promise<{ seen: string; version: string; outdated: boolean; away: boolean }> {
   const [helper, away] = await Promise.all([loadHelper(), kv().get(AWAY_KEY)]);
-  return { seen: helper?.seen ?? "", outdated: helperOutdated(helper), away: Boolean(away) };
+  return { seen: helper?.seen ?? "", version: helper?.version ?? "", outdated: helperOutdated(helper), away: Boolean(away) };
 }
 
 /**

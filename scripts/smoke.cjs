@@ -4,7 +4,7 @@
 // the tabs, Settings on every screen, Stock (nothing comes back by itself), Shop (one page by store), Add a meal and a
 // recipe's Add to the plan, the Recipes tab, a recipe and back, adding recipes, saves that fail (the sheet keeps what was
 // entered), every tap answering at once (within ~150 ms, with the server slowed to prove it), and a passcode turned down
-// mid-use. Saves screenshots to .data/shots.
+// mid-use, and Feedback (a long press on Settings, on a tab and over a sheet). Saves screenshots to .data/shots.
 //
 // How the checks are split (Nov 11): behaviour (a tap does X, a list changes, an alert or confirm appears, no busy words,
 // answers within ~150 ms) runs ONCE, at phone size in light mode. Look and layout (Settings and the tab bar placed, row
@@ -116,6 +116,19 @@ const began = Date.now();
       const btn = page.getByRole("button", { name: "Settings" });
       ok(`${tag}: Settings at the top of ${where}`, (await btn.count()) === 1 && (await btn.boundingBox()).y < 80);
       ok(`${tag}: tab bar on ${where}`, await page.getByRole("navigation", { name: "Main" }).isVisible());
+    };
+    /**
+     * A finger held on Settings and lifted (the long press that opens Feedback, Nov 24), as real touches, wherever the
+     * button is, whatever lies over it. On purpose a timed wait: the hold itself, 650 ms (Feedback needs 500).
+     */
+    const holdSettings = async (ms = 650) => {
+      const bx = await page.locator("[data-settings]").first().boundingBox();
+      const at = { x: bx.x + bx.width / 2, y: bx.y + bx.height / 2 };
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at] });
+      await wait(ms);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp.detach();
     };
     // The behaviour run has Safeway stood in for from the start (Shop puts in its own below), so no cart read is left
     // waiting on this server, where no helper answers, to grey Check out or say Not connected partway through.
@@ -327,6 +340,45 @@ const began = Date.now();
         await round();
         page.off("request", countGets);
         ok("tabs: a second round of the tabs asks for almost nothing", gets - first <= 2, `first round ${first}, second ${gets - first}`);
+      }
+
+      {
+        // Feedback (Sam, Nov 24): a long press on Settings opens it, on a tab and with a sheet open; what was showing goes
+        // with the text; closing it leaves everything as it was; a short tap is still Settings.
+        const fb = page.getByRole("dialog", { name: "Feedback" });
+        const sent = () => page.waitForRequest((r) => r.url().endsWith("/api/feedback") && r.method() === "POST", { timeout: 5000 });
+        await tabs.getByRole("button", { name: "Meals" }).tap(); await page.getByRole("heading", { name: "Meals" }).waitFor(); await idle();
+        await holdSettings(); await resting(fb);
+        const field = fb.getByLabel("Feedback");
+        ok("feedback: a long press on Settings opens Feedback, not Settings, the box focused and Send waiting for words",
+          (await page.getByRole("dialog", { name: "Settings" }).count()) === 0 && await field.evaluate((el) => el === document.activeElement)
+          && await fb.getByRole("button", { name: "Send" }).isDisabled() && (await field.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))) >= 16);
+        await field.fill("Smoke: from Meals");
+        let req = sent();
+        await fb.getByRole("button", { name: "Send" }).tap();
+        ok("feedback: Send closes it at once", await within150(async () => (await fb.count()) === 0));
+        let body = (await req).postDataJSON(); const answer = await (await req).response();
+        ok("feedback: sent with the tab, the release and the state, and kept", body.text === "Smoke: from Meals" && body.tab === "Meals" && body.sheets.length === 0
+          && /^\d{2}\.\d/.test(body.release) && typeof body.state.Safeway === "string" && /x/.test(body.viewport) && answer?.status() === 200, JSON.stringify(body).slice(0, 300));
+        // With a sheet open: Feedback over it, and the sheet still there after.
+        const addSheet = page.getByRole("dialog", { name: "Add a meal" });
+        await addOn(TODAY); await resting(addSheet);
+        await holdSettings(); await resting(fb);
+        ok("feedback: opens over an open sheet, which stays open", (await addSheet.isVisible()) && (await fb.isVisible()));
+        await fb.getByRole("button", { name: "Cancel" }).tap(); await gone(fb);
+        ok("feedback: Cancel goes back to the sheet as it was", await addSheet.isVisible());
+        await holdSettings(); await resting(fb);
+        await fb.getByLabel("Feedback").fill("Smoke: with Add a meal open");
+        req = sent();
+        await fb.getByRole("button", { name: "Send" }).tap(); await gone(fb);
+        body = (await req).postDataJSON();
+        ok("feedback: names the open sheet and what it shows", body.tab === "Meals" && body.sheets.some((x) => x.name === "Add a meal" && x.detail === TODAY), JSON.stringify(body.sheets));
+        ok("feedback: and the sheet under it is still open", await addSheet.isVisible());
+        await addSheet.getByRole("button", { name: "Close" }).last().tap(); await gone(addSheet);
+        // A short press is still a tap.
+        await holdSettings(80);
+        ok("feedback: a short press on Settings opens Settings", await seen(page.getByRole("dialog", { name: "Settings" })) && (await fb.count()) === 0);
+        await page.keyboard.press("Escape"); await gone(page.getByRole("dialog", { name: "Settings" }));
       }
 
       // Settings: the look only (adding recipes lives on the Recipes tab, Nov 9).
@@ -811,6 +863,18 @@ const began = Date.now();
     await page.screenshot({ path: `${dir}/4-settings-${tag}.png` });
     ok(`${tag}: sheets have a close button`, await settingsSheet.getByRole("button", { name: "Close" }).last().isVisible());
     await page.keyboard.press("Escape"); await gone(settingsSheet);
+    if (phone) {
+      // Feedback's look (Nov 24), opened over the Settings sheet's place on Meals.
+      const fb = page.getByRole("dialog", { name: "Feedback" });
+      await holdSettings(); await resting(fb);
+      await fb.getByLabel("Feedback").fill("The Add meal sheet showed yesterday's day.");
+      await page.screenshot({ path: `${dir}/4b-feedback-${tag}.png` });
+      ok(`${tag}: Feedback's Send and Cancel sit side by side in the sheet`, await fb.evaluate((el) => {
+        const [c, s] = [...el.querySelectorAll("button")].filter((b) => /^(Cancel|Send)$/.test(b.textContent.trim())).map((b) => b.getBoundingClientRect());
+        return Boolean(c && s) && Math.abs(c.top - s.top) < 1 && c.right <= s.left && s.right <= innerWidth;
+      }));
+      await page.keyboard.press("Escape"); await gone(fb);
+    }
     await tabs.getByRole("button", { name: "List" }).tap(); await page.getByLabel("Add item to the list").waitFor(); await idle();
     await settingsHere("Stock");
     {
