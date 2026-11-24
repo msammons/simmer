@@ -422,6 +422,21 @@ const takesReport = (j: Job, reported: boolean) => !(j.status === "done" || (j.s
 const REPORT_HOLD = 60_000;
 
 /**
+ * How long each Safeway job took, from asking to its report (Sam, Nov 23: "once we get some runs under our belt maybe
+ * we can try and optimize"): the last 500, kept 90 days, so slow kinds and steps can be found later. Kind, seconds,
+ * whether it went through and its error or stop; nothing else. Read with scripts/helper-status.mjs.
+ */
+const TIMES_KEY = `${NS}:job-times`;
+async function noteTime(j: Job, at: string, ok: boolean, why: string) {
+  try {
+    const s = kv();
+    await s.rpush(TIMES_KEY, JSON.stringify({ at, kind: j.kind, s: Math.round((Date.parse(at) - Date.parse(j.created)) / 100) / 10, ok, ...(why && { why }) }));
+    await s.ltrim(TIMES_KEY, -500, -1);
+    await s.expire(TIMES_KEY, 90 * 24 * 3600);
+  } catch { /* a missed timing never stops a job's report */ }
+}
+
+/**
  * The helper: a job's outcome. A quantity set on Safeway goes into Simmer's cart, and a product added for an item
  * becomes that item's pick. What a search shows about products already in Simmer's cart keeps the cart in step. A report
  * sent twice (the helper keeps one until Simmer has it, Nov 19) counts once: it's claimed on the job in one step first
@@ -438,6 +453,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   // already (Oct 31: the eggs went, a second removal a second later came back "not found").
   const gone = !reported && j.kind === "setQty" && Number(j.args.qty) === 0 && reportedRaw.error === "not-found";
   const ok = reported || gone;
+  await noteTime(j, at, ok, str(reportedRaw.error, 40) || str(reportedRaw.stopped, 40));
   const raw: Record<string, unknown> = gone ? { ok: true, qty: 0 } : reportedRaw;
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
