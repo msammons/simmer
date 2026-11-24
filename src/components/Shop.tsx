@@ -135,8 +135,10 @@ function ShopRow({ title, sub, checked, onTick, control, more }: {
 }) {
   const words = (
     <span className="min-w-0 flex-1">
-      <span className={`block break-words t-body ${checked ? "text-muted line-through" : ""}`}>{title}</span>
-      {sub && <span className="block truncate t-foot text-muted">{sub}</span>}
+      {/* One line, cut short with …, so a long name never pushes the line under it (a price) out of the row: every row is
+          one height. The whole name is still the row's text (read out, and in Find). */}
+      <span data-row-name className={`block truncate t-body ${checked ? "text-muted line-through" : ""}`}>{title}</span>
+      {sub && <span data-row-sub className="block truncate t-foot text-muted">{sub}</span>}
     </span>
   );
   return (
