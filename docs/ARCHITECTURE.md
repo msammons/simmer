@@ -115,7 +115,11 @@ behind it waits and the app keeps following; a job is "not answering" only when 
 was queued and it's working on nothing (the 20 s pickup window is how long that silence is waited for); a job taken and
 never reported is given up after a five-minute backstop, unless the same helper asks for work again without it and
 without a report kept for it (Chrome stopped it mid-job): then it's "lost" at once and never done again (not checkout's
-jobs, which keep their own rules). A job the helper doesn't pick up drops Shop's Safeway controls,
+jobs, which keep their own rules). Signed in on the computer with Pickup not chosen on Safeway (Nov 23: Safeway then sends every page home) is kept apart
+from signed out (`noPickup`, from Safeway's own session note): Shop's button says "Choose Pickup on Safeway" and the
+cart is hidden as when signed out. Shop's Signed out, Choose Pickup and Not connected buttons look again when pressed,
+reading "Looking…" while the cart is read and "Still signed out" (and the like) when it ends the same, until the next
+press or a change; no timer. A job the helper doesn't pick up drops Shop's Safeway controls,
 and the Safeway rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be

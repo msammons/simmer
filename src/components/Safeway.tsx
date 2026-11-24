@@ -17,6 +17,7 @@ export const NOT_ANSWERING = "Can't reach Safeway right now. Check things off in
 function problemText(error: string): string {
   if (error === "not-answering" || error === "stuck") return NOT_ANSWERING;
   if (error === "signed-out") return "Safeway isn't signed in. Sign in to Safeway, then try again.";
+  if (error === "no-pickup") return "Pickup isn't chosen on Safeway. Choose Pickup on Safeway, then try again.";
   if (error === "not-found") return "Couldn't find that product on Safeway just now. Try again.";
   if (error === "not-loaded") return "Safeway didn't load. Try again in a minute.";
   return "That didn't go through on Safeway. Try again.";
@@ -40,6 +41,8 @@ const isAlive = (life: React.RefObject<AbortController | null>) => Boolean(life.
 type JobOutcome = { ok: true; result: Record<string, unknown> } | { ok: false; problem: string };
 /** One product's number for the cart, as Add usuals sends it. */
 export type CartWant = { p: Product; qty: number; query: string; forItem?: { id: string; item: string } | null };
+/** Why Safeway can't be shopped from here: signed out, signed in with Pickup not chosen, or the computer not answering. */
+export type SafewayOff = "signed-out" | "no-pickup" | "not-connected";
 
 /**
  * Reading Safeway's own cart sends the computer to Safeway's cart page, so opening Shop again within a minute of the last
@@ -64,6 +67,8 @@ export function useSafeway() {
   const setAway = useCallback((v: boolean) => { gone.current = v; setAwayState(v); }, []);
   // Safeway signed out on the computer (Nov 16): Shop greys the cart and hides what's in it, since it may not be right.
   const [signedOut, setSignedOut] = useState(false);
+  // Signed in on the computer with Pickup not chosen on Safeway (Nov 23): shown as Shop shows signed out, in its own words.
+  const [noPickup, setNoPickup] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Record<string, number>>({});
   const [problem, setProblem] = useState<string | null>(null);
@@ -73,6 +78,12 @@ export function useSafeway() {
   const life = useRef<AbortController | null>(null);
   useEffect(() => { const c = new AbortController(); life.current = c; return () => c.abort(); }, []);
   const out = useRef(false); // signed out, as the last cart read said
+  const nop = useRef(false); // Pickup not chosen, as the last cart read said
+  /** Why Safeway can't be shopped from here now, as the last answers said (signed out first), or null. */
+  const offNow = useCallback((): SafewayOff | null => (out.current ? "signed-out" : nop.current ? "no-pickup" : gone.current ? "not-connected" : null), []);
+  // A look again pressed that ended as it began (Nov 23, Sam: the button went grey, then came back the same, as if nothing
+  // happened): the state it's still in, until the next press or the state changing. No timer.
+  const [still, setStill] = useState<SafewayOff | null>(null);
 
   // Counts up with each cart read started and each change to the cart shown from a job's answer: a read answering after
   // a newer one, or after a change, is older than what's showing, so it's dropped.
@@ -83,9 +94,11 @@ export function useSafeway() {
       const r = await api.cart();
       if (mine !== cartAt.current || !isAlive(life)) return;
       out.current = r.signedOut === true;
-      setCart(r.cart); setPicks(r.picks); setAway(r.away === true); setSignedOut(out.current); setLoaded(true);
+      nop.current = !out.current && r.noPickup === true;
+      setCart(r.cart); setPicks(r.picks); setAway(r.away === true); setSignedOut(out.current); setNoPickup(nop.current); setLoaded(true);
+      setStill((s) => (s && s !== offNow() ? null : s));
     } catch (e) { if (!(e instanceof AuthError) && isAlive(life)) setLoaded(true); }
-  }, [setAway]);
+  }, [setAway, offNow]);
 
   /**
    * Queues a job and follows it. Each answer about it comes once the job's finished, or after about 20 seconds while it's
@@ -130,21 +143,32 @@ export function useSafeway() {
    */
   const lastRead = useRef({ busy: false, at: -Infinity });
   const copying = useRef(false);
+  const pressedIn = useRef<SafewayOff | null>(null); // the state Look again was pressed in, until its reading ends
   const look = useCallback(() => {
     if (!copying.current) { copying.current = true; void refresh().finally(() => { copying.current = false; }); }
     const r = lastRead.current;
-    // Signed out or not answering, it always looks again (Nov 23: Not connected, pressed, looks again too).
-    if (r.busy || (!out.current && !gone.current && Date.now() - r.at < CART_FRESH)) return;
+    // Signed out, Pickup not chosen or not answering, it always looks again (Nov 23: Not connected, pressed, looks again too).
+    if (r.busy || (!out.current && !nop.current && !gone.current && Date.now() - r.at < CART_FRESH)) return;
     r.busy = true;
     setReading(true);
-    run("cart", {}, life.current?.signal).then((x) => {
+    run("cart", {}, life.current?.signal).then(async (x) => {
       r.busy = false;
       r.at = Date.now();
       if (!isAlive(life)) return;
+      if (x.ok) await refresh();
+      // Pressed, and still the same when it ends: said on the button (Shop), until the next press or a change.
+      const was = pressedIn.current;
+      pressedIn.current = null;
+      if (was && was === offNow()) setStill(was);
       setReading(false);
-      if (x.ok) void refresh();
     });
-  }, [run, refresh]);
+  }, [run, refresh, offNow]);
+  /** Shop's Signed out, Choose Pickup or Not connected pressed: looks again, and says if nothing changed. */
+  const lookAgain = useCallback(() => {
+    setStill(null);
+    pressedIn.current = offNow();
+    look();
+  }, [look, offNow]);
 
   /**
    * Sets how many of a product are in the Safeway cart (0 takes it out), for a list item when it's from Find. `query`:
@@ -208,7 +232,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, away, signedOut, loaded, pending, reading, problem, setProblem, refresh, look, run, setQty, fill, qtyOf, forget };
+  return { cart, picks, away, signedOut, noPickup, still, loaded, pending, reading, problem, setProblem, refresh, look, lookAgain, run, setQty, fill, qtyOf, forget };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
@@ -359,6 +383,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       : { query: q, state: "failed", products: [], signedIn: true } }));
     // A problem shows over the page (Nov 11: no bars); the results place says what's left to do.
     if (!r.ok) setProblem(r.problem || NOT_ANSWERING);
+    else if (r.result.noPickup === true) { setProblem(`Pickup isn't chosen on ${store}. Choose Pickup on ${store} to add things.`); void refresh(); }
     else if (!signedIn) { setProblem(`${store} isn't signed in. Sign in to ${store} to add things.`); void refresh(); }
   }, [run, setProblem, refresh, store]);
   // The item showing is searched for when it comes up (once; going back to it shows what was found). Its search words

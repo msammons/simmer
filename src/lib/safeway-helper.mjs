@@ -75,6 +75,12 @@ export const PAGE = {
   signIn: "^sign in$",
   noResults: "no (search )?results for",
   productLinks: "a[href*='product']",
+  // Safeway's own session note (Nov 23, read on the real site after signing in and choosing Pickup): a cookie the page
+  // can read, JSON written as an address part, whose COMMON.userType was "C" (a signed-in customer; a guest is likely
+  // "G", not seen) and COMMON.preference "Dug" (pickup; what it holds with nothing chosen, or for delivery, isn't seen).
+  // Signed in with Pickup not chosen, Safeway sends every page to its home page, the cart too (Nov 23). Missing or
+  // unreadable, or any other user, the helper judges as it did before.
+  session: { cookie: "SWY_SHARED_SESSION_INFO", customer: "C", pickup: "Dug" },
   // Safeway's Purchases page, read after the cart page says it's empty (helper 1.3 on), to tell an order that went
   // through from a cart that only emptied (Nov 3). Its "Online" tab says exactly `none` when there are no orders. A
   // listed order has never been seen, so `entry` is a guess at what holds one, and an entry only counts when it has a

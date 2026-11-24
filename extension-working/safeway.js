@@ -100,12 +100,17 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
   // signed out (Nov 23: with the session over, Safeway sends its cart address to its home page every time, and that
   // page shows the name it remembers and no Sign In; 26.11.23.2 watched it for products, opened it again, and said
   // "didn't load").
+  // Signed in with Pickup not chosen sends every page home too (Nov 23: after signing in again Safeway had forgotten
+  // Pickup, and the helper said signed out while Sam was signed in): Safeway's own session note says which (`noPickup`).
   for (let i = 0; i < 2; i++) {
     await go(tabId, url);
     const r = await waitForProducts(tabId, url, page, settings, tries);
     const away = r ? r.away === true : await sentAway(tabId, url);
     if (away && i === 0) continue;
-    if (away) return { ...(r ?? { cartCount: null, tiles: {}, noResults: false, loading: false }), products: [], signedIn: false, away: true };
+    if (away) {
+      const s = r && "session" in r ? r.session : await onPage(tabId, "session", null, page);
+      return { ...(r ?? { cartCount: null, tiles: {}, noResults: false, loading: false }), products: [], signedIn: false, away: true, ...(noPickup(s, page) && { noPickup: true }) };
+    }
     if (r || !(await movedOff(tabId, url))) return r;
   }
   return null;
@@ -117,6 +122,19 @@ async function movedOff(tabId, url) {
   const [a, b] = [new URL(tab.url), new URL(url)];
   return a.origin + a.pathname + a.search !== b.origin + b.pathname + b.search;
 }
+/**
+ * Safeway's session note (page.js `session()`, `PAGE.session`) says signed in, with Pickup not chosen: a signed-in
+ * customer whose choice isn't pickup. Missing, unreadable, or any other user: not this (judged as before, signed out).
+ */
+const same = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
+const noPickup = (s, page) => Boolean(s && page.session) && same(s.user, page.session.customer) && !same(s.mode, page.session.pickup);
+/** The note says Safeway is set to something other than pickup (delivery): a choice written there that isn't pickup. */
+const onDelivery = (s, page) => Boolean(s && page.session && s.mode) && !same(s.mode, page.session.pickup);
+/**
+ * Safeway's checkout page set for delivery, read from its words when the note doesn't say (Nov 23): no pickup anywhere
+ * on it, and delivery named. Reads only.
+ */
+const deliveryPage = (text) => !/\bpick\s*-?up\b/i.test(text ?? "") && /\bdeliver(?:y|ed|ing)?\b/i.test(text ?? "");
 /** Safeway's home page and its sign-in page: where it sends a page it won't show signed out. */
 const AWAY = ["/", "/home.html", new URL(SIGN_IN).pathname];
 /** Whether the tab is now on Safeway's home page or its sign-in page instead of `url`. */
@@ -215,7 +233,8 @@ export async function runJob(job, windowId) {
     await store.set("parked", "looked");
   } else if (parked) await store.set("parked", "");
   const r = await doJob(job, tabId);
-  const out = r.error === "signed-out" || r.result?.signedIn === false;
+  // Signed in with Pickup not chosen isn't signed out: the tab stays where Safeway put it, for Sam to choose Pickup.
+  const out = r.error !== "no-pickup" && r.result?.noPickup !== true && (r.error === "signed-out" || r.result?.signedIn === false);
   if (out && looks) { await go(tabId, SIGN_IN); await store.set("parked", again ? "looked" : "fresh"); }
   return r;
 }
@@ -236,7 +255,7 @@ async function doJob(job, tabId) {
   if (job.kind === "search") {
     const r = await search(tabId, args.query, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
-    return { ok: true, result: { products: r.products, signedIn: r.signedIn, noResults: r.noResults } };
+    return { ok: true, result: { products: r.products, signedIn: r.signedIn, noResults: r.noResults, ...(r.noPickup && { noPickup: true }) } };
   }
   if (job.kind === "cart") {
     const r = await cartHere(tabId, page, settings);
@@ -247,7 +266,7 @@ async function doJob(job, tabId) {
     const orders = empty && args.orders === true && r.signedIn !== false && page.orders?.path ? await readOrders(tabId, page, settings) : null;
     // Back to the cart page, which is what the Safeway tab shows beside Simmer's Lists.
     if (orders) await go(tabId, `${page.site}${page.cartPath}`);
-    return { ok: true, result: { products: r.products, signedIn: r.signedIn, empty, ...(orders && { orders }) } };
+    return { ok: true, result: { products: r.products, signedIn: r.signedIn, empty, ...(orders && { orders }), ...(r.noPickup && { noPickup: true }) } };
   }
   if (job.kind === "setQty") {
     // Where the product can be changed: Safeway's cart page first when asked (from Cart, where it's listed), then
@@ -262,6 +281,7 @@ async function doJob(job, tabId) {
       const r = t.cart ? await cartHere(tabId, page, settings) : await searchHere(tabId, t.q, page, settings);
       if (!r) continue;
       loaded = true;
+      if (r.noPickup) return { ok: false, error: "no-pickup" };
       if (r.signedIn === false) return { ok: false, error: "signed-out" };
       // On the page: read, or a tile whose buttons Safeway builds once it's scrolled to (page.js scrolls to it).
       if (!r.products.some((x) => x.id === args.productId) && !(args.productId in (r.tiles ?? {}))) continue;
@@ -344,8 +364,18 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   const start = onCheckout ? tab.url : `${page.site}${page.cartPath}`;
   await go(tabId, start);
   let here = await settle(start);
+  // Read as Safeway was sending the tab elsewhere (Nov 23: home, signed in with Pickup not chosen): looked at once more
+  // where it lands (Chrome's events, with a limit), reading only.
+  if (!here) { await urlChange(tabId, start, 5000); here = await look(); }
   if (!here) return stop("page didn't load");
   if (/sign back in|sign in to continue/i.test(here.text)) return stop("signed out");
+  // Simmer orders pickup only (docs/CHECKOUT.md). Safeway's session note, read before any press (Nov 23): signed in with
+  // Pickup not chosen (Safeway sent the cart home), or set to delivery: stop, nothing pressed, and the mode is never
+  // switched here (Sam switches it on Safeway). The checkout page's own words say delivery too, below.
+  const sentHome = AWAY.includes(new URL(here.url).pathname) && new URL(here.url).pathname !== new URL(start).pathname;
+  if (sentHome && noPickup(here.session, page)) return stop("no pickup chosen");
+  if (onDelivery(here.session, page)) return stop("delivery");
+  if (new URL(here.url).pathname === checkoutPath && deliveryPage(here.text)) return stop("delivery");
   const steps = [
     { path: page.cartPath, words: ["checkout", "safeway"] },
     { path: `${page.cartPath}/dnf`, words: ["continue", "to", "checkout", "safeway"] },
@@ -363,8 +393,11 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
       here = await settle(to);
     }
     if (!here) return stop("page didn't load");
+    // On the checkout page and set for delivery: stopped before Order info's Continue or any pickup step.
+    if (new URL(here.url).pathname === checkoutPath && (onDelivery(here.session, page) || deliveryPage(here.text))) return stop("delivery");
   }
   if (new URL(here.url).pathname !== checkoutPath) return stop("not the checkout page");
+  if (onDelivery(here.session, page) || deliveryPage(here.text)) return stop("delivery");
   // Free times, Regular or Express (Nov 14), and since Nov 16 Flash too, shown with its price (Sam: "offer flash but
   // show it"). Other paid times aren't offered.
   const free = (w) => !/FLASH/i.test(`${w.id} ${w.words}`) && /\bprice Free\b/i.test(w.words) && !w.off;
@@ -389,6 +422,9 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   let seen = await read();
   // A time chosen earlier (the last Get ready) folds the pickup step into one line: reopen it once (Sam, Nov 14), then read.
   if (seen && !seen.days.length && !seen.windows.length) {
+    // No pickup times and no pickup on the page: set for delivery (Nov 23: this said "pickup times closed").
+    const now = await look();
+    if (now && (onDelivery(now.session, page) || deliveryPage(now.text))) return stop("delivery");
     const opened = await onPage(tabId, "pressPickupEdit", { path: checkoutPath }, page);
     if (!opened?.pressed) return { ...stop("pickup times closed"), detail: { found: opened?.found ?? null, why: opened?.why ?? "" } };
     await until("timesOpen");
@@ -454,6 +490,7 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
 async function placeOrder(tabId, page, settings, windowId, expect, jobId) {
   const stop = (stopped, extra = {}) => ({ stopped, pressed: false, chosen: null, final: null, ...extra });
   const cart = await openCart(tabId, page, settings);
+  if (cart?.noPickup) return stop("no pickup chosen");
   if (!cart || cart.signedIn === false) return stop(cart ? "signed out" : "page didn't load");
   const key = cart.products.filter((p) => p.inCart).map((p) => `${p.id}x${p.qty || 1}`).sort().join(",");
   if (key !== expect.cart) return stop("cart changed");

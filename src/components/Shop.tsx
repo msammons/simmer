@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
-import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway } from "./Safeway";
+import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway, type SafewayOff } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
 // Check out isn't loaded on demand (Nov 19): a tap before it arrived opened the sheet late, and it saved only ~3 KB.
@@ -68,15 +68,24 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  * - nothing in the cart: Check out greyed, can't be pressed (Nov 21: with no button, Safeway looked not connected);
  * - Safeway signed out on the computer (Nov 16): greyed "Signed out", no price; pressing it looks again (Nov 21, Sam:
  *   signed in on the computer, Shop still said Signed out, since nothing tells an open screen);
- * - the computer not answering: greyed "Not connected"; pressing it looks again, the same way.
+ * - the computer not answering: greyed "Not connected"; pressing it looks again, the same way;
+ * - signed in on the computer with Pickup not chosen on Safeway (Nov 23: Safeway sent every page home and this said
+ *   Signed out): "Choose Pickup on Safeway", pressing it looks again, the same way.
  * While the cart is changing or being read (Nov 16, Sam: no checking out while things are in progress), the button is
- * greyed and can't be pressed.
+ * greyed and can't be pressed. Looking again (Nov 23, Sam: a press that found nothing new looked like nothing happened)
+ * it says "Looking…" while the reading runs, and "Still signed out" (and the like) when it ends the same, until the next
+ * press or the state changing (`still`). No timer.
  */
 export type CartButton =
   | { state: "ready"; price: string; onCheckOut: () => void; busy?: boolean }
   | { state: "empty" }
-  | { state: "signed-out" | "not-connected"; onLook: () => void; busy?: boolean };
-const OFF_WORDS = { "signed-out": ["Signed out", "Signed out of Safeway. Check again"], "not-connected": ["Not connected", "Safeway not connected. Check again"] } as const;
+  | { state: SafewayOff; onLook: () => void; busy?: boolean; still?: boolean };
+/** Each state's words: on the button, for screen readers, and after a look again that found it the same. */
+const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
+  "signed-out": ["Signed out", "Signed out of Safeway. Check again", "Still signed out"],
+  "no-pickup": ["Choose Pickup on Safeway", "Pickup isn't chosen on Safeway. Check again", "Pickup still not chosen"],
+  "not-connected": ["Not connected", "Safeway not connected. Check again", "Still not connected"],
+};
 
 function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNode }) {
   const base = "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold";
@@ -93,8 +102,8 @@ function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNod
           ) : cart.state === "empty" ? (
             <button type="button" disabled className={`${base} bg-sunk text-muted`}>{icon}Check out</button>
           ) : (
-            <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={OFF_WORDS[cart.state][1]}
-              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}{OFF_WORDS[cart.state][0]}</button>
+            <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}
+              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}<span className="truncate">{cart.busy ? "Looking…" : cart.still ? OFF_WORDS[cart.state][2] : OFF_WORDS[cart.state][0]}</span></button>
           )}
         </span>
       )}
@@ -182,7 +191,8 @@ export function ShopScreen({ act }: { act: ShopActions }) {
   }, [list, sw.picks]);
   // Safeway signed out on the computer (Nov 16, Sam): what Simmer has as the cart may not be right, so it isn't shown
   // and the Safeway rows are a plain checklist until a cart read sees Safeway signed in again.
-  const signedOut = sw.loaded && sw.signedOut;
+  // Signed in with Pickup not chosen (Nov 23) is treated the same way: Safeway showed no cart to match.
+  const signedOut = sw.loaded && (sw.signedOut || sw.noPickup);
   const live = sw.loaded && !sw.away && !signedOut; // Safeway can be reached: its rows get their controls
 
   // The cart, with a change on its way counted (taken out: gone at once).
@@ -257,8 +267,9 @@ export function ShopScreen({ act }: { act: ShopActions }) {
 
   /** The Check out button's look (TopLine): nothing until Safeway's first answer, so it never flashes the wrong one. */
   const cartButton: CartButton | null = !sw.loaded ? null
-    : signedOut ? { state: "signed-out", onLook: sw.look, busy: sw.reading }
-    : sw.away ? { state: "not-connected", onLook: sw.look, busy: sw.reading }
+    : sw.signedOut ? { state: "signed-out", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "signed-out" }
+    : sw.noPickup ? { state: "no-pickup", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "no-pickup" }
+    : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected" }
     : count > 0 ? { state: "ready", price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 }
     : { state: "empty" };
 

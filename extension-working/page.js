@@ -9,7 +9,8 @@
 // what changes and the helper picks it up on its next run.
 
 /**
- * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }] }
+ * safewayPage("read") → { signedIn, loading, noResults, cartCount, tiles, products: [{ id, name, price, image, inCart, qty }], session }
+ *   session: Safeway's own session note, { user, mode } or null (see `session()`); also in "look", and alone as "session"
  *   tiles: { [id]: what that product's Add button says now ("" when there's none), for every product on the page }
  * safewayPage("setQty", { id, qty, wait }) → { ok, qty, name, price, image }
  * safewayPage("snapshot", { id }) → that product's part of the page, for fixing this file when Safeway changes
@@ -230,6 +231,26 @@ export async function safewayPage(action, arg, P) {
 
   const strip = (p) => ({ id: p.id, name: p.name, price: p.price, image: p.image, inCart: p.inCart, qty: p.qty });
 
+  /**
+   * What Safeway's own session note says (Nov 23, read on the real site after signing in and choosing Pickup): a cookie
+   * the page can read (`P.session.cookie`), JSON written as an address part, whose COMMON.userType was "C" (a signed-in
+   * customer) and COMMON.preference "Dug" (pickup). { user, mode } as written there, or null when there's no such
+   * cookie or it doesn't read (the helper then judges as before). Reads only.
+   */
+  function session() {
+    try {
+      const name = P.session?.cookie;
+      if (!name) return null;
+      const raw = document.cookie.split(/;\s*/).find((c) => c.startsWith(`${name}=`));
+      if (!raw) return null;
+      let v = raw.slice(name.length + 1);
+      for (let i = 0; i < 3 && !/^\s*\{/.test(v); i++) v = decodeURIComponent(v);
+      const c = JSON.parse(v)?.COMMON;
+      if (!c || typeof c !== "object") return null;
+      return { user: typeof c.userType === "string" ? c.userType : "", mode: typeof c.preference === "string" ? c.preference : "" };
+    } catch { return null; }
+  }
+
   function readPage() {
     const header = document.querySelector("header") ?? document.body;
     const signInShown = buttons(header).concat([...header.querySelectorAll("a")]).some((el) => visible(el) && re(P.signIn).test(label(el)));
@@ -242,9 +263,11 @@ export async function safewayPage(action, arg, P) {
       noResults: re(P.noResults).test(text),
       loading: !list.length && !re(P.noResults).test(text),
       products: list.slice(0, 40).map(strip),
+      session: session(),
     };
   }
   if (action === "read") return readPage();
+  if (action === "session") return session();
 
 
   // Checkout, read-only (Nov 12, docs/CHECKOUT.md phase 1): what the page says, its links (with where they go) and its
@@ -256,7 +279,7 @@ export async function safewayPage(action, arg, P) {
     const key = /check\s*out|continue|place|order|pay|submit|review|pick\s*up|time|window/i;
     const buttons = deepAll(document, "button, [role=button], input[type=submit]").filter(visible).map((b) => (label(b) || b.value || "").slice(0, 80)).filter(Boolean)
       .sort((a, b) => Number(key.test(b)) - Number(key.test(a))).slice(0, 80);
-    return { url: location.href, title: document.title, text: words(document.body).slice(0, 12000), links, buttons };
+    return { url: location.href, title: document.title, text: words(document.body).slice(0, 12000), links, buttons, session: session() };
   }
 
   // The checkout look's presses (Nov 12, Sam: "Checkout only", then "Continue only"): on the one page named (`path`, exact),
