@@ -19,6 +19,8 @@ type Kv = {
   expire(k: string, secs: number): Promise<unknown>;
   // A list (the checkout record, Nov 19): added to at the end, never read and written back.
   rpush(k: string, ...v: string[]): Promise<unknown>;
+  /** At the front (the feedback list, newest first, Nov 24). */
+  lpush(k: string, ...v: string[]): Promise<unknown>;
   ltrim(k: string, start: number, stop: number): Promise<unknown>;
   lrange(k: string, start: number, stop: number): Promise<string[]>;
   // A sorted set (the jobs' index, Nov 19): members by a number, here when they were queued.
@@ -64,6 +66,7 @@ const inMemory: Kv = {
   mget: async (...ks) => ks.map(memoryGet),
   expire: async (k, secs) => { const e = held(k); if (e) e.until = Date.now() + secs * 1000; },
   rpush: async (k, ...v) => { holding<string[]>(k, () => []).push(...v); },
+  lpush: async (k, ...v) => { holding<string[]>(k, () => []).unshift(...[...v].reverse()); },
   ltrim: async (k, start, stop) => { const e = held(k); if (e && Array.isArray(e.v)) e.v = span(e.v, start, stop); },
   lrange: async (k, start, stop) => { const v = held(k)?.v; return Array.isArray(v) ? span(v, start, stop) : []; },
   zadd: async (k, m) => { holding<Map<string, number>>(k, () => new Map()).set(m.member, m.score); },

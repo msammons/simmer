@@ -13,6 +13,8 @@ import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, Button, Contained, Dialog, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
 import { todayIn } from "@/lib/time";
+import { useNote } from "@/lib/feedback";
+import { FeedbackHost } from "./Feedback";
 
 // Settings (with ordering) loads on its own, after the app is up (see `preload`), not with the first screen. A load that
 // fails (offline) is said in the shared alert, with Try again, and is tried afresh next time.
@@ -382,6 +384,8 @@ export default function App() {
   const backLabel = `Back to ${!below ? TAB_NAMES[root] : below.kind === "recipe" ? recipeOf(below.id)?.name ?? TAB_NAMES[root] : TAB_NAMES[below.kind]}`;
   // In the helper's panel: the computer's work for the phone (components/Activity.tsx).
   const panel = usePanelActivity(phase === "app" && framed());
+  // Feedback's note of where you are (lib/feedback.ts); a screen pushed on it notes itself (a recipe).
+  useNote("tab", phase === "app" ? TAB_NAMES[root] : phase === "passcode" ? "Passcode" : "Starting");
 
   return (
     <SafewayHost active={phase === "app"}>
@@ -439,6 +443,8 @@ export default function App() {
       {phase === "app" && (
         <TabBar tabs={TABS} active={root} onTab={onTab} />
       )}
+      {/* The long press on Settings (Nov 24): Feedback, over whatever is open. */}
+      <FeedbackHost active={phase === "app"} theme={theme} />
       <Alert open={Boolean(problem)} title={problem?.title ?? ""} message={problem?.message ?? ""} onClose={() => setProblem(null)}
         onRetry={problem?.retry && (() => { const again = problem.retry!; setProblem(null); again(); })} />
     </main>

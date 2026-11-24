@@ -3,6 +3,7 @@
 // Searches and cart changes are jobs done by the Safeway helper in Chrome on a computer (lib/jobs.ts); the panel at
 // the computer shows this same screen, so it works the same everywhere. Product pictures are Safeway's own, shown from
 // Safeway's addresses (nothing's stored).
+import { useNote } from "@/lib/feedback";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { PAGE } from "@/lib/safeway-helper.mjs";
@@ -263,6 +264,11 @@ export function SafewayHost({ active, children }: { active: boolean; children: R
     window.addEventListener("focus", back);
     return () => { document.removeEventListener("visibilitychange", back); window.removeEventListener("focus", back); };
   }, [active, look]);
+  // Feedback's note of Safeway as the app knows it (lib/feedback.ts), on every tab.
+  const lines = sw.cart.filter((l) => l.qty > 0);
+  useNote("state", "Safeway", !sw.loaded ? "not read yet" : [sw.signedOut ? "signed out" : sw.noPickup ? "Pickup not chosen" : sw.away ? "not connected" : "signed in",
+    `cart ${lines.reduce((n, l) => n + l.qty, 0)} (${lines.length} products)`, sw.reading && `reading${sw.readingStep ? ` (${sw.readingStep})` : ""}`,
+    Object.keys(sw.pending).length > 0 && `${Object.keys(sw.pending).length} changes on their way`].filter(Boolean).join("; "));
   return <SafewayContext value={sw}>{children}</SafewayContext>;
 }
 export function useSafewayCart(): Safeway {

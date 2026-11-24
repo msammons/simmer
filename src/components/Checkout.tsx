@@ -8,6 +8,7 @@
 // Safeway's checkout, and changing the bags reads it again; then "Test run · $X" approves those figures with Face ID and goes through Safeway's
 // checkout again, stopping one press short, and says what it would have placed. Place order (phase 3) asks first, then
 // Face ID approves exactly the reading shown (its preparedId, Nov 19), and the helper places it once.
+import { useNote } from "@/lib/feedback";
 import { useContext, useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
@@ -59,6 +60,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
 function TestRun({ onClose }: { onClose: () => void }) {
   const startPlan = useContext(StartPlan);
   const [run, setRun] = useState<Run>({ stage: "reading" });
+  useNote("state", "Check out", `step: ${run.stage}${run.stage === "times" && run.loading ? `, ${run.loading}` : ""}`);
   const [problem, setProblem] = useState<string | null>(null);
   const check = usePrepared<PublicKeyCredentialRequestOptionsJSON>();
   const stop = useRef<AbortController | null>(null);
