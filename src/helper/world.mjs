@@ -320,6 +320,26 @@ const deliveryCheckout = (shop) => ({
   run: () => { for (const id of ["continue", "edit", "place"]) doc.getElementById(id).addEventListener("click", () => press(shop, id)); },
 });
 
+/**
+ * Safeway's checkout page for pickup (`shop.checkoutFor = "pickup"`), as scripts/extension-test.mjs has it: one day, its
+ * free time, the pickup step's Continue (on once a time is chosen; then the step folds into its Edit), and Place Order,
+ * every press counted.
+ */
+export const WINDOW = "slot-2026-11-24-1000";
+const pickupCheckout = (shop) => ({
+  html: `${bar(shop, true, "/erums/cart")}<main><h1>Checkout</h1><section><h2>Pickup date &amp; time</h2><div id="slots">
+    <div class="date-tile date-is-active" role="button" aria-label="select slots for TUESDAY Nov, 24 Tue Nov 24">Tue 24</div>
+    <div><label><input type="radio" name="slot" id="${WINDOW}"> 10:00 AM - 11:00 AM</label><span> price Free</span></div>
+  </div><button id="go" disabled>Continue</button></section>
+  <p>Estimated total $3.49</p><button id="place">Place Order</button></main>`,
+  run: () => {
+    doc.getElementById(WINDOW).addEventListener("click", () => { press(shop, "time"); doc.getElementById("go").disabled = false; });
+    const go = doc.getElementById("go");
+    go.addEventListener("click", () => { press(shop, "pickupContinue"); doc.getElementById("slots").innerHTML = "<p>Tue, Nov 24, 10:00 AM - 11:00 AM</p><button>Pickup date &amp; time Edit</button>"; go.remove(); });
+    doc.getElementById("place").addEventListener("click", () => press(shop, "place"));
+  },
+});
+
 /** Safeway's Purchases page: In-store showing first; Online shows "no orders", or an order placed today once `ordered`. */
 function ordersPage(shop) {
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -348,7 +368,7 @@ function serve(u) {
     return { html: first.html, run: (t) => { first.run?.(t); t.after(shop.goneAfter ?? 150, () => t.go("/")); } };
   }
   if (p === "/erums/cart") return cartPage(shop);
-  if (p === "/erums/checkout") return deliveryCheckout(shop);
+  if (p === "/erums/checkout") return shop.checkoutFor === "pickup" ? pickupCheckout(shop) : deliveryCheckout(shop);
   if (p === PAGE.orders.path) return ordersPage(shop);
   // Signed in, Safeway's sign-in page sends the tab on to its home page by itself (seen Nov 23).
   if (p === "/account/sign-in.html") return { html: '<h1>Sign in</h1><input id="user"><button>Sign in</button>', run: (t) => { if (shop.signedIn && !shop.sessionGone) t.after(300, () => t.go("/")); } };

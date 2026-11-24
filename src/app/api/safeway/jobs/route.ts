@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { cancelJob, finishJob, returnJob, helperPush, helperStatus, jobStatus, pressJob, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type Job, type JobKind, HELPER_VERSION } from "@/lib/jobs";
+import { cancelJob, finishJob, returnJob, helperPush, helperStatus, jobStatus, noteStep, pressJob, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type Job, type JobKind, HELPER_VERSION } from "@/lib/jobs";
 import { loadSettings, record } from "@/lib/checkout";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
@@ -49,7 +49,8 @@ function argsFor(kind: JobKind, b: Record<string, unknown>): Record<string, unkn
 }
 
 /**
- * GET ?id=…: how a job stands, and whether the helper is answering (&wait=1: once it's finished, or after ~20 s). GET ?recent=1: the panel's activity log. GET with
+ * GET ?id=…: how a job stands, and whether the helper is answering (&wait=1: once it's finished, its step changes from
+ * &since=…, or after ~20 s). GET ?recent=1: the panel's activity log. GET with
  * neither: just whether it's answering.
  */
 export const GET = api(async (req) => {
@@ -57,13 +58,16 @@ export const GET = api(async (req) => {
   if (params.get("recent")) return Response.json({ jobs: await recentJobs(), ...(await helperStatus()), ...ANSWERING }, noStore);
   const id = text(params.get("id"), 40);
   if (!id) return Response.json({ ...(await helperStatus()), ...ANSWERING }, noStore);
-  return Response.json({ job: params.get("wait") ? await waitForJob(id) : await jobStatus(id), ...ANSWERING }, noStore);
+  // `since` (Nov 23): the step time the asker already has, so the wait answers as soon as the helper's step changes.
+  const since = params.has("since") ? text(params.get("since"), 40) : undefined;
+  return Response.json({ job: params.get("wait") ? await waitForJob(id, undefined, since) : await jobStatus(id), ...ANSWERING }, noStore);
 });
 
 /**
  * POST { op, ... }. From Simmer: queue { kind, from, ...args } → { job, answering }, cancel { id }. From the helper: next
  * { version, panel, helper, pending } → { job (with Simmer's page details and settings) | null, push: { key, have } }, done { id, result },
  * failed { id, error }, again { id } (handing back a job as it reloads), press { id } (may it press Place Order, Nov 19),
+ * step { id, step, at } (where it is in a job, Nov 23),
  * push { key, subscription } (1.3: how to wake it when a job is queued).
  */
 export const POST = api(async (req) => {
@@ -81,6 +85,9 @@ export const POST = api(async (req) => {
     case "cancel": await cancelJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
     // A placing job's outcome is worked out as it finishes, however it finishes (jobs.ts settlePlacing, Nov 19).
     case "again": await returnJob(text(b.id, 40)); return Response.json({ ok: true }, noStore);
+    // Where the helper is in a job (Nov 23): a step's key and the helper's time, kept on the job for the phone's words and
+    // for timing. Read-only for Safeway; it never changes a job's status. Answered at once, kept or not.
+    case "step": return Response.json({ ok: await noteStep(text(b.id, 40), text(b.step, 24), Number(b.at)) }, noStore);
     // "May I press?" (Nov 19): asked by the helper right before Place Order; only yes moves the job to pressing.
     case "press": return Response.json({ ok: await pressJob(text(b.id, 40)) }, noStore);
     case "next": {

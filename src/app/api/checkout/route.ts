@@ -49,13 +49,15 @@ const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.tes
  */
 async function run(req: Request, b: Record<string, unknown>) {
   try {
-    const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined)
-      : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined)
-      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined, undefined, typeof b.bagsOwn === "boolean" ? b.bagsOwn : undefined)
+    // `since` (Nov 23): the step time the phone already shows, so following answers as soon as the helper's step changes.
+    const since = typeof b.since === "string" ? text(b.since, 40) : undefined;
+    const out = b.op === "look" ? await lookUp(id(b.jobId) || undefined, undefined, since)
+      : b.op === "times" ? await pickupTimes(id(b.jobId) || undefined, text(b.day, 80) || undefined, undefined, since)
+      : b.op === "prepare" ? await prepare(id(b.jobId) || undefined, windowId(b.windowId) || undefined, undefined, typeof b.bagsOwn === "boolean" ? b.bagsOwn : undefined, since)
       : b.op === "approve" ? await approve(req, answerOf(b.faceId), id(b.preparedId))
       // Placing for real (phase 3): only with an approval made with Face ID, or following the one started.
-      : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId)) : await placeOrder(id(b.approvalId), { totalCents: Number.isInteger(b.totalCents) ? b.totalCents as number : null, window: text(b.window, 80) }))
-      : id(b.jobId) ? await followTestRun(id(b.jobId)) : await testRun(id(b.approvalId));
+      : b.op === "place" ? (id(b.jobId) ? await followOrder(id(b.jobId), undefined, since) : await placeOrder(id(b.approvalId), { totalCents: Number.isInteger(b.totalCents) ? b.totalCents as number : null, window: text(b.window, 80) }))
+      : id(b.jobId) ? await followTestRun(id(b.jobId), undefined, since) : await testRun(id(b.approvalId));
     return Response.json(out, noStore);
   } catch (e) {
     return failed(e, req);

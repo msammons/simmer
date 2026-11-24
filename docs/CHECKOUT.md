@@ -16,6 +16,12 @@ when exactly one fits; never Delivery, In Store or another store; a store alread
 known, no switch. Searches, cart reads, Adds, getting ready and test runs switch; placing never does (it stops as before,
 on exactly what Face ID approved). Only if the switch doesn't take does Simmer show the words above.
 
+Progress (Nov 23, helper 26.11.24, Sam: "some sort of status message saying what the app is doing as it goes"): as it
+works a checkout job the helper tells Simmer which step it's at (a short key and its time: the cart, Checkout, the
+pickup times, a day, the time, the bags, reading the order, checking before Place Order, waiting for the confirmation).
+These are read-only messages to Simmer, sent without waiting and dropped if they fail: they add no presses, change no
+job's status, and nothing in checkout waits on them or decides by them. The phone shows them as words in place.
+
 ## The flow
 
 1. Shop → **Check out**, on the line above the list (it opens only with something in the Safeway cart: greyed with an

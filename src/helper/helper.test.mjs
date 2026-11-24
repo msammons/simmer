@@ -4,7 +4,7 @@
 // browser can show (Chrome's own events, the panel, Simmer's screens) is in scripts/extension-test.mjs; whether Safeway's
 // real pages still read right is scripts/real-pages-test.mjs.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BREAD, makeWorld, OTHER_STREET, OUR_STREET, PAGE, SAFEWAY, SETTINGS } from "./world.mjs";
+import { BREAD, makeWorld, OTHER_STREET, OUR_STREET, PAGE, SAFEWAY, SETTINGS, WINDOW } from "./world.mjs";
 import { resetKv } from "../lib/kv";
 import { finishJob, jobStatus, queueJob, resetJobs, takeJob } from "../lib/jobs";
 
@@ -421,5 +421,74 @@ describe("switching Safeway to Pickup (Sam, Nov 23: \"i want this process to be 
     const r = await runS("checkoutPlace", { windowId: "w1", expect: { cart: "960001x1" } });
     expect(r.result?.stopped ?? r.error).toBe("no pickup chosen");
     expect(Object.keys(world.shop.presses).filter((k) => k !== "close")).toEqual([]);
+  });
+});
+
+describe("progress told to Simmer as it goes (Nov 23, Sam: \"some sort of status message\")", () => {
+  let told, answer;
+  beforeEach(() => {
+    told = []; answer = async () => ({ ok: true });
+    world.simmer = async (op, b) => { if (op === "step") { told.push(b); return answer(); } return { ok: true }; };
+  });
+  const stepsOf = (id) => told.filter((t) => t.id === id).map((t) => t.step);
+  /** `want` appears in `list` in this order (other steps may come between). */
+  const inOrder = (list, want) => { let i = 0; for (const x of list) if (x === want[i]) i++; return i === want.length; };
+  const STORE = `Safeway ${OUR_STREET} Petaluma, CA 00000`;
+  const runAs = async (kind, args = {}, more = {}) => { const j = { ...job(kind, args), ...more }; return { id: j.id, ...(await drive(helper.runJob(j, null))) }; };
+  const pickupCheckout = () => { world.shop.cart = { "960001": 1 }; world.shop.checkoutButton = true; world.shop.checkoutFor = "pickup"; };
+
+  it("a cart read: opening the cart, then waiting for Safeway, each with the time, once each", async () => {
+    const { id, value } = await runAs("cart");
+    expect(value.ok).toBe(true);
+    expect(stepsOf(id)).toEqual(["cart", "wait"]);
+    const at = told.map((t) => t.at);
+    expect(at.every((t) => typeof t === "number")).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+  });
+
+  it("switching to Pickup on the way: the cart, choosing Pickup, then the cart again", async () => {
+    world.note({ userType: "C", preference: "" }); world.shop.cartGone = true; world.shop.box = { selected: "" };
+    const { id, value } = await runAs("cart", {}, { store: STORE });
+    expect(value.result.signedIn).toBe(true);
+    expect(inOrder(stepsOf(id), ["cart", "wait", "pickup", "cart", "wait"])).toBe(true);
+    expect(stepsOf(id).at(-1)).toBe("wait");
+  });
+
+  it("an Add: the search, waiting, then adding", async () => {
+    const { id } = await runAs("setQty", { productId: "960090", qty: 1, query: "butter", name: "Lucerne Butter Salted - 16 Oz" });
+    expect(stepsOf(id)).toEqual(["search", "wait", "add"]);
+  });
+
+  it("getting ready: the cart, Checkout, then the pickup times", async () => {
+    pickupCheckout();
+    const { id, value } = await runAs("checkoutPrepare", { list: true });
+    expect(value.result.stopped).toBe("times");
+    expect(inOrder(stepsOf(id), ["cart", "wait", "checkout", "times"])).toBe(true);
+  });
+
+  it("a test run: the cart, Checkout, the times, choosing the time, reading the order; Place Order never pressed", async () => {
+    pickupCheckout();
+    const { id, value } = await runAs("checkoutDry", { windowId: WINDOW });
+    expect(value.result).toMatchObject({ stopped: "ready", chosen: { id: WINDOW } });
+    expect(inOrder(stepsOf(id), ["cart", "wait", "checkout", "times", "time", "read"])).toBe(true);
+    expect(world.shop.presses.place).toBeUndefined();
+  });
+
+  it("progress that fails, or never answers, changes nothing about the job and doesn't slow it", async () => {
+    pickupCheckout();
+    const base = await runAs("checkoutDry", { windowId: WINDOW });
+    const presses = { ...world.shop.presses };
+    for (const fail of [async () => "drop", () => new Promise(() => {})]) {
+      answer = fail;
+      world.shop.presses = {};
+      world.go("/");
+      await wait(200);
+      const r = await runAs("checkoutDry", { windowId: WINDOW });
+      expect(r.value.result.stopped).toBe("ready");
+      expect(r.value.result.chosen).toEqual(base.value.result.chosen);
+      expect(world.shop.presses).toEqual(presses);
+      expect(r.ms).toBeLessThan(base.ms + 1000);
+      expect(stepsOf(r.id).length).toBeGreaterThan(3);
+    }
   });
 });

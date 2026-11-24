@@ -52,8 +52,8 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - Problems are one `Alert` over the page (a short headline, the reason, OK), never a bar that pushes the page; risky
   actions ask first with one `ConfirmSheet` (headline, one muted line, the action, Cancel). No Undo, no toasts, no
   "Saving…": a change shows at once (every tap, within about 150 ms) and saves behind it; one that fails is put back and
-  the alert says why. A first load with nothing saved here shows `Held`, grey rows with Head Out's `.shimmer`; no loading
-  words, no spinners. No sentence on screen speaks of the app in the third person.
+  the alert says why. A first load with nothing saved here shows `Held`, grey rows with Head Out's `.shimmer`; no spinners,
+  and no loading words except the helper's steps while a Safeway job runs (Nov 23). No sentence on screen speaks of the app in the third person.
 - Settings ends with the release as YY.M.D (`NEXT_PUBLIC_VERSION`, worked out in `next.config.ts`).
 - Type scale `t-*` utilities and colors as CSS variables in `app/globals.css`. Themes set `--accent` and a brand gradient
   (`--g1..g3`) used only on non-interactive brand surfaces. Simmer (tomato, matching the icon; the default), Apricot (the original warm orange), then plain iOS colors.
@@ -106,7 +106,7 @@ when a new test run is needed (a search or cart fix to the helper needs none).
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
 Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" rows,
 pruned as it goes), the helper takes it, does it on safeway.com and reports back (the app follows it with one request at a
-time that the server answers once the job's finished, or after about 20 s: `waitForJob`, no timer in the app); a quantity set on Safeway goes into
+time that the server answers once the job's finished, its step changes, or after about 20 s: `waitForJob`, no timer in the app); a quantity set on Safeway goes into
 Simmer's cart ("Safeway cart" rows, `lib/safeway.ts`, with a `cart` column so more carts can be kept later) and a
 product added for an item becomes that item's pick (the Safeway rows, now with the product's picture address; pictures
 are shown from Safeway, never stored). The helper's last check-in (each time it asks for jobs or reports one) is kept
@@ -120,7 +120,14 @@ from signed out (`noPickup`, from Safeway's own session note): Shop's button say
 cart is hidden as when signed out. Shop's Signed out, Choose Pickup and Not connected buttons look again when pressed,
 reading "Looking…" while the cart is read and "Still signed out" (and the like) when it ends the same, until the next
 press or a change; no timer. A job the helper doesn't pick up drops Shop's Safeway controls,
-and the Safeway rows become a plain checklist. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
+and the Safeway rows become a plain checklist. What the helper is doing (Nov 23, Sam: "some sort of status
+message saying what the app is doing as it goes"): at each step of a job it sends Simmer a short key and its time
+(fire and forget, a 3 s limit, never slowing the job); `noteStep` keeps `step`, `stepAt` and the job's own step list
+(the newest 30) without touching its status or `updated`. `waitForJob` reads every 300 ms and also answers when the
+step changes from the one the asker has (`since`, its last `stepAt`), so each step reaches the phone through the same
+wait, with no timer. The words (`lib/steps.ts`) show where she's waiting, in place of what was there: Shop's Check out
+button and "Looking…" while the cart is read, the checkout sheet's reading, test run and placing, the store and card
+reading in Settings, and Find's loading row. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be
 framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the
@@ -215,8 +222,9 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
   scripts/helper-status.mjs /tmp/simmer.env [N]` prints the helper's check-in (version against the one Simmer ships, when,
   panel open), the open jobs, the last N jobs (default 15: kind, status, when, how long, a short result: errors, stops,
   signed in or not, Pickup, how many products; no product names or addresses), how long each kind of job takes from
-  `${NS}:job-times` (count, median, max, failures by reason; the last 500 finished jobs, kept 90 days, written by
-  `finishJob`), and whether this checkout's fingerprint (`src/lib/checkout-print.json`) is among the passed test runs.
+  `${NS}:job-times` (count, median, max, failures by reason, and since Nov 23 the median seconds in each step by kind,
+  from each row's `st`, `start` being queued until the first step; the last 500 finished jobs, kept 90 days, written
+  by `finishJob`), and whether this checkout's fingerprint (`src/lib/checkout-print.json`) is among the passed test runs.
 - **Backups** (`ops/backup.ts`): New plan, starting the plan over, and Done shopping each keep the tabs as they were
   before the change (read just before it, written once the answer has gone): one key per tab,
   `${NS}:backup:<ISO time>:<tab>`, and an index `${NS}:backup:<ISO time>` written last. The newest 7 are kept, older

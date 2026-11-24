@@ -1,7 +1,7 @@
 // Where the Safeway helper stands, read-only, for a round's check-up (Nov 23: done by hand every round till now):
 //   vercel env pull /tmp/simmer.env --environment=production && node scripts/helper-status.mjs /tmp/simmer.env [last N jobs, default 15]
 // The helper's check-in (version, when, panel open), the open jobs, the last N jobs with a short result each, how long
-// each kind of job takes (the job-times list src/lib/jobs.ts keeps), and whether this checkout's fingerprint has passed a test run. Reads
+// each kind of job takes (the job-times list src/lib/jobs.ts keeps) and the median seconds in each of its steps, and whether this checkout's fingerprint has passed a test run. Reads
 // only; the env file is deleted as soon as it's read (scripts/ops-env.mjs), and nothing secret, no product names and
 // no addresses are printed.
 import { readFileSync } from "node:fs";
@@ -51,6 +51,21 @@ export function timesByKind(rows) {
   return [...by].sort((a, b) => b[1].n - a[1].n).map(([kind, k]) => ({ kind, n: k.n, median: median(k.s), max: Math.max(...k.s), fails: [...k.fails].sort((a, b) => b[1] - a[1]) }));
 }
 
+/**
+ * Median seconds in each step, by kind (Nov 23: the job-times rows' `st`, seconds per step), steps in the order they
+ * first came, each with how many jobs had it. Kinds with no steps (before helper 26.11.24) are left out.
+ */
+export function stepsByKind(rows) {
+  const by = new Map();
+  for (const t of rows) {
+    if (!t || !t.st || typeof t.st !== "object") continue;
+    const k = by.get(t.kind) ?? new Map();
+    for (const [step, s] of Object.entries(t.st)) if (typeof s === "number") k.set(step, [...(k.get(step) ?? []), s]);
+    by.set(t.kind, k);
+  }
+  return [...by].map(([kind, k]) => ({ kind, steps: [...k].map(([step, xs]) => ({ step, n: xs.length, median: median(xs) })) }));
+}
+
 /** Every line of the report. `redis(...cmd)` is one Redis command, as in scripts/ops-env.mjs. */
 export async function report(redis, ns, { last = 15, now = Date.now(), print, ships } = {}) {
   const lines = [];
@@ -80,6 +95,11 @@ export async function report(redis, ns, { last = 15, now = Date.now(), print, sh
   const times = timesByKind((timesRaw ?? []).map(parse));
   out(""); out(`How long jobs take (${(timesRaw ?? []).length} kept)`);
   for (const t of times) out(`  ${t.kind.padEnd(15)} ${String(t.n).padStart(4)} jobs, median ${t.median.toFixed(1)} s, max ${t.max.toFixed(1)} s${t.fails.length ? `; failed: ${t.fails.map(([why, n]) => `${why} ×${n}`).join(", ")}` : ""}`);
+  const steps = stepsByKind((timesRaw ?? []).map(parse));
+  if (steps.length) {
+    out(""); out("Median seconds per step (start: queued until the helper's first step)");
+    for (const k of steps) out(`  ${k.kind.padEnd(15)} ${k.steps.map((s) => `${s.step} ${s.median.toFixed(1)}`).join(", ")}`);
+  }
 
   const passed = parse(passedRaw) ?? [];
   out(""); out("Checkout test run");

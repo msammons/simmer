@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, approveWithFaceId, errorText, faceIdAnswer, faceIdWhere, setUpFaceId, WHERE, type CheckoutSettings, type Choices } from "@/lib/client";
 import { needsFaceId } from "@/lib/checkout-rules";
+import { stepWords } from "@/lib/steps";
 import { Alert, Button, ConfirmSheet, Group, Held, Row } from "./ui";
 
 const OFF: CheckoutSettings = { on: false, limitCents: 0, store: "", card: "" };
@@ -346,10 +347,18 @@ const FIELDS: Record<Field, string> = { limit: "Limit per order", store: "Pickup
  * Place Order (docs/CHECKOUT.md phase 1).
  */
 let looked: Promise<Choices> | null = null;
+/** The helper's step in that look (Nov 23), told to whichever field is showing it. */
+let lookStep: string | undefined;
+const lookWatchers = new Set<(step: string | undefined) => void>();
 function lookAtSafeway(): Promise<Choices> {
   looked ??= (async () => {
+    lookStep = undefined;
     let r = await api.checkoutLook();
-    while ("waiting" in r) r = await api.checkoutLook(r.waiting);
+    while ("waiting" in r) {
+      lookStep = r.step;
+      for (const w of lookWatchers) w(lookStep);
+      r = await api.checkoutLook(r.waiting, undefined, r.stepAt ?? "");
+    }
     return r;
   })().catch((e) => { looked = null; throw e; });
   return looked;
@@ -383,11 +392,13 @@ function LimitField({ value, onSave }: { value: CheckoutSettings; onSave: (v: Ch
 function PickField({ field, value, onFound, onSave }: { field: "store" | "card"; value: CheckoutSettings; onFound: () => void; onSave: (v: CheckoutSettings) => void }) {
   const [found, setFound] = useState<Choices | null>(null);
   const [problem, setProblem] = useState("");
+  const [step, setStep] = useState<string | undefined>(lookStep);
   const found0 = useRef(onFound);
   useEffect(() => {
     let live = true;
+    lookWatchers.add(setStep);
     lookAtSafeway().then((c) => { if (live) { setFound(c); found0.current(); } }, (e) => live && setProblem(errorText(e)));
-    return () => { live = false; };
+    return () => { live = false; lookWatchers.delete(setStep); };
   }, []);
   const current = field === "store" ? value.store : value.card;
   const shown = (v: string) => (field === "card" ? `•••• ${v}` : v);
@@ -397,7 +408,7 @@ function PickField({ field, value, onFound, onSave }: { field: "store" | "card";
     ? "Orders go to the store Safeway is set to. To pick up somewhere else, change the store on Safeway, then come back."
     : "Orders use the card Safeway has. To use another, change it on Safeway, then come back.";
   if (problem) return <Group header={FIELDS[field]} footer={footer}><Row title="Safeway couldn't be read" subtitle={problem} /></Group>;
-  if (!found) return <Held groups={[2]} label="Reading Safeway's checkout" />;
+  if (!found) return <Held groups={[2]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} />;
   return (
     <Group header={FIELDS[field]} footer={footer}>
       {choices.length ? choices.map((c) => (

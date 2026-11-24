@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { PAGE } from "@/lib/safeway-helper.mjs";
 import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { stepWords } from "@/lib/steps";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, scrollAppTo } from "./ui";
 
@@ -74,6 +75,8 @@ export function useSafeway() {
   const [problem, setProblem] = useState<string | null>(null);
   // Safeway's cart page being read (Nov 16, Sam: no checking out while that's going).
   const [reading, setReading] = useState(false);
+  // The helper's step in that reading (Nov 23), for Shop's button to say while it goes.
+  const [readingStep, setReadingStep] = useState<string | undefined>(undefined);
   // Stopped when the hook goes: nothing more is queued for the computer after that.
   const life = useRef<AbortController | null>(null);
   useEffect(() => { const c = new AbortController(); life.current = c; return () => c.abort(); }, []);
@@ -105,17 +108,19 @@ export function useSafeway() {
    * still going (the server waits, Nov 11: no timer in the app). Simmer gives a job up only from what happened (Nov 23):
    * nothing heard from the computer since it was queued, or a job there never reported. While the computer is working
    * on another job, this one waits behind it and the app keeps following. Ten minutes is only a backstop.
+   * `onStep` (Nov 23): hears the helper's step each time it changes (the server answers then too, so no timer).
    */
-  const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal): Promise<JobOutcome> => {
+  const run = useCallback(async (kind: JobKind, args: Record<string, unknown>, signal?: AbortSignal, onStep?: (step: string | undefined) => void): Promise<JobOutcome> => {
     if (signal?.aborted || !isAlive(life)) return { ok: false, problem: "" };
     let job: Job;
     try {
       job = (await api.queueJob(kind, args)).job;
     } catch (e) { return { ok: false, problem: e instanceof AuthError ? "" : errorText(e) }; }
+    let since = "";
     for (const end = Date.now() + FOLLOW_MOST; Date.now() < end;) {
       if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
       try {
-        const s = await api.job(job.id, signal);
+        const s = await api.job(job.id, signal, since);
         if (!s.job) return { ok: false, problem: problemText("") };
         if (s.job.status === "done") { setAway(false); return { ok: true, result: s.job.result ?? {} }; }
         if (s.job.status === "failed") {
@@ -124,6 +129,7 @@ export function useSafeway() {
           if (error === "not-answering" || error === "stuck") setAway(true);
           return { ok: false, problem: error === "cancelled" ? "" : problemText(error) };
         }
+        if ((s.job.stepAt ?? "") !== since) { since = s.job.stepAt ?? ""; onStep?.(s.job.step); }
       } catch (e) {
         if (signal?.aborted) { api.cancelJob(job.id).catch(() => {}); return { ok: false, problem: "" }; }
         if (e instanceof AuthError) return { ok: false, problem: "" };
@@ -151,7 +157,8 @@ export function useSafeway() {
     if (r.busy || (!out.current && !nop.current && !gone.current && Date.now() - r.at < CART_FRESH)) return;
     r.busy = true;
     setReading(true);
-    run("cart", {}, life.current?.signal).then(async (x) => {
+    setReadingStep(undefined);
+    run("cart", {}, life.current?.signal, setReadingStep).then(async (x) => {
       r.busy = false;
       r.at = Date.now();
       if (!isAlive(life)) return;
@@ -161,6 +168,7 @@ export function useSafeway() {
       pressedIn.current = null;
       if (was && was === offNow()) setStill(was);
       setReading(false);
+      setReadingStep(undefined);
     });
   }, [run, refresh, offNow]);
   /** Shop's Signed out, Choose Pickup or Not connected pressed: looks again, and says if nothing changed. */
@@ -232,7 +240,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, away, signedOut, noPickup, still, loaded, pending, reading, problem, setProblem, refresh, look, lookAgain, run, setQty, fill, qtyOf, forget };
+  return { cart, picks, away, signedOut, noPickup, still, loaded, pending, reading, readingStep, problem, setProblem, refresh, look, lookAgain, run, setQty, fill, qtyOf, forget };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 
@@ -341,7 +349,7 @@ function FindProduct({ p, sub, control }: { p: { name: string; image?: string };
 }
 
 /** `by`: which search is loading it, so one stopped (Skip, Back, another search) takes only its own loading away. */
-type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean; by?: number };
+type Search = { query: string; state: "loading" | "done" | "failed"; products: Product[]; signedIn: boolean; by?: number; step?: string };
 
 /**
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
@@ -368,10 +376,12 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
     const c = new AbortController(), by = ++searchesMade.current;
     ctl.current = c;
     setSearches((s) => (s[q]?.state === "done" && !again ? s : { ...s, [q]: { query: q, state: "loading", products: [], signedIn: true, by } }));
-    let r = await run("search", { query: q }, c.signal);
+    // The helper's step (Nov 23), said in the loading row while it goes.
+    const onStep = (step: string | undefined) => setSearches((s) => (s[q]?.by === by && s[q].state === "loading" ? { ...s, [q]: { ...s[q], step } } : s));
+    let r = await run("search", { query: q }, c.signal, onStep);
     // Safeway can say "no results" for a moment while its page is still building (Oct 31: "canned pumpkin" came back
     // empty, then full the next time), so an empty answer is asked once more before it's shown.
-    if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await run("search", { query: q }, c.signal);
+    if (r.ok && r.result.noResults === true && !((r.result.products as Product[] | undefined) ?? []).length && !c.signal.aborted) r = await run("search", { query: q }, c.signal, onStep);
     if (c.signal.aborted) {
       // Stopped before it answered: no grey rows left behind, so coming back to it searches again.
       setSearches((s) => { if (s[q]?.by !== by) return s; const { [q]: _gone, ...rest } = s; void _gone; return rest; });
@@ -456,11 +466,14 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
             {[0, 1, 2].map((k) => (
               <div key={k} className={TILE} aria-hidden>
                 <span className="shimmer size-14 shrink-0 rounded-xl min-[640px]:h-32 min-[640px]:w-full" />
-                <span className="flex-1 space-y-2"><span className="shimmer block h-3.5 w-3/4 rounded-full" /><span className="shimmer block h-3 w-1/4 rounded-full" /></span>
+                {/* The first row says what's being done (Nov 23), in its first line's place, one line high either way. */}
+                <span className="min-w-0 flex-1 space-y-2">{k === 0
+                  ? <span className="block h-5 truncate t-sub leading-5 text-muted" data-find-step>{stepWords(s?.step, `Looking on ${store}…`)}</span>
+                  : <span className="shimmer block h-3.5 w-3/4 rounded-full" />}<span className="shimmer block h-3 w-1/4 rounded-full" /></span>
               </div>
             ))}
           </div>
-          <p className="sr-only" role="status">Looking on {store}</p>
+          <p className="sr-only" role="status">{stepWords(s?.step, `Looking on ${store}`)}</p>
         </section>
       )}
       {s?.state === "failed" && (

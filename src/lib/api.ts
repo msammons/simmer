@@ -54,8 +54,8 @@ import type { NewDish, NewLunch, PlanData } from "./plan";
 import type { CartLine, Pick } from "./safeway";
 export type { CartLine, Pick };
 import type { Activity, Job, JobKind } from "./jobs";
-import type { Choices, OrderResult, ReadyView, RunResult, TimesView } from "./checkout-run";
-export type { Choices, OrderResult, ReadyView, RunResult, TimesView };
+import type { Choices, OrderResult, ReadyView, RunResult, TimesView, Waiting } from "./checkout-run";
+export type { Choices, OrderResult, ReadyView, RunResult, TimesView, Waiting };
 export type { Activity, Job, JobKind };
 import type { Counts, Dish, Frozen, Kind, Lunch, LunchPart } from "./week";
 export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, PlanData };
@@ -109,13 +109,15 @@ export const api = {
    * Test runs (Nov 13): get ready (the helper reads Safeway's checkout; follow it with the job while it's going), approve
    * with a Face ID answer, then the test run (followed the same way). Nothing orders.
    */
-  checkoutLook: (jobId?: string, signal?: AbortSignal) => call<Choices | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "look", jobId }), signal }),
-  checkoutTimes: (jobId: string | undefined, day: string | undefined, signal?: AbortSignal) => call<TimesView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "times", jobId, day }), signal }),
-  checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal, bagsOwn?: boolean) => call<ReadyView | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId, bagsOwn }), signal }),
+  // `since` (Nov 23): following a job, the step time already showing (the last answer's `stepAt`), so the answer comes
+  // as soon as the helper reaches its next step.
+  checkoutLook: (jobId?: string, signal?: AbortSignal, since?: string) => call<Choices | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "look", jobId, since }), signal }),
+  checkoutTimes: (jobId: string | undefined, day: string | undefined, signal?: AbortSignal, since?: string) => call<TimesView | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "times", jobId, day, since }), signal }),
+  checkoutPrepare: (jobId: string | undefined, windowId: string | undefined, signal?: AbortSignal, bagsOwn?: boolean, since?: string) => call<ReadyView | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "prepare", jobId, windowId, bagsOwn, since }), signal }),
   // The approval names the reading it approves (Nov 19: another phone getting ready can't swap the figures).
   checkoutApprove: (faceId: unknown, preparedId: string) => call<{ ok: true; approvalId: string; totalCents: number; window: string } | { ok: false; reasons: string[] }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "approve", faceId, preparedId }) }),
-  checkoutPlace: (by: { approvalId: string; totalCents: number | null; window: string } | { jobId: string }, signal?: AbortSignal) => call<OrderResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
-  checkoutTestRun: (by: { approvalId: string } | { jobId: string }, signal?: AbortSignal) => call<RunResult | { waiting: string }>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),
+  checkoutPlace: (by: { approvalId: string; totalCents: number | null; window: string } | { jobId: string; since?: string }, signal?: AbortSignal) => call<OrderResult | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "place", ...by }), signal }),
+  checkoutTestRun: (by: { approvalId: string } | { jobId: string; since?: string }, signal?: AbortSignal) => call<RunResult | Waiting>("/api/checkout", { method: "POST", body: JSON.stringify({ op: "test-run", ...by }), signal }),
   /** Turning on, raising the limit, or changing the store or card needs `faceId`, a Face ID answer (Nov 13). */
   saveCheckout: (s: CheckoutSettings, faceId?: unknown) => call<{ settings: CheckoutSettings; server: boolean }>("/api/checkout", { method: "POST", body: JSON.stringify({ ...s, faceId }) }),
   freezer: (c: { op: "add"; text: string } | { op: "use"; id: string }) => call<Kitchen>("/api/freezer", { method: "POST", body: JSON.stringify(c) }),
@@ -132,7 +134,8 @@ export const api = {
   /** The helper's recent searches and cart changes, for the panel's activity log. */
   activity: (signal?: AbortSignal) => call<{ jobs: Activity[]; answering: boolean }>("/api/safeway/jobs?recent=1", { signal }),
   /** How a job stands, answered once it's finished (or after about 20 seconds, still going): the server waits, not the app. */
-  job: (id: string, signal?: AbortSignal) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}&wait=1`, { signal }),
+  // `since`: the step time already showing (Nov 23), so the answer also comes when the helper reaches its next step.
+  job: (id: string, signal?: AbortSignal, since?: string) => call<{ job: Job | null; answering: boolean }>(`/api/safeway/jobs?id=${encodeURIComponent(id)}&wait=1${since !== undefined ? `&since=${encodeURIComponent(since)}` : ""}`, { signal }),
   cancelJob: (id: string) => call<{ ok: boolean }>("/api/safeway/jobs", { method: "POST", body: JSON.stringify({ op: "cancel", id }) }),
 };
 
