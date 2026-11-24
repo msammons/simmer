@@ -64,19 +64,25 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    allows placing, or on Test run · $X while the helper's checkout fingerprint hasn't passed a test run (Sam, Nov 24:
    "We only need the test run button if it's required"). The sheet only stops offering Test run once it isn't needed;
    every check on the server is unchanged, and placing still needs a passed test run (phase 3). When neither shows (the
-   test run passed but placing is closed: the server's switch off, or the helper out of date), one short muted line
-   says why in the server's own words, e.g. "The helper on the computer needs updating first." (Sam, Nov 24); with a
-   button showing, no line.
-   Changing the bags while a reading shows gets ready again with the same time (Pick another time goes back to the
-   times); every reading has its own id, and Face ID approves only the one showing. Getting ready takes
-   only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
+   test run passed but placing is closed: the server's switch off, or another order on its way; or the helper out of
+   date, when a test run wouldn't count either, so none is offered: review, Nov 24), one short muted line says why in
+   the server's own words, e.g. "The helper on the computer needs updating first." (Sam, Nov 24); with a button
+   showing, no line. Place order isn't offered while another order is on its way (placing refuses then anyway).
+   Bags is one control: with a reading showing it shows the reading's bags (Nov 24). Changing the bags while a reading
+   shows gets ready again with the same time (Pick another time goes back to the times); every reading has its own id,
+   and Face ID approves only the one showing. Getting ready takes only a time Simmer just offered (kept 10 minutes from
+   the last reading; after that the sheet reads the times again and says so), stops if Safeway's chosen time isn't the
+   one picked, and stops if the cart changed between queuing it and its answer (review, Nov 24). Shimmer while it reads.
    A test run that passes doesn't ask for the time again (Sam, Nov 24: "don't need to pick another time on a test"):
    the sheet gets ready again at once with the same time and bags, the same getting ready as a tap, so a new reading
    with its own id (the approval the test run used is gone, and nothing from it is reused), and lands on Place order ·
    $X. That reading is approved like any other: Face ID approves exactly it, within its 2 minutes, with the cart
    unchanged, and every check before the press is made again. If Safeway no longer offers that time by then (or the
-   time is no longer one Simmer just offered), the times are read again and an alert says so. A test run that didn't
-   pass says why, with Try again (the same time and bags read again); there's no Pick another time after a test run.
+   time is no longer one Simmer just offered), the times are read again and an alert says so. Whatever stops a reading,
+   a test run or placing is said with the controls its words name (review, Nov 24): Pick another time (the times read
+   afresh) and, unless the time or day itself has gone, Try again (the same time and bags read again, a new reading
+   to approve). "Not sure the order went through" offers neither. A test run that passed never shows Pick another
+   time while its new reading is fine.
 3. **Place order · $128.40** → the confirm sheet (store, time, card, bags, total; unusual items highlighted) → Face ID
    approves exactly the reading shown → the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's
    order number when its page shows one. The cart comes off the list as bought.
@@ -102,7 +108,7 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
   changes are refused.
 - The approval is fixed at the tap: every product and count, the store, the window, the card's last 4, the total. The
   helper checks Safeway's final page against all of it; any difference (a cent, an item) stops it, and Simmer shows the
-  new figures to approve again. Face ID approves only the reading the phone showed (each Get ready has its own id, Nov
+  new figures to approve again. Face ID approves only the reading the phone showed (each reading has its own id, Nov
   19), and placing is refused, by the phone and the server, unless the approved total and time are the ones shown.
 - Weighed items (Sam, Nov 12): the charge after picking may come in up to 10% over the approved total, and never more
   than $5 over. Simmer reads the charge from Safeway's order history and flags anything beyond that.

@@ -7,11 +7,11 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SafewayHost, useSafewayCart } from "./Safeway";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
-import { removedWith } from "@/lib/stock-rows";
+import { afterRemoval } from "@/lib/stock-rows";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
-import { afterChange, groupsOf, renamed } from "@/lib/groups";
+import { afterChange, groupsOf, putInGroup, renamed } from "@/lib/groups";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, Button, Contained, Dialog, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
 import { todayIn } from "@/lib/time";
@@ -312,13 +312,16 @@ export default function App() {
       },
       // The groups change with the kept things, as on the server (lib/groups.ts, Nov 24): a group stays until Remove group.
       keepGroup: (from, to) => void change({ op: "keepGroup", from, to }, (l) => ({ ...l, staples: l.staples.map((x) => (x.group && norm(x.group) === norm(from) ? { ...x, group: to } : x)), groups: renamed(groupsOf(l.groups, l.staples), from, to) })),
-      keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)))),
+      // Put in a group, it moves to the group's part of the list, as on the server (groups.ts putInGroup, Nov 24).
+      keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => {
+        const kinded = l.staples.map((x) => (norm(x.item) === norm(item) && c.kind ? { ...x, kind: c.kind } : x));
+        return keepGroups(l, c.group !== undefined ? putInGroup(kinded, l.groups, item, c.group) : kinded);
+      }),
       keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, section } : x)))),
       mealMove: (it, section) => void change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
-      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => {
-        const off = new Set(removedWith(l.items, st.item)); // its rows not bought and not a dinner's go with it (Nov 24)
-        return keepGroups({ ...l, items: l.items.filter((x) => !off.has(x.id)) }, l.staples.filter((x) => x.item !== st.item));
-      }),
+      // Its rows go with it as on the server (stock-rows.ts removalOf, Nov 24): a dinner's part stays, cart rows are left alone.
+      keepRemove: (st, inCart) => void change({ op: "keepRemove", item: st.item }, (l) =>
+        keepGroups({ ...l, items: afterRemoval(l.items, st.item, inCart) }, l.staples.filter((x) => norm(x.item) !== norm(st.item)))),
     };
     return { shop, stock };
   }, [lists, kitchens]);

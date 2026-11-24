@@ -3,7 +3,7 @@ import { Component, createContext, useContext, useEffect, useLayoutEffect, useRe
 import { createPortal } from "react-dom";
 import { APP_ICON } from "./app-icon";
 import { Icon, type IconName } from "./icons";
-import { noteAlert, useNote } from "@/lib/feedback";
+import { noteAlert, popupDetail, useNote } from "@/lib/feedback";
 
 // The app's building blocks. Screens use these rather than one-off styles, so every screen looks and behaves the same:
 // pills for controls, 22px cards (inset grouped lists), 36px sheets, the t-* type scale, one line-icon set.
@@ -264,14 +264,16 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * every studio app): a headline, a muted line, then its buttons. Drawn by the app, so its buttons say what they do and a
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
-export function Dialog({ title, message, children, onDismiss, above, clear }: {
+export function Dialog({ title, message, children, onDismiss, above, clear, private: hidden }: {
   title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void;
+  // Feedback notes only the title (Nov 24): for ordering's pop-ups, whose lines name the store, card, limit or a code.
+  private?: boolean;
   above?: boolean; // over everything, sheets and other pop-ups too (Feedback, Nov 24)
   // Nothing faded behind it, so what's open stays in view (Sam, Nov 24: Feedback); a hairline and shadow set it apart.
   // Taps outside still stop at an invisible layer, and do nothing: only its own buttons close it.
   clear?: boolean;
 }) {
-  useNote("popup", title, typeof message === "string" ? message : "");
+  useNote("popup", title, popupDetail(message, hidden));
   // A pop-up with a field (Feedback) stays in the part of the screen the keyboard leaves, centred there.
   const card = useRef<HTMLDivElement>(null);
   const view = useTypingView(card);
@@ -334,12 +336,14 @@ export class Contained extends Component<{ children: ReactNode; onError: () => v
  * Asks before something risky: a headline, one muted line, the action as a full-width button, then Cancel. The same in
  * every studio app, so it can be copied across. danger: the action takes something away (red).
  */
-export function ConfirmSheet({ open, title, message, confirm, onConfirm, onCancel, danger }: {
+export function ConfirmSheet({ open, title, message, confirm, onConfirm, onCancel, danger, private: hidden }: {
   open: boolean; title: string; message?: ReactNode; confirm: string; onConfirm: () => void; onCancel: () => void; danger?: boolean;
+  /** Feedback notes only its title (ordering's confirms: the store, card, limit or a code stay out). */
+  private?: boolean;
 }) {
   if (!open || typeof document === "undefined") return null;
   return (
-    <Dialog title={title} message={message} onDismiss={onCancel}>
+    <Dialog title={title} message={message} onDismiss={onCancel} private={hidden}>
       {danger ? (
         <button type="button" onClick={onConfirm} className={`inline-flex h-[52px] w-full items-center justify-center rounded-full bg-alert px-6 t-headline text-white ${PRESS}`}>{confirm}</button>
       ) : (

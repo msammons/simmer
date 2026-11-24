@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
-import { stepWords } from "@/lib/steps";
+import { STEP_WORDS, stepWords } from "@/lib/steps";
 import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway, type SafewayOff } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
@@ -286,12 +286,15 @@ export function ShopScreen({ act }: { act: ShopActions }) {
 
   /** The helper's step while Safeway's cart is read (Nov 23), in words; none until its first step. */
   const readingWords = sw.reading && sw.readingStep ? stepWords(sw.readingStep, "") || undefined : undefined;
+  const changing = Object.keys(pending).length > 0;
   /** The Check out button's look (TopLine): nothing until Safeway's first answer, so it never flashes the wrong one. */
   const cartButton: CartButton | null = !sw.loaded ? null
     : sw.signedOut ? { state: "signed-out", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "signed-out", words: readingWords }
     : sw.noPickup ? { state: "no-pickup", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "no-pickup", words: readingWords }
     : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected", words: readingWords }
-    : count > 0 ? { state: "ready", onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0, words: sw.reading ? readingWords : undefined }
+    // Greyed while changes are on their way to the cart, saying so in the helper's own words for it (review, Nov 24: the
+    // status line was empty, so it looked broken).
+    : count > 0 ? { state: "ready", onCheckOut: () => setCheckingOut(true), busy: sw.reading || changing, words: sw.reading ? readingWords : changing ? STEP_WORDS.add : undefined }
     : { state: "empty" };
 
   // Feedback's note of Shop (lib/feedback.ts): the store showing, the cart, and the status line's words.

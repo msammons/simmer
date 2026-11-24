@@ -1,6 +1,6 @@
 // Test runs (docs/CHECKOUT.md, phase 2, "Dry runs: every step for real on the account, stopping one press short"; Nov
-// 13). Get ready: the helper goes through Safeway's checkout, chooses the earliest free pickup time and reads the final
-// page; Simmer checks it against every rule. Test run: Face ID approves exactly those figures, then the helper goes the
+// 13). Getting ready (a time tapped on the sheet): the helper goes through Safeway's checkout, chooses the pickup time
+// she picked and reads the final page; Simmer checks it against every rule. Test run: Face ID approves exactly those figures, then the helper goes the
 // same way again with that one pickup time, reads the final page, and Simmer checks it against the approval as it would
 // before a real press. Placing for real (phase 3, Nov 14) is at the end: the one press is the helper's, made only on
 // what Face ID approved.
@@ -23,6 +23,7 @@ import { json, kv, secs, swap } from "./kv";
 import { passkeyCount, verifyCheck } from "./passkeys";
 import { wakeHelper } from "./push";
 import { cartTotal, priceOf } from "./shop";
+import { TIMES_RAN_OUT } from "./checkout-sheet";
 
 /** What the helper sends back from getting ready or a test run (jobs.ts trims it). */
 type Reading = { stopped: string; chosen: { id: string; words: string } | null; final: { url: string; text: string; buttons: string[] } | null; bagsOwn: boolean | null };
@@ -35,8 +36,6 @@ type Approved = Approval & { windowId: string; windowWords: string; faceId: stri
 export type ReadyView = {
   store: string; window: string; card: string; items: number | null; totalCents: number | null;
   stops: string[]; highlights: string[];
-  /** The store and card aren't remembered yet: approving this remembers the ones shown (Sam, Nov 14). */
-  remember: boolean;
   /** Safeway's bags switch on the final page (Nov 16): true, she brings her own; false, Safeway's bags; null, unread. */
   bagsOwn?: boolean | null;
   /** Safeway's taxes and fees in the total ("Est. taxes and fees"), shown as their own row; null when unread. */
@@ -50,6 +49,10 @@ export type ReadyView = {
   needsTest: boolean;
   /** Safeway no longer offers the pickup time or day picked (the helper said so): the sheet shows the times again. */
   timeGone?: boolean;
+  /** The day itself is gone (not only the time): the times are read again from Safeway's first day. */
+  dayGone?: boolean;
+  /** The helper on the computer isn't the one Simmer ships: a test run wouldn't count, so the sheet doesn't offer one. */
+  helperOutdated?: boolean;
   /**
    * This reading's own id (Nov 19), sent back with the Face ID approval: it approves exactly these figures, never another
    * reading made meanwhile. Empty when there's nothing to approve.
@@ -70,13 +73,15 @@ export type Waiting = { waiting: string; step?: string; stepAt?: string };
 export type TimesView = { days: { key: string; label: string }[]; day: string; times: { id: string; time: string; price: string; flash: boolean }[] };
 export type RunResult = { ok: true; would: string } | { ok: false; reasons: string[] };
 
-/** Each reading under its own id (Nov 19: one shared key let a second Get ready swap the figures Face ID approved). */
+/** Each reading under its own id (Nov 19: one shared key let a second reading swap the figures Face ID approved). */
 const PREPARED_KEY = `${NS}:checkout-prepared:`;
 /** The pickup times just offered: a set, each added in one step, kept 10 minutes from the last listing. */
 const TIMES_KEY = `${NS}:checkout-times-offered`;
 const TIMES_MS = 10 * 60_000;
 const APPROVAL_KEY = `${NS}:checkout-approval:`;
 const RUN_KEY = `${NS}:checkout-run:`;
+/** The cart as it was when getting ready was queued, by its job (review, Nov 24): a change while it ran stops the reading. */
+const PREP_CART_KEY = `${NS}:checkout-prepare-cart:`;
 /** An order started, by its approval's id: what was approved, kept for working out what happened (Nov 19). */
 const ORDER_KEY = `${NS}:checkout-order:`;
 /** What an order came to, by its approval's id, worked out once when the helper reports (Nov 19). */
@@ -181,8 +186,8 @@ const CHANGING = "The cart is still changing on Safeway. Wait for it to finish, 
 /**
  * The days Safeway offers and one day's free times (or follows the reading started): the helper goes to Safeway's
  * checkout and reads the day showing, or presses the day asked for and reads it; it chooses no time. Only free times
- * are offered, Regular or Express (never Flash or a priced one), and each one offered is remembered for 10 minutes: getting ready
- * takes only one of them.
+ * are offered, Regular or Express, plus Flash with its price (Nov 16; never another paid time), and each one offered is
+ * remembered for 10 minutes: getting ready takes only one of them.
  */
 export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS, since?: string): Promise<TimesView | Waiting> {
   await ready();
@@ -219,10 +224,14 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   const s = await ready();
   let id = jobId;
   if (!id) {
-    if (!windowId || !Number(await kv().sismember(TIMES_KEY, windowId))) throw new AppError("Pick a pickup time again.");
+    // Only a time just offered; the list lapses 10 minutes after the last reading (the sheet then reads the times again).
+    if (!windowId || !Number(await kv().sismember(TIMES_KEY, windowId))) throw new AppError(TIMES_RAN_OUT);
     if (await cartChanging()) throw new AppError(CHANGING);
+    // The cart as it is now, before the helper starts (review, Nov 24): compared again when the reading comes back.
+    const before = await cartNow();
     // The bags she picked for this order (Nov 16): the helper sets Safeway's switch to match before reading the total.
     id = (await queueAndWake("checkoutPrepare", { windowId, ...(typeof bagsOwn === "boolean" && { bagsOwn }) })).id;
+    await kv().set(PREP_CART_KEY + id, before, { ex: secs(15 * 60_000) });
   }
   const job = await waitForJob(id, ms, jobId ? since : undefined);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
@@ -234,9 +243,11 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   if (r.stopped === "ready" && (!picked || r.chosen?.id !== picked)) why.push("Safeway's pickup time isn't the one picked.");
   const bagsPicked = typeof job.args?.bagsOwn === "boolean" ? job.args.bagsOwn : null;
   if (r.stopped === "ready" && bagsPicked !== null && r.bagsOwn !== bagsPicked) why.push("Safeway's bags aren't the ones picked.");
-  // The cart read once, for its key and the highlights (Nov 19: it was read twice), beside whether ordering's open.
-  const [lines, open] = await Promise.all([loadCart(), orderOpen()]);
+  // The cart read once, for its key and the highlights (Nov 19: it was read twice), beside whether ordering's open, and
+  // the cart as it was when this was queued (review, Nov 24): the reading is of that cart, so any change since stops it.
+  const [lines, open, before] = await Promise.all([loadCart(), orderOpen(), kv().get(PREP_CART_KEY + job.id)]);
   const cart = cartKey(lines);
+  if (r.stopped === "ready" && (typeof before !== "string" || before !== cart)) why.push("The cart changed while Safeway was read. Try again.");
   const reasons = allStops(why, r.stopped === "ready" ? stops(expected(s, final), final, null, Date.now(), cart, true) : []);
   let preparedId = "";
   if (r.chosen && r.stopped === "ready") {
@@ -245,8 +256,8 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   }
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
-    stops: reasons, highlights: highlights(lines, final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents, bagsOwn: r.bagsOwn,
-    ...open, preparedId, timeGone: r.stopped === "pickup time gone" || r.stopped === "pickup day gone",
+    stops: reasons, highlights: highlights(lines, final.totalCents, final.feesCents), feesCents: final.feesCents, bagsOwn: r.bagsOwn,
+    ...open, preparedId, timeGone: r.stopped === "pickup time gone" || r.stopped === "pickup day gone", dayGone: r.stopped === "pickup day gone",
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });
   return view;
@@ -267,17 +278,17 @@ export async function approve(req: Request, faceId: unknown, preparedId: string)
   const now = Date.now();
   const reasons: string[] = [];
   if (!check.ok) reasons.push(check.why ?? "Face ID didn't match.");
-  if (!p) reasons.push("Pick a time first.");
+  if (!p) reasons.push("That reading ran out after 2 minutes. Try again.");
   else {
-    if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Pick the time again.");
+    if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Try again.");
     const cart = await cartNow();
-    if (cart !== p.cartKey) reasons.push("The cart changed since. Pick the time again.");
+    if (cart !== p.cartKey) reasons.push("The cart changed since. Try again.");
     if (await cartChanging()) reasons.push(CHANGING);
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
     // Free, or a paid time (Flash) whose price was read and is in the total she sees (Nov 16).
     if (w.priceCents === null) reasons.push("Safeway's pickup time price couldn't be read.");
     // The bags, as Safeway's switch showed them (Nov 16): no approval without them.
-    if (typeof p.bagsOwn !== "boolean") reasons.push("Safeway's bags couldn't be read. Pick the time again.");
+    if (typeof p.bagsOwn !== "boolean") reasons.push("Safeway's bags couldn't be read. Try again.");
     reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {
@@ -313,13 +324,13 @@ export async function approve(req: Request, faceId: unknown, preparedId: string)
 export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResult | Waiting> {
   const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("test run", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
-  if (!a) return refuse(["That approval was already used or ran out. Pick the time again."]);
-  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Pick the time again."]);
+  if (!a) return refuse(["That approval was already used or ran out. Try again."]);
+  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Try again."]);
   const s = await loadSettings();
   if (!s.on) return refuse(["Ordering is off in Settings."]);
   if ((await cartNow()) !== a.cartKey) return refuse(["The cart changed after the approval."]);
   if (await cartChanging()) return refuse([CHANGING]);
-  if (typeof a.bagsOwn !== "boolean") return refuse(["Safeway's bags couldn't be read. Pick the time again."]);
+  if (typeof a.bagsOwn !== "boolean") return refuse(["Safeway's bags couldn't be read. Try again."]);
   const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId, ...(typeof a.bagsOwn === "boolean" && { bagsOwn: a.bagsOwn }) });
   await kv().set(RUN_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(15 * 60_000) });
   await record("test run started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId });
@@ -329,11 +340,11 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
 /** How the test run stands: still going, or what Safeway's final page said against the approval (reported once). */
 export async function followTestRun(jobId: string, ms = WAIT_MS, since?: string): Promise<RunResult | Waiting> {
   const pending = json<Approved>(await kv().get(RUN_KEY + jobId));
-  if (!pending) throw new AppError("That test run was already reported. Pick a time for another.");
+  if (!pending) throw new AppError("That test run was already reported. Try again.");
   const job = await waitForJob(jobId, ms, since);
   if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(RUN_KEY + jobId));
-  if (!a) throw new AppError("That test run was already reported. Pick a time for another.");
+  if (!a) throw new AppError("That test run was already reported. Try again.");
   let result: RunResult;
   let reading: Reading | null = null;
   if (!job || job.kind !== "checkoutDry" || job.status !== "done") result = { ok: false, reasons: [failedWords(job)] };
@@ -373,18 +384,26 @@ async function passedDryRun(version: string) {
   if (!all.includes(version)) await kv().set(DRY_KEY, JSON.stringify([...all, version].slice(-20)), { ex: 400 * 24 * 3600 });
 }
 
+/** Another order on its way, or not known to have gone through (placeOrder refuses then): Place order isn't offered. */
+const GOING_WORDS = "An order is already on its way, or the last one may not have gone through. Check Safeway.";
+
 /**
  * Whether placing for real is open (docs/CHECKOUT.md): the server's own switch (CHECKOUT_ENABLED), and only a helper
- * version that has passed a test run on this account, with the helper on the computer up to date.
+ * version that has passed a test run on this account, with the helper on the computer up to date, and no other order
+ * on its way (review, Nov 24: Place order showed and was refused only after Face ID). The helper's being out of date is
+ * said first: a test run wouldn't count either (`helperOutdated`, so the sheet offers none).
  */
-export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string; needsTest: boolean }> {
-  const [helper, passed] = await Promise.all([helperStatus(), passedVersions()]);
+export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string; needsTest: boolean; helperOutdated: boolean }> {
+  const [helper, passed, going] = await Promise.all([helperStatus(), passedVersions(), kv().get(GOING_KEY)]);
   // Whether this checkout's fingerprint still needs a test run (Sam, Nov 24): only then does the sheet offer one.
   const needsTest = !passed.includes(CHECKOUT_PRINT);
-  if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now.", needsTest };
-  if (helper.outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first.", needsTest };
-  if (needsTest) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed.", needsTest };
-  return { canOrder: true, orderWhy: "", needsTest };
+  const helperOutdated = Boolean(helper.outdated);
+  const closed = (orderWhy: string) => ({ canOrder: false, orderWhy, needsTest, helperOutdated });
+  if (helperOutdated) return closed("The helper on the computer needs updating first.");
+  if (!serverOn()) return closed("Ordering is turned off for now.");
+  if (needsTest) return closed("Do a test run first: the helper's checkout steps changed.");
+  if (going) return closed(GOING_WORDS);
+  return { canOrder: true, orderWhy: "", needsTest, helperOutdated };
 }
 
 /** Safeway's order number on the page it lands on after Place Order, when it shows one. */
@@ -405,20 +424,20 @@ export type Shown = { totalCents: number | null; window: string };
 export async function placeOrder(approvalId: string, shown: Shown, ms = WAIT_MS): Promise<OrderResult | Waiting> {
   const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("order", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
-  if (!a) return refuse(["That approval was already used or ran out. Pick the time again."]);
-  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Pick the time again."]);
-  if (shown.totalCents !== a.totalCents || shown.window !== a.windowWords) return refuse(["What Face ID approved isn't what this phone showed. Pick the time again."]);
+  if (!a) return refuse(["That approval was already used or ran out. Try again."]);
+  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Try again."]);
+  if (shown.totalCents !== a.totalCents || shown.window !== a.windowWords) return refuse(["What Face ID approved isn't what was shown. Nothing was ordered. Try again."]);
   // Read together (Nov 19: these were one after another); the going mark is still set last, in one step.
   const [open, going, s, lines, changing] = await Promise.all([orderOpen(), kv().get(GOING_KEY), loadSettings(), loadCart(), cartChanging()]);
   if (!open.canOrder) return refuse([open.orderWhy]);
-  if (going) return refuse(["An order is already on its way, or the last one may not have gone through. Check Safeway."]);
+  if (going) return refuse([GOING_WORDS]);
   const now = Date.now(), cart = cartKey(lines);
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
   if (cart !== a.cartKey) why.push("The cart changed after the approval.");
   if (changing) why.push(CHANGING);
-  if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Pick the time again.");
+  if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Try again.");
   if (why.length) return refuse(why);
-  if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Pick the time again."]);
+  if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Try again."]);
   const expect = expectFor(a);
   // Marked going before the helper is asked (outside review): if anything is lost after this, no second order can start
   // until the last one is reported or half an hour has passed.

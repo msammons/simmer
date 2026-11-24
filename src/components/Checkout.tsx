@@ -16,7 +16,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
-import { afterReadAgain, afterTestRun, readyButtons } from "@/lib/checkout-sheet";
+import { afterReadAgain, afterTestRun, dayAfterGone, readyButtons, stopButtons, timesRanOut } from "@/lib/checkout-sheet";
 import { stepWords } from "@/lib/steps";
 import { usePrepared, useOrdering } from "./Ordering";
 import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet, StartPlan } from "./ui";
@@ -28,7 +28,8 @@ const BAGS_KEY = "sm.bags";
 const lastBags = (): Bags => { try { return localStorage.getItem(BAGS_KEY) === "store" ? "store" : "own"; } catch { return "own"; } };
 const bagsWords = (own: boolean | null | undefined) => (own === true ? "Bring my own" : own === false ? "Safeway's bags" : "Couldn't be read");
 
-type Run = { stage: "idle" } | { stage: "reading" } | { stage: "times"; times: TimesView; loading?: string; picked?: boolean } | { stage: "ready"; view: ReadyView; tested?: boolean } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult }
+/** `times`: the reading is of the pickup times, not Safeway's checkout with a time (the words say which). */
+type Run = { stage: "idle" } | { stage: "reading"; times?: boolean } | { stage: "times"; times: TimesView; loading?: string; picked?: boolean } | { stage: "ready"; view: ReadyView; tested?: boolean } | { stage: "running"; view: ReadyView } | { stage: "done"; view: ReadyView; result: RunResult }
   | { stage: "ordering"; view: ReadyView } | { stage: "ordered"; view: ReadyView; result: OrderResult };
 const cents = (c: number | null) => (c === null ? "Couldn't be read" : `$${(c / 100).toFixed(2)}`);
 
@@ -88,6 +89,8 @@ function TestRun({ onClose }: { onClose: () => void }) {
 
   /** Ready to approve: Face ID's check is fetched now, so it shows straight from the tap (Safari). */
   function showReady(view: ReadyView, tested = false) {
+    // The one Bags control always agrees with the reading showing (review, Nov 24: a second Bags row could disagree).
+    if (typeof view.bagsOwn === "boolean") setBagsState(view.bagsOwn ? "own" : "store");
     setRun({ stage: "ready", view, tested });
     if (!view.stops.length && view.totalCents !== null && view.preparedId) check.prepare(() => api.faceIdCheckOptions().then((r) => r.options));
   }
@@ -100,7 +103,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     if (busy.current) return;
     busy.current = true;
     const back = offered.current;
-    setRun(day && back ? { stage: "times", times: { ...back, day, times: [] }, loading: day } : { stage: "reading" });
+    setRun(day && back ? { stage: "times", times: { ...back, day, times: [] }, loading: day } : { stage: "reading", times: true });
     setStep(undefined);
     const ac = (stop.current = new AbortController());
     try {
@@ -133,15 +136,22 @@ function TestRun({ onClose }: { onClose: () => void }) {
     setRun({ stage: "reading" });
     setStep(undefined);
     const ac = (stop.current = new AbortController());
+    let fresh: { day: string | undefined } | null = null; // the times to read again: the time went, or the list ran out
     try {
-      showReady(await readWith(windowId, own, ac.signal));
+      const v = await readWith(windowId, own, ac.signal);
+      if (afterReadAgain(v) === "times") { fresh = { day: dayAfterGone(v, offered.current?.day) }; setProblem(v.stops[0] ?? "That pickup time isn't offered any more. Pick another time."); }
+      else showReady(v);
     } catch (e) {
       if (ac.signal.aborted) return;
-      setRun(offered.current ? { stage: "times", times: offered.current } : { stage: "idle" });
-      setProblem(errorText(e));
+      const why = errorText(e);
+      // The times shown ran out (kept 10 minutes): read afresh, never the old ones, where every tap would be refused.
+      if (timesRanOut(why)) fresh = { day: offered.current?.day };
+      else setRun(offered.current ? { stage: "times", times: offered.current, picked: true } : { stage: "idle" });
+      setProblem(why);
     } finally {
       done(ac);
     }
+    if (fresh) void getTimes(fresh.day);
   }
 
   /**
@@ -158,7 +168,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     const ac = (stop.current = new AbortController());
     let approved = false;
     let again = false; // passed, and Safeway is being read again
-    let gone: string | null = null; // the time's gone (or the reading again didn't go through): the times again, saying so
+    let fresh: { day: string | undefined } | null = null; // the times to read again (the time went, or the list ran out)
     try {
       let options: PublicKeyCredentialRequestOptionsJSON;
       try { options = await check.take(); } finally { check.clear(); } // used once; the reading again prepares its own
@@ -174,14 +184,16 @@ function TestRun({ onClose }: { onClose: () => void }) {
       setStep(undefined);
       const own = typeof view.bagsOwn === "boolean" ? view.bagsOwn : pickedOwn.current;
       const v = await readWith(pickedId.current, own, ac.signal);
-      if (afterReadAgain(v) === "times") gone = v.stops[0] ?? "That pickup time isn't offered any more. Pick another time.";
+      if (afterReadAgain(v) === "times") { fresh = { day: dayAfterGone(v, offered.current?.day) }; setProblem(v.stops[0] ?? "That pickup time isn't offered any more. Pick another time."); }
       else showReady(v, true);
     } catch (e) {
       if (ac.signal.aborted) return;
       if (again) {
-        // The test run passed but reading Safeway again didn't go through: the times again (as last read), saying why.
-        setRun(offered.current ? { stage: "times", times: offered.current, picked: true } : { stage: "idle" });
-        setProblem(errorText(e));
+        // The test run passed but reading Safeway again didn't go through. The times shown ran out: read afresh, saying
+        // so. Anything else: said under the figures tested, with Try again and Pick another time (review, Nov 24).
+        const why = errorText(e);
+        if (timesRanOut(why)) { fresh = { day: offered.current?.day }; setProblem(why); }
+        else setRun({ stage: "done", view, result: { ok: false, reasons: ["The test run passed, but Safeway couldn't be read again.", why] } });
       } else {
         // Before the approval (Face ID cancelled, say), the figures still stand; after it, they've been used.
         if (approved) setRun({ stage: "idle" }); else showReady(view);
@@ -190,7 +202,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     } finally {
       done(ac);
     }
-    if (gone) { setProblem(gone); void getTimes(offered.current?.day); }
+    if (fresh) void getTimes(fresh.day);
   }
 
   /**
@@ -211,9 +223,9 @@ function TestRun({ onClose }: { onClose: () => void }) {
       const a = await api.checkoutApprove(answer, view.preparedId);
       approved = true;
       if (!a.ok) { setRun({ stage: "ordered", view, result: a }); return; }
-      // Only what this phone showed (Nov 19): a different total or time approved stops here, and the server checks again.
+      // Only what the sheet showed (Nov 19): a different total or time approved stops here, and the server checks again.
       if (a.totalCents !== view.totalCents || a.window !== view.window) {
-        setRun({ stage: "ordered", view, result: { ok: false, reasons: ["What Face ID approved isn't what this phone showed. Nothing was ordered. Pick the time again."] } });
+        setRun({ stage: "ordered", view, result: { ok: false, reasons: ["What Face ID approved isn't what was shown. Nothing was ordered. Try again."] } });
         return;
       }
       const shown = { approvalId: a.approvalId, totalCents: view.totalCents, window: view.window };
@@ -233,6 +245,15 @@ function TestRun({ onClose }: { onClose: () => void }) {
 
   const view = run.stage === "ready" || run.stage === "running" || run.stage === "done" || run.stage === "ordering" || run.stage === "ordered" ? run.view : null;
   const buttons = run.stage === "ready" ? readyButtons(run.view) : null;
+  // Under what stopped it (review, Nov 24): each message names a control that's showing. A reading, a test run or placing
+  // that stopped offers Pick another time (the times read afresh) and, unless the time itself went, Try again (the same
+  // time and bags read again); "not sure the order went through" offers nothing.
+  const stopped = run.stage === "ready" && run.view.stops.length ? run.view.stops
+    : run.stage === "done" ? (run.result.ok ? [] : run.result.reasons)
+    : run.stage === "ordered" && !run.result.ok ? run.result.reasons : null;
+  const after = stopped && stopButtons(stopped, Boolean(pickedId.current), run.stage === "ordered" && !run.result.ok && run.result.unsure === true);
+  /** The times again: as last read for a reading that's fine, read afresh after anything stopped (they may have lapsed). */
+  const timesAgain = (fresh: boolean) => (!fresh && offered.current ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(offered.current?.day));
   /** Bags changed: with a time picked and its reading showing, getting ready again with the new bags (Sam, Nov 24). */
   function changeBags(b: Bags) {
     setBags(b);
@@ -240,20 +261,24 @@ function TestRun({ onClose }: { onClose: () => void }) {
   }
   return (
     <>
+      {/* Bags (Nov 16): one control, with the time; with a reading showing it shows the reading's bags (review, Nov 24). */}
       {((run.stage === "times" && !run.loading) || run.stage === "ready") && (
         <div className="space-y-2">
           <p className="px-4 t-sub font-semibold text-muted">Bags</p>
           <Segmented label="Bags" value={bags} options={BAGS} onChange={changeBags} />
         </div>
       )}
-      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={stepWords(step, "Reading that day's times…")}
+      {run.stage === "reading" ? (run.times
+        ? <Held groups={[5]} label="Reading pickup times" words={stepWords(step, "Reading pickup times…")} />
+        : <Held groups={[5]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} />) : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={stepWords(step, "Reading that day's times…")}
         onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
       <Group header="Order">
         {view ? (
           <>
             <Row icon="home" title="Pickup store" value={view.store ? view.store.split(",")[0] : "Couldn't be read"} />
             <Row icon="clock" title="Pickup time" value={view.window || "None chosen"} />
-            <Row icon="bag" title="Bags" value={bagsWords(view.bagsOwn)} />
+            {/* With the Bags control above (a reading showing), its row would say it twice. */}
+            {run.stage !== "ready" && <Row icon="bag" title="Bags" value={bagsWords(view.bagsOwn)} />}
             <Row icon="card" title="Card" value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
             {view.feesCents ? <Row icon="bag" title="Taxes and fees" value={cents(view.feesCents)} /> : null}
@@ -276,7 +301,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       {/* Neither button (the test run passed but placing is closed): one muted line saying why, in the server's words (Sam, Nov 24). */}
       {run.stage === "ready" && buttons && !buttons.place && !buttons.test && run.view.orderWhy && <p className="px-4 t-sub text-muted">{run.view.orderWhy}</p>}
       {run.stage === "ready" && buttons?.test && (
-        <Button className="w-full" variant={buttons.place ? "secondary" : "primary"} disabled={!buttons.enabled} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
+        <Button className="w-full" disabled={!buttons.enabled} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}
       {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" words={stepWords(step, "Placing the order…")} />}
       {run.stage === "ordered" && (
@@ -289,7 +314,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       {/* After an order, New plan is offered here too (Sam, Nov 24; docs/PLAN.md 4.11): this sheet closes and New plan asks first, as from the top bar. */}
       {run.stage === "ordered" && run.result.ok && startPlan && <Button className="w-full" onClick={() => { onClose(); startPlan(); }}>New plan</Button>}
       {run.stage === "ready" && (
-        <ConfirmSheet open={confirming} title={`Place order · ${cents(run.view.totalCents)}?`} confirm="Place order"
+        <ConfirmSheet private open={confirming} title={`Place order · ${cents(run.view.totalCents)}?`} confirm="Place order"
           message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, bagsWords(run.view.bagsOwn), ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}
           onConfirm={() => placeIt(run.view)} onCancel={() => setConfirming(false)} />
       )}
@@ -299,12 +324,14 @@ function TestRun({ onClose }: { onClose: () => void }) {
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
         </div>
       )}
-      {/* After a test run there's no Pick another time (Sam, Nov 24): one that passed has read Safeway again with the same
-          time and lands on Place order alone; one that didn't offers Try again, the same time and bags read again. */}
-      {run.stage === "ready" && !run.tested && <Button variant="plain" className="w-full" onClick={() => (offered.current ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes())}>Pick another time</Button>}
-      {run.stage === "done" && (pickedId.current
-        ? <Button variant="plain" className="w-full" onClick={() => pick(pickedId.current!, pickedOwn.current)}>Try again</Button>
-        : <Button variant="plain" className="w-full" onClick={() => getTimes()}>Pick a time</Button>)}
+      {/* A reading that's fine: Pick another time, except after a test run passed (Sam, Nov 24: it lands on Place order
+          alone). Anything stopped: the controls its words name (stopButtons). */}
+      {after ? (
+        <>
+          {after.tryAgain && <Button variant="plain" className="w-full" onClick={() => pick(pickedId.current!, pickedOwn.current)}>Try again</Button>}
+          {after.pickTime && <Button variant="plain" className="w-full" onClick={() => timesAgain(true)}>Pick another time</Button>}
+        </>
+      ) : run.stage === "ready" && !run.tested && <Button variant="plain" className="w-full" onClick={() => timesAgain(false)}>Pick another time</Button>}
       <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
     </>
   );

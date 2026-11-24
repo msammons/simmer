@@ -2,7 +2,7 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { fromDinner, linesOf, removedWith, rowsOf } from "./stock-rows";
+import { afterRemoval, fromDinner, linesOf, removalOf, rowsOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -58,9 +58,22 @@ describe("Stock rows", () => {
     const rows = [
       item({ id: "need", item: "Sugar", for: "", check: false }), item({ id: "have", item: "sugar", for: "", have: true }),
       item({ id: "dinner", item: "sugar", for: "Cookies" }), item({ id: "got", item: "sugar", for: "", checked: true }),
-      item({ id: "other", item: "rice", for: "", check: false }),
+      item({ id: "other", item: "rice", for: "", check: false }), item({ id: "weekly", item: "sugar", for: "Every week", check: false }),
     ];
-    expect(removedWith(rows, "Sugar")).toEqual(["need", "have"]);
+    expect(removalOf(rows, "Sugar")).toEqual({ drop: ["need", "have", "weekly"], keep: [] });
+  });
+
+  it("keeps a dinner's part of a row added by hand too, back to waiting for the dinner (review, Nov 24)", () => {
+    const rows = [item({ id: "both", item: "eggs", for: "added by hand, Frittata, Cake", check: false })];
+    expect(removalOf(rows, "Eggs")).toEqual({ drop: [], keep: [{ id: "both", for: "Frittata, Cake" }] });
+    expect(afterRemoval(rows, "Eggs")).toMatchObject([{ id: "both", for: "Frittata, Cake", check: true, have: false }]);
+    expect(rowsOf(list(afterRemoval(rows, "Eggs")), null)).toMatchObject([{ name: "eggs", meal: true, answer: "check" }]);
+  });
+
+  it("leaves a row with a line in the Safeway cart alone (review, Nov 24)", () => {
+    const rows = [item({ id: "cart", item: "Sugar", for: "", check: false }), item({ id: "loose", item: "sugar", for: "added by hand", check: false })];
+    expect(removalOf(rows, "sugar", new Set(["cart"]))).toEqual({ drop: ["loose"], keep: [] });
+    expect(afterRemoval(rows, "sugar", new Set(["cart"])).map((r) => r.id)).toEqual(["cart"]);
   });
 });
 

@@ -22,7 +22,7 @@ of her is a cost.
 | Plan dinners | Meals | A day's dinner in two taps (Add meal, then the recipe). Simmer never picks meals. |
 | Check the house | List | One tap per thing (Have or Need); what a planned dinner needs has its name in the accent colour, with how much; nothing she didn't ask for appears. |
 | Shop in store | Shop | Tick as she goes; one page by store (a filter at the top for one store); ticked things stay struck through or tuck away (Show checked). |
-| Shop Safeway from the phone | Shop, Check out | Usuals in one tap (Add favorites), Find for the rest, the order placed in a few taps, every protection kept (docs/CHECKOUT.md). |
+| Shop Safeway from the phone | Shop, Check out | Favorites in one tap (Add favorites), Find for the rest, the order placed in a few taps, every protection kept (docs/CHECKOUT.md). |
 | Keep recipes | Recipes | Add from a link, photo, file or typing; fix where an ingredient goes in one tap. |
 | Order from the phone | Settings → Ordering, Check out | Face ID on each phone that orders (a new phone is approved from one that has it), a limit per order, the store and card from Safeway. |
 
@@ -107,7 +107,7 @@ Changed:
   adds sat in its first dinner's ⋯ until Nov 18, when every day ended with its own Add meal row again, now one row, not
   one per kind.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
-- Shop: **Add favorites** (a button, no count; Sam, Nov 24) in the Safeway header; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
+- Shop: **Add favorites** (a button, no count; Sam, Nov 24) on the line above the list, just left of Shop's ⋯; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
   **Show checked** live in Shop's ⋯ above the list, with **Check out** (and its cart picture, no price: Sam, Nov 24) on the left of the same line; the add field has a **plain grey + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
   at full colour (an empty tap does nothing).
 - List groups were toned down on Nov 17 (a 1px faint outline, a lighter tint, the name in medium weight, a grey ⋯; Sam:
@@ -135,7 +135,7 @@ Nov 17 with a small test household; the budget is where it should get to.
 | Taps to plan one dinner | 2 | 2 (Add meal, then the recipe; the recipe sets the kind) |
 | Taps to plan a week of dinners | 14 | 14 |
 | Taps per thing when checking the house | 1 | 1 |
-| Taps to put the usuals in the Safeway cart | 1 | 1 (Add favorites) |
+| Taps to put the favorites in the Safeway cart | 1 | 1 (Add favorites) |
 | Taps to place a Safeway order, from Check out (no Get ready since Nov 24) | 3 + Face ID | not remeasured since the pickup day and time were picked in Simmer and Place order asked first (Nov 14-16) |
 | Controls on Meals' first screen | 1 per day + 1 per meal + top bar | An Add meal row ending every day (Sam, Nov 18) |
 | Controls on List's first screen | 25 | 37 |
