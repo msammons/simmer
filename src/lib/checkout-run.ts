@@ -51,7 +51,11 @@ export type ReadyView = {
 };
 /** What placing came to: ordered (with Safeway's order number when it shows one), refused before any press, or unsure. */
 export type OrderResult = { ok: true; ordered: string; number: string } | { ok: false; reasons: string[]; unsure?: boolean };
-export type Waiting = { waiting: string };
+/**
+ * Still going: the job to follow, and the step the helper is at (Nov 23: shown in words while it goes), with when it was
+ * reached, sent back as `since` so the next wait answers at the next step.
+ */
+export type Waiting = { waiting: string; step?: string; stepAt?: string };
 /**
  * To pick the pickup time, as on Safeway's site (Sam, Nov 14: "let me pick", then "picking a day first"): the days
  * Safeway offers, the one showing, and that day's free times.
@@ -116,7 +120,7 @@ export function expected(s: CheckoutSettings, f: Pick<Final, "store" | "card">):
 /** Still going: a job nobody has taken yet gets another wake-up as the phone follows it (a push can arrive late). */
 async function stillGoing(job: Job): Promise<Waiting> {
   if (job.status === "waiting") await wakeHelper().catch((e) => console.error("couldn't wake the helper", e));
-  return { waiting: job.id };
+  return { waiting: job.id, ...(job.step && { step: job.step, stepAt: job.stepAt ?? "" }) };
 }
 
 const cartNow = async () => cartKey(await loadCart());
@@ -173,11 +177,11 @@ const CHANGING = "The cart is still changing on Safeway. Wait for it to finish, 
  * are offered, Regular or Express (never Flash or a priced one), and each one offered is remembered for 10 minutes: getting ready
  * takes only one of them.
  */
-export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): Promise<TimesView | Waiting> {
+export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS, since?: string): Promise<TimesView | Waiting> {
   await ready();
   if (!jobId && (await cartChanging())) throw new AppError(CHANGING);
   const id = jobId ?? (await queueAndWake("checkoutPrepare", { list: true, ...(day && isDayTile(day) && { day }) })).id;
-  const job = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms, jobId ? since : undefined);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
@@ -204,7 +208,7 @@ export async function pickupTimes(jobId?: string, day?: string, ms = WAIT_MS): P
  * Gets ready with the pickup time picked (or follows it): only one of the times just offered. The helper chooses it on
  * Safeway's checkout and reads the final page: the helper's reading, checked, or still going.
  */
-export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, bagsOwn?: boolean): Promise<ReadyView | Waiting> {
+export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, bagsOwn?: boolean, since?: string): Promise<ReadyView | Waiting> {
   const s = await ready();
   let id = jobId;
   if (!id) {
@@ -213,7 +217,7 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
     // The bags she picked for this order (Nov 16): the helper sets Safeway's switch to match before reading the total.
     id = (await queueAndWake("checkoutPrepare", { windowId, ...(typeof bagsOwn === "boolean" && { bagsOwn }) })).id;
   }
-  const job = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms, jobId ? since : undefined);
   if (!job || job.kind !== "checkoutPrepare") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));
@@ -316,10 +320,10 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
 }
 
 /** How the test run stands: still going, or what Safeway's final page said against the approval (reported once). */
-export async function followTestRun(jobId: string, ms = WAIT_MS): Promise<RunResult | Waiting> {
+export async function followTestRun(jobId: string, ms = WAIT_MS, since?: string): Promise<RunResult | Waiting> {
   const pending = json<Approved>(await kv().get(RUN_KEY + jobId));
   if (!pending) throw new AppError("That test run was already reported. Get ready again for another.");
-  const job = await waitForJob(jobId, ms);
+  const job = await waitForJob(jobId, ms, since);
   if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(RUN_KEY + jobId));
   if (!a) throw new AppError("That test run was already reported. Get ready again for another.");
@@ -526,8 +530,8 @@ export async function settleOrder(job: Job | null, gaveUp = false): Promise<Orde
  * the cart comes off the Safeway list as bought and the cart starts empty. Pressed but no answer, or the helper lost:
  * "Simmer isn't sure", never tried again.
  */
-export async function followOrder(jobId: string, ms = WAIT_MS): Promise<OrderResult | Waiting> {
-  const job = await waitForJob(jobId, ms);
+export async function followOrder(jobId: string, ms = WAIT_MS, since?: string): Promise<OrderResult | Waiting> {
+  const job = await waitForJob(jobId, ms, since);
   // A job Simmer no longer has (gone after a day, or kept the old way before Nov 19): never "already reported", which
   // isn't known; not sure, and recorded as such (Nov 19, review).
   const lost = async (why: string) => {
@@ -564,9 +568,9 @@ export function choicesOf(pages: { text?: unknown; buttons?: unknown }[]): Choic
  * phase 1 (docs/CHECKOUT.md: Checkout, the suggestions page's Continue, Order info's Continue, one day; never a pickup
  * time, never Place Order). Only reads, so it needs no Face ID; picking one saves it as any other change, with Face ID.
  */
-export async function lookUp(jobId?: string, ms = WAIT_MS): Promise<Choices | Waiting> {
+export async function lookUp(jobId?: string, ms = WAIT_MS, since?: string): Promise<Choices | Waiting> {
   const id = jobId ?? (await queueAndWake("checkoutLook", {})).id;
-  const job = await waitForJob(id, ms);
+  const job = await waitForJob(id, ms, jobId ? since : undefined);
   if (!job || job.kind !== "checkoutLook") throw new AppError("That didn't go through. Try again.");
   if (job.status === "waiting" || job.status === "working") return stillGoing(job);
   if (job.status !== "done") throw new AppError(failedWords(job));

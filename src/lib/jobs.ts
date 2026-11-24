@@ -28,7 +28,20 @@ export type Job = {
   pressedAt?: string;
   /** When a report started being worked through (Nov 19, review): a second copy arriving meanwhile does nothing. */
   reporting?: string;
+  /**
+   * Where the helper is in the job (Nov 23, Sam: "some sort of status message saying what the app is doing as it goes"):
+   * the latest step's key and when it was reached, and every step in order (the newest STEPS_KEPT), for timing each one.
+   */
+  step?: string;
+  stepAt?: string;
+  steps?: JobStep[];
 };
+/** One step of a job as the helper reported it: its key ("cart", "times"…) and when, by the helper's clock. */
+export type JobStep = { step: string; at: string };
+/** How many steps a job keeps (a job has ten or so; a cart read sent away and opened again a few more). */
+export const STEPS_KEPT = 30;
+/** How often waitForJob reads the job (Nov 23: a second was slow to show each step; a read is one small GET). */
+export const WAIT_STEP_MS = 300;
 /** A browser push subscription (its JSON), and the public key it was made with. */
 export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
 export type Helper = { seen: string; version: string; panel: boolean };
@@ -107,14 +120,16 @@ async function add(j: Job): Promise<Job> {
  * meanwhile, it's read again and `next` asked again, so a change is always made from the job as it really is.
  * Answers the job as it ends up (null when there's none).
  */
-async function change(id: string, next: (j: Job) => Job | null, read?: { job: Job; raw: string }): Promise<Job | null> {
+async function change(id: string, next: (j: Job) => Job | null, read?: { job: Job; raw: string }, quiet = false): Promise<Job | null> {
   for (let i = 0; i < 8; i++) {
     let cur = read;
     read = undefined;
     if (!cur) { const raw = await kv().get(JOB(id)); const job = json<Job>(raw); if (!job || !raw) return null; cur = { job, raw }; }
     const n = next(cur.job);
     if (!n) return cur.job;
-    const after: Job = { ...n, updated: now() };
+    // `quiet`: a step noted (Nov 23) leaves `updated` alone; it says when the job was taken or last changed status, which
+    // the stuck backstop and following an order both count from.
+    const after: Job = { ...n, updated: quiet ? cur.job.updated : now() };
     if (await swap(JOB(id), cur.raw, JSON.stringify(after), KEEP_S)) {
       if (!going(after.status)) await kv().zrem(OPEN, id);
       else if (!going(cur.job.status)) await kv().zadd(OPEN, { score: Date.parse(after.created) || Date.now(), member: id });
@@ -278,19 +293,55 @@ export async function jobStatus(id: string): Promise<Job | null> {
 }
 
 /**
- * Simmer: how a job stands, answered once it's finished or after `ms` (Nov 11: the app has no timers, so it doesn't keep
- * asking; the server waits here, and the app asks again only when an answer says it's still going). Redis over Upstash's
- * web API has no way to wait for a key to change (no blocking reads, no notifications), so this is one bounded loop of
- * single-key reads, a second apart (Nov 19: it used to read every job each time).
+ * Simmer: how a job stands, answered once it's finished, when its step changes, or after `ms` (Nov 11: the app has no
+ * timers, so it doesn't keep asking; the server waits here, and the app asks again only when an answer says it's still
+ * going). Redis over Upstash's web API has no way to wait for a key to change (no blocking reads, no notifications), so
+ * this is one bounded loop of single-key reads, WAIT_STEP_MS apart (Nov 19: it used to read every job each time).
+ * `since`: the step time the asker already has (its last answer's `stepAt`, "" for none): a different one answers at
+ * once, so a step reached between two asks isn't missed. Without it, a change from the first read answers (Nov 23).
  */
-export async function waitForJob(id: string, ms = 20_000): Promise<Job | null> {
+export async function waitForJob(id: string, ms = 20_000, since?: string): Promise<Job | null> {
   const end = Date.now() + ms;
+  let from = since;
   for (;;) {
     const j = await jobStatus(id);
     if (!j || !going(j.status) || Date.now() >= end) return j;
-    await new Promise((r) => setTimeout(r, Math.min(1000, Math.max(0, end - Date.now()))));
+    const at = j.stepAt ?? "";
+    if (from === undefined) from = at;
+    else if (at !== from) return j;
+    await new Promise((r) => setTimeout(r, Math.min(WAIT_STEP_MS, Math.max(0, end - Date.now()))));
   }
 }
+
+/** A step key as the helper sends it: a short word or two, lower case. */
+const STEP_KEY = /^[a-z][a-z-]{0,23}$/;
+/** How far the helper's clock may be from Simmer's before its time is taken as Simmer's (it's normally a second or less). */
+const CLOCK_SLACK = 5 * 60_000;
+/**
+ * The helper: the step it's at in a job (Nov 23), kept on the job while it's being done: `step` and `stepAt` (the latest
+ * by its time, so reports that arrive out of order still end on the newest), and the step list, in order, capped. A job
+ * that isn't being done any more takes none. Never changes a job's status, nor `updated` (the backstops count from it).
+ * Answers whether it was kept.
+ */
+export async function noteStep(id: string, step: string, at: number): Promise<boolean> {
+  if (!STEP_KEY.test(step) || !/^[a-z0-9]{1,40}$/.test(id)) return false;
+  const t = Number.isFinite(at) && Math.abs(at - Date.now()) < CLOCK_SLACK ? at : Date.now();
+  const iso = new Date(t).toISOString();
+  let kept = false;
+  await change(id, (j) => {
+    kept = false;
+    if (j.status !== "working" && j.status !== "pressing") return null;
+    const had = Array.isArray(j.steps) ? j.steps : [];
+    if (had.some((s) => s.step === step && s.at === iso)) return null;
+    const steps = [...had, { step, at: iso }].sort((a, b) => a.at.localeCompare(b.at)).slice(-STEPS_KEPT);
+    const last = steps[steps.length - 1];
+    kept = true;
+    return { ...j, steps, step: last.step, stepAt: last.at };
+  }, undefined, true);
+  return kept;
+}
+/** A job going back to waiting starts its steps over. */
+const noSteps = (j: Job): Job => { const { step: _s, stepAt: _a, steps: _l, ...rest } = j; void _s; void _a; void _l; return rest; };
 
 /** Simmer: a job no longer wanted (only while nobody's taken it). */
 export async function cancelJob(id: string): Promise<void> {
@@ -308,7 +359,7 @@ export async function returnJob(id: string): Promise<Job | null> {
   if (!(await getJob(id))) return null;
   return change(id, (j) => {
     if (j.kind === "checkoutPlace" && (j.status === "working" || j.status === "pressing")) return unsure(j);
-    return j.status === "working" ? { ...j, status: "waiting", created: now() } : null;
+    return j.status === "working" ? { ...noSteps(j), status: "waiting", created: now() } : null;
   });
 }
 
@@ -388,7 +439,7 @@ export async function takeJob(version: string, panel: boolean, asker: { helper: 
     if (overdue(j, q)) { await giveUp(j.id, q, o); continue; }
     if (!reloaded && dropped(j, asker)) { await change(j.id, (x) => (dropped(x, asker) ? { ...x, status: "failed", result: { error: "lost" } } : null), o); continue; }
     if (reloaded && (j.status === "working" || j.status === "pressing")) {
-      const back = await change(j.id, (x) => (x.status !== "working" && x.status !== "pressing" ? null : x.kind === "checkoutPlace" ? unsure(x) : { ...x, status: "waiting", created: now() }), o);
+      const back = await change(j.id, (x) => (x.status !== "working" && x.status !== "pressing" ? null : x.kind === "checkoutPlace" ? unsure(x) : { ...noSteps(x), status: "waiting", created: now() }), o);
       if (back?.status === "waiting") waiting.push({ job: back, raw: JSON.stringify(back) });
       continue;
     }
@@ -424,13 +475,31 @@ const REPORT_HOLD = 60_000;
 /**
  * How long each Safeway job took, from asking to its report (Sam, Nov 23: "once we get some runs under our belt maybe
  * we can try and optimize"): the last 500, kept 90 days, so slow kinds and steps can be found later. Kind, seconds,
- * whether it went through and its error or stop; nothing else. Read with scripts/helper-status.mjs.
+ * whether it went through and its error or stop, and (Nov 23) seconds per step; nothing else. Read with
+ * scripts/helper-status.mjs.
  */
 const TIMES_KEY = `${NS}:job-times`;
+const tenths = (ms: number) => Math.round(Math.max(0, ms) / 100) / 10;
+/**
+ * Seconds in each step, from the job's step list (`st`, compact: each key once, its times added up, in the order first
+ * reached): a step lasts until the next one, the last until the report. `start` is from queueing to the first step
+ * (waiting for the helper, and finding its tab). Nothing when no steps were reported (an older helper).
+ */
+export function stepSeconds(j: Pick<Job, "created" | "steps">, end: string): Record<string, number> | null {
+  const steps = Array.isArray(j.steps) ? j.steps : [];
+  if (!steps.length) return null;
+  const out: Record<string, number> = { start: tenths(Date.parse(steps[0].at) - Date.parse(j.created)) };
+  steps.forEach((s, i) => {
+    const next = i + 1 < steps.length ? Date.parse(steps[i + 1].at) : Date.parse(end);
+    out[s.step] = Math.round(((out[s.step] ?? 0) + tenths(next - Date.parse(s.at))) * 10) / 10;
+  });
+  return out;
+}
 async function noteTime(j: Job, at: string, ok: boolean, why: string) {
   try {
     const s = kv();
-    await s.rpush(TIMES_KEY, JSON.stringify({ at, kind: j.kind, s: Math.round((Date.parse(at) - Date.parse(j.created)) / 100) / 10, ok, ...(why && { why }) }));
+    const st = stepSeconds(j, at);
+    await s.rpush(TIMES_KEY, JSON.stringify({ at, kind: j.kind, s: tenths(Date.parse(at) - Date.parse(j.created)), ok, ...(why && { why }), ...(st && { st }) }));
     await s.ltrim(TIMES_KEY, -500, -1);
     await s.expire(TIMES_KEY, 90 * 24 * 3600);
   } catch { /* a missed timing never stops a job's report */ }

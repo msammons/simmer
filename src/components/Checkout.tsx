@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
+import { stepWords } from "@/lib/steps";
 import { usePrepared, useOrdering } from "./Ordering";
 import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet } from "./ui";
 
@@ -63,6 +64,8 @@ function TestRun() {
   const offered = useRef<TimesView | null>(null); // the day and times last read, to go back to
   const [confirming, setConfirming] = useState(false); // Place order's confirm sheet (docs/CHECKOUT.md)
   const [bags, setBagsState] = useState<Bags>(lastBags);
+  // The step the helper is at while a step here is going (Nov 23, Sam: "some sort of status message"), said in place.
+  const [step, setStep] = useState<string | undefined>(undefined);
   const setBags = (b: Bags) => { setBagsState(b); try { localStorage.setItem(BAGS_KEY, b); } catch { /* kept for this order only */ } };
   useEffect(() => () => stop.current?.abort(), []);
 
@@ -81,10 +84,11 @@ function TestRun() {
     busy.current = true;
     const back = offered.current;
     setRun(day && back ? { stage: "times", times: { ...back, day, times: [] }, loading: day } : { stage: "reading" });
+    setStep(undefined);
     const ac = (stop.current = new AbortController());
     try {
       let r = await api.checkoutTimes(undefined, day, ac.signal);
-      while ("waiting" in r) r = await api.checkoutTimes(r.waiting, undefined, ac.signal);
+      while ("waiting" in r) { setStep(r.step); r = await api.checkoutTimes(r.waiting, undefined, ac.signal, r.stepAt ?? ""); }
       offered.current = r;
       setRun({ stage: "times", times: r, picked: Boolean(day) });
     } catch (e) {
@@ -101,10 +105,11 @@ function TestRun() {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "reading" });
+    setStep(undefined);
     const ac = (stop.current = new AbortController());
     try {
       let r = await api.checkoutPrepare(undefined, windowId, ac.signal, bags === "own");
-      while ("waiting" in r) r = await api.checkoutPrepare(r.waiting, undefined, ac.signal);
+      while ("waiting" in r) { setStep(r.step); r = await api.checkoutPrepare(r.waiting, undefined, ac.signal, undefined, r.stepAt ?? ""); }
       showReady(r);
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -119,6 +124,7 @@ function TestRun() {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "running", view });
+    setStep(undefined);
     const ac = (stop.current = new AbortController());
     let approved = false;
     try {
@@ -127,7 +133,7 @@ function TestRun() {
       approved = true;
       if (!a.ok) { setRun({ stage: "done", view, result: a }); return; }
       let r = await api.checkoutTestRun({ approvalId: a.approvalId }, ac.signal);
-      while ("waiting" in r) r = await api.checkoutTestRun({ jobId: r.waiting }, ac.signal);
+      while ("waiting" in r) { setStep(r.step); r = await api.checkoutTestRun({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
       setRun({ stage: "done", view, result: r });
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -150,6 +156,7 @@ function TestRun() {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "ordering", view });
+    setStep(undefined);
     const ac = (stop.current = new AbortController());
     let approved = false;
     try {
@@ -164,7 +171,7 @@ function TestRun() {
       }
       const shown = { approvalId: a.approvalId, totalCents: view.totalCents, window: view.window };
       let r = await api.checkoutPlace(shown, ac.signal);
-      while ("waiting" in r) r = await api.checkoutPlace({ jobId: r.waiting }, ac.signal);
+      while ("waiting" in r) { setStep(r.step); r = await api.checkoutPlace({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
       setRun({ stage: "ordered", view, result: r });
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -186,7 +193,7 @@ function TestRun() {
           <Segmented label="Bags" value={bags} options={BAGS} onChange={setBags} />
         </div>
       )}
-      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading}
+      {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={stepWords(step, "Reading that day's times…")}
         onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
       <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
         {view ? (
@@ -215,7 +222,7 @@ function TestRun() {
         <Button className="w-full" variant={run.view.canOrder ? "secondary" : "primary"} disabled={view!.stops.length > 0 || view!.totalCents === null || !view!.preparedId} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}
       {run.stage === "ready" && !run.view.canOrder && run.view.orderWhy && <p className="px-4 t-sub text-muted">{run.view.orderWhy}</p>}
-      {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" />}
+      {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" words={stepWords(step, "Placing the order…")} />}
       {run.stage === "ordered" && (
         <div className="space-y-1 px-4">
           {run.result.ok
@@ -228,7 +235,7 @@ function TestRun() {
           message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, bagsWords(run.view.bagsOwn), ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}
           onConfirm={() => placeIt(run.view)} onCancel={() => setConfirming(false)} />
       )}
-      {run.stage === "running" && <Held groups={[1]} label="Test run going" />}
+      {run.stage === "running" && <Held groups={[1]} label="Test run going" words={stepWords(step, "Test run going…")} />}
       {run.stage === "done" && (
         <div className="space-y-1 px-4">
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
@@ -244,7 +251,7 @@ function TestRun() {
  * Pick a day, then a time, as on Safeway's site (Sam, Nov 14): first only the days; a day tapped shows its free times
  * (only free ones; paid Flash times never show), and a time tapped gets ready with it.
  */
-function TimesList({ view, picked, loading, onDay, onPick }: { view: TimesView; picked: boolean; loading?: string; onDay: (key: string) => void; onPick: (id: string) => void }) {
+function TimesList({ view, picked, loading, words, onDay, onPick }: { view: TimesView; picked: boolean; loading?: string; words: string; onDay: (key: string) => void; onPick: (id: string) => void }) {
   const chosen = picked || loading ? (loading ?? view.day) : "";
   return (
     <div className="space-y-4">
@@ -256,7 +263,7 @@ function TimesList({ view, picked, loading, onDay, onPick }: { view: TimesView; 
           ))}
         </div>
       </Group>
-      {loading ? <Held groups={[4]} label="Reading that day's times" /> : chosen && (
+      {loading ? <Held groups={[4]} label="Reading that day's times" words={words} /> : chosen && (
         <Group header="Pickup time">
           {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} subtitle={t.flash ? "Flash: ready sooner, costs extra" : undefined} value={t.price} onClick={() => onPick(t.id)} />)
             : <Row title="No times this day" subtitle="Pick another day." />}

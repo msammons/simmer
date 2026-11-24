@@ -334,12 +334,16 @@ export function ConfirmSheet({ open, title, message, confirm, onConfirm, onCance
  * Still loading, the first time (nothing saved here yet): grey rows in the shape of a list, with Head Out's shimmer, the
  * same in every app. No words, no spinner.
  */
-export function Held({ groups = [4, 3], label = "Loading" }: { groups?: number[]; label?: string }) {
+export function Held({ groups = [4, 3], label = "Loading", words }: { groups?: number[]; label?: string; words?: string }) {
+  // `words` (Nov 23): what's being done, said in the first heading's place (one line, the same height whatever it says),
+  // as the helper's steps come in.
   return (
-    <div className="space-y-6" role="status" aria-label={label}>
+    <div className="space-y-6" role="status" aria-label={words || label}>
       {groups.map((rows, i) => (
         <section key={i} className="space-y-1.5">
-          <div className="shimmer ml-4 h-3 w-20 rounded-full" />
+          {i === 0 && words !== undefined
+            ? <p className="ml-4 h-5 truncate t-sub leading-5 text-muted" aria-hidden>{words}</p>
+            : <div className="shimmer ml-4 h-3 w-20 rounded-full" />}
           <div className="space-y-4 rounded-[1.375rem] bg-card px-4 py-4">
             {Array.from({ length: rows }, (_, n) => (
               <div key={n} className={`shimmer h-[15px] rounded-full ${n % 3 === 1 ? "w-1/2" : n % 3 === 2 ? "w-2/3" : "w-5/6"}`} />

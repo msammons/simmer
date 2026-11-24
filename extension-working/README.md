@@ -21,6 +21,14 @@ order Face ID approved, once, when the page says exactly what was approved.
   (`background.js`) has no timers (26.11.11): it looks for jobs when Simmer pushes it one, when Chrome starts, and when
   the panel opens, works until none are left, and stops. It does each job in a Safeway tab (`safeway.js`): one
   already open (in the panel's window when it's open), or a new one behind; it's never brought to the front.
+- **Says what it's doing as it goes (26.11.24).** Nov 23, Sam: "some sort of status message saying what the app is
+  doing as it goes". At each step of a job (opening the cart or a search, waiting for Safeway, choosing Pickup, adding,
+  pressing Checkout, reading pickup times, a day's times, choosing the time, setting the bags, reading the order,
+  checking before Place Order, waiting for Safeway to confirm, reading the Purchases page) the helper tells Simmer a short
+  key and its time (`step`, op "step"). Fire and forget: never awaited, given up after 3 s, a failure dropped, the same
+  step twice in a row told once, so it can never fail or slow a job. A read-only message to Simmer: it presses nothing.
+  Simmer keeps the steps on the job, shows them in words on the phone, and keeps seconds per step. Checkout reports its
+  steps too, so this needs a test run.
 - **Places the order (26.11.14.7; waits for Place Order to turn on, 26.11.16; reads the confirmation once it fills in, 26.11.18.1).**
   A `checkoutPlace` job, only for an order Face ID approved: it reads Safeway's cart page first (exactly the approved
   products and counts), goes through checkout to exactly the approved time, waits (watching the page, 15 s at most) for
@@ -142,7 +150,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.5.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
@@ -160,8 +168,9 @@ YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as ev
 - `../src/helper/helper.test.mjs` (with `world.mjs`): the helper's decisions, fast. These files (page.js, safeway.js,
   background.js), loaded unchanged, run against a stand-in Chrome and Safeway on a fake clock: the signed-out hold, sent
   away once or twice, Pickup not chosen and delivery, "didn't load", Safeway's boxes and toast after an Add, + and − on
-  awkward names, a checkout read caught mid-redirect, jobs in order, kept reports, and a job lost when Chrome stops the
-  helper. About a second; part of `npm test` and the checks on GitHub.
+  awkward names, a checkout read caught mid-redirect, jobs in order, kept reports, a job lost when Chrome stops the
+  helper, and the steps it tells Simmer (in order, for a cart read, a Pickup switch, getting ready and a test run, and
+  a failing report changing nothing). About a second; part of `npm test` and the checks on GitHub.
 - `../scripts/real-pages-test.mjs`: page.js's reading against saved copies of Safeway's real pages, offline, on Sam's Mac
   only (they're in `safeway/`, never committed; without it the script skips). Save a new copy (Chrome's "Save Page As…,
   complete") of a search, the cart and the empty cart when Safeway changes, and run it.

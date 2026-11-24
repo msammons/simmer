@@ -37,6 +37,19 @@ export async function simmer(method, body, path, ms = 0) {
 }
 
 /**
+ * Progress (Nov 23, Sam: "some sort of status message saying what the app is doing as it goes"): the step a job is at,
+ * told to Simmer as a short key with this computer's time, for the phone to say in words and for timing each step.
+ * Fire and forget: never awaited, given up after 3 s, and a failure is dropped, so it can never fail or slow the job.
+ * A read-only message to Simmer; it presses nothing on Safeway. The same step twice in a row is told once.
+ */
+let stepJob = null, lastStep = "";
+function step(key) {
+  if (!stepJob || key === lastStep) return;
+  lastStep = key;
+  simmer("POST", { op: "step", id: stepJob, step: key, at: Date.now() }, "/api/safeway/jobs", 3000).catch(() => {});
+}
+
+/**
  * A Safeway tab to work in: one in the panel's window when it's open there, else any, else a new one. It's never brought
  * to the front, and a new one opens behind (Sam brings it forward when he wants to, Oct 31).
  */
@@ -106,7 +119,9 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
   // "i want this process to be automated"), then opens the page again; still sent away, it's said as before.
   let switched = false;
   for (let i = 0; i < 2; i++) {
+    step(page.onlyInCart ? "cart" : "search");
     await go(tabId, url);
+    step("wait");
     const r = await waitForProducts(tabId, url, page, settings, tries);
     const away = r ? r.away === true : await sentAway(tabId, url);
     if (away && i === 0) continue;
@@ -125,6 +140,7 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
  * the script, so the note is read again where the tab lands.
  */
 async function choosePickup(tabId, page) {
+  step("pickup");
   // Safeway's home page carries the box's button (the cart and checkout pages are another app and may not).
   let at = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
   if (!at.startsWith(`${page.site}/`) || new URL(at).pathname !== "/") { await go(tabId, `${page.site}/`); at = `${page.site}/`; }
@@ -207,6 +223,7 @@ const sameWords = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim().toLowerC
  * Find's search; no reload, Oct 31), else opened.
  */
 async function searchHere(tabId, query, page, settings) {
+  step("search");
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const want = new URL(searchUrl(query, page));
   const at = tab?.url ? new URL(tab.url) : null;
@@ -222,6 +239,7 @@ const cartPage = (page) => ({ ...page, ...(page.cartItems ?? {}), noResults: pag
 const openCart = (tabId, page, settings) => open(tabId, `${page.site}${page.cartPath}`, cartPage(page), settings, settings.cartTries ?? 8);
 /** The cart page as it is: read where it stands when the tab is already showing it (no reload), else opened. */
 async function cartHere(tabId, page, settings) {
+  step("cart");
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab?.url || new URL(tab.url).pathname !== page.cartPath) return openCart(tabId, page, settings);
   // Watched where it stands, without a reload, long enough that an empty cart is Safeway saying so (not a page still building).
@@ -236,6 +254,7 @@ async function cartHere(tabId, page, settings) {
  * moment while the page builds). Answers what page.js read, or null when it never loaded.
  */
 async function readOrders(tabId, page, settings) {
+  step("orders");
   await go(tabId, `${page.site}${page.orders.path}`);
   return onPage(tabId, "orders", { wait: 15 * (settings.resultsWait ?? 800), hold: settings.noResultsHold ?? 4000 }, page);
 }
@@ -246,6 +265,11 @@ async function readOrders(tabId, page, settings) {
  * ("signed-out", "not-found", "not-loaded", "failed").
  */
 export async function runJob(job, windowId) {
+  stepJob = typeof job.id === "string" ? job.id : null;
+  lastStep = "";
+  try { return await runOne(job, windowId); } finally { stepJob = null; }
+}
+async function runOne(job, windowId) {
   if (!job.page?.site) return { ok: false, error: "failed" };
   const tabId = await safewayTab(windowId);
   // Signed out (Sam, Nov 17: "why does the app not open the page?"): the Safeway tab waits on Safeway's sign-in page for
@@ -320,6 +344,7 @@ async function doJob(job, tabId) {
       if (r.signedIn === false) return { ok: false, error: "signed-out" };
       // On the page: read, or a tile whose buttons Safeway builds once it's scrolled to (page.js scrolls to it).
       if (!r.products.some((x) => x.id === args.productId) && !(args.productId in (r.tiles ?? {}))) continue;
+      step("add");
       let x = await onPage(tabId, "setQty", { id: args.productId, qty: args.qty, wait: settings.stepWait ?? 10_000 }, p);
       if (!x || (!x.ok && x.why === "not-found")) continue;
       // Safeway said its session expired instead of taking the Add (Nov 23): signed out, said so, nothing pressed again.
@@ -397,7 +422,9 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const onCheckout = Boolean(tab?.url) && tab.url.startsWith(`${page.site}/`) && new URL(tab.url).pathname === checkoutPath;
   const start = onCheckout ? tab.url : `${page.site}${page.cartPath}`;
+  step(onCheckout ? "checkout" : "cart");
   await go(tabId, start);
+  step("wait");
   let here = await settle(start);
   // Read as Safeway was sending the tab elsewhere (Nov 23: home, signed in with Pickup not chosen): looked at once more
   // where it lands (Chrome's events, with a limit), reading only.
@@ -412,6 +439,7 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   let sentHome = AWAY.includes(new URL(here.url).pathname) && new URL(here.url).pathname !== new URL(start).pathname;
   if (page.store && ((sentHome && noPickup(here.session, page)) || onDelivery(here.session, page)) && await choosePickup(tabId, page)) {
     const cart = `${page.site}${page.cartPath}`;
+    step("cart");
     await go(tabId, cart);
     here = await settle(cart);
     if (!here) return stop("page didn't load");
@@ -425,12 +453,13 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
     { path: `${page.cartPath}/dnf`, words: ["continue", "to", "checkout", "safeway"] },
     { path: checkoutPath, words: ["continue"], samePage: true, optional: true },
   ];
-  for (const step of steps) {
-    if (new URL(here.url).pathname !== step.path) continue;
-    const p = await onPage(tabId, "pressCheckout", step, page);
-    if (!p?.pressed && step.optional) break;
+  for (const s of steps) {
+    if (new URL(here.url).pathname !== s.path) continue;
+    step("checkout");
+    const p = await onPage(tabId, "pressCheckout", s, page);
+    if (!p?.pressed && s.optional) break;
     if (!p?.pressed) return stop("no button to press");
-    if (step.samePage) { await until("times"); here = await look(); }
+    if (s.samePage) { step("times"); await until("times"); here = await look(); }
     else {
       const to = await urlChange(tabId, here.url);
       if (!to) return stop("page didn't load");
@@ -457,11 +486,13 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   };
   /** A day's tile pressed, then its own times waited for (their ids end in its date), all of them. */
   const openDay = async (label, dd) => {
+    step("day");
     await onPage(tabId, "pressDay", { path: checkoutPath, label }, page);
     await until("day", { label, dd }, 8000);
     return allTimes(await read());
   };
   const ddOf = (label) => String(Number(label.match(/[A-Z][a-z]{2}, (\d{1,2}) /)?.[1] ?? 0)).padStart(2, "0");
+  step("times");
   await until("times");
   let seen = await read();
   // A time chosen earlier (the last Get ready) folds the pickup step into one line: reopen it once (Sam, Nov 14), then read.
@@ -502,6 +533,7 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   }
   if (!target || !offered(target)) return stop("pickup time gone");
   // A paid time (Flash) is chosen only when it's the one Simmer asked for, with its price shown to her.
+  step("time");
   const chose = await onPage(tabId, "chooseWindow", { path: checkoutPath, id: target.id, paid: !free(target) }, page);
   if (!chose?.pressed) return stop("couldn't choose the pickup time");
   // The pickup step's own Continue (exactly "Continue", the only one), which Safeway turns on once a time is chosen.
@@ -511,6 +543,7 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   // The bags she picked for this order (Nov 16): the one switch pressed once if it isn't already that way, then read
   // back until Safeway shows it (its fee, if any, is in the total read next).
   if (typeof bagsOwn === "boolean") {
+    step("bags");
     const set = await onPage(tabId, "setBags", { path: checkoutPath, own: bagsOwn }, page);
     if (!set?.ok && !set?.pressed) return stop("couldn't set the bags");
     // Read back by watching the switch (Nov 19: it was read every 250 ms), 5 s at most.
@@ -519,6 +552,7 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
     // (watched, counted again from each change), 10 s at most.
     if (set.pressed && !(await until("settled", {}, 10000))?.ok) return stop("total didn't settle");
   }
+  step("read");
   const final = await look();
   if (!final) return stop("page didn't load");
   const bagsNow = (await onPage(tabId, "bagsState", null, page))?.own ?? null;
@@ -545,6 +579,7 @@ async function placeOrder(tabId, page, settings, windowId, expect, jobId) {
   const from = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
   // Safeway turns Place Order on a moment after the pickup time is set (Nov 15, Robin's run: "place order turned
   // off" twice). Wait for it, watching the page, then check everything and press.
+  step("check");
   const turnedOn = await onPage(tabId, "waitFor", { until: "placeOn", ms: 15000 }, page);
   if (!turnedOn?.ok) return { ...r, stopped: "not pressed", pressed: false, why: "place order stayed off" };
   // "May I press?" (Nov 19): Simmer says yes only to a placing job still in hand and within its approval, by its own
@@ -556,6 +591,7 @@ async function placeOrder(tabId, page, settings, windowId, expect, jobId) {
   // Pressed, or no answer once Simmer said yes (Nov 19, review: the click may have started Safeway's next page, which
   // ends the script before it answers), reported "unknown", never "not pressed". Whatever happens next, it's never
   // pressed again: read where Safeway lands, for the order number.
+  step("confirm");
   const to = await urlChange(tabId, from, 30_000);
   // Safeway's confirmation page fills in a few seconds after it opens (Nov 18: read at once, it was only the header, and
   // Simmer couldn't say the order went through). Watched, not polled: read as soon as its thank-you words show.
@@ -594,6 +630,7 @@ async function checkoutLook(tabId, page) {
   const shows = { [page.cartPath]: "cart", [`${page.cartPath}/dnf`]: "suggestions", [checkoutPath]: "checkout" };
   const pages = [], pressed = [];
   const read = async () => { const r = await onPage(tabId, "look", null, page); if (r) pages.push(r); return r; };
+  step("cart");
   await go(tabId, `${page.site}${page.cartPath}`);
   await until("cart");
   let here = await read();
@@ -605,13 +642,14 @@ async function checkoutLook(tabId, page) {
     // button that says exactly "Continue"; Place Order is never among the words.
     { path: checkoutPath, words: ["continue"], samePage: true, optional: true },
   ];
-  for (const step of steps) {
-    if (new URL(here.url).pathname !== step.path) continue;
-    const p = await onPage(tabId, "pressCheckout", step, page);
+  for (const s of steps) {
+    if (new URL(here.url).pathname !== s.path) continue;
+    step("checkout");
+    const p = await onPage(tabId, "pressCheckout", s, page);
     pressed.push(p);
-    if (!p?.pressed && step.optional) break; // Order info already done: its Continue isn't there to press
+    if (!p?.pressed && s.optional) break; // Order info already done: its Continue isn't there to press
     if (!p?.pressed) return { pages, pressed, stopped: "no button to press" };
-    if (step.samePage) await until("times");
+    if (s.samePage) { step("times"); await until("times"); }
     else {
       const to = await urlChange(tabId, here.url);
       if (!to) break;
@@ -623,6 +661,7 @@ async function checkoutLook(tabId, page) {
   }
   // Then one pickup day (Sam, Nov 12: "a day only"), to see its windows; never a time.
   if (here && new URL(here.url).pathname === checkoutPath) {
+    step("day");
     const d = await onPage(tabId, "pressDay", { path: checkoutPath }, page);
     pressed.push(d);
     if (d?.pressed) {

@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
+import { stepWords } from "@/lib/steps";
 import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway, type SafewayOff } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
@@ -74,12 +75,13 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  * While the cart is changing or being read (Nov 16, Sam: no checking out while things are in progress), the button is
  * greyed and can't be pressed. Looking again (Nov 23, Sam: a press that found nothing new looked like nothing happened)
  * it says "Looking…" while the reading runs, and "Still signed out" (and the like) when it ends the same, until the next
- * press or the state changing (`still`). No timer.
+ * press or the state changing (`still`). No timer. While Safeway's cart is being read, the helper's step is said on the
+ * button in place of its words (`words`, Nov 23, Sam: "some sort of status message saying what the app is doing").
  */
 export type CartButton =
-  | { state: "ready"; price: string; onCheckOut: () => void; busy?: boolean }
+  | { state: "ready"; price: string; onCheckOut: () => void; busy?: boolean; words?: string }
   | { state: "empty" }
-  | { state: SafewayOff; onLook: () => void; busy?: boolean; still?: boolean };
+  | { state: SafewayOff; onLook: () => void; busy?: boolean; still?: boolean; words?: string };
 /** Each state's words: on the button, for screen readers, and after a look again that found it the same. */
 const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
   "signed-out": ["Signed out", "Signed out of Safeway. Check again", "Still signed out"],
@@ -97,13 +99,13 @@ function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNod
         <span className="flex min-w-0 flex-row-reverse items-center justify-end gap-2.5">
           {cart.state === "ready" && cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
           {cart.state === "ready" ? (
-            <button type="button" onClick={cart.onCheckOut} disabled={cart.busy}
-              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>{icon}Check out</button>
+            <button type="button" onClick={cart.onCheckOut} disabled={cart.busy} aria-label={cart.busy && cart.words ? `Check out. ${cart.words}` : undefined}
+              className={`${base} min-w-0 ${cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>{icon}<span className="truncate">{cart.busy && cart.words ? cart.words : "Check out"}</span></button>
           ) : cart.state === "empty" ? (
             <button type="button" disabled className={`${base} bg-sunk text-muted`}>{icon}Check out</button>
           ) : (
             <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}
-              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}<span className="truncate">{cart.busy ? "Looking…" : cart.still ? OFF_WORDS[cart.state][2] : OFF_WORDS[cart.state][0]}</span></button>
+              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}<span className="truncate">{cart.busy ? cart.words || "Looking…" : cart.still ? OFF_WORDS[cart.state][2] : OFF_WORDS[cart.state][0]}</span></button>
           )}
         </span>
       )}
@@ -265,12 +267,14 @@ export function ShopScreen({ act }: { act: ShopActions }) {
     return <ShopItemRow key={it.id} it={it} sub={sub} control={control} qty={qty} inCart={n} canPick={canPick} onTap={onTap} />;
   };
 
+  /** The helper's step while Safeway's cart is read (Nov 23), in words; none until its first step. */
+  const readingWords = sw.reading && sw.readingStep ? stepWords(sw.readingStep, "") || undefined : undefined;
   /** The Check out button's look (TopLine): nothing until Safeway's first answer, so it never flashes the wrong one. */
   const cartButton: CartButton | null = !sw.loaded ? null
-    : sw.signedOut ? { state: "signed-out", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "signed-out" }
-    : sw.noPickup ? { state: "no-pickup", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "no-pickup" }
-    : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected" }
-    : count > 0 ? { state: "ready", price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0 }
+    : sw.signedOut ? { state: "signed-out", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "signed-out", words: readingWords }
+    : sw.noPickup ? { state: "no-pickup", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "no-pickup", words: readingWords }
+    : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected", words: readingWords }
+    : count > 0 ? { state: "ready", price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0, words: sw.reading ? readingWords : undefined }
     : { state: "empty" };
 
   const shown = (where === "all" ? STORES : [where]).filter((s) => visible.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));

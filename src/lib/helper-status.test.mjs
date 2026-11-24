@@ -2,7 +2,7 @@
 // report keeps up with the keys and shapes it reads.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { kv, resetKv } from "./kv";
-import { finishJob, queueJob, resetJobs, takeJob } from "./jobs";
+import { finishJob, noteStep, queueJob, resetJobs, takeJob } from "./jobs";
 import { report } from "../../scripts/helper-status.mjs";
 
 /** Redis's commands the report sends, answered from the in-memory store. */
@@ -28,7 +28,9 @@ describe("helper status", () => {
       await finishJob(a.id, true, { products: [{ id: "1", name: "Some Milk", price: "$3", image: "", inCart: false, qty: 0 }], signedIn: true });
       const b = await queueJob("checkoutPrepare", {});
       await takeJob("26.11.23.5", true);
-      vi.setSystemTime(Date.now() + 10_000);
+      vi.setSystemTime(Date.now() + 1_000); await noteStep(b.id, "cart", Date.now());
+      vi.setSystemTime(Date.now() + 3_000); await noteStep(b.id, "times", Date.now());
+      vi.setSystemTime(Date.now() + 6_000);
       await finishJob(b.id, true, { stopped: "signed out", chosen: null, final: null });
       const c = await queueJob("setQty", { productId: "1", qty: 2 });
       await takeJob("26.11.23.5", true);
@@ -48,6 +50,9 @@ describe("helper status", () => {
       expect(text).toMatch(/search +1 jobs, median 4\.0 s, max 4\.0 s\n/);
       expect(text).toMatch(/checkoutPrepare +1 jobs, median 10\.0 s, max 10\.0 s\n/); // a stop is a report, not a failure
       expect(text).toContain("this checkout (abc) has passed a test run");
+      // Seconds per step (Nov 23), only for kinds whose helper reported steps.
+      expect(text).toMatch(/Median seconds per step[^\n]*\n {2}checkoutPrepare +start 1\.0, cart 3\.0, times 6\.0\n/);
+      expect(text).not.toMatch(/search +start/);
     } finally { vi.useRealTimers(); }
   });
 });

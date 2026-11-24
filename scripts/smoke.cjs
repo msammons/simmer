@@ -535,7 +535,9 @@ const began = Date.now();
         await page.route("**/api/checkout", async (r) => {
           if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: false, limitCents: 2000, store: "", card: "" }, server: false, faceId: 1, adding: null } });
           const b = r.request().postDataJSON() ?? {};
-          if (b.op === "look") { await new Promise((w) => setTimeout(w, 400)); return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", card: "4242" } }); }
+          // The helper's step comes first (Nov 23), then the reading.
+          if (b.op === "look" && !b.jobId) return r.fulfill({ json: { waiting: "look1", step: "cart", stepAt: "2026-11-23T18:00:01.000Z" } });
+          if (b.op === "look") { await new Promise((w) => setTimeout(w, 800)); return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", card: "4242" } }); }
           return r.fallback();
         });
         await page.getByRole("button", { name: "Settings" }).tap();
@@ -543,7 +545,8 @@ const began = Date.now();
         await st.waitFor(); await idle();
         ok("settings: the store and card say they come from Safeway", await seen(st.getByRole("button", { name: /^Pickup store.*From Safeway$/ }), 2000) && await st.getByRole("button", { name: /^Card.*From Safeway$/ }).isVisible());
         await st.getByRole("button", { name: /^Pickup store/ }).tap();
-        ok("settings: Pickup store shows in place, reading Safeway", await seen(st.getByRole("status", { name: "Reading Safeway's checkout" }), 1000));
+        ok("settings: Pickup store shows in place, saying the helper's step as it reads Safeway", await seen(st.getByRole("status", { name: "Opening your Safeway cart…" }), 1000)
+          && await st.getByText("Opening your Safeway cart…", { exact: true }).isVisible());
         const pick = st.getByRole("radio", { name: /100 Main St, Springfield, CA 90000/ });
         ok("settings: then offers the store Safeway shows, to pick", await seen(pick, 3000) && (await pick.innerText()).includes("What Safeway shows"));
         await st.getByRole("button", { name: "Back" }).tap();
@@ -551,6 +554,27 @@ const began = Date.now();
         ok("settings: Card offers Safeway's card from the same reading, at once", await seen(st.getByRole("radio", { name: /•••• 4242/ }), 300));
         await st.getByRole("button", { name: "Back" }).tap(); await st.getByRole("button", { name: /^Card/ }).waitFor();
         await page.keyboard.press("Escape"); await gone(st);
+        await page.unroute("**/api/checkout");
+        // The checkout sheet says the helper's step in place while it gets ready (Nov 23, Sam: "some sort of status
+        // message saying what the app is doing as it goes"): in the reading's own heading, never a new bar.
+        await page.route("**/api/checkout", async (r) => {
+          if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: true, limitCents: 2000, store: "", card: "" }, server: false, faceId: 1, adding: null } });
+          const b = r.request().postDataJSON() ?? {};
+          if (b.op !== "times") return r.fallback();
+          if (!b.jobId) return r.fulfill({ json: { waiting: "times1", step: "cart", stepAt: "2026-11-23T18:00:01.000Z" } });
+          if (b.since === "2026-11-23T18:00:01.000Z") { await new Promise((w) => setTimeout(w, 300)); return r.fulfill({ json: { waiting: "times1", step: "times", stepAt: "2026-11-23T18:00:04.000Z" } }); }
+          await new Promise((w) => setTimeout(w, 1200));
+          return r.fulfill({ json: { days: [{ key: "select slots for TUESDAY Nov, 24", label: "Tue, Nov 24" }], day: "select slots for TUESDAY Nov, 24", times: [] } });
+        });
+        await checkOut.tap();
+        const sheet = page.getByRole("dialog", { name: "Check out" });
+        await sheet.getByRole("button", { name: /^Get ready/ }).tap();
+        const words = sheet.getByText("Reading pickup times…", { exact: true });
+        ok("checkout: getting ready says each step in place (Opening your Safeway cart…, then Reading pickup times…)", await seen(sheet.getByText("Opening your Safeway cart…", { exact: true }), 2000)
+          && await seen(words, 2000) && (await sheet.getByRole("status", { name: "Reading pickup times…" }).count()) === 1);
+        ok("checkout: the step's words sit in the reading's heading, inside it", await words.evaluate((el) => Boolean(el.closest("[role=status]")) && el.getBoundingClientRect().height <= 21));
+        ok("checkout: and the times replace them once read", await seen(sheet.getByRole("radio", { name: "Tue, Nov 24" }), 4000));
+        await page.keyboard.press("Escape"); await gone(sheet);
         await page.unroute("**/api/checkout");
       }
       ok("shop: a Safeway row says its Safeway product and how many under its name", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
@@ -759,10 +783,16 @@ const began = Date.now();
     await tabs.getByRole("button", { name: "List" }).tap(); await page.getByLabel("Add item to the list").waitFor(); await idle();
     await settingsHere("Stock");
     {
-      // A planned dinner's thing (Sam, Nov 18): what the dinners need under its name, no asterisk, no tint.
+      // A planned dinner's thing (Sam, Nov 18): what the dinners need under its name, no asterisk, no tint. A dinner is
+      // planned first (Nov 23: with none, in every setup, this checked nothing).
+      await page.evaluate((day) => fetch("/api/plan", { method: "POST", headers: { "content-type": "application/json", "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") }, body: JSON.stringify({ op: "plan", dishes: [{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day }], lunches: [], counts: null, by: "Sam" }) }).then((r) => r.text()),
+        new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }));
+      await page.reload(); await seen(page.getByRole("heading", { name: "Meals" }), 8000);
+      await tabs.getByRole("button", { name: "List" }).tap(); await page.getByLabel("Add item to the list").waitFor(); await idle();
       const meal = page.locator("[data-meal]").filter({ has: page.getByRole("group", { name: /^Have or need / }) });
-      ok(`${tag}: a dinner's thing shows its amount, without an asterisk`, (await meal.count()) === 0 || ((await meal.first().getByText("*", { exact: true }).count()) === 0
-        && (await meal.first().evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgba(0, 0, 0, 0)"));
+      const amounts = await meal.evaluateAll((ms) => ms.map((m) => m.querySelector("span > span + span")?.textContent?.trim() ?? ""));
+      ok(`${tag}: a dinner's thing shows its amount, without an asterisk`, amounts.some(Boolean) && (await meal.first().getByText("*", { exact: true }).count()) === 0
+        && (await meal.first().evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgba(0, 0, 0, 0)", amounts.slice(0, 3).join(" | "));
     }
     ok(`${tag}: every Stock row is the same height`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => new Set(gs.map((g) => Math.round(g.parentElement.getBoundingClientRect().height))).size === 1));
     // Every row has ⋯ or its space, so the switches line up (Nov 11).
