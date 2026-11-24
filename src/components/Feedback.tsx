@@ -15,6 +15,8 @@ import { contextNow, type FeedbackContext } from "@/lib/feedback";
 import { Alert, Button, Dialog } from "./ui";
 
 export const HOLD_MS = 500;
+/** Under the title (Sam, Nov 24): how it opened, so a hold by accident explains itself. */
+export const HOW = "You held the Settings button, which opens this on any screen.";
 const SLOP = 10; // px a finger may drift before it's a drag, not a hold
 
 /** The Settings button showing now, if any (BrandBar's, marked data-settings). */
@@ -126,7 +128,7 @@ function FeedbackPopup({ initial, onSend, onCancel }: { initial: string; onSend:
   }, []);
   const ready = text.trim().length > 0;
   return (
-    <Dialog title="Feedback" above clear onDismiss={onCancel}>
+    <Dialog title="Feedback" message={HOW} above clear onDismiss={onCancel}>
       <textarea ref={box} data-feedback-box value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label="Feedback"
         placeholder="What happened, or what would be better?"
         className="block w-full resize-none rounded-[1rem] bg-sunk px-3.5 py-2.5 text-left text-[17px] leading-snug text-ink outline-none placeholder:text-muted" />
