@@ -211,3 +211,12 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
 - **Checks on GitHub** (`.github/workflows/check.yml`): every pull request and push to main runs types, lint, tests, the
   build and the browser smoke test against `next start` (sample data, test passcode, no Redis, no secrets). Playwright is
   installed outside the project in CI and found through `NODE_PATH`, as on the Mac, so it isn't a dependency.
+- **Checks for a helper change** (Nov 23, Sam: "be efficient with tests. And intelligent. Not too much or little."): one
+  command, `npm run helper-check` (`scripts/helper-check.mjs`), about a minute. First the helper's decisions, fast
+  (`src/helper/helper.test.mjs`, also in `npm test` and CI): the helper's own files, loaded unchanged as text, against a
+  stand-in Chrome and Safeway (`src/helper/world.mjs`) on a fake clock, so the 8 s signed-out hold, the page limits and
+  Safeway's slow or misbehaving pages take milliseconds. Then page.js on saved copies of Safeway's real pages
+  (`scripts/real-pages-test.mjs`, Sam's Mac only), then a short end-to-end run with a real Chrome and Simmer
+  (`scripts/extension-test.mjs`): only the wiring, what was seen go wrong live, and checkout's protections. Simmer is built
+  once. Every check runs once, with no repeats: a case that passes only on a second try is a bug to fix. A new decision in
+  the helper gets its fast check; the end-to-end run grows only for wiring a fake Chrome can't show.

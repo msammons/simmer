@@ -151,14 +151,23 @@ YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as ev
 - `safeway.js`: doing one job in a Safeway tab.
 - `page.js`: what runs inside safeway.com: reads the products on screen, presses Add / + / −, using Simmer's page details.
 - `panel.html`, `panel.css`, `panel.js`: setup, then Simmer in a frame.
-- `../scripts/extension-test.mjs`: the whole thing against a real local Simmer and a stand-in Safeway
-  (`node scripts/extension-test.mjs`), including a Safeway that misbehaves: slow pages, Sign In shown a moment or for
-  good, a page that never stops changing or never finishes building, checks that throw, an Add answered by a box to
-  choose from, an error box or a toast, the tab sent elsewhere mid-job, an empty cart listing past purchases, several
-  jobs at once behind a slow one, and the helper stopped mid-job. It can't tell whether the real Safeway pages still match.
+- `../src/helper/helper.test.mjs` (with `world.mjs`): the helper's decisions, fast. These files (page.js, safeway.js,
+  background.js), loaded unchanged, run against a stand-in Chrome and Safeway on a fake clock: the signed-out hold, sent
+  away once or twice, Pickup not chosen and delivery, "didn't load", Safeway's boxes and toast after an Add, + and − on
+  awkward names, a checkout read caught mid-redirect, jobs in order, kept reports, and a job lost when Chrome stops the
+  helper. About a second; part of `npm test` and the checks on GitHub.
 - `../scripts/real-pages-test.mjs`: page.js's reading against saved copies of Safeway's real pages, offline, on Sam's Mac
   only (they're in `safeway/`, never committed; without it the script skips). Save a new copy (Chrome's "Save Page As…,
   complete") of a search, the cart and the empty cart when Safeway changes, and run it.
+- `../scripts/extension-test.mjs`: the helper end to end in a real Chrome with a real local Simmer and a stand-in Safeway:
+  setup and check-in, a search, an Add, −, a cart read, the background with the panel closed, signed out by Safeway's
+  redirect, Pickup not chosen on Shop (Looking…, Still…), checkout to "ready" and never Place Order, a delivery stop with
+  nothing pressed, the live check pressing nothing, and no framing. It can't tell whether the real Safeway pages still match.
+
+**Testing a helper change:** `npm run helper-check` runs the three above in that order (Simmer built once, alongside),
+about a minute, and prints each stage's time. Run it once: a check that passes only on a second try is a bug to fix, not
+to run again. A new decision gets a fast check in `helper.test.mjs`; the end-to-end run grows only for something a
+stand-in Chrome can't show.
 - `../scripts/live-check.mjs`: the live check below.
 
 ## Before a release: the live check (by hand, read only)
