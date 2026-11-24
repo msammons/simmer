@@ -119,7 +119,7 @@ Never press Place order for real. Everything here is **R**.
 | 7.5 | Shop → Check out (with something in the cart) | A sheet: Cart (how many things, the estimate); with ordering not set up, one plain line pointing to Settings → Ordering; the button is greyed while the cart is changing | R |
 | 7.6 | Open Check out (set up) | Safeway's pickup days are read at once, no Get ready button and no explanatory lines; one tapped shows its free times (Flash is marked and priced); Bags: Bring my own or Safeway's bags; a time tapped reads Safeway's checkout at once (changing the bags reads it again): store, time, bags, card, items, total | R |
 | 7.7 | Test run · $X | Face ID, then goes through Safeway's checkout and stops one press short: "Would place $X · day time"; nothing is ordered | R |
-| 7.8 | Place order · $X | Shown only when the server allows it and the helper's checkout fingerprint has passed a test run, the helper counting only if it's the one Simmer ships; otherwise a plain line says why ("Do a test run first…", "The helper on the computer needs updating first.") | R |
+| 7.8 | Place order · $X | Shown only when the server allows it and the helper's checkout fingerprint has passed a test run, the helper counting only if it's the one Simmer ships; otherwise it isn't offered and no line says why (Sam, Nov 24) | R |
 | 7.9 | Change only a search or cart part of the helper | No new test run is needed; changing anything checkout runs makes Place order go away until a test run passes (docs/CHECKOUT.md) | R |
 | 7.10 | Anything over the limit, or Safeway showing a different store or card | Refused with the reason, before anything is pressed | R |
 

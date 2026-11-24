@@ -238,7 +238,6 @@ function TestRun({ onClose }: { onClose: () => void }) {
       {run.stage === "ready" && (
         <Button className="w-full" variant={run.view.canOrder ? "secondary" : "primary"} disabled={view!.stops.length > 0 || view!.totalCents === null || !view!.preparedId} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}
-      {run.stage === "ready" && !run.view.canOrder && run.view.orderWhy && <p className="px-4 t-sub text-muted">{run.view.orderWhy}</p>}
       {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" words={stepWords(step, "Placing the order…")} />}
       {run.stage === "ordered" && (
         <div className="space-y-1 px-4">
