@@ -95,7 +95,10 @@ const began = Date.now();
       const onCart = (r) => r.fulfill({ json: { cart, picks, answering: !away, away, outdated: false, signedOut } });
       const onJobs = async (r) => {
         const req = r.request();
-        if (req.method() !== "POST") return r.fulfill({ json: { job: { id: "fake", kind: "setQty", status: "done", result: {} }, answering: true } });
+        // A search (Find) answers with a dozen products, enough to scroll Find's sheet; anything else answers done.
+        if (req.method() !== "POST") return r.fulfill({ json: req.url().includes("id=fake-search")
+          ? { job: { id: "fake-search", kind: "search", status: "done", result: { signedIn: true, products: Array.from({ length: 12 }, (_, i) => ({ id: `p-found-${i}`, name: `Safeway Found Thing ${i + 1} - 16 Oz`, price: "$3.49", image: "" })) } }, answering: true }
+          : { job: { id: "fake", kind: "setQty", status: "done", result: {} }, answering: true } });
         const b = req.postDataJSON() ?? {};
         if (b.op !== "queue") return r.fulfill({ json: { ok: true } });
         if (helperSlow) await wait(600);
@@ -105,7 +108,7 @@ const began = Date.now();
           else if (at >= 0) cart[at].qty = b.qty;
           else cart.push({ cart: "safeway", productId: b.productId, name: b.name, price: "$4.29", image: "", qty: b.qty, itemId: b.itemId ?? "", item: b.item ?? "", updated: "" });
         }
-        return r.fulfill({ json: { job: { id: "fake", kind: b.kind, status: "waiting", result: null }, answering: true } }).catch(() => {});
+        return r.fulfill({ json: { job: { id: b.kind === "search" ? "fake-search" : "fake", kind: b.kind, status: "waiting", result: null }, answering: true } }).catch(() => {});
       };
       await page.route("**/api/safeway/cart", onCart);
       await page.route("**/api/safeway/jobs**", onJobs);
@@ -698,6 +701,59 @@ const began = Date.now();
         ok("checkout: and the times replace them once read", await seen(sheet.getByRole("radio", { name: "Tue, Nov 24" }), 4000));
         await page.keyboard.press("Escape"); await gone(sheet);
         await page.unroute("**/api/checkout");
+        // Test run only when one is required (Sam, Nov 24), and after one passes, Safeway read again with the same time and
+        // bags, landing on Place order with no time picked again. Face ID stood in for (the page's own credentials call).
+        {
+          let passed = true, reads = 0;
+          const bodies = [];
+          const DAY = "select slots for TUESDAY Nov, 24";
+          await page.route("**/api/checkout", async (r) => {
+            if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: true, limitCents: 5000, store: "100 Main St", card: "4242" }, server: true, faceId: 1, adding: null } });
+            const b = r.request().postDataJSON() ?? {};
+            bodies.push(b);
+            if (b.op === "times") return r.fulfill({ json: { days: [{ key: DAY, label: "Tue, Nov 24" }], day: DAY, times: [{ id: "w1", time: "6–7 PM", price: "Free", flash: false }] } });
+            if (b.op === "prepare") {
+              reads++;
+              return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", window: "Tue 6–7 PM", card: "4242", items: 3, totalCents: 694, stops: [], highlights: [], remember: false, bagsOwn: b.bagsOwn !== false, feesCents: null,
+                canOrder: passed, orderWhy: passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, preparedId: `reading${reads}` } });
+            }
+            if (b.op === "approve") return r.fulfill({ json: { ok: true, approvalId: `ok-${b.preparedId}`, totalCents: 694, window: "Tue 6–7 PM" } });
+            if (b.op === "test-run") { passed = true; return r.fulfill({ json: { ok: true, would: "Would place $6.94 · Tue 6–7 PM" } }); }
+            return r.fallback();
+          });
+          await page.route("**/api/checkout/passkey", (r) => r.fulfill({ json: { options: { challenge: "c21va2U", rpId: "localhost", allowCredentials: [], userVerification: "preferred" } } }));
+          await page.evaluate(() => {
+            const buf = (s) => new TextEncoder().encode(s).buffer;
+            navigator.credentials.get = async () => ({ id: "smoke", rawId: buf("smoke"), type: "public-key", authenticatorAttachment: "platform", getClientExtensionResults: () => ({}),
+              response: { authenticatorData: buf("a"), clientDataJSON: buf("{}"), signature: buf("s"), userHandle: null } });
+          });
+          const pickTime = async (co) => {
+            await co.getByRole("radio", { name: "Tue, Nov 24" }).tap();
+            await co.getByRole("button", { name: /6–7 PM/ }).tap();
+          };
+          await checkOut.tap();
+          let co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          const place = co.getByRole("button", { name: "Place order · $6.94" });
+          ok("checkout: with the test run passed, the reading offers only Place order · $X, no Test run", await seen(place, 3000) && (await co.getByRole("button", { name: /^Test run/ }).count()) === 0);
+          await page.keyboard.press("Escape"); await gone(co);
+          passed = false; reads = 0; bodies.length = 0;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          const test = co.getByRole("button", { name: "Test run · $6.94" });
+          ok("checkout: while a test run is required, Test run · $X, and no Place order", await seen(test, 3000) && (await co.getByRole("button", { name: /^Place order/ }).count()) === 0);
+          await test.tap();
+          ok("checkout: after a test run passes, Place order · $X shows without picking a time, and no Pick another time", await seen(place, 4000) && (await co.getByRole("button", { name: /^Test run/ }).count()) === 0
+            && (await co.getByRole("radio", { name: "Tue, Nov 24" }).count()) === 0 && (await co.getByRole("button", { name: "Pick another time" }).count()) === 0);
+          const preps = bodies.filter((x) => x.op === "prepare" && !x.jobId);
+          ok("checkout: Safeway read again with the same time and bags, as a new reading approved on its own", preps.length === 2 && preps[1].windowId === "w1" && preps[1].bagsOwn === preps[0].bagsOwn
+            && bodies.filter((x) => x.op === "approve").map((x) => x.preparedId).join() === "reading1" && bodies.filter((x) => x.op === "times").length === 1, JSON.stringify(bodies));
+          await page.keyboard.press("Escape"); await gone(co);
+          await page.unroute("**/api/checkout"); await page.unroute("**/api/checkout/passkey");
+        }
       }
       ok("shop: a Safeway row says its Safeway product and how many under its name", await seen(tick("Milk").getByText(/Lucerne 2% Reduced Fat Milk.* · Need 1 gallon/)));
       ok("shop: a cart thing added on Safeway ends the Safeway group, with its price", (await swGroup.locator("[data-shop-row]").last().innerText()).includes("Sparkling Water"));
@@ -710,6 +766,28 @@ const began = Date.now();
       await idle();
       ok("shop: and Safeway has them: Auto-fill gone with one usual left", await until(async () => (await page.getByRole("button", { name: /^Add usuals/ }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
       ok("shop: Find on a row with no usual", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
+      // Find's Back, place and Skip or Next float at the bottom of its sheet (Sam, Nov 24: "It needs to float somehow"):
+      // in view however far the results are scrolled, and after the last product once at the end, never over it.
+      {
+        const findBtn = page.getByRole("button", { name: /^Find .* at Safeway$/ }).first();
+        if (await findBtn.count()) {
+          await findBtn.tap();
+          const fs = page.getByRole("dialog", { name: "Safeway's choices" });
+          await seen(fs.getByText("Safeway Found Thing 12 - 16 Oz"), 5000);
+          const list = fs.locator("[data-sheet-body]"), bar = fs.locator("[data-find-bar]");
+          await list.evaluate((el) => { el.scrollTop = el.scrollHeight / 2; });
+          const inView = async () => { const l = await list.boundingBox(), b = await bar.boundingBox(); return Boolean(l && b) && b.y >= l.y && b.y + b.height <= l.y + l.height + 1; };
+          ok("find: Skip and where it is float at the bottom of the sheet while the results scroll", (await list.evaluate((el) => el.scrollHeight > el.clientHeight + 40)) && await inView()
+            && await bar.getByRole("button", { name: "Skip" }).isVisible() && /^\d+ of \d+$/.test((await bar.locator("p").innerText()).trim()));
+          await list.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+          const last = await fs.getByText("Safeway Found Thing 12 - 16 Oz").boundingBox(), b = await bar.boundingBox();
+          ok("find: scrolled to the end, the bar is still there and the last product sits above it", await inView() && last.y + last.height <= b.y + 1, JSON.stringify([last, b]));
+          ok("find: no copy of Next or Skip at the top any more", (await fs.getByRole("button", { name: /^(Skip|Next)/ }).count()) === 1);
+          await bar.getByRole("button", { name: "Skip" }).tap();
+          ok("find: the next item starts at the top", await until(async () => (await list.evaluate((el) => el.scrollTop)) === 0, 2000));
+          await page.keyboard.press("Escape"); await gone(fs);
+        } else ok("find: a Find button to open", false);
+      }
       await slow("**/api/list");
       await tick("Milk").tap();
       ok("shop: a tick shows within 150 ms, struck through", await within150(async () => (await tick("Milk").getAttribute("aria-checked")) === "true" && (await tick("Milk").locator(".line-through").count()) === 1));

@@ -126,10 +126,15 @@ Opening the app, bringing it back to the front (on any tab, Nov 23) and opening 
 a minute unless signed out or not connected), so Simmer's copy matches it and Shop already knows when it opens. A change to something already in the cart (a −, a +
 or taking it out) is made on Safeway's cart page first, where the product is listed, from Shop's rows and from Find alike;
 only adding something new goes through a search. Find searches when an item comes up and on Search, never on each letter
-typed, ranks results by her own words, and starts each item at the top of the screen. Old `?open=lists` addresses land on
-Shop, as the helper panel's `?open=shop` does. Check out and ordering are in docs/CHECKOUT.md: Face ID, a limit, test
-runs, and a checkout fingerprint of the helper (`scripts/checkout-print.mjs`, `src/lib/checkout-print.json`) that decides
-when a new test run is needed (a search or cart fix to the helper needs none).
+typed, ranks results by her own words, and starts each item at the top of its sheet. Find's Back (‹), where it is
+("3 of 8") and Skip, Next: <item> or Got it float at the bottom of the sheet (Sam, Nov 24: "It needs to float somehow"):
+a bar on the top bar's blurred backing, pinned to the bottom of the results while they scroll and in its own place after
+the last product at the end, so it never covers one; the sheet rides above the keyboard, so the bar does too. Old
+`?open=lists` addresses land on Shop, as the helper panel's `?open=shop` does. Check out and ordering are in
+docs/CHECKOUT.md: Face ID, a limit, test runs, and a checkout fingerprint of the helper (`scripts/checkout-print.mjs`,
+`src/lib/checkout-print.json`) that decides when a new test run is needed (a search or cart fix to the helper needs
+none). The sheet offers Test run only while one is needed, and after one passes reads Safeway again with the same time
+and bags and lands on Place order (Sam, Nov 24); what it offers is plain code in `lib/checkout-sheet.ts`, with tests.
 
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
 Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" rows,

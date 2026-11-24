@@ -359,8 +359,9 @@ type Search = { query: string; state: "loading" | "done" | "failed"; products: P
 
 /**
  * One list item at a time: search Safeway (Simmer's own search first: the remembered product, else the usual one, else
- * the item), the usual first, Add puts one in the cart, − / + after that. Skip or Next (at the top, where it doesn't
- * move anything when it changes) goes on; Find never moves on by itself.
+ * the item), the usual first, Add puts one in the cart, − / + after that. Back, where it is ("3 of 8") and Skip or Next
+ * float at the bottom of the sheet (Sam, Nov 24: "It needs to float somehow"), always in reach while the results scroll
+ * and changing in place; Find never moves on by itself.
  */
 export function FindView({ store, items, index, onIndex, sw, onCart, onList, onGot }: {
   /** The online store being shopped, by name. */
@@ -373,6 +374,7 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [searches, setSearches] = useState<Record<string, Search>>({});
   const ctl = useRef<AbortController | null>(null);
+  const root = useRef<HTMLDivElement>(null);
   const searchesMade = useRef(0);
   const query = it ? typed[it.id] ?? it.query : "";
   const { run, setProblem, refresh } = sw; // each stays the same from render to render
@@ -442,22 +444,21 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
   const results = order ? [...ranked].sort((a, b) => at(a.product.id) - at(b.product.id)) : ranked;
   const inCartForIt = qtyFor(sw.cart, it.id);
   const last = index === items.length - 1;
-  // A new item starts at the top (Nov 18: after Next at the bottom, Robin had to scroll up to see what came next).
-  const move = (to: number) => { ctl.current?.abort(); onIndex(to); scrollAppTo(0); };
-  // Where Next goes: the next item still to find (else the cart). Shown at the top in a row that's always there, so it
-  // appearing after an Add doesn't push the results under the finger.
+  // A new item starts at the top (Nov 18: after Next at the bottom, Robin had to scroll up to see what came next): the
+  // sheet's own list, which keeps its place from item to item, else the page.
+  const move = (to: number) => {
+    ctl.current?.abort(); onIndex(to);
+    const list = root.current?.closest<HTMLElement>("[data-sheet-body]");
+    if (list) list.scrollTop = 0; else scrollAppTo(0);
+  };
+  // Where Next goes: the next item still to find (else the cart). In the bar floating at the bottom, which is always
+  // there, so it changing after an Add moves nothing under the finger.
   const to = nextAfter(items, sw.cart, index);
   const next = () => (to < 0 ? onCart() : move(to));
-  const top = "flex h-10 max-w-[65%] min-w-0 items-center gap-1 rounded-full px-4 t-sub font-semibold transition active:scale-95";
+  const pill = "inline-flex h-[52px] min-w-0 items-center justify-center gap-1 rounded-full px-5 t-headline transition active:scale-[0.97]";
   return (
-    <div className="space-y-5">
+    <div ref={root} className="space-y-5">
       <div>
-        <div className="flex h-10 items-center justify-between gap-3">
-          <p className="t-foot font-semibold text-muted">{index + 1} of {items.length}</p>
-          {inCartForIt
-            ? <button onClick={next} className={`${top} glass-tint text-on-accent`}><span className="truncate">{to < 0 ? "See the cart" : `Next: ${cap(items[to].item)}`}</span><Icon name="right" className="size-4 shrink-0" strokeWidth={2.4} /></button>
-            : !last && s?.state !== "failed" && <button onClick={() => move(index + 1)} className={`${top} glass text-accent`}>Skip</button>}
-        </div>
         <h2 className="text-[26px] font-bold leading-tight tracking-tight">{cap(it.item)}</h2>
         <p className="t-sub text-muted">{[it.want > 1 ? `${it.want} wanted` : shownAmount(it.quantity) && `${shownAmount(it.quantity)} on the list`, inCartForIt ? `In the cart · ${inCartForIt}` : ""].filter(Boolean).join(" · ") || "One wanted"}</p>
       </div>
@@ -513,14 +514,25 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
           })}
         </div>
       ) : <EmptyState icon="search" title="Nothing came up" />)}
-      <div className="flex gap-3">
-        {index > 0 && <button type="button" aria-label={`Back to ${cap(items[index - 1].item)}`} onClick={() => move(index - 1)} className="glass inline-flex h-[52px] flex-1 items-center justify-center rounded-full px-6 t-headline text-accent transition active:scale-[0.97]">Back</button>}
-        {inCartForIt
-          ? <Button className="flex-1" onClick={next}>{to < 0 ? "See the cart" : "Next item"}</Button>
-          : s?.state === "failed"
-            ? <Button className="flex-1" onClick={() => { onGot(it.id); if (!last) move(index + 1); }}>Got it</Button>
-            : <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
-        {s?.state === "failed" && !inCartForIt && <Button variant="secondary" className="flex-1" onClick={() => move(index + 1)}>Skip</Button>}
+      {/* Floating at the bottom of the sheet (Sam, Nov 24): pinned to the bottom of the list while it scrolls, on the
+          top bar's kind of backing (blurred, fading out at its top edge; solid underneath, so nothing shows through the buttons' edge), and in its own place after the last product once scrolled to the end, so it
+          never covers one. The sheet rides above the keyboard, so this does too. */}
+      <div data-find-bar role="group" aria-label="Find, one item at a time" className="sticky -bottom-4 z-10 -mx-4 !mt-3 px-4 pb-4 pt-3">
+        <span aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-bg backdrop-blur-2xl [mask-image:linear-gradient(to_top,black_80%,transparent)]" />
+        <div className="flex items-center gap-2">
+          {index > 0
+            ? <button type="button" aria-label={`Back to ${cap(items[index - 1].item)}`} onClick={() => move(index - 1)} className={`glass ${pill} w-[52px] shrink-0 px-0 text-accent`}><Icon name="left" className="size-5" strokeWidth={2.4} /></button>
+            : null}
+          <p className="shrink-0 px-1 t-foot font-semibold text-muted tabular-nums">{index + 1} of {items.length}</p>
+          {inCartForIt
+            ? <button type="button" onClick={next} className={`glass-tint ${pill} flex-1 text-on-accent`}><span className="truncate">{to < 0 ? "See the cart" : `Next: ${cap(items[to].item)}`}</span><Icon name="right" className="size-4 shrink-0" strokeWidth={2.4} /></button>
+            : s?.state === "failed"
+              ? <>
+                <button type="button" onClick={() => { onGot(it.id); if (!last) move(index + 1); }} className={`glass-tint ${pill} flex-1 text-on-accent`}>Got it</button>
+                <button type="button" onClick={() => move(index + 1)} className={`glass ${pill} flex-1 text-accent`}>Skip</button>
+              </>
+              : <button type="button" onClick={() => move(index + 1)} className={`glass ${pill} flex-1 text-accent`}>Skip</button>}
+        </div>
       </div>
     </div>
   );

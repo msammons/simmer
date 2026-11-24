@@ -411,6 +411,43 @@ describe("placing the order (phase 3, Nov 14)", () => {
     expect(await ready()).toMatchObject({ canOrder: true, orderWhy: "" });
   });
 
+  it("asks for a test run only while this checkout's fingerprint hasn't passed one (Sam, Nov 24)", async () => {
+    expect((await ready()).needsTest).toBe(true); // the switch off doesn't hide it: the fingerprint can pass first
+    process.env.CHECKOUT_ENABLED = "on";
+    expect(await ready()).toMatchObject({ canOrder: false, needsTest: true });
+    await passTestRun();
+    expect(await ready()).toMatchObject({ canOrder: true, needsTest: false });
+    delete process.env.CHECKOUT_ENABLED;
+    expect(await ready()).toMatchObject({ canOrder: false, needsTest: false });
+  });
+
+  it("after a test run passes, reads Safeway again with the same time and bags, a new reading of its own, ready to place", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    const first = await ready();
+    const a = await approve(req(), await faceId());
+    if (!a.ok) throw new Error(a.reasons.join(" "));
+    expect(await testRun(a.approvalId)).toMatchObject({ ok: true });
+    // No new listing of times: the same window, picked again at once.
+    const again = (await prepare(undefined, FRI6.id, undefined, true)) as ReadyView;
+    expect(vi.mocked(queueJob)).toHaveBeenLastCalledWith("checkoutPrepare", { windowId: FRI6.id, bagsOwn: true });
+    expect(again).toMatchObject({ canOrder: true, needsTest: false, stops: [], window: first.window, totalCents: first.totalCents, timeGone: false });
+    expect(again.preparedId).toBeTruthy();
+    expect(again.preparedId).not.toBe(first.preparedId);
+    // The first reading was used by the test run's approval: it can't be approved again.
+    expect(await approve(req(), await faceId(), first.preparedId)).toMatchObject({ ok: false });
+    // The new one is approved on its own, within its 2 minutes, and places as before.
+    shown = again;
+    const b = await approve(req(), await faceId(), again.preparedId);
+    expect(b).toMatchObject({ ok: true, totalCents: first.totalCents });
+  });
+
+  it("says when the time has gone by the time it reads again", async () => {
+    await passTestRun();
+    does = () => ({ stopped: "pickup time gone", chosen: null, final: null });
+    const again = (await prepare(undefined, FRI6.id)) as ReadyView;
+    expect(again).toMatchObject({ timeGone: true, preparedId: "", stops: ["That pickup time isn't offered any more. Pick another time."] });
+  });
+
   it("refuses with the switch off, and asks nothing of the helper", async () => {
     const id = await approved();
     const asked = vi.mocked(queueJob).mock.calls.length;
