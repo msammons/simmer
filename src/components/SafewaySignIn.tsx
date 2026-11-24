@@ -46,7 +46,7 @@ export function SafewaySignInSettings() {
         </div>
       ) : (
         <Group header="Safeway sign-in">
-          <Row title="Google account" value={account === null ? "" : account || "Off"} accessory="chevron" onClick={account === null ? undefined : open} disabled={account === null} />
+          <Row icon="link" title="Google account" value={account === null ? "" : account || "Off"} accessory="chevron" onClick={account === null ? undefined : open} disabled={account === null} />
         </Group>
       )}
       <Alert open={Boolean(problem)} title="Safeway sign-in" message={problem} onClose={() => setProblem("")} />
