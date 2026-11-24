@@ -8,6 +8,12 @@ order Face ID approved, once, when the page says exactly what was approved.
 
 ## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push; since 26.11.12 checkout)
 
+- **Pickup tried whenever Safeway sends the cart home; the redirect seen at once (26.11.24.1).** Nov 24: Sam signed in
+  again, Safeway had forgotten Pickup, its note didn't say "customer", and the helper said signed out, after about 40 s,
+  because each look sat out a watch's whole limit while Safeway had already redirected. Now a page that has already
+  landed on Safeway's home or sign-in page counts as sent away without watching, and sent away twice with the
+  household's store known, the helper tries Pickup first, whatever the note says. Signed out for real, the cart still
+  goes home after it and that's said as before.
 - **Jobs.** Simmer queues a job (`/api/safeway/jobs`): `search` (a search's products with picture, name, price and
   whether each is in the cart), `setQty` (press Add / + / − on a product until the cart holds that many; 0 takes it
   out), `cart` (1.2: show Safeway's cart page in the Safeway tab, and read it), and `sample` / `snapshot` (a short
@@ -150,7 +156,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.1.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

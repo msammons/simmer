@@ -122,12 +122,18 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
     step(page.onlyInCart ? "cart" : "search");
     await go(tabId, url);
     step("wait");
-    const r = await waitForProducts(tabId, url, page, settings, tries);
-    const away = r ? r.away === true : await sentAway(tabId, url);
+    // Already sent to Safeway's home or sign-in page by the time the load finished (Nov 24: its cart redirects before
+    // any watch can start, and the watch then sat out its whole limit, about 20 s each time): away, without watching.
+    const landed = await landedAway(tabId, url);
+    const r = landed ? null : await waitForProducts(tabId, url, page, settings, tries);
+    const away = landed || (r ? r.away === true : await sentAway(tabId, url));
     if (away && i === 0) continue;
     if (away) {
       const s = r && "session" in r ? r.session : await onPage(tabId, "session", null, page);
-      if (!switched && noPickup(s, page) && page.store) { switched = true; if (await choosePickup(tabId, page)) { i = -1; continue; } }
+      // Sent away twice with the household's store known: Pickup is tried first, whatever Safeway's note says (Nov 24:
+      // signed in with Pickup forgotten, the note didn't say "customer", and the helper said signed out). Signed out
+      // for real, the cart still sends the tab away after it, and that's said as before.
+      if (!switched && page.store) { switched = true; if (await choosePickup(tabId, page)) { i = -1; continue; } }
       return { ...(r ?? { cartCount: null, tiles: {}, noResults: false, loading: false }), products: [], signedIn: false, away: true, ...(noPickup(s, page) && { noPickup: true }) };
     }
     if (r || !(await movedOff(tabId, url))) return r;
@@ -145,11 +151,12 @@ async function choosePickup(tabId, page) {
   let at = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
   if (!at.startsWith(`${page.site}/`) || new URL(at).pathname !== "/") { await go(tabId, `${page.site}/`); at = `${page.site}/`; }
   const r = await onPage(tabId, "choosePickup", { store: page.store }, page);
+  // Nothing pressed (no box, store not listed, already Selected…): no switch.
   if (r && r.done === false) return false;
-  // Safeway's note can already say pickup (the box closed in place); otherwise the page is reloading: read it once loaded.
-  let s = r?.mode !== undefined && r.closed ? { mode: r.mode } : null;
-  if (!s || !same(s.mode, page.session?.pickup)) { await loaded(tabId); s = await onPage(tabId, "session", null, page); }
-  return Boolean(s && page.session && same(s.mode, page.session.pickup));
+  // Select was pressed, or the page reloaded under it: the page is opened again, and Safeway's answer there decides
+  // (the note isn't always written for a choice made this way, Nov 24).
+  await loaded(tabId);
+  return true;
 }
 /** Waits until the tab has finished loading (Chrome's own event; at most 10 s). */
 function loaded(tabId) {
@@ -161,6 +168,14 @@ function loaded(tabId) {
     t = setTimeout(done, 10_000);
     chrome.tabs.get(tabId).then((tab) => { if (tab?.status === "complete") done(); }, done);
   });
+}
+
+/** Whether the tab, its load finished, is on Safeway's home or sign-in page instead of `url`. */
+async function landedAway(tabId, url) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab?.url || tab.status !== "complete") return false;
+  const [a, b] = [new URL(tab.url), new URL(url)];
+  return a.origin === b.origin && a.pathname !== b.pathname && AWAY.includes(a.pathname);
 }
 
 /** Whether the tab is now on another page than `url` (by its address without the part after #). */

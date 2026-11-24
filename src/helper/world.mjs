@@ -407,7 +407,8 @@ function withBox(shop, page) {
     for (const a of doc.querySelectorAll("#fulfilmentPickup a[data-street]")) a.onclick = () => {
       press(shop, `select ${a.dataset.street}`);
       if (b.noTake) return;
-      t.after(400, () => { b.selected = a.dataset.street; b.mode = "Dug"; shop.cartGone = false; current.note({ userType: "C", preference: "Dug" }); box.style.display = "none"; });
+      // Signed out for real (`shop.sessionGone`), Safeway takes the choice for a guest, and its cart still sends the tab home.
+      t.after(400, () => { b.selected = a.dataset.street; b.mode = "Dug"; if (!shop.sessionGone) { shop.cartGone = false; if (!b.quietNote) current.note({ userType: "C", preference: "Dug" }); } box.style.display = "none"; });
     };
   } };
 }
