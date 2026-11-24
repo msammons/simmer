@@ -653,14 +653,16 @@ const began = Date.now();
             const ok = fav.right <= menu.left + 0.5 && menu.left - fav.right <= 12 && Math.abs(mid(fav) - mid(menu)) <= 1.5 && Math.abs(mid(fav) - mid(co)) <= 1.5
               && price.right <= fav.left - 4 && box(st).right <= fav.left + 0.5 && fav.height <= 40 && co.height <= 40 && document.documentElement.scrollWidth <= innerWidth;
             st.textContent = st.dataset.was;
-            return ok;
+            return ok || JSON.stringify({ co: [co.left, co.right, mid(co)], price: [price.left, price.right], fav: [fav.left, fav.right, mid(fav), fav.height], menu: [menu.left, mid(menu)], sw: document.documentElement.scrollWidth, w: innerWidth });
           });
           return r;
         };
-        ok("shop: Add favorites sits just left of the ⋯, centred with it and Check out, the line whole at 390 wide", await lineFits());
+        const fits390 = await lineFits();
+        ok("shop: Add favorites sits just left of the ⋯, centred with it and Check out, the line whole at 390 wide", fits390 === true, fits390);
         const vp = page.viewportSize();
         await page.setViewportSize({ width: 375, height: 667 }); await frames();
-        ok("shop: and at 375 wide", await lineFits());
+        const fits375 = await lineFits();
+        ok("shop: and at 375 wide", fits375 === true, fits375);
         await page.setViewportSize(vp); await frames();
       }
       // Check out (Nov 14): the order only; set-up is in Settings, and until it's done Check out says so in one line.

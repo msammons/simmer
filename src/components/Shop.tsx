@@ -119,8 +119,9 @@ function TopLine({ cart, menu, add }: { cart: CartButton | null; menu: React.Rea
             <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={`Check out. ${cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}`}
               className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}Check out</button>
           )}
-          {cart.state === "ready" && cart.price && <span className="shrink-0 t-sub text-muted">{cart.price}</span>}
-          <span data-cart-status aria-hidden="true" className="min-w-0 truncate t-foot text-muted empty:hidden">{status}</span>
+          {/* Short of room, the status words give way first (shrinking far faster), and only then would the price be cut. */}
+          {cart.state === "ready" && cart.price && <span className="min-w-0 shrink truncate t-sub text-muted">{cart.price}</span>}
+          <span data-cart-status aria-hidden="true" className="min-w-0 shrink-[1000] truncate t-foot text-muted empty:hidden">{status}</span>
         </span>
       )}
       {/* Add favorites sits just left of the ⋯ (Sam, Nov 24): the buttons never shrink; the status words give way first. */}
