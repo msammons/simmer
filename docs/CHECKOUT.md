@@ -20,8 +20,8 @@ Signing in through Google (helper 26.11.24.2; Sam, Nov 24, asked directly about 
 When a search, cart read or Add finds Safeway signed out, the helper signs Sam in once per job: on Safeway's sign-in
 page, its one "Sign in with Google" (its one Sign In first, only if that box isn't showing); Safeway's own page then
 takes the tab to its sign-in service and on to Google in the same tab; on accounts.google.com, the one account in
-"Choose an account" whose address is exactly the one Simmer sends (kept only in Vercel, SAFEWAY_GOOGLE; none set, never
-tried). Each press only when exactly one fits. It never types, reads or keeps a password or code. Google asking for
+"Choose an account" whose address is exactly the one Simmer sends (set in Settings → Safeway sign-in, Sam, Nov 24: "i
+want the email to be set in settings"; never saved there, the address in Vercel, SAFEWAY_GOOGLE; empty, never tried). Each press only when exactly one fits. It never types, reads or keeps a password or code. Google asking for
 anything more (a password, a code, anything typed, a consent screen, a check that it's a person) or that account not
 listed exactly once: nothing pressed there, and the tab waits on Safeway's sign-in page as before ("Signed out"). Never
 in getting ready, test runs or placing: those stop "signed out" as before. Version 1 signs in as Sam only.

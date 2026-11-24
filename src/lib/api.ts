@@ -92,6 +92,9 @@ export const api = {
   /** Settings → Copy to Google Sheet: answers how many tabs were copied. */
   exportSheet: () => call<{ tabs: number }>("/api/export", { method: "POST" }),
   /** Ordering from Simmer (docs/CHECKOUT.md): its settings, and whether the server allows it at all. */
+  /** The Google account the helper signs in to Safeway with ("" for none; src/lib/safeway-signin.ts). */
+  safewaySignIn: (signal?: AbortSignal) => call<{ account: string }>("/api/safeway/signin", { signal }),
+  setSafewaySignIn: (account: string) => call<{ account: string }>("/api/safeway/signin", { method: "POST", body: JSON.stringify({ account }) }),
   checkout: (signal?: AbortSignal) => call<{ settings: CheckoutSettings; server: boolean; faceId: number; adding: { code: string } | null }>("/api/checkout", { signal }),
   /** Face ID for ordering (src/lib/passkeys.ts): start setting it up or a check, then send the phone's answer. */
   // With a phone already set up, setting up needs the token of a request another phone approved (Nov 12).

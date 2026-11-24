@@ -2,9 +2,10 @@
 import { THEMES, type Theme } from "@/lib/client";
 import { Group, Row, Sheet } from "./ui";
 import { OrderingSettings } from "./Ordering";
+import { SafewaySignInSettings } from "./SafewaySignIn";
 
 /**
- * Settings: the look, ordering, and the release. The copy to the Google Sheet left Settings (Sam, Nov 17); the export
+ * Settings: the look, ordering, Safeway sign-in, and the release. The copy to the Google Sheet left Settings (Sam, Nov 17); the export
  * still runs from the server when asked (`/api/export`).
  */
 export function SettingsSheet({ theme, onTheme, onClose }: {
@@ -27,6 +28,7 @@ export function SettingsSheet({ theme, onTheme, onClose }: {
           ))}
         </Group>
         <OrderingSettings />
+        <SafewaySignInSettings />
         {/* The release, as YY.M.D (Nov 11: the last line of Settings in every Morales app). */}
         <p className="px-4 text-center t-foot text-muted">{process.env.NEXT_PUBLIC_VERSION}</p>
       </div>
