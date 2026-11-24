@@ -214,15 +214,21 @@ const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(os.tmpd
 });
 let signedIn = true;
 let sessionGone = false; // Safeway's session expired: its sign-in page stays (signed in, it sends the tab home)
+// Safeway's sign-in ran out as on Nov 23: its cart address sends the tab to its home page, which shows the name it
+// remembers and no Sign In (its Sign In link and Session Expired box are there, hidden).
+let cartGone = false;
 await ctx.route("https://www.safeway.com/**", async (route) => {
   const u = new URL(route.request().url());
   if (u.pathname.startsWith("/img/")) return route.fulfill({ contentType: "image/png", body: PNG });
   if (chaos.slow && (u.pathname.startsWith("/shop/search-results") || u.pathname === "/erums/cart")) await new Promise((r) => setTimeout(r, chaos.slow));
   if (u.pathname.startsWith("/shop/search-results")) return route.fulfill({ contentType: "text/html", body: searchPage(u.searchParams.get("q") ?? "", signedIn) });
+  if (u.pathname === "/erums/cart" && cartGone) return route.fulfill({ contentType: "text/html", body: '<html><body><p>Loading…</p><script>setTimeout(() => location.replace("/"), 150)</script></body></html>' });
   if (u.pathname === "/erums/cart") return route.fulfill({ contentType: "text/html", body: cartPage(signedIn) });
   if (u.pathname === "/order-account/orders") return route.fulfill({ contentType: "text/html", body: ordersPage(signedIn) });
   // As Safeway's (seen Nov 23): signed in, its sign-in page sends the tab on to its home page by itself.
   if (u.pathname === "/account/sign-in.html") return route.fulfill({ contentType: "text/html", body: `<html><body><h1>Sign in</h1><input id="user"><button>Sign in</button>${signedIn && !sessionGone ? '<script>setTimeout(() => location.replace("/"), 300)</script>' : ""}</body></html>` });
+  if (cartGone) return route.fulfill({ contentType: "text/html", body: `<html><body><div class="menu-nav"><a href="/erums/cart" aria-label="Cart">Cart</a> <button aria-label="Account menu">Hi, Sam</button><div class="menu" style="display:none"><a href="/account/sign-in.html">Sign In</a> <a href="/account/short-registration.html">Create Account</a></div></div><h1>Safeway</h1>
+    <div id="sessionTimeoutModal" class="modal fade" role="dialog" style="display:none"><div class="modal-dialog"><h4>Session Expired</h4><p>Your session is expired. Please sign in to continue.</p><button>Sign In</button></div></div></body></html>` });
   return route.fulfill({ contentType: "text/html", body: `<html><body><div class="menu-nav">${signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</div><h1>Safeway</h1></body></html>` });
 });
 // The helper's Simmer address goes to the local Simmer (pages, the frame in the panel, and the background's calls).
@@ -509,6 +515,28 @@ dropReports = false;
 let kept = null;
 await until(async () => { kept = (await api(`/api/safeway/jobs?id=${keptId}`)).job; return kept?.status === "done" || kept?.status === "failed"; }, 60_000);
 expect(kept?.status === "done" && kept.result?.reached === true && await safewayQty("960120") === 1 && await presses("960120") === 1, `a report kept when Simmer couldn't be reached is sent once the helper starts again, and the Add isn't made twice (${say(kept)}, presses ${await presses("960120")})`);
+
+// Safeway's sign-in ran out (Nov 23, helper 26.11.23.2 said "didn't load" after 47 s, twice): the cart address sends the
+// tab to the home page, which shows the name and no Sign In. A cart read says signed out, promptly, and the tab waits
+// on the sign-in page; the next cart read looks once more and says so again; signed in again, the next one works.
+for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
+cartGone = true;
+sessionGone = true;
+let t3 = Date.now();
+cj = await run({ kind: "cart" });
+let took = Math.round((Date.now() - t3) / 1000);
+expect(cj?.status === "done" && cj.result?.signedIn === false && !cj.result.empty && !(cj.result.products ?? []).length && await until(onSignIn, 15_000) && took < 30,
+  `the cart address sent to Safeway's home page while signed out: signed out in ${took} s, not "didn't load", and the tab waits on the sign-in page (${say(cj)})`);
+expect((await api("/api/safeway/cart")).signedOut === true, "…and Simmer says Safeway isn't signed in");
+t3 = Date.now();
+cj = await run({ kind: "cart" });
+took = Math.round((Date.now() - t3) / 1000);
+expect(cj?.status === "done" && cj.result?.signedIn === false && took < 30 && await until(onSignIn, 15_000), `…the next cart read looks once more and says signed out again in ${took} s (${say(cj)})`);
+cartGone = false;
+sessionGone = false;
+for (const p of ctx.pages()) if (p.url().includes("/account/sign-in")) await p.goto("https://www.safeway.com/");
+cj = await run({ kind: "cart" });
+expect(cj?.status === "done" && cj.result?.signedIn === true && !onSignIn(), `…signed in again, the next cart read works (${say(cj)})`);
 
 // Really signed out: Sign In stays, so it is; the tab waits on the sign-in page; signing in, the next search works.
 signedIn = false;

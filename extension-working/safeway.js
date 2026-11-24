@@ -96,10 +96,16 @@ async function onPage(tabId, action, arg, page) {
  */
 async function open(tabId, url, page, settings, tries = settings.resultsTries ?? 25) {
   // Safeway can take the tab somewhere else while its page builds (to its home page, say): then it's opened once more.
-  // Reads only, so opening again changes nothing on Safeway.
+  // Reads only, so opening again changes nothing on Safeway. Sent to its home page or its sign-in page both times is
+  // signed out (Nov 23: with the session over, Safeway sends its cart address to its home page every time, and that
+  // page shows the name it remembers and no Sign In; 26.11.23.2 watched it for products, opened it again, and said
+  // "didn't load").
   for (let i = 0; i < 2; i++) {
     await go(tabId, url);
-    const r = await waitForProducts(tabId, page, settings, tries);
+    const r = await waitForProducts(tabId, url, page, settings, tries);
+    const away = r ? r.away === true : await sentAway(tabId, url);
+    if (away && i === 0) continue;
+    if (away) return { ...(r ?? { cartCount: null, tiles: {}, noResults: false, loading: false }), products: [], signedIn: false, away: true };
     if (r || !(await movedOff(tabId, url))) return r;
   }
   return null;
@@ -111,6 +117,15 @@ async function movedOff(tabId, url) {
   const [a, b] = [new URL(tab.url), new URL(url)];
   return a.origin + a.pathname + a.search !== b.origin + b.pathname + b.search;
 }
+/** Safeway's home page and its sign-in page: where it sends a page it won't show signed out. */
+const AWAY = ["/", "/home.html", new URL(SIGN_IN).pathname];
+/** Whether the tab is now on Safeway's home page or its sign-in page instead of `url`. */
+async function sentAway(tabId, url) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab?.url?.startsWith(`${SAFEWAY}/`)) return false;
+  const at = new URL(tab.url).pathname;
+  return at !== new URL(url).pathname && AWAY.includes(at);
+}
 /**
  * Watches the page for its products (Nov 19: it read the page again every 800 ms), up to `tries` × `resultsWait`. On the
  * cart page only what's in the cart counts: an empty cart lists past purchases, each with Add, under "Your shopping cart
@@ -121,14 +136,16 @@ async function movedOff(tabId, url) {
  * (signed out). A page that never got there (it never finished building, or kept changing pages) is null, "didn't load",
  * never an empty search, an empty cart or a sign-out read in passing.
  */
-async function waitForProducts(tabId, page, settings, tries = settings.resultsTries ?? 25) {
+async function waitForProducts(tabId, url, page, settings, tries = settings.resultsTries ?? 25) {
   // The cart page watched 10 s at least (Nov 19, review: placing's cart read could give up early and stop "cart changed").
   const ms = Math.max(tries * (settings.resultsWait ?? 800), page.onlyInCart ? 10_000 : 0);
   const outHold = settings.signedOutHold ?? 8000;
-  const watch = () => onPage(tabId, "waitFor", { until: "products", onlyInCart: Boolean(page.onlyInCart), hold: settings.noResultsHold ?? 4000, outHold, ms: Math.max(ms, outHold + 2000) }, page);
+  const watch = () => onPage(tabId, "waitFor", { until: "products", onlyInCart: Boolean(page.onlyInCart), hold: settings.noResultsHold ?? 4000, outHold, path: new URL(url).pathname, away: AWAY, ms: Math.max(ms, outHold + 2000) }, page);
   // No answer: the page moved on under the watch (Nov 19, review), so it's watched once more on the page it moved to.
   const w = (await watch()) ?? (await watch());
   if (!w?.page) return null;
+  // On Safeway's home page or sign-in page instead: none of its products are the page's (open() judges it).
+  if (w.away) return { ...w.page, products: [], away: true };
   return w.held ? { ...w.page, held: true } : w.page;
 }
 const searchUrl = (query, page) => `${page.site}${page.searchPath}${encodeURIComponent(query)}`;
@@ -145,7 +162,7 @@ async function searchHere(tabId, query, page, settings) {
   const at = tab?.url ? new URL(tab.url) : null;
   const key = [...want.searchParams.keys()][0] ?? "q";
   if (!at || at.origin !== want.origin || at.pathname !== want.pathname || !sameWords(at.searchParams.get(key), query)) return search(tabId, query, page, settings);
-  const r = await waitForProducts(tabId, page, settings, 3);
+  const r = await waitForProducts(tabId, want.href, page, settings, 3);
   return r && r.products.length ? r : search(tabId, query, page, settings);
 }
 // not-checkout:end
@@ -158,7 +175,7 @@ async function cartHere(tabId, page, settings) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab?.url || new URL(tab.url).pathname !== page.cartPath) return openCart(tabId, page, settings);
   // Watched where it stands, without a reload, long enough that an empty cart is Safeway saying so (not a page still building).
-  const r = await waitForProducts(tabId, cartPage(page), settings, settings.cartTries ?? 8);
+  const r = await waitForProducts(tabId, tab.url, cartPage(page), settings, settings.cartTries ?? 8);
   return r && (r.products.some((p) => p.inCart) || r.held) ? r : openCart(tabId, page, settings);
 }
 
