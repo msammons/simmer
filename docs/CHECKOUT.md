@@ -35,14 +35,17 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
 ## The flow
 
 1. Shop → **Check out**, on the line above the list (it opens only with something in the Safeway cart: greyed with an
-   empty cart, while a cart change is on its way or the cart is being read; "Signed out" when Safeway was last seen
-   signed out, "Choose Pickup on Safeway" when it was signed in with Pickup not chosen (Nov 23), and "Not connected"
-   when the computer isn't answering, all greyed, a press looking again: "Looking…" while it reads, and "Still signed
-   out" and the like when it ends the same). Until ordering is
+   empty cart, while a cart change is on its way or the cart is being read; greyed too when Safeway was last seen
+   signed out, when it was signed in with Pickup not chosen (Nov 23), and when the computer isn't answering, a press
+   looking again). The button always reads "Check out" (Sam, Nov 24): its state shows by colour only, and the words
+   ("Signed out", "Choose Pickup on Safeway", "Not connected", "Looking…" while it reads, "Still signed out" and the
+   like when it ends the same, the helper's step while the cart is read) are a small status line beside the cart's
+   price, in place, so the line never moves. Until ordering is
    set up and on in Settings → Ordering, the sheet says so and offers nothing else.
 2. A sheet: what Simmer knows at once (how many things in the cart and Simmer's estimate), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a
-   day first": reading every day was slow); tapping another day has the helper press that one tile and read it. Only
+   day first": reading every day was slow), read as the sheet opens (Sam, Nov 24: "skip get ready button": there's no
+   Get ready button, and the sheet carries no explanatory lines); tapping another day has the helper press that one tile and read it. Only
    free times, plus Flash shown with its price (Sam, Nov 16: "offer flash but show it", his yes to this change); never
    another paid time; the helper chooses none. Free Express times count as well as Regular (Sam,
    Nov 14: "why would i not use express times?"; today's first three were Express, and the Regular-only rule hid them).
@@ -56,7 +59,10 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    ones picked, the test run if they changed, and Place Order isn't pressed unless the switch is as approved.
    Each day shows five times and a "More times" button; the helper may press it (Nov 14, to match the site): only on the
    checkout page, only a button reading exactly "More times", only one, once per day read. It shows more times only. With one picked, what
-   the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Getting ready takes
+   the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Tapping a time is
+   getting ready: the reading starts at once, its steps said in place, and lands on Place order · $X / Test run.
+   Changing the bags while a reading shows gets ready again with the same time (Pick another time goes back to the
+   times); every reading has its own id, and Face ID approves only the one showing. Getting ready takes
    only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
 3. **Place order · $128.40** → the confirm sheet (store, time, card, bags, total; unusual items highlighted) → Face ID
    approves exactly the reading shown → the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's

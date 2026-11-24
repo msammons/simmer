@@ -593,9 +593,11 @@ const began = Date.now();
         });
         await checkOut.tap();
         const sheet = page.getByRole("dialog", { name: "Check out" });
-        await sheet.getByRole("button", { name: /^Get ready/ }).tap();
+        // No Get ready button (Sam, Nov 24: "skip get ready button"): opening the sheet reads the pickup times at once.
+        ok("checkout: no Get ready button, and no explanatory lines", (await sheet.getByRole("button", { name: /^Get ready/ }).count()) === 0
+          && (await sheet.getByText(/stops one step short|Nothing is ordered|Remembered once you approve/).count()) === 0);
         const words = sheet.getByText("Reading pickup times…", { exact: true });
-        ok("checkout: getting ready says each step in place (Opening your Safeway cart…, then Reading pickup times…)", await seen(sheet.getByText("Opening your Safeway cart…", { exact: true }), 2000)
+        ok("checkout: opening it reads the times, saying each step in place (Opening your Safeway cart…, then Reading pickup times…)", await seen(sheet.getByText("Opening your Safeway cart…", { exact: true }), 2000)
           && await seen(words, 2000) && (await sheet.getByRole("status", { name: "Reading pickup times…" }).count()) === 1);
         ok("checkout: the step's words sit in the reading's heading, inside it", await words.evaluate((el) => Boolean(el.closest("[role=status]")) && el.getBoundingClientRect().height <= 21));
         ok("checkout: and the times replace them once read", await seen(sheet.getByRole("radio", { name: "Tue, Nov 24" }), 4000));
@@ -673,23 +675,27 @@ const began = Date.now();
       await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
       ok("shop: with Safeway out of reach, its rows are a plain checklist", (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway|One more .*)$/ }).count()) === 0 && (await swGroup.locator("h2 + *").count()) === 0 && (await tick("Milk").count()) === 1);
-      // Not answering (Sam, Nov 23): the button says Not connected, greyed but pressable, never Check out or the price.
-      const awayButton = page.getByRole("button", { name: /^Safeway not connected/ });
-      ok("shop: with Safeway out of reach, the button says Not connected", (await awayButton.count()) === 1 && (await awayButton.innerText()).trim() === "Not connected"
-        && !(await awayButton.isDisabled()) && (await page.getByRole("button", { name: "Check out" }).count()) === 0);
+      // Not answering (Sam, Nov 23): greyed but pressable, no price. The button always reads Check out (Sam, Nov 24); "Not
+      // connected" is the small status line beside it, in place, no taller than the button.
+      const cartStatus = page.locator("[data-cart-status]");
+      const awayButton = page.getByRole("button", { name: /^Check out\. Safeway not connected/ });
+      ok("shop: with Safeway out of reach, the button still reads Check out, greyed but pressable, and the status line says Not connected", (await awayButton.count()) === 1 && (await awayButton.innerText()).trim() === "Check out"
+        && !(await awayButton.isDisabled()) && (await cartStatus.innerText()).trim() === "Not connected"
+        && (await cartStatus.boundingBox()).height <= (await awayButton.boundingBox()).height);
       await page.screenshot({ path: `${dir}/5c-shop-away.png`, fullPage: true });
       // Answering again: tapping Not connected looks again, and Check out comes back.
       awayFake.back();
       await awayButton.tap(); await idle();
-      ok("shop: tapping Not connected looks again and Check out comes back", await until(async () => (await awayButton.count()) === 0 && (await page.getByRole("button", { name: "Check out" }).count()) === 1, 3000));
+      ok("shop: tapping it looks again and Check out comes back, the status line empty", await until(async () => (await awayButton.count()) === 0 && (await page.getByRole("button", { name: "Check out", exact: true }).count()) === 1 && (await cartStatus.innerText()).trim() === "", 3000));
       await awayFake.stop();
       // Safeway signed out on the computer (Nov 16): the cart is greyed, says so, and shows nothing that's in it.
       const outFake = await fakeSafeway({ signedOut: true });
       await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
       await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
-      const signedOutButton = page.getByRole("button", { name: /^Signed out/ });
-      ok("shop: with Safeway signed out, the cart is greyed and empty", (await signedOutButton.count()) === 1
-        && (await page.getByRole("button", { name: "Check out" }).count()) === 0
+      const signedOutButton = page.getByRole("button", { name: /^Check out\. Signed out/ });
+      ok("shop: with Safeway signed out, the cart is greyed and empty, Check out's words unchanged and Signed out in the status line", (await signedOutButton.count()) === 1
+        && (await signedOutButton.innerText()).trim() === "Check out" && (await cartStatus.innerText()).trim() === "Signed out"
+        && (await page.getByRole("button", { name: "Check out", exact: true }).count()) === 0
         && (await page.getByText(/Sparkling Water/).count()) === 0
         && (await page.getByRole("button", { name: /^(Add .* to the cart|Find .* at Safeway)$/ }).count()) === 0
         && (await page.getByRole("button", { name: /Ordered\?/ }).count()) === 0);

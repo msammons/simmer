@@ -103,7 +103,7 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 6.15 | Order placed on Safeway, then Shop | The cart's rows come off Safeway's list by themselves and the trip is recorded | R |
 | 6.16 | Mark the Safeway cart bought | Asks "Mark the cart bought?"; the cart and what it was for come off at once | R |
 | 6.17 | Helper not running (two minutes or more) | "Can't reach Safeway right now. Check things off in the store instead."; Safeway rows are a plain checklist (no +, Find or −); back once it checks in | L |
-| 6.18 | Safeway signed out on the computer | The cart greyed, no price, a "Signed out" button that can't be pressed; rows are a checklist; coming back after signing in reads the cart again | R |
+| 6.18 | Safeway signed out on the computer | The cart greyed, no price, Check out greyed (its words never change) with "Signed out" in the small status line beside it; pressing it looks again ("Looking…" there); rows are a checklist; coming back after signing in reads the cart again | R |
 | 6.19 | Find from the phone with Chrome idle | The search starts within a couple of seconds (a push wakes the helper) | R |
 
 ## 7. Ordering and Check out
@@ -117,7 +117,7 @@ Never press Place order for real. Everything here is **R**.
 | 7.3 | Face ID, a second phone | "Add this phone?"; the row says "Waiting for approval" with a code; reload: it's still there; tapping too soon says "Not approved yet" instead of failing; the other phone shows "Approve a new phone" with the same code and Face ID approves it; then "Set up Face ID now" | R |
 | 7.4 | Check out after an approval made on another phone | "Set up Face ID on this phone" is offered | R |
 | 7.5 | Shop → Check out (with something in the cart) | A sheet: Cart (how many things, the estimate); with ordering not set up, one plain line pointing to Settings → Ordering; the button is greyed while the cart is changing | R |
-| 7.6 | Get ready | Safeway's pickup days, one tapped shows its free times (Flash is marked and priced); Bags: Bring my own or Safeway's bags; a time tapped reads Safeway's checkout: store, time, bags, card, items, total | R |
+| 7.6 | Open Check out (set up) | Safeway's pickup days are read at once, no Get ready button and no explanatory lines; one tapped shows its free times (Flash is marked and priced); Bags: Bring my own or Safeway's bags; a time tapped reads Safeway's checkout at once (changing the bags reads it again): store, time, bags, card, items, total | R |
 | 7.7 | Test run · $X | Face ID, then goes through Safeway's checkout and stops one press short: "Would place $X · day time"; nothing is ordered | R |
 | 7.8 | Place order · $X | Shown only when the server allows it and the helper's checkout fingerprint has passed a test run, the helper counting only if it's the one Simmer ships; otherwise a plain line says why ("Do a test run first…", "The helper on the computer needs updating first.") | R |
 | 7.9 | Change only a search or cart part of the helper | No new test run is needed; changing anything checkout runs makes Place order go away until a test run passes (docs/CHECKOUT.md) | R |

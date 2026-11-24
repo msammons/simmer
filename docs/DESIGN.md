@@ -136,7 +136,7 @@ Nov 17 with a small test household; the budget is where it should get to.
 | Taps to plan a week of dinners | 14 | 14 |
 | Taps per thing when checking the house | 1 | 1 |
 | Taps to put the usuals in the Safeway cart | 1 | 1 (Add usuals) |
-| Taps to place a Safeway order, after Get ready | 3 + Face ID | not remeasured since the pickup day and time were picked in Simmer and Place order asked first (Nov 14-16) |
+| Taps to place a Safeway order, from Check out (no Get ready since Nov 24) | 3 + Face ID | not remeasured since the pickup day and time were picked in Simmer and Place order asked first (Nov 14-16) |
 | Controls on Meals' first screen | 1 per day + 1 per meal + top bar | An Add meal row ending every day (Sam, Nov 18) |
 | Controls on List's first screen | 25 | 37 |
 | Controls on Shop's first screen | 20 | 13 (test data) |

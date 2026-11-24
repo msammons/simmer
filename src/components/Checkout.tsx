@@ -3,8 +3,9 @@
 // order: Face ID and the limit per order, then Turn on ordering (asking first); the pickup store and card come from
 // Safeway and are remembered at the first approval (Sam, Nov 14).
 // Once set up: the cart and Simmer's estimate (as Shop's Safeway heading shows them), ordering's switch, limit, store
-// and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): Get ready lists Safeway's free pickup times this week, one
-// is picked (Sam, Nov 14) and Safeway's checkout read with it, then "Test run · $X" approves those figures with Face ID and goes through Safeway's
+// and card, and a test run (docs/CHECKOUT.md phase 2, Nov 13): opening the sheet reads Safeway's pickup days and free
+// times at once (Sam, Nov 24: "skip get ready button"), a time picked (with the bags) gets ready with it, reading
+// Safeway's checkout, and changing the bags reads it again; then "Test run · $X" approves those figures with Face ID and goes through Safeway's
 // checkout again, stopping one press short, and says what it would have placed. Place order (phase 3) asks first, then
 // Face ID approves exactly the reading shown (its preparedId, Nov 19), and the helper places it once.
 import { useContext, useEffect, useRef, useState } from "react";
@@ -57,18 +58,26 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
  */
 function TestRun({ onClose }: { onClose: () => void }) {
   const startPlan = useContext(StartPlan);
-  const [run, setRun] = useState<Run>({ stage: "idle" });
+  const [run, setRun] = useState<Run>({ stage: "reading" });
   const [problem, setProblem] = useState<string | null>(null);
   const check = usePrepared<PublicKeyCredentialRequestOptionsJSON>();
   const stop = useRef<AbortController | null>(null);
   const busy = useRef(false);
   const offered = useRef<TimesView | null>(null); // the day and times last read, to go back to
+  const pickedId = useRef<string | null>(null); // the time last picked, read again when the bags change
   const [confirming, setConfirming] = useState(false); // Place order's confirm sheet (docs/CHECKOUT.md)
   const [bags, setBagsState] = useState<Bags>(lastBags);
   // The step the helper is at while a step here is going (Nov 23, Sam: "some sort of status message"), said in place.
   const [step, setStep] = useState<string | undefined>(undefined);
   const setBags = (b: Bags) => { setBagsState(b); try { localStorage.setItem(BAGS_KEY, b); } catch { /* kept for this order only */ } };
-  useEffect(() => () => stop.current?.abort(), []);
+  // Opening the sheet reads the pickup times at once (Sam, Nov 24): no Get ready button. Closing it stops following.
+  useEffect(() => {
+    void getTimes();
+    return () => { stop.current?.abort(); stop.current = null; busy.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /** A step's end frees the sheet for the next only if it's still the one going (not one the sheet closing stopped). */
+  const done = (ac: AbortController) => { if (stop.current === ac) busy.current = false; };
 
   /** Ready to approve: Face ID's check is fetched now, so it shows straight from the tap (Safari). */
   function showReady(view: ReadyView) {
@@ -77,8 +86,8 @@ function TestRun({ onClose }: { onClose: () => void }) {
   }
 
   /**
-   * Get ready (Sam, Nov 14: "let me pick", "picking a day first"): Safeway's days and the day showing's free times; a day
-   * tapped reads that day's times (the days stay, the times shimmer while they're read).
+   * The pickup times (Sam, Nov 14: "let me pick", "picking a day first"), read on opening: Safeway's days and the day
+   * showing's free times; a day tapped reads that day's times (the days stay, the times shimmer while they're read).
    */
   async function getTimes(day?: string) {
     if (busy.current) return;
@@ -97,19 +106,20 @@ function TestRun({ onClose }: { onClose: () => void }) {
       setRun(back ? { stage: "times", times: back } : { stage: "idle" });
       setProblem(errorText(e));
     } finally {
-      busy.current = false;
+      done(ac);
     }
   }
 
-  /** A time picked: Safeway's checkout read with it, to approve. */
-  async function pick(windowId: string) {
+  /** A time picked (or the bags changed with one picked): getting ready, Safeway's checkout read with it, to approve. */
+  async function pick(windowId: string, own = bags === "own") {
     if (busy.current) return;
     busy.current = true;
+    pickedId.current = windowId;
     setRun({ stage: "reading" });
     setStep(undefined);
     const ac = (stop.current = new AbortController());
     try {
-      let r = await api.checkoutPrepare(undefined, windowId, ac.signal, bags === "own");
+      let r = await api.checkoutPrepare(undefined, windowId, ac.signal, own);
       while ("waiting" in r) { setStep(r.step); r = await api.checkoutPrepare(r.waiting, undefined, ac.signal, undefined, r.stepAt ?? ""); }
       showReady(r);
     } catch (e) {
@@ -117,7 +127,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       setRun(offered.current ? { stage: "times", times: offered.current } : { stage: "idle" });
       setProblem(errorText(e));
     } finally {
-      busy.current = false;
+      done(ac);
     }
   }
 
@@ -143,7 +153,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       setProblem(errorText(e));
     } finally {
       check.clear();
-      busy.current = false;
+      done(ac);
     }
   }
 
@@ -167,7 +177,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       if (!a.ok) { setRun({ stage: "ordered", view, result: a }); return; }
       // Only what this phone showed (Nov 19): a different total or time approved stops here, and the server checks again.
       if (a.totalCents !== view.totalCents || a.window !== view.window) {
-        setRun({ stage: "ordered", view, result: { ok: false, reasons: ["What Face ID approved isn't what this phone showed. Nothing was ordered. Get ready again."] } });
+        setRun({ stage: "ordered", view, result: { ok: false, reasons: ["What Face ID approved isn't what this phone showed. Nothing was ordered. Pick the time again."] } });
         return;
       }
       const shown = { approvalId: a.approvalId, totalCents: view.totalCents, window: view.window };
@@ -181,33 +191,38 @@ function TestRun({ onClose }: { onClose: () => void }) {
       setProblem(errorText(e));
     } finally {
       check.clear();
-      busy.current = false;
+      done(ac);
     }
   }
 
   const view = run.stage === "ready" || run.stage === "running" || run.stage === "done" || run.stage === "ordering" || run.stage === "ordered" ? run.view : null;
+  /** Bags changed: with a time picked and its reading showing, getting ready again with the new bags (Sam, Nov 24). */
+  function changeBags(b: Bags) {
+    setBags(b);
+    if (run.stage === "ready" && pickedId.current) void pick(pickedId.current, b === "own");
+  }
   return (
     <>
-      {run.stage === "times" && !run.loading && (
+      {((run.stage === "times" && !run.loading) || run.stage === "ready") && (
         <div className="space-y-2">
           <p className="px-4 t-sub font-semibold text-muted">Bags</p>
-          <Segmented label="Bags" value={bags} options={BAGS} onChange={setBags} />
+          <Segmented label="Bags" value={bags} options={BAGS} onChange={changeBags} />
         </div>
       )}
       {run.stage === "reading" ? <Held groups={[5]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} /> : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={stepWords(step, "Reading that day's times…")}
         onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
-      <Group header="Test run" footer="A test run goes through Safeway's checkout for real and stops one step short. Nothing is ordered.">
+      <Group header="Test run">
         {view ? (
           <>
-            <Row icon="home" title="Pickup store" subtitle={view.remember && view.store ? "Remembered once you approve" : undefined} value={view.store ? view.store.split(",")[0] : "Couldn't be read"} />
+            <Row icon="home" title="Pickup store" value={view.store ? view.store.split(",")[0] : "Couldn't be read"} />
             <Row icon="clock" title="Pickup time" value={view.window || "None chosen"} />
             <Row icon="bag" title="Bags" value={bagsWords(view.bagsOwn)} />
-            <Row icon="card" title="Card" subtitle={view.remember && view.card ? "Remembered once you approve" : undefined} value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
+            <Row icon="card" title="Card" value={view.card ? `•••• ${view.card}` : "Couldn't be read"} />
             <Row icon="bag" title="Items" value={view.items === null ? "Couldn't be read" : String(view.items)} />
             {view.feesCents ? <Row icon="bag" title="Taxes and fees" value={cents(view.feesCents)} /> : null}
             <Row icon="cart" title="Total" value={cents(view.totalCents)} />
           </>
-        ) : <Row icon="refresh" title="Get ready" subtitle="Shows Safeway's pickup days and free times." onClick={() => getTimes()} />}
+        ) : <Row icon="refresh" title="Try again" onClick={() => getTimes()} />}
       </Group>
       )}
       {/* What stops ordering stays here. The "Check: …" notes are on Place order's confirm sheet only (Sam, Nov 24: get
@@ -245,7 +260,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
         </div>
       )}
-      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={() => (offered.current && run.stage === "ready" ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes())}>{run.stage === "ready" ? "Pick another time" : "Get ready again"}</Button>}
+      {(run.stage === "ready" || run.stage === "done") && <Button variant="plain" className="w-full" onClick={() => (offered.current && run.stage === "ready" ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes())}>Pick another time</Button>}
       <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
     </>
   );
@@ -253,7 +268,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
 
 /**
  * Pick a day, then a time, as on Safeway's site (Sam, Nov 14): first only the days; a day tapped shows its free times
- * (only free ones; paid Flash times never show), and a time tapped gets ready with it.
+ * (free ones, and Flash marked with its price), and a time tapped gets ready with it.
  */
 function TimesList({ view, picked, loading, words, onDay, onPick }: { view: TimesView; picked: boolean; loading?: string; words: string; onDay: (key: string) => void; onPick: (id: string) => void }) {
   const chosen = picked || loading ? (loading ?? view.day) : "";
@@ -269,8 +284,8 @@ function TimesList({ view, picked, loading, words, onDay, onPick }: { view: Time
       </Group>
       {loading ? <Held groups={[4]} label="Reading that day's times" words={words} /> : chosen && (
         <Group header="Pickup time">
-          {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} subtitle={t.flash ? "Flash: ready sooner, costs extra" : undefined} value={t.price} onClick={() => onPick(t.id)} />)
-            : <Row title="No times this day" subtitle="Pick another day." />}
+          {view.times.length ? view.times.map((t) => <Row key={t.id} icon="clock" title={t.time} subtitle={t.flash ? "Flash" : undefined} value={t.price} onClick={() => onPick(t.id)} />)
+            : <Row title="No times this day" />}
         </Group>
       )}
     </div>
