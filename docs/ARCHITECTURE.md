@@ -96,7 +96,9 @@ delivered), the household's name for the thing, and one small line: for a Safewa
 product name and "Need …"; otherwise the amount. While Safeway can be reached, a Safeway row also has + (its usual into
 the cart), Find (Safeway's choices with pictures, in a sheet, one item at a time) or − n + once it's in the cart; the
 Safeway header has Add usuals (N); and things put in the cart on Safeway's own site end the Safeway group. Above the list,
-with something in the cart, Check out and the cart's price sit on the left and Shop's ⋯ on the right: Show checked (on
+Check out, the cart's price and a small status line sit on the left and Shop's ⋯ on the right (Check out always reads
+"Check out", its state shown by colour only, Sam, Nov 24; what's going on is said in the status line beside the price,
+in place, so the line never moves): Show checked (on
 unless this phone turned it off: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought
 (for when Simmer can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
 Opening the app, bringing it back to the front (on any tab, Nov 23) and opening Shop read Safeway's own cart (at most once
@@ -121,17 +123,17 @@ was queued and it's working on nothing (the 20 s pickup window is how long that 
 never reported is given up after a five-minute backstop, unless the same helper asks for work again without it and
 without a report kept for it (Chrome stopped it mid-job): then it's "lost" at once and never done again (not checkout's
 jobs, which keep their own rules). Signed in on the computer with Pickup not chosen on Safeway (Nov 23: Safeway then sends every page home) is kept apart
-from signed out (`noPickup`, from Safeway's own session note): Shop's button says "Choose Pickup on Safeway" and the
-cart is hidden as when signed out. Shop's Signed out, Choose Pickup and Not connected buttons look again when pressed,
-reading "Looking…" while the cart is read and "Still signed out" (and the like) when it ends the same, until the next
-press or a change; no timer. A job the helper doesn't pick up drops Shop's Safeway controls,
+from signed out (`noPickup`, from Safeway's own session note): Shop's status line says "Choose Pickup on Safeway" and the
+cart is hidden as when signed out. Signed out, Choose Pickup or Not connected, Shop's greyed Check out looks again when
+pressed, the status line reading "Looking…" while the cart is read and "Still signed out" (and the like) when it ends the
+same, until the next press or a change; no timer. A job the helper doesn't pick up drops Shop's Safeway controls,
 and the Safeway rows become a plain checklist. What the helper is doing (Nov 23, Sam: "some sort of status
 message saying what the app is doing as it goes"): at each step of a job it sends Simmer a short key and its time
 (fire and forget, a 3 s limit, never slowing the job); `noteStep` keeps `step`, `stepAt` and the job's own step list
 (the newest 30) without touching its status or `updated`. `waitForJob` reads every 300 ms and also answers when the
 step changes from the one the asker has (`since`, its last `stepAt`), so each step reaches the phone through the same
-wait, with no timer. The words (`lib/steps.ts`) show where she's waiting, in place of what was there: Shop's Check out
-button and "Looking…" while the cart is read, the checkout sheet's reading, test run and placing, the store and card
+wait, with no timer. The words (`lib/steps.ts`) show where she's waiting, in place of what was there: Shop's status line
+beside the cart's price while the cart is read, the checkout sheet's reading, test run and placing, the store and card
 reading in Settings, and Find's loading row. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be

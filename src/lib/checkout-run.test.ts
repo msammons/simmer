@@ -264,13 +264,13 @@ describe("the approval", () => {
   it("is refused more than 2 minutes after getting ready", async () => {
     await ready();
     vi.setSystemTime(Date.now() + 2 * 60_000 + 1);
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That was more than 2 minutes ago. Get ready again."] });
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That was more than 2 minutes ago. Pick the time again."] });
   });
 
   it("is refused when the cart changed since", async () => {
     await ready();
     await setCartLine({ productId: "184420001", qty: 2 });
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed since. Get ready again."]) });
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed since. Pick the time again."]) });
   });
 
   it("is refused when Face ID fails or is used again, and each reading approves once", async () => {
@@ -283,7 +283,7 @@ describe("the approval", () => {
     expect((await approve(req(), f)).ok).toBe(true);
     await ready();
     expect(await approve(req(), f)).toMatchObject({ ok: false, reasons: expect.arrayContaining([expect.stringMatching(/already used/)]) });
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["Get ready again first."] }); // the reading went with the last try
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["Pick a time first."] }); // the reading went with the last try
     expect(await approve(req(), null)).toMatchObject({ ok: false });
   });
 });
@@ -305,7 +305,7 @@ describe("the test run", () => {
     const id = await approved();
     await testRun(id);
     const asked = vi.mocked(queueJob).mock.calls.length;
-    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That approval was already used or ran out. Get ready again."] });
+    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That approval was already used or ran out. Pick the time again."] });
     expect(vi.mocked(queueJob).mock.calls.length).toBe(asked);
     // Two taps at once: only one starts.
     const again = await approved();
@@ -349,7 +349,7 @@ describe("the test run", () => {
   it("reports where the helper stopped short", async () => {
     const id = await approved();
     does = () => ({ stopped: "pickup time gone", chosen: null, final: null });
-    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That pickup time isn't offered any more. Get ready again."] });
+    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That pickup time isn't offered any more. Pick another time."] });
   });
 
   it("is followed while going, and reported once", async () => {
@@ -499,7 +499,7 @@ describe("placing the order (phase 3, Nov 14)", () => {
     await ready(); // someone else gets ready with other figures
     const a = await approve(req(), await faceId(), first.preparedId);
     expect(a).toMatchObject({ ok: true, totalCents: 694 });
-    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["Get ready again first."]) });
+    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["Pick a time first."]) });
   });
 
   it("refuses to place what the phone didn't show, before asking the helper (Nov 19)", async () => {

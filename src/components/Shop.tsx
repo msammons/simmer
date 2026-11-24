@@ -62,27 +62,28 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * One line above the list: the Safeway cart's price and a Check out button with a cart. (Show checked moved to the ⋯ by
- * Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) The button has one place and four looks
- * (Sam, Nov 23: not connected and an empty cart should look different):
- * - something in the cart: orange Check out with the price;
+ * One line above the list: a Check out button with a cart, then the Safeway cart's price and a small status line, in
+ * place. (Show checked moved to the ⋯ by Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) The
+ * button always reads "Check out" (Sam, Nov 24): its state shows by colour only, and what's going on is said in the
+ * status line to the right of the price, the same height, so the line never moves:
+ * - something in the cart: orange Check out, then the price;
  * - nothing in the cart: Check out greyed, can't be pressed (Nov 21: with no button, Safeway looked not connected);
- * - Safeway signed out on the computer (Nov 16): greyed "Signed out", no price; pressing it looks again (Nov 21, Sam:
+ * - Safeway signed out on the computer (Nov 16): greyed, no price, "Signed out"; pressing it looks again (Nov 21, Sam:
  *   signed in on the computer, Shop still said Signed out, since nothing tells an open screen);
- * - the computer not answering: greyed "Not connected"; pressing it looks again, the same way;
+ * - the computer not answering: greyed, "Not connected"; pressing it looks again, the same way;
  * - signed in on the computer with Pickup not chosen on Safeway (Nov 23: Safeway sent every page home and this said
- *   Signed out): "Choose Pickup on Safeway", pressing it looks again, the same way.
+ *   Signed out): greyed, "Choose Pickup on Safeway"; pressing it looks again, the same way.
  * While the cart is changing or being read (Nov 16, Sam: no checking out while things are in progress), the button is
  * greyed and can't be pressed. Looking again (Nov 23, Sam: a press that found nothing new looked like nothing happened)
- * it says "Looking…" while the reading runs, and "Still signed out" (and the like) when it ends the same, until the next
- * press or the state changing (`still`). No timer. While Safeway's cart is being read, the helper's step is said on the
- * button in place of its words (`words`, Nov 23, Sam: "some sort of status message saying what the app is doing").
+ * the status says "Looking…" while the reading runs, and "Still signed out" (and the like) when it ends the same, until
+ * the next press or the state changing (`still`). No timer. While Safeway's cart is being read, the helper's step is
+ * said in the status (`words`, Nov 23, Sam: "some sort of status message saying what the app is doing").
  */
 export type CartButton =
   | { state: "ready"; price: string; onCheckOut: () => void; busy?: boolean; words?: string }
   | { state: "empty" }
   | { state: SafewayOff; onLook: () => void; busy?: boolean; still?: boolean; words?: string };
-/** Each state's words: on the button, for screen readers, and after a look again that found it the same. */
+/** Each state's words: in the status line, for screen readers, and after a look again that found it the same. */
 const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
   "signed-out": ["Signed out", "Signed out of Safeway. Check again", "Still signed out"],
   "no-pickup": ["Choose Pickup on Safeway", "Pickup isn't chosen on Safeway. Check again", "Pickup still not chosen"],
@@ -92,21 +93,26 @@ const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
 function TopLine({ cart, menu }: { cart: CartButton | null; menu: React.ReactNode }) {
   const base = "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold";
   const icon = <Icon name="cart" className="size-[18px]" strokeWidth={2} />;
+  const off = cart && cart.state !== "ready" && cart.state !== "empty" ? cart : null;
+  /** What's going on, in words, beside the price (never on the button). */
+  const status = !cart ? "" : cart.state === "ready" ? (cart.busy && cart.words) || ""
+    : off ? (off.busy ? off.words || "Looking…" : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
   return (
     // Above the list (Sam, Nov 17): Check out and the cart's price on the left, away from Shop's own ⋯ on the right.
     <div className="flex min-h-10 items-center gap-2.5 pl-1 pr-2">
       {cart && (
-        <span className="flex min-w-0 flex-row-reverse items-center justify-end gap-2.5">
-          {cart.state === "ready" && cart.price && <span className="truncate t-sub text-muted">{cart.price}</span>}
+        <span className="flex min-w-0 items-center gap-2.5">
           {cart.state === "ready" ? (
             <button type="button" onClick={cart.onCheckOut} disabled={cart.busy} aria-label={cart.busy && cart.words ? `Check out. ${cart.words}` : undefined}
-              className={`${base} min-w-0 ${cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>{icon}<span className="truncate">{cart.busy && cart.words ? cart.words : "Check out"}</span></button>
+              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-accent text-on-accent active:scale-95"}`}>{icon}Check out</button>
           ) : cart.state === "empty" ? (
             <button type="button" disabled className={`${base} bg-sunk text-muted`}>{icon}Check out</button>
           ) : (
-            <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}
-              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}<span className="truncate">{cart.busy ? cart.words || "Looking…" : cart.still ? OFF_WORDS[cart.state][2] : OFF_WORDS[cart.state][0]}</span></button>
+            <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={`Check out. ${cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}`}
+              className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}Check out</button>
           )}
+          {cart.state === "ready" && cart.price && <span className="shrink-0 t-sub text-muted">{cart.price}</span>}
+          <span data-cart-status aria-hidden="true" className="min-w-0 truncate t-foot text-muted">{status}</span>
         </span>
       )}
       <span className="ml-auto">{menu}</span>

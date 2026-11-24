@@ -260,17 +260,17 @@ export async function approve(req: Request, faceId: unknown, preparedId: string)
   const now = Date.now();
   const reasons: string[] = [];
   if (!check.ok) reasons.push(check.why ?? "Face ID didn't match.");
-  if (!p) reasons.push("Get ready again first.");
+  if (!p) reasons.push("Pick a time first.");
   else {
-    if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Get ready again.");
+    if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Pick the time again.");
     const cart = await cartNow();
-    if (cart !== p.cartKey) reasons.push("The cart changed since. Get ready again.");
+    if (cart !== p.cartKey) reasons.push("The cart changed since. Pick the time again.");
     if (await cartChanging()) reasons.push(CHANGING);
     const w = windowOf(p.chosen.id, p.chosen.words, 0);
     // Free, or a paid time (Flash) whose price was read and is in the total she sees (Nov 16).
     if (w.priceCents === null) reasons.push("Safeway's pickup time price couldn't be read.");
     // The bags, as Safeway's switch showed them (Nov 16): no approval without them.
-    if (typeof p.bagsOwn !== "boolean") reasons.push("Safeway's bags couldn't be read. Get ready again.");
+    if (typeof p.bagsOwn !== "boolean") reasons.push("Safeway's bags couldn't be read. Pick the time again.");
     reasons.push(...p.why.filter((x) => !reasons.includes(x)), ...stops(expected(s, p.final), p.final, null, now, cart, true).filter((x) => !reasons.includes(x) && !p.why.includes(x)));
   }
   if (reasons.length || !p || p.final.items === null || p.final.totalCents === null || p.final.slot.priceCents === null) {
@@ -306,13 +306,13 @@ export async function approve(req: Request, faceId: unknown, preparedId: string)
 export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResult | Waiting> {
   const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("test run", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
-  if (!a) return refuse(["That approval was already used or ran out. Get ready again."]);
-  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Get ready again."]);
+  if (!a) return refuse(["That approval was already used or ran out. Pick the time again."]);
+  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Pick the time again."]);
   const s = await loadSettings();
   if (!s.on) return refuse(["Ordering is off in Settings."]);
   if ((await cartNow()) !== a.cartKey) return refuse(["The cart changed after the approval."]);
   if (await cartChanging()) return refuse([CHANGING]);
-  if (typeof a.bagsOwn !== "boolean") return refuse(["Safeway's bags couldn't be read. Get ready again."]);
+  if (typeof a.bagsOwn !== "boolean") return refuse(["Safeway's bags couldn't be read. Pick the time again."]);
   const job = await queueAndWake("checkoutDry", { approvalId: a.id, windowId: a.windowId, ...(typeof a.bagsOwn === "boolean" && { bagsOwn: a.bagsOwn }) });
   await kv().set(RUN_KEY + job.id, JSON.stringify({ ...a, used: true }), { ex: secs(15 * 60_000) });
   await record("test run started", { approvalId: a.id, jobId: job.id, windowId: a.windowId, faceId: a.faceId });
@@ -322,11 +322,11 @@ export async function testRun(approvalId: string, ms = WAIT_MS): Promise<RunResu
 /** How the test run stands: still going, or what Safeway's final page said against the approval (reported once). */
 export async function followTestRun(jobId: string, ms = WAIT_MS, since?: string): Promise<RunResult | Waiting> {
   const pending = json<Approved>(await kv().get(RUN_KEY + jobId));
-  if (!pending) throw new AppError("That test run was already reported. Get ready again for another.");
+  if (!pending) throw new AppError("That test run was already reported. Pick a time for another.");
   const job = await waitForJob(jobId, ms, since);
   if (job && job.kind === "checkoutDry" && (job.status === "waiting" || job.status === "working")) return stillGoing(job);
   const a = json<Approved>(await kv().getdel(RUN_KEY + jobId));
-  if (!a) throw new AppError("That test run was already reported. Get ready again for another.");
+  if (!a) throw new AppError("That test run was already reported. Pick a time for another.");
   let result: RunResult;
   let reading: Reading | null = null;
   if (!job || job.kind !== "checkoutDry" || job.status !== "done") result = { ok: false, reasons: [failedWords(job)] };
@@ -396,9 +396,9 @@ export type Shown = { totalCents: number | null; window: string };
 export async function placeOrder(approvalId: string, shown: Shown, ms = WAIT_MS): Promise<OrderResult | Waiting> {
   const a = ID.test(approvalId) ? json<Approved>(await kv().getdel(APPROVAL_KEY + approvalId)) : null;
   const refuse = async (reasons: string[]) => { await record("order", { ok: false, approvalId, reasons }); return { ok: false as const, reasons }; };
-  if (!a) return refuse(["That approval was already used or ran out. Get ready again."]);
-  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Get ready again."]);
-  if (shown.totalCents !== a.totalCents || shown.window !== a.windowWords) return refuse(["What Face ID approved isn't what this phone showed. Get ready again."]);
+  if (!a) return refuse(["That approval was already used or ran out. Pick the time again."]);
+  if (Date.now() - a.at > APPROVAL_MS) return refuse(["The approval ran out. Pick the time again."]);
+  if (shown.totalCents !== a.totalCents || shown.window !== a.windowWords) return refuse(["What Face ID approved isn't what this phone showed. Pick the time again."]);
   // Read together (Nov 19: these were one after another); the going mark is still set last, in one step.
   const [open, going, s, lines, changing] = await Promise.all([orderOpen(), kv().get(GOING_KEY), loadSettings(), loadCart(), cartChanging()]);
   if (!open.canOrder) return refuse([open.orderWhy]);
@@ -407,9 +407,9 @@ export async function placeOrder(approvalId: string, shown: Shown, ms = WAIT_MS)
   const why = stops(s, { ...readFinal("", []), store: a.store, card: a.card, items: a.items, totalCents: a.totalCents, slot: a.slot, placeButton: true }, null, now, cart, serverOn());
   if (cart !== a.cartKey) why.push("The cart changed after the approval.");
   if (changing) why.push(CHANGING);
-  if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Get ready again.");
+  if (typeof a.bagsOwn !== "boolean") why.push("Safeway's bags couldn't be read. Pick the time again.");
   if (why.length) return refuse(why);
-  if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Get ready again."]);
+  if (a.itemsCents == null) return refuse(["Safeway's figures couldn't be read. Pick the time again."]);
   const expect = expectFor(a);
   // Marked going before the helper is asked (outside review): if anything is lost after this, no second order can start
   // until the last one is reported or half an hour has passed.

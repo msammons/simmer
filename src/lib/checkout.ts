@@ -277,8 +277,8 @@ const STOPPED: Record<string, string> = {
   // Simmer orders pickup only (Nov 23): Safeway set to delivery, or signed in with Pickup not chosen. Never switched here.
   "delivery": "Safeway is set to delivery. Switch it to Pickup on Safeway, then try again.",
   "no pickup chosen": "Pickup isn't chosen on Safeway. Choose Pickup on Safeway, then try again.",
-  "pickup day gone": "That pickup day isn't offered any more. Get ready again.",
-  "pickup time gone": "That pickup time isn't offered any more. Get ready again.",
+  "pickup day gone": "That pickup day isn't offered any more. Pick another day.",
+  "pickup time gone": "That pickup time isn't offered any more. Pick another time.",
   "no free pickup time": "No free pickup time in the next week.",
   "couldn't choose the pickup time": "The pickup time couldn't be chosen.",
   "no window": "No pickup time could be chosen.",
