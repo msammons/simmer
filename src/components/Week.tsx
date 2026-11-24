@@ -1,7 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { Dish, Kind, ListState, NewDish, PlanData, Recipe } from "@/lib/client";
-import { useStore } from "@/lib/app-data";
+import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
@@ -35,16 +34,13 @@ function dayName(day: string): string {
  * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
  * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
  */
-export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, onNewPlan }: {
+export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, }: {
   plan: PlanData | null; recipes: Recipe[];
-  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind | null, day: string) => void; onNewPlan: () => void;
+  onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind | null, day: string) => void;
 }) {
   const dishes = useMemo(() => plan?.dishes ?? [], [plan]);
-  // How many lines are on the lists: what New plan empties (only the count, so a tick on Shop doesn't redraw Meals).
-  const dinnerGroceries = useStore<ListState, number>("lists", (l) => l?.items.length ?? 0);
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
-  const [starting, setStarting] = useState(false); // waiting on "Start a new plan?"
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
@@ -73,10 +69,7 @@ export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, on
   };
   return (
     <div className="space-y-6">
-      {/* New plan, the one fresh start for the whole app, in the pinned top bar beside Settings (Sam, Nov 11). */}
-      <BrandBar trailing={plan && (dishes.length > 0 || dinnerGroceries > 0) && (
-        <button type="button" onClick={() => setStarting(true)} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>
-      )} />
+      <BrandBar />
       <h1 className="sr-only">Meals</h1>
       {!plan && <Held groups={[2, 2, 2]} />}
       {plan && (
@@ -101,13 +94,6 @@ export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, on
         </>
       )}
       {moving && <PickDaySheet name={mealName(moving.recipe, recipes)} dishes={dishes} recipes={recipes} onClose={() => setMoving(null)} onPick={(day) => { const d = moving; setMoving(null); if (day !== d.day) onMove(d, day); }} />}
-      {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
-      <ConfirmSheet open={starting} title="Start a new plan?" confirm="New plan" danger
-        message={`${[
-          dishes.length ? (dishes.length === 1 ? "The dinner comes off" : `All ${dishes.length} dinners come off`) : "",
-          dinnerGroceries ? `${dishes.length ? "the" : "The"} list empties` : "",
-        ].filter(Boolean).join(" and ")}. The Safeway cart stays.`}
-        onConfirm={() => { onNewPlan(); setStarting(false); }} onCancel={() => setStarting(false)} />
       {/* Taking one off asks first (Nov 9: a confirm, never an Undo). */}
       <ConfirmSheet open={Boolean(taking)} title={taking ? `Take ${mealName(taking.recipe, recipes)} off the plan?` : ""} confirm="Take it off" danger
         message="What only it needed comes off the list."
