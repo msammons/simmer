@@ -10,5 +10,6 @@ scripts/*
 # Imported by tests that run in the build's type check (Nov 19).
 !scripts/restore.mjs
 !scripts/ops-env.mjs
+!scripts/feedback.mjs
 node_modules/
 .next/
