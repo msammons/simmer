@@ -9,6 +9,7 @@ import { AppError } from "./errors";
 import { withinCap } from "./ops/caps";
 import { newId, yes } from "./parse";
 import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
+import { afterChange, groupsOf, renamed, union, type Group } from "./groups";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
@@ -72,6 +73,18 @@ const STAPLES = table<Staple>({
   key: (s) => norm(s.item),
 });
 
+/**
+ * The List's groups (Sam, Nov 24): a name in a section, kept until Remove group, so a group with no things left stays.
+ * Groups in use before this tab existed read as kept (groups.ts groupsOf) and are written down by the next change.
+ */
+const GROUPS = table<Group>({
+  tab: "Groups",
+  headers: ["section", "name"],
+  read: (get) => (get("name").trim() ? { section: asSection(get("section")), name: get("name").replace(/\s+/g, " ").trim().slice(0, 40) } : null),
+  cells: (g) => ({ section: g.section, name: g.name }),
+  key: (g) => `${g.section}|${norm(g.name)}`,
+});
+
 type Filing = { store: Store; section: Section };
 /** The app's memory of where things go, one row per name (the first for a name wins). */
 const INGREDIENTS = table<Filing & { name: string }>({
@@ -86,13 +99,13 @@ const INGREDIENTS = table<Filing & { name: string }>({
 const BOUGHT = strings("Bought", ["item", "quantity", "store", "date_bought", "for"]);
 
 /** Every tab loadList reads, for its "nothing changed" answers (ops/fresh.ts; a test keeps this in step). */
-export const LIST_READS = [LIST.tab, STAPLES.tab];
+export const LIST_READS = [LIST.tab, STAPLES.tab, GROUPS.tab];
 /** The tab savedSections reads. */
 export const SECTION_READS = [INGREDIENTS.tab];
 
-export async function loadList(): Promise<{ items: Item[]; staples: Staple[] }> {
-  const [items, staples] = await loadAll(LIST, STAPLES); // one read
-  return { items, staples };
+export async function loadList(): Promise<{ items: Item[]; staples: Staple[]; groups: Group[] }> {
+  const [items, staples, groups] = await loadAll(LIST, STAPLES, GROUPS); // one read
+  return { items, staples, groups: groupsOf(groups, staples) };
 }
 
 // ---- filing: which store and section an item goes in
@@ -174,7 +187,7 @@ async function refile(guessed: { name: string; kept: boolean; f: Filing }[]) {
     const g = !x.checked && x.section === DEFAULT.section ? by.get(norm(x.item)) : undefined;
     return g ? [[x.id, { section: g.f.section, ...(!g.kept && x.store === DEFAULT.store && { store: g.f.store }) }]] : [];
   }));
-  await change(STAPLES, (all) => (all.some((s) => s.section === DEFAULT.section && by.has(norm(s.item)))
+  await writeStaples((all) => (all.some((s) => s.section === DEFAULT.section && by.has(norm(s.item)))
     ? all.map((s) => { const g = s.section === DEFAULT.section ? by.get(norm(s.item)) : undefined; return g ? { ...s, section: g.f.section } : s; })
     : all));
 }
@@ -479,7 +492,18 @@ export const removeItems = (ids: string[]): Promise<Item[]> => editList([], new 
 
 // ---- Stock: the things the house keeps (the Staples tab)
 
-const writeStaples = async (f: (all: Staple[]) => Staple[]) => { await change(STAPLES, f); };
+/**
+ * The kept things changed by `f`, and the groups with them (Nov 24): one transaction, the Groups tab written only when
+ * its groups change. `groups` works them out; by default a group stays until Remove group (groups.ts afterChange).
+ */
+const writeStaples = (f: (all: Staple[]) => Staple[], groups: (kept: Group[], before: Staple[], after: Staple[]) => Group[] = afterChange) => transact(async () => {
+  const [before, kept] = await loadAll(STAPLES, GROUPS);
+  const after = f(before);
+  if (after !== before) await save(STAPLES, after);
+  const next = groups(kept, before, after);
+  const same = (gs: Group[]) => JSON.stringify(union(gs));
+  if (same(next) !== same(kept)) await save(GROUPS, next);
+});
 
 /**
  * A new thing the house keeps, in the section given or guessed. The same name again keeps it, changing only the kind
@@ -497,9 +521,13 @@ export const addStaple = atomically(async (text: string, section?: Section, opts
 /** A kept thing made common or specialty, or put in a group ("" for none) (Nov 16). */
 export const setStaple = (item: string, change: { kind?: StapleKind; group?: string }) =>
   writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(change.kind && { kind: change.kind }), ...(change.group !== undefined && { group: change.group }) } : s)));
-/** A group renamed, or removed with `to` "" (Nov 16, Sam): every thing in it moves with it; the things stay kept. */
+/**
+ * A group renamed, or removed with `to` "" (Nov 16, Sam): every thing in it moves with it; the things stay kept. The
+ * group itself is renamed or goes (Nov 24: an empty one too).
+ */
 export const renameGroup = (from: string, to: string) =>
-  writeStaples((all) => all.map((s) => (s.group && norm(s.group) === norm(from) ? { ...s, group: to } : s)));
+  writeStaples((all) => all.map((s) => (s.group && norm(s.group) === norm(from) ? { ...s, group: to } : s)),
+    (kept, before, after) => union(renamed(groupsOf(kept, before), from, to), groupsOf([], after)));
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 

@@ -78,7 +78,12 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   underneath, and waits there until she says Need. Things in a group sit together: the header row is tinted and the group
   has a faint outline; tapping its name switches between all its items and only the ones in the cart or needed by a dinner
   (the arrow shows which); a group whose things all show anyway starts open and closes to its name alone. A group's ⋯ has
-  Rename group and Remove group only; the list's own ⋯ has Show all groups. A row's ⋯ moves it, groups it, makes it
+  Rename group and Remove group only; the list's own ⋯ has Show all groups. A group is kept in its own place (the Groups
+  tab, a section and a name; rules in `lib/groups.ts`, with tests) until Remove group, so one with no things left stays
+  (Sam, Nov 24): Show all groups shows every group, an empty one as its header alone, and Add's and Put in a group's
+  pickers list every group. Removing, ungrouping or regrouping its last thing keeps it; moving all its things to another
+  section takes it with them. Groups on things before the tab existed read as kept, and the next change to the kept
+  things writes them down (nothing to run by hand). A row's ⋯ moves it, groups it, makes it
   common or specialty, or removes it. The field at the top adds a thing as Need.
 - **List items are what's bought** (`parseIngredient`, `bothOf`, `listName` in `lib/words.ts`): no sizes or cuts, "or"
   picks one, "X and Y" splits into two when both are known things, and names that mean the same are one line (spices

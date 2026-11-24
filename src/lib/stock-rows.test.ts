@@ -64,3 +64,11 @@ describe("Stock: specialty things and groups", () => {
       .toEqual(["Apples", "Cheese: Cheddar, Swiss", "Eggs", "Yogurt: Greek yogurt"]);
   });
 });
+
+describe("Stock: empty groups (Sam, Nov 24)", () => {
+  it("shows a group with nothing in it as its header alone, A to Z among the rest, once", () => {
+    const rows = rowsOf(list([], [staple("Swiss", "fresh", { group: "Cheese" }), staple("Apples", "fresh")]), null);
+    const lines = linesOf(rows, ["Milk", "cheese"]);
+    expect(lines.map((l) => (l.kind === "row" ? l.row.name : `[${l.name}:${l.rows.length}]`))).toEqual(["Apples", "[Cheese:1]", "[Milk:0]"]);
+  });
+});

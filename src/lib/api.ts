@@ -48,6 +48,8 @@ import type { Item, Section, Staple, StapleKind, Store } from "./groceries";
 /** Where a recipe's ingredient goes (Nov 17: Freezer too). */
 export type RecipeSection = "fresh" | "pantry" | "freezer";
 export type { Item, Section, Staple, StapleKind, Store };
+import type { Group } from "./groups";
+export type { Group };
 import type { Draft, Effort, Ingredient, Recipe } from "./recipes";
 export type { Draft, Effort, Ingredient, Recipe };
 import type { NewDish, NewLunch, PlanData } from "./plan";
@@ -63,7 +65,8 @@ export type { Counts, Dish, Frozen, Kind, Lunch, LunchPart, NewDish, NewLunch, P
 export type Kitchen = { freezer: Frozen[] };
 /** A change to one planned thing: another recipe, another part of a lunch, made (or packed), or off. */
 export type PlanChange = { op: "change"; id: string; recipe: string; pinned?: boolean } | { op: "change"; id: string; day: string } | { op: "change"; id: string; part: LunchPart; item: string } | { op: "made"; id: string } | { op: "remove"; id: string } | { op: "on"; id: string } | { op: "clear"; keep: boolean } | { op: "count"; recipe: string; kind: Kind; count: number };
-export type ListState = { items: Item[]; staples: Staple[] };
+/** groups: every group on the List (Nov 24), empty ones too; missing from a copy this phone kept before then. */
+export type ListState = { items: Item[]; staples: Staple[]; groups?: Group[] };
 export type ListChange = { op: "need"; id: string } | { op: "unneed"; id: string } | { op: "haveIt"; id: string } | { op: "have" } | { op: "add"; text: string; by: string; store?: Store; section?: Section; amount?: string; have?: boolean } | { op: "check"; id: string; checked: boolean } | { op: "move"; id: string; store?: Store; section?: Section } | { op: "many"; items: { item: string; quantity: string; check?: boolean }[]; for: string; by: string } | { op: "remove"; id: string } | { op: "done"; store: Store; cart?: boolean }
   | { op: "keepAdd"; text: string; section?: Section; kind?: StapleKind; group?: string; need?: boolean; by?: string } | { op: "keepSet"; item: string; kind?: StapleKind; group?: string } | { op: "keepGroup"; from: string; to: string } | { op: "keepRemove"; item: string } | { op: "keepMove"; item: string; section: Section };
 
