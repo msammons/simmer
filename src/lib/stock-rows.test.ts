@@ -2,7 +2,7 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { fromDinner, linesOf, rowsOf } from "./stock-rows";
+import { fromDinner, linesOf, removedWith, rowsOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -41,6 +41,26 @@ describe("Stock rows", () => {
     expect(fromDinner(item({ for: "added by hand, Turkey chili" }))).toBe(false);
     expect(fromDinner(item({ for: "" }))).toBe(false);
     expect(fromDinner(item({ for: "Every week" }))).toBe(false);
+  });
+
+  it("shows everything on the list, even with no kept thing or dinner behind it (Sam, Nov 24: sugar on Shop, not on the List)", () => {
+    // Its kept thing removed while it was Needed, or added by hand: still answerable here, in its own section.
+    const sugar = item({ id: "s1", item: "Sugar", quantity: "", for: "", check: false });
+    expect(rowsOf(list([sugar]), null)).toMatchObject([{ key: "l|s1", name: "Sugar", section: "pantry", answer: "need", meal: false, staple: null, item: sugar }]);
+    expect(rowsOf(list([item({ item: "foil", section: "household", for: "added by hand", check: false })]), null)).toMatchObject([{ name: "foil", section: "household", answer: "need" }]);
+    // Once only, and never ahead of its kept row or a freezer row of the same name; bought things stay off.
+    expect(rowsOf(list([sugar], [staple("sugar")]), null)).toMatchObject([{ key: "s|sugar", answer: "need" }]);
+    expect(rowsOf(list([sugar], [staple("sugar")]), null)).toHaveLength(1);
+    expect(rowsOf(list([{ ...sugar, checked: true }]), null)).toHaveLength(0);
+  });
+
+  it("takes a kept thing's rows off the list with it when it's removed, but not a dinner's or what's been bought (Nov 24)", () => {
+    const rows = [
+      item({ id: "need", item: "Sugar", for: "", check: false }), item({ id: "have", item: "sugar", for: "", have: true }),
+      item({ id: "dinner", item: "sugar", for: "Cookies" }), item({ id: "got", item: "sugar", for: "", checked: true }),
+      item({ id: "other", item: "rice", for: "", check: false }),
+    ];
+    expect(removedWith(rows, "Sugar")).toEqual(["need", "have"]);
   });
 });
 

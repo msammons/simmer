@@ -1,8 +1,9 @@
 import { AppError } from "@/lib/errors";
 import { recordTrip } from "@/lib/plan";
 import { clearCart, loadCart } from "@/lib/safeway";
-import { addItem, addItems, addStaple, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, removeItem, removeStaple, renameGroup, setStaple, SECTIONS, STORES, type Section, type StapleKind, type Store } from "@/lib/groceries";
+import { addItem, addItems, addStaple, checkItem, haveTheRest, haveItem, needItem, unneedItem, doneShopping, loadList, moveItem, moveStaple, removeItem, removeItems, removeStaple, renameGroup, setStaple, SECTIONS, STORES, type Section, type StapleKind, type Store } from "@/lib/groceries";
 import { norm } from "@/lib/words";
+import { removedWith } from "@/lib/stock-rows";
 import { backUpAfter, before } from "@/lib/ops/backup";
 import { api, body, clean, refuse } from "@/lib/ops/route";
 import { freshChange, freshRead, LIST, withEtag } from "@/lib/ops/fresh";
@@ -65,7 +66,14 @@ export const POST = api(async (req) => {
       }
       case "keepSet": await setStaple(clean(b.item), { ...(isKind(b.kind) && { kind: b.kind }), ...(typeof b.group === "string" && { group: clean(b.group, 40) }) }); break;
       case "keepGroup": if (!clean(b.from, 40)) throw new AppError("Which group?"); await renameGroup(clean(b.from, 40), typeof b.to === "string" ? clean(b.to, 40) : ""); break;
-      case "keepRemove": await removeStaple(clean(b.item)); break;
+      case "keepRemove": {
+        // Off the list with it (Sam, Nov 24): its rows not bought and not a dinner's, so Shop and the List agree.
+        const item = clean(b.item);
+        await removeStaple(item);
+        const ids = removedWith((await loadList()).items, item);
+        if (ids.length) await removeItems(ids);
+        break;
+      }
       case "keepMove": if (!isSection(b.section)) throw new AppError("Which part of the list?"); await moveStaple(clean(b.item), b.section); break;
       case "done": if (!isStore(b.store)) throw new AppError("Which store?"); {
         // Safeway: what's in the cart counts as bought too, and the cart starts empty again.

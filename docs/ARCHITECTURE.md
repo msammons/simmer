@@ -75,7 +75,10 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   Every row is answered Have (✓) or Need (a cart): Need puts it on its store's list, Have checks it, the lit side tapped
   again clears it. Common things always show; specialty things only while they're on the list or answered. What the
   planned dinners need shows in its own section with its name in the accent colour and the amount all of them need
-  underneath, and waits there until she says Need. Things in a group sit together: the header row is tinted and the group
+  underneath, and waits there until she says Need. Anything else on the list (added on Shop, say) has a plain row in its
+  section, so everything on Shop's lists shows here and can be answered (Sam, Nov 24: sugar was on Shop but not here,
+  its kept thing removed while it was Need); Remove from the list takes the thing's rows not bought and not a dinner's
+  off the list with it (`removedWith`). Things in a group sit together: the header row is tinted and the group
   has a faint outline; tapping its name switches between all its items and only the ones in the cart or needed by a dinner
   (the arrow shows which); a group whose things all show anyway starts open and closes to its name alone. A group's ⋯ has
   Rename group and Remove group only; the list's own ⋯ has Show all groups. A group is kept in its own place (the Groups
@@ -116,9 +119,10 @@ filter pinned under the top bar (All or one store). Every row is the same height
 delivered), the household's name for the thing, and one small line: for a Safeway thing with a chosen product, Safeway's
 product name and "Need …"; otherwise the amount. While Safeway can be reached, a Safeway row also has + (its favorite into
 the cart), Find (Safeway's choices with pictures, in a sheet, one item at a time) or − n + once it's in the cart; the
-line above the list has an Add favorites button just left of Shop's ⋯ (no count, styled like the row +; Sam, Nov 24) when more than one favorite product (Find shows it as "Your favorite"; Sam, Nov 24: "Yes update usual to favorite") is not in the cart yet, on All or Safeway; with it there, a phone under 400 px wide drops Check out's cart picture so the line fits whole, and the status words are what give way; and things put in the cart on Safeway's own site end the Safeway group. Above the list,
-Check out, the cart's price and a small status line sit on the left and Shop's ⋯ on the right (Check out always reads
-"Check out", its state shown by colour only, Sam, Nov 24; what's going on is said in the status line beside the price,
+line above the list has an Add favorites button just left of Shop's ⋯ (no count, styled like the row +; Sam, Nov 24) when more than one favorite product (Find shows it as "Your favorite"; Sam, Nov 24: "Yes update usual to favorite") is not in the cart yet, on All or Safeway; Check out always has its cart picture and the line fits whole at 375 and 390 wide, the status words being what give way; and things put in the cart on Safeway's own site end the Safeway group. Above the list,
+Check out and a small status line sit on the left and Shop's ⋯ on the right (no price there, Sam, Nov 24: "We can drop
+the dollar amount by cart"; the total is on the Check out sheet. Check out always reads
+"Check out", its state shown by colour only, Sam, Nov 24; what's going on is said in the status line beside it,
 in place, so the line never moves): Show checked (on
 unless this phone turned it off: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought
 (for when Simmer can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
@@ -159,7 +163,7 @@ message saying what the app is doing as it goes"): at each step of a job it send
 (the newest 30) without touching its status or `updated`. `waitForJob` reads every 300 ms and also answers when the
 step changes from the one the asker has (`since`, its last `stepAt`), so each step reaches the phone through the same
 wait, with no timer. The words (`lib/steps.ts`) show where she's waiting, in place of what was there: Shop's status line
-beside the cart's price while the cart is read, the checkout sheet's reading, test run and placing, the store and card
+beside Check out while the cart is read, the checkout sheet's reading, test run and placing, the store and card
 reading in Settings, and Find's loading row. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be

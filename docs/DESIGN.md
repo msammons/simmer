@@ -108,7 +108,7 @@ Changed:
   one per kind.
 - List: **Have and Need as a ✓ and a cart**, same one tap; she needs all three states (have, need, not checked yet).
 - Shop: **Add favorites** (a button, no count; Sam, Nov 24) in the Safeway header; Safeway rows show **Safeway's product and how many** under the name (Sam, Nov 17: keep the product); **Mark the Safeway cart bought** and
-  **Show checked** live in Shop's ⋯ above the list, with **Check out** and the cart's price on the left of the same line; the add field has a **plain grey + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
+  **Show checked** live in Shop's ⋯ above the list, with **Check out** (and its cart picture, no price: Sam, Nov 24) on the left of the same line; the add field has a **plain grey + inside its right end** (Sam, Nov 17: a big filled + beside it was overkill), always
   at full colour (an empty tap does nothing).
 - List groups were toned down on Nov 17 (a 1px faint outline, a lighter tint, the name in medium weight, a grey ⋯; Sam:
   "pretty close… just too bold"); on Nov 19 the outline and header tint stayed and the group's name went back to the usual colour.

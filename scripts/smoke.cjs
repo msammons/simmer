@@ -622,7 +622,7 @@ const began = Date.now();
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
       const swGroup = page.locator("main section").filter({ has: page.getByRole("heading", { name: "Safeway", exact: true }) });
-      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add favorites sits left of the ⋯ (Sam, Nov 24).
+      // One line above the list (Nov 14): Show checked, and a Check out button (no price beside it, Sam, Nov 24); Add favorites sits left of the ⋯ (Sam, Nov 24).
       const checkOut = page.getByRole("button", { name: "Check out" });
       const shopMenu = page.getByLabel("More for Shop");
       {
@@ -631,7 +631,8 @@ const began = Date.now();
         ok("shop: Check out sits on the left, away from the ⋯ (Nov 17)", Boolean(add && menu && co) && co.x - add.x < 24 && menu.x - (co.x + co.width) > 80);
       }
       const showCheckedText = async () => (await shopMenu.locator("option[value=checked]").innerText()).trim();
-      ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add favorites on that line, a button with no number, nothing beside Safeway's heading", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
+      const topLine = page.locator("[data-cart-status]").locator("xpath=ancestor::div[1]");
+      ok("shop: Show checked in the ⋯ by Add; Check out above the list with no price beside it; Add favorites on that line, a button with no number, nothing beside Safeway's heading", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && !/\$\d/.test(await topLine.innerText()) && await checkOut.isVisible()
         && (await swGroup.locator("h2 + *").count()) === 0 && (await page.getByRole("button", { name: "Add favorites" }).count()) === 1 && (await page.getByText(/in the cart/).count()) === 0);
       {
         // Add favorites (Sam, Nov 24): a real button, button-sized, with the row +'s own fill and text colour.
@@ -640,7 +641,7 @@ const began = Date.now();
         const box = await fav.boundingBox();
         ok("shop: Add favorites is a button with the row +'s fill and text, button-sized", (await fav.count()) === 1 && (await look(fav)) === (await look(plus)) && Boolean(box) && box.height >= 32, `${await look(fav).catch(() => "")} vs ${await look(plus).catch(() => "")}`);
         // On the line above the list, just left of Shop's ⋯, centred with it and Check out; at 390 and 375 wide everything
-        // fits whole with the longest status words beside the price (the words give way, never a button).
+        // fits whole, Check out with its cart picture, with the longest status words beside it (the words give way, never a button).
         const lineFits = async () => {
           await page.evaluate(() => { const st = document.querySelector("[data-cart-status]"); st.dataset.was = st.textContent; st.textContent = "Reading your Safeway cart and checking every price…"; });
           await frames();
@@ -648,17 +649,17 @@ const began = Date.now();
             const box = (el) => el.getBoundingClientRect(), btns = [...document.querySelectorAll("button")];
             const fav = box(btns.find((x) => x.textContent === "Add favorites")), co = box(btns.find((x) => x.textContent.endsWith("Check out")));
             const menu = box(document.querySelector("[aria-label='More for Shop']").parentElement), st = document.querySelector("[data-cart-status]");
-            const price = st.previousElementSibling && !st.previousElementSibling.matches("button") ? box(st.previousElementSibling) : co;
+            const coEl = btns.find((x) => x.textContent.endsWith("Check out")), pic = coEl.querySelector("svg"), picBox = pic && box(pic);
             const mid = (b) => b.top + b.height / 2;
-            const ok = fav.right <= menu.left + 0.5 && menu.left - fav.right <= 12 && Math.abs(mid(fav) - mid(menu)) <= 1.5 && Math.abs(mid(fav) - mid(co)) <= 1.5
-              && price.right <= fav.left - 4 && box(st).right <= fav.left + 0.5 && fav.height <= 40 && co.height <= 40 && document.documentElement.scrollWidth <= innerWidth;
+            const ok = Boolean(picBox && picBox.width >= 16 && picBox.left >= co.left) && coEl.scrollWidth <= coEl.clientWidth + 0.5 && co.right <= box(st).left + 0.5 && fav.right <= menu.left + 0.5 && menu.left - fav.right <= 12 && Math.abs(mid(fav) - mid(menu)) <= 1.5 && Math.abs(mid(fav) - mid(co)) <= 1.5
+              && co.right <= fav.left - 4 && box(st).right <= fav.left + 0.5 && fav.height <= 40 && co.height <= 40 && document.documentElement.scrollWidth <= innerWidth;
             st.textContent = st.dataset.was;
-            return ok || JSON.stringify({ co: [co.left, co.right, mid(co)], price: [price.left, price.right], fav: [fav.left, fav.right, mid(fav), fav.height], menu: [menu.left, mid(menu)], sw: document.documentElement.scrollWidth, w: innerWidth });
+            return ok || JSON.stringify({ co: [co.left, co.right, mid(co)], pic: picBox ? [picBox.left, picBox.width] : null, fav: [fav.left, fav.right, mid(fav), fav.height], menu: [menu.left, mid(menu)], sw: document.documentElement.scrollWidth, w: innerWidth });
           });
           return r;
         };
         const fits390 = await lineFits();
-        ok("shop: Add favorites sits just left of the ⋯, centred with it and Check out, the line whole at 390 wide", fits390 === true, fits390);
+        ok("shop: Add favorites sits just left of the ⋯, centred with it and Check out (its cart picture shown), the line whole at 390 wide", fits390 === true, fits390);
         const vp = page.viewportSize();
         await page.setViewportSize({ width: 375, height: 667 }); await frames();
         const fits375 = await lineFits();
@@ -839,6 +840,10 @@ const began = Date.now();
       ok("shop: something added shows within 150 ms", await within150(() => page.getByRole("checkbox", { name: /smoke basil/i }).first().isVisible()));
       await idle(); await page.unroute("**/api/list");
       ok("shop: and is there once, once it's saved", (await page.getByRole("checkbox", { name: /smoke basil/i }).count()) === 1);
+      // Everything on Shop shows on the List too (Sam, Nov 24: sugar was on Shop, not on the List), Need lit, answerable there.
+      await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
+      ok("list: something added on Shop shows on the List too, Need lit", (await page.getByRole("button", { name: /^Need: smoke basil$/i }).getAttribute("aria-pressed").catch(() => null)) === "true");
+      await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
       // Ordered? asks first; Cancel leaves the list alone.
       await page.getByLabel("More for Shop").selectOption("bought");
       const ordered = page.getByRole("dialog", { name: "Mark the cart bought?" });
