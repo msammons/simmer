@@ -81,6 +81,11 @@ export const PAGE = {
   // Signed in with Pickup not chosen, Safeway sends every page to its home page, the cart too (Nov 23). Missing or
   // unreadable, or any other user, the helper judges as it did before.
   session: { cookie: "SWY_SHARED_SESSION_INFO", customer: "C", pickup: "Dug" },
+  // Safeway's Delivery-or-Pickup box (seen on the real site Nov 23, saved as safeway/pickup box.html): the header's
+  // "Pickup at … / Delivery to …" button opens it; its Pickup tab shows store cards, each with its street on the first
+  // line and one button, "Select" or "Selected". The helper switches Safeway to Pickup at the household's store with these
+  // (Sam, Nov 23: "i want this process to be automated. ideally i never touch safeway"; docs/CHECKOUT.md).
+  pickupBox: { open: "#openFulfillmentModalButton", box: "#storeFulfillmentModal", tab: "#modal-tab-pickup-btn", pane: "#fulfilmentPickup", card: ".card-store", close: "#closeFulfillmentModalButton" },
   // Safeway's Purchases page, read after the cart page says it's empty (helper 1.3 on), to tell an order that went
   // through from a cart that only emptied (Nov 3). Its "Online" tab says exactly `none` when there are no orders. A
   // listed order has never been seen, so `entry` is a guess at what holds one, and an entry only counts when it has a

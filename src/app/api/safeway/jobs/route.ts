@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { cancelJob, finishJob, returnJob, helperPush, helperStatus, jobStatus, pressJob, waitForJob, JOB_KINDS, queueJob, recentJobs, savePush, takeJob, type Job, type JobKind, HELPER_VERSION } from "@/lib/jobs";
-import { record } from "@/lib/checkout";
+import { loadSettings, record } from "@/lib/checkout";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
@@ -92,7 +92,10 @@ export const POST = api(async (req) => {
       // `at`: where Simmer would send the push, so a helper whose subscription Chrome dropped (a reload drops it, Nov 12) makes a new one.
       const key = pushKey(), saved = key ? await helperPush() : null, have = saved?.key === key;
       // `version`: the helper this Simmer ships, so a helper whose newer files are already on its computer reloads itself (26.11.11).
-      return Response.json({ job: job && { ...handOff(job), page: PAGE, settings: SETTINGS }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
+      // `store`: the household's pickup store (learned from checkout), so the helper can switch Safeway to Pickup there
+      // (Sam, Nov 23: "i want this process to be automated"). Never for placing, which doesn't switch (docs/CHECKOUT.md).
+      const store = job && job.kind !== "checkoutPlace" ? (await loadSettings()).store : "";
+      return Response.json({ job: job && { ...handOff(job), page: PAGE, settings: SETTINGS, store }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
     }
     case "push": {
       const s = b.subscription, key = text(b.key, 200);

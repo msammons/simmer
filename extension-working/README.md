@@ -28,6 +28,12 @@ order Face ID approved, once, when the page says exactly what was approved.
   count, card, store, time and bags, no card detail asked for, exactly one enabled "Place Order", and the approval's 2
   minutes haven't run out. Then it reads the page it lands on (its order number or confirmation words, and the address the
   tab moved to) for Simmer to judge. It never presses again, whatever comes back.
+- **Switches Safeway to Pickup itself (26.11.23.5).** Nov 23, Sam: "i want this process to be automated. ideally i never
+  touch safeway while building testing or running." Signed in with Pickup not chosen, or set to delivery, the helper
+  opens Safeway's Delivery/Pickup box on its home page, chooses Pickup, and presses Select on the one store card whose
+  street is the household's (the store checkout learned, sent by Simmer with each job), once per job, then carries on.
+  Placing never switches. Built against the real box (safeway/pickup box.html); real-pages-test checks it presses only
+  that Select. See docs/CHECKOUT.md.
 - **Signed in with Pickup not chosen, and delivery, said as such (26.11.23.4).** Nov 23, after Sam signed in again
   Safeway had forgotten Pickup, sent every page home (the cart too, with a "Please Select Delivery or Pickup" box), and
   the helper said signed out. Safeway keeps a session note the page can read (`PAGE.session`: a cookie whose userType
@@ -136,7 +142,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.4.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.23.5.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

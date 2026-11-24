@@ -4,7 +4,7 @@
 // browser can show (Chrome's own events, the panel, Simmer's screens) is in scripts/extension-test.mjs; whether Safeway's
 // real pages still read right is scripts/real-pages-test.mjs.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BREAD, makeWorld, PAGE, SAFEWAY, SETTINGS } from "./world.mjs";
+import { BREAD, makeWorld, OTHER_STREET, OUR_STREET, PAGE, SAFEWAY, SETTINGS } from "./world.mjs";
 import { resetKv } from "../lib/kv";
 import { finishJob, jobStatus, queueJob, resetJobs, takeJob } from "../lib/jobs";
 
@@ -355,3 +355,71 @@ describe("the background: jobs in order, reports kept, a job lost when Chrome st
 });
 
 void SAFEWAY;
+
+describe("switching Safeway to Pickup (Sam, Nov 23: \"i want this process to be automated\")", () => {
+  const STORE = `Safeway ${OUR_STREET} Petaluma, CA 00000`;
+  const withStore = (kind, args = {}) => ({ id: `j${++ids}`, kind, args, page: PAGE, settings: SETTINGS, store: STORE });
+  const runS = async (kind, args) => (await drive(helper.runJob(withStore(kind, args), null))).value;
+  const noPickupNow = () => { world.note({ userType: "C", preference: "" }); world.shop.cartGone = true; world.shop.box = { selected: "" }; };
+
+  it("signed in with Pickup not chosen: picks the household's store, then reads the cart", async () => {
+    noPickupNow();
+    world.shop.cart = { "960001": 2 };
+    const r = await runS("cart");
+    expect(r.result.noPickup).toBeUndefined();
+    expect(r.result.signedIn).toBe(true);
+    expect(world.shop.presses).toMatchObject({ box: 1, "pickup tab": 1, [`select ${OUR_STREET}`]: 1 });
+    expect(world.shop.presses[`select ${OTHER_STREET}`]).toBeUndefined();
+    expect(world.shop.presses["delivery tab"]).toBeUndefined();
+  });
+
+  it("an Add with Pickup not chosen switches, then adds", async () => {
+    noPickupNow();
+    expect(await setQtyS("960001", 1)).toMatchObject({ ok: true });
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+    async function setQtyS(productId, qty) { return runS("setQty", { productId, qty, query: "milk", name: "", on: "cart" }); }
+  });
+
+  it("Safeway not taking the Select: one try, then said as before (noPickup), nothing pressed again", async () => {
+    noPickupNow();
+    world.shop.box.noTake = true;
+    const r = await runS("cart");
+    expect(r.result.noPickup).toBe(true);
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+  });
+
+  it("the household's store not in the list, or there twice: nothing selected", async () => {
+    noPickupNow();
+    world.shop.box.stores = [OTHER_STREET, "300 Elm Rd"];
+    expect((await runS("cart")).result.noPickup).toBe(true);
+    expect(Object.keys(world.shop.presses).filter((k) => k.startsWith("select"))).toEqual([]);
+    world.shop.box.stores = [OUR_STREET, OUR_STREET];
+    world.shop.presses = {};
+    expect((await runS("cart")).result.noPickup).toBe(true);
+    expect(Object.keys(world.shop.presses).filter((k) => k.startsWith("select"))).toEqual([]);
+  });
+
+  it("no store known (Simmer sent none): no switch, said as before", async () => {
+    noPickupNow();
+    expect((await run("cart")).result.noPickup).toBe(true);
+    expect(world.shop.presses).toEqual({});
+  });
+
+  it("getting ready on delivery switches to Pickup first, then goes on to Checkout", async () => {
+    world.note({ userType: "C", preference: "Delivery" });
+    world.shop.box = { selected: "", mode: "Delivery" };
+    world.shop.cart = { "960001": 1 }; world.shop.checkoutButton = true;
+    const r = await runS("checkoutPrepare", { list: true });
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+    expect(world.shop.presses.checkout).toBe(1);
+    expect(r.result.stopped).not.toBe("no pickup chosen");
+  });
+
+  it("placing never switches: stops \"no pickup chosen\", nothing pressed", async () => {
+    noPickupNow();
+    world.shop.cart = { "960001": 1 };
+    const r = await runS("checkoutPlace", { windowId: "w1", expect: { cart: "960001x1" } });
+    expect(r.result?.stopped ?? r.error).toBe("no pickup chosen");
+    expect(Object.keys(world.shop.presses).filter((k) => k !== "close")).toEqual([]);
+  });
+});

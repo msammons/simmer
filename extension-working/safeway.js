@@ -102,6 +102,9 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
   // "didn't load").
   // Signed in with Pickup not chosen sends every page home too (Nov 23: after signing in again Safeway had forgotten
   // Pickup, and the helper said signed out while Sam was signed in): Safeway's own session note says which (`noPickup`).
+  // Signed in with Pickup not chosen, the helper switches Safeway to Pickup at the household's store once (Sam, Nov 23:
+  // "i want this process to be automated"), then opens the page again; still sent away, it's said as before.
+  let switched = false;
   for (let i = 0; i < 2; i++) {
     await go(tabId, url);
     const r = await waitForProducts(tabId, url, page, settings, tries);
@@ -109,12 +112,41 @@ async function open(tabId, url, page, settings, tries = settings.resultsTries ??
     if (away && i === 0) continue;
     if (away) {
       const s = r && "session" in r ? r.session : await onPage(tabId, "session", null, page);
+      if (!switched && noPickup(s, page) && page.store) { switched = true; if (await choosePickup(tabId, page)) { i = -1; continue; } }
       return { ...(r ?? { cartCount: null, tiles: {}, noResults: false, loading: false }), products: [], signedIn: false, away: true, ...(noPickup(s, page) && { noPickup: true }) };
     }
     if (r || !(await movedOff(tabId, url))) return r;
   }
   return null;
 }
+/**
+ * Switches Safeway to Pickup at the household's store (page.js "choosePickup"; docs/CHECKOUT.md), on whatever Safeway
+ * page the tab is on, and says whether Safeway's note now says pickup. One try; a page reload after Safeway's Select ends
+ * the script, so the note is read again where the tab lands.
+ */
+async function choosePickup(tabId, page) {
+  // Safeway's home page carries the box's button (the cart and checkout pages are another app and may not).
+  let at = (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
+  if (!at.startsWith(`${page.site}/`) || new URL(at).pathname !== "/") { await go(tabId, `${page.site}/`); at = `${page.site}/`; }
+  const r = await onPage(tabId, "choosePickup", { store: page.store }, page);
+  if (r && r.done === false) return false;
+  // Safeway's note can already say pickup (the box closed in place); otherwise the page is reloading: read it once loaded.
+  let s = r?.mode !== undefined && r.closed ? { mode: r.mode } : null;
+  if (!s || !same(s.mode, page.session?.pickup)) { await loaded(tabId); s = await onPage(tabId, "session", null, page); }
+  return Boolean(s && page.session && same(s.mode, page.session.pickup));
+}
+/** Waits until the tab has finished loading (Chrome's own event; at most 10 s). */
+function loaded(tabId) {
+  return new Promise((resolve) => {
+    let t = null;
+    const done = () => { chrome.tabs.onUpdated.removeListener(on); clearTimeout(t); resolve(); };
+    const on = (id, info) => { if (id === tabId && info.status === "complete") done(); };
+    chrome.tabs.onUpdated.addListener(on);
+    t = setTimeout(done, 10_000);
+    chrome.tabs.get(tabId).then((tab) => { if (tab?.status === "complete") done(); }, done);
+  });
+}
+
 /** Whether the tab is now on another page than `url` (by its address without the part after #). */
 async function movedOff(tabId, url) {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
@@ -251,7 +283,10 @@ async function typing(tabId) {
 }
 
 async function doJob(job, tabId) {
-  const { page, settings = {}, args = {} } = job;
+  const { settings = {}, args = {} } = job;
+  // The household's pickup store (Simmer sends the one checkout learned), for switching Safeway to Pickup there. Placing
+  // never switches (docs/CHECKOUT.md), so its page has no store.
+  const page = job.kind === "checkoutPlace" ? job.page : { ...job.page, store: typeof job.store === "string" ? job.store : "" };
   if (job.kind === "search") {
     const r = await search(tabId, args.query, page, settings);
     if (!r) return { ok: false, error: "not-loaded" };
@@ -371,8 +406,17 @@ async function checkoutReady(tabId, page, windowId, list = null, bagsOwn = null)
   if (/sign back in|sign in to continue/i.test(here.text)) return stop("signed out");
   // Simmer orders pickup only (docs/CHECKOUT.md). Safeway's session note, read before any press (Nov 23): signed in with
   // Pickup not chosen (Safeway sent the cart home), or set to delivery: stop, nothing pressed, and the mode is never
-  // switched here (Sam switches it on Safeway). The checkout page's own words say delivery too, below.
-  const sentHome = AWAY.includes(new URL(here.url).pathname) && new URL(here.url).pathname !== new URL(start).pathname;
+  // The checkout page's own words say delivery too, below. Getting ready and test runs switch Safeway to Pickup at the
+  // household's store first, once (Sam, Nov 23: "i want this process to be automated"), and start again from the cart;
+  // placing never switches (its page carries no store), so placing stops here as before.
+  let sentHome = AWAY.includes(new URL(here.url).pathname) && new URL(here.url).pathname !== new URL(start).pathname;
+  if (page.store && ((sentHome && noPickup(here.session, page)) || onDelivery(here.session, page)) && await choosePickup(tabId, page)) {
+    const cart = `${page.site}${page.cartPath}`;
+    await go(tabId, cart);
+    here = await settle(cart);
+    if (!here) return stop("page didn't load");
+    sentHome = AWAY.includes(new URL(here.url).pathname);
+  }
   if (sentHome && noPickup(here.session, page)) return stop("no pickup chosen");
   if (onDelivery(here.session, page)) return stop("delivery");
   if (new URL(here.url).pathname === checkoutPath && deliveryPage(here.text)) return stop("delivery");
