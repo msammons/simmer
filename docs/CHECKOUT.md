@@ -63,7 +63,10 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    getting ready: the reading starts at once, its steps said in place, and lands on Place order · $X when the server
    allows placing, or on Test run · $X while the helper's checkout fingerprint hasn't passed a test run (Sam, Nov 24:
    "We only need the test run button if it's required"). The sheet only stops offering Test run once it isn't needed;
-   every check on the server is unchanged, and placing still needs a passed test run (phase 3).
+   every check on the server is unchanged, and placing still needs a passed test run (phase 3). When neither shows (the
+   test run passed but placing is closed: the server's switch off, or the helper out of date), one short muted line
+   says why in the server's own words, e.g. "The helper on the computer needs updating first." (Sam, Nov 24); with a
+   button showing, no line.
    Changing the bags while a reading shows gets ready again with the same time (Pick another time goes back to the
    times); every reading has its own id, and Face ID approves only the one showing. Getting ready takes
    only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.

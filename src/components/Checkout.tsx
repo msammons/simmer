@@ -273,6 +273,8 @@ function TestRun({ onClose }: { onClose: () => void }) {
       {run.stage === "ready" && buttons?.place && (
         <Button className="w-full" disabled={!buttons.enabled} onClick={() => setConfirming(true)}>Place order · {cents(run.view.totalCents)}</Button>
       )}
+      {/* Neither button (the test run passed but placing is closed): one muted line saying why, in the server's words (Sam, Nov 24). */}
+      {run.stage === "ready" && buttons && !buttons.place && !buttons.test && run.view.orderWhy && <p className="px-4 t-sub text-muted">{run.view.orderWhy}</p>}
       {run.stage === "ready" && buttons?.test && (
         <Button className="w-full" variant={buttons.place ? "secondary" : "primary"} disabled={!buttons.enabled} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}

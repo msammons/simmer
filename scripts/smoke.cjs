@@ -622,7 +622,7 @@ const began = Date.now();
       ok("shop: what's out in Stock is on the list", await seen(tick("Milk")));
       ok("shop: every list row has a checkbox (only a cart thing added on Safeway has none)", (await page.locator("[data-shop-row]").count()) === (await page.locator("[data-shop-row] [role=checkbox]").count()) + 1);
       const swGroup = page.locator("main section").filter({ has: page.getByRole("heading", { name: "Safeway", exact: true }) });
-      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add usuals stays by Safeway.
+      // One line above the list (Nov 14): Show checked, and the cart's price with a Check out button; Add favorites stays by Safeway.
       const checkOut = page.getByRole("button", { name: "Check out" });
       const shopMenu = page.getByLabel("More for Shop");
       {
@@ -631,8 +631,15 @@ const began = Date.now();
         ok("shop: Check out sits on the left, away from the ⋯ (Nov 17)", Boolean(add && menu && co) && co.x - add.x < 24 && menu.x - (co.x + co.width) > 80);
       }
       const showCheckedText = async () => (await shopMenu.locator("option[value=checked]").innerText()).trim();
-      ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add usuals by Safeway", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
-        && /^Add usuals \(2\)$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      ok("shop: Show checked in the ⋯ by Add; the cart's price and Check out above the list; Add favorites by Safeway, a button with no number", (await page.getByRole("checkbox", { name: "Show checked" }).count()) === 0 && (await showCheckedText()).endsWith("Show checked") && await page.getByText("$5.99", { exact: true }).first().isVisible() && await checkOut.isVisible()
+        && /^Add favorites$/.test((await swGroup.locator("h2 + *").innerText().catch(() => "")).trim()) && (await page.getByText(/in the cart/).count()) === 0, await swGroup.locator("h2 + *").innerText().catch(() => ""));
+      {
+        // Add favorites (Sam, Nov 24): a real button, button-sized, with the row +'s own fill and text colour.
+        const fav = swGroup.getByRole("button", { name: "Add favorites" }), plus = page.getByRole("button", { name: /^Add .* to the cart$/ }).first();
+        const look = (l) => l.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.color, c.backdropFilter].join("|"); });
+        const box = await fav.boundingBox();
+        ok("shop: Add favorites is a button with the row +'s fill and text, button-sized", (await fav.count()) === 1 && (await look(fav)) === (await look(plus)) && Boolean(box) && box.height >= 32, `${await look(fav).catch(() => "")} vs ${await look(plus).catch(() => "")}`);
+      }
       // Check out (Nov 14): the order only; set-up is in Settings, and until it's done Check out says so in one line.
       {
         await checkOut.tap();
@@ -704,7 +711,7 @@ const began = Date.now();
         // Test run only when one is required (Sam, Nov 24), and after one passes, Safeway read again with the same time and
         // bags, landing on Place order with no time picked again. Face ID stood in for (the page's own credentials call).
         {
-          let passed = true, reads = 0;
+          let passed = true, reads = 0, closed = false;
           const bodies = [];
           const DAY = "select slots for TUESDAY Nov, 24";
           await page.route("**/api/checkout", async (r) => {
@@ -715,7 +722,7 @@ const began = Date.now();
             if (b.op === "prepare") {
               reads++;
               return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", window: "Tue 6–7 PM", card: "4242", items: 3, totalCents: 694, stops: [], highlights: [], remember: false, bagsOwn: b.bagsOwn !== false, feesCents: null,
-                canOrder: passed, orderWhy: passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, preparedId: `reading${reads}` } });
+                canOrder: passed && !closed, orderWhy: closed ? "The helper on the computer needs updating first." : passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, preparedId: `reading${reads}` } });
             }
             if (b.op === "approve") return r.fulfill({ json: { ok: true, approvalId: `ok-${b.preparedId}`, totalCents: 694, window: "Tue 6–7 PM" } });
             if (b.op === "test-run") { passed = true; return r.fulfill({ json: { ok: true, would: "Would place $6.94 · Tue 6–7 PM" } }); }
@@ -751,6 +758,16 @@ const began = Date.now();
           const preps = bodies.filter((x) => x.op === "prepare" && !x.jobId);
           ok("checkout: Safeway read again with the same time and bags, as a new reading approved on its own", preps.length === 2 && preps[1].windowId === "w1" && preps[1].bagsOwn === preps[0].bagsOwn
             && bodies.filter((x) => x.op === "approve").map((x) => x.preparedId).join() === "reading1" && bodies.filter((x) => x.op === "times").length === 1, JSON.stringify(bodies));
+          ok("checkout: with a button showing, no line saying why", (await co.getByText("The helper on the computer needs updating first.").count()) === 0);
+          await page.keyboard.press("Escape"); await gone(co);
+          // Test run passed but placing closed (the helper out of date): neither button, one muted line saying why (Sam, Nov 24).
+          closed = true;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          ok("checkout: with neither Test run nor Place order, one line says why", await seen(co.getByText("The helper on the computer needs updating first.", { exact: true }), 3000)
+            && (await co.getByRole("button", { name: /^(Test run|Place order)/ }).count()) === 0);
           await page.keyboard.press("Escape"); await gone(co);
           await page.unroute("**/api/checkout"); await page.unroute("**/api/checkout/passkey");
         }
@@ -764,7 +781,7 @@ const began = Date.now();
       await page.getByRole("button", { name: "One more Milk" }).tap();
       ok("shop: + shows within 150 ms", await within150(() => page.getByLabel("2 in the cart").first().isVisible()));
       await idle();
-      ok("shop: and Safeway has them: Auto-fill gone with one usual left", await until(async () => (await page.getByRole("button", { name: /^Add usuals/ }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
+      ok("shop: and Safeway has them: Auto-fill gone with one usual left", await until(async () => (await page.getByRole("button", { name: "Add favorites" }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
       ok("shop: Find on a row with no usual", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
       // Find's Back, place and Skip or Next float at the bottom of its sheet (Sam, Nov 24: "It needs to float somehow"):
       // in view however far the results are scrolled, and after the last product once at the end, never over it.
