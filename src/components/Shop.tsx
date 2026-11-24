@@ -19,7 +19,7 @@ import { CheckoutSheet } from "./Checkout";
  * Every row is the same: a tick (got it, in the store or delivered), the household's name for the thing, and one small
  * line under it (Safeway's product and how much is needed, or just the amount). While Safeway can be reached, a Safeway
  * row also has Add (its usual product into the cart), Find (Safeway's choices, in a sheet) or − n + once it's in the
- * cart; the Safeway header has what's in the cart and Add usuals, and cart things added on Safeway's own site end the
+ * cart; the Safeway header has what's in the cart and Add favorites (Sam, Nov 24: a button, no count), and cart things added on Safeway's own site end the
  * group. When Safeway can't be reached (a job the helper didn't pick up), its rows are a plain checklist. One Done
  * shopping (confirmed first) takes what's ticked off in every store. No Clear here (Nov 11): New plan on Meals is the
  * one fresh start, and it empties the list.
@@ -226,7 +226,7 @@ export function ShopScreen({ act }: { act: ShopActions }) {
   const product = (p: { id: string; name: string; image?: string }) => ({ id: p.id, name: p.name, price: "", image: p.image ?? "" });
   const want = (f: FindItem) => ({ p: product(f.picked!), qty: Math.max(1, f.want), query: f.query, forItem: f });
   const addUsual = (f: FindItem) => { if (f.picked) { const w = want(f); void sw.setQty(w.p, w.qty, w.query, w.forItem); } };
-  // Usuals not in the cart yet, for Add usuals: every row shows its count at once; Safeway takes them one after another.
+  // Usuals not in the cart yet, for Add favorites: every row shows its count at once; Safeway takes them one after another.
   const usual = toFind.filter((f) => f.picked && !lineOf.has(f.id) && !(pending[f.picked.id] > 0));
 
   const submit = (e: React.FormEvent) => {
@@ -324,7 +324,7 @@ export function ShopScreen({ act }: { act: ShopActions }) {
           {shown.map((s) => (
             <div key={s} className="space-y-2">
             <Group header={STORE_NAMES[s]} aside={s === "safeway" && live && usual.length > 1 && (
-              <button onClick={() => void sw.fill(usual.map(want))} className="shrink-0 t-foot font-semibold text-accent">Add usuals ({usual.length})</button>
+              <button type="button" onClick={() => void sw.fill(usual.map(want))} className={`${pill} glass -my-2 -translate-y-1 text-accent`}>Add favorites</button>
             )}>
               {visible.filter((i) => i.store === s).map(itemRow)}
               {/* Put in the cart on Safeway's own site: in the cart, but not for anything on the list. */}

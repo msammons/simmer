@@ -41,7 +41,7 @@ function notTaken(result: Record<string, unknown>): string {
 const isAlive = (life: React.RefObject<AbortController | null>) => Boolean(life.current && !life.current.signal.aborted);
 
 type JobOutcome = { ok: true; result: Record<string, unknown> } | { ok: false; problem: string };
-/** One product's number for the cart, as Add usuals sends it. */
+/** One product's number for the cart, as Add favorites sends it. */
 export type CartWant = { p: Product; qty: number; query: string; forItem?: { id: string; item: string } | null };
 /** Why Safeway can't be shopped from here: signed out, signed in with Pickup not chosen, or the computer not answering. */
 export type SafewayOff = "signed-out" | "no-pickup" | "not-connected";
@@ -224,7 +224,7 @@ export function useSafeway() {
     settle();
   }, [run, settle]);
 
-  /** Add usuals: every row shows its number at once; Safeway takes them one after another, then the cart is read once. */
+  /** Add favorites: every row shows its number at once; Safeway takes them one after another, then the cart is read once. */
   const fill = useCallback(async (wants: CartWant[]) => {
     setPending((x) => ({ ...x, ...Object.fromEntries(wants.map((w) => [w.p.id, w.qty])) }));
     busy.current++;

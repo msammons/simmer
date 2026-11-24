@@ -116,7 +116,7 @@ filter pinned under the top bar (All or one store). Every row is the same height
 delivered), the household's name for the thing, and one small line: for a Safeway thing with a chosen product, Safeway's
 product name and "Need …"; otherwise the amount. While Safeway can be reached, a Safeway row also has + (its usual into
 the cart), Find (Safeway's choices with pictures, in a sheet, one item at a time) or − n + once it's in the cart; the
-Safeway header has Add usuals (N); and things put in the cart on Safeway's own site end the Safeway group. Above the list,
+Safeway header has an Add favorites button (no count, styled like the row +; Sam, Nov 24) when more than one usual product is not in the cart yet; and things put in the cart on Safeway's own site end the Safeway group. Above the list,
 Check out, the cart's price and a small status line sit on the left and Shop's ⋯ on the right (Check out always reads
 "Check out", its state shown by colour only, Sam, Nov 24; what's going on is said in the status line beside the price,
 in place, so the line never moves): Show checked (on
