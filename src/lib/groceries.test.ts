@@ -101,6 +101,40 @@ describe("groups on List (Nov 16)", () => {
     await renameGroup("fancy cheese", "");
     expect([await group("smoke brie"), await group("smoke gouda")]).toEqual(["", ""]);
     for (const n of ["smoke brie", "smoke gouda", "smoke oats"]) await removeStaple(n);
+    await renameGroup("breakfast", "");
+  });
+});
+
+describe("groups are kept until Remove group (Sam, Nov 24)", () => {
+  const names = async () => (await loadList()).groups.map((g) => `${g.section}:${g.name}`);
+  it("a group with no things left stays, and goes with Remove group", async () => {
+    await addStaple("kept brie", "fresh", { group: "Kept cheese" });
+    await removeStaple("kept brie");
+    expect(await names()).toContain("fresh:Kept cheese");
+    await renameGroup("kept cheese", "Nice cheese");
+    expect(await names()).toContain("fresh:Nice cheese");
+    expect(await names()).not.toContain("fresh:Kept cheese");
+    await renameGroup("nice cheese", "");
+    expect((await names()).some((n) => /cheese/i.test(n))).toBe(false);
+  });
+  it("reads groups already on things as kept, before the Groups tab exists, and writes them down with the next change", async () => {
+    const { writeTab, readTab } = await import("./store");
+    const before = await readTab("Staples");
+    await writeTab("Staples", [...before, ["old ricotta", "safeway", "fresh", "", "", "", "Old dairy"]]);
+    expect(await names()).toContain("fresh:Old dairy");
+    await removeStaple("old ricotta"); // the first change since: the group is written down before its last thing goes
+    expect(await names()).toContain("fresh:Old dairy");
+    expect((await readTab("Groups")).some((r) => r[1] === "Old dairy")).toBe(true);
+    await renameGroup("old dairy", "");
+  });
+  it("a group whose things all move to another part of the list goes with them", async () => {
+    await addStaple("moved oats", "pantry", { group: "Moved breakfast" });
+    await moveStaple("moved oats", "fresh");
+    const now = await names();
+    expect(now).toContain("fresh:Moved breakfast");
+    expect(now).not.toContain("pantry:Moved breakfast");
+    await removeStaple("moved oats");
+    await renameGroup("moved breakfast", "");
   });
 });
 

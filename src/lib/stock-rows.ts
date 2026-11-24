@@ -67,9 +67,10 @@ export type StockLine = { kind: "row"; row: StockRow } | { kind: "group"; name: 
 
 /**
  * A section's lines, A to Z (Nov 16, Robin's rule): things in the same group sit together under it. A group shows from
- * its first thing (Sam, Nov 16: a group just made with one thing didn't show).
+ * its first thing (Sam, Nov 16: a group just made with one thing didn't show). `empty`: groups to show even with nothing
+ * showing in them (Show all groups, Nov 24), each as its header alone.
  */
-export function linesOf(rows: StockRow[]): StockLine[] {
+export function linesOf(rows: StockRow[], empty: string[] = []): StockLine[] {
   const groups = new Map<string, StockRow[]>();
   for (const r of rows) if (r.group) groups.set(norm(r.group), [...(groups.get(norm(r.group)) ?? []), r]);
   const lines: StockLine[] = [];
@@ -80,6 +81,11 @@ export function linesOf(rows: StockRow[]): StockLine[] {
     if (seen.has(norm(r.group))) continue;
     seen.add(norm(r.group));
     lines.push({ kind: "group", name: g[0].group, rows: [...g].sort((a, b) => a.name.localeCompare(b.name)) });
+  }
+  for (const name of empty) {
+    if (seen.has(norm(name))) continue;
+    seen.add(norm(name));
+    lines.push({ kind: "group", name, rows: [] });
   }
   const nameOf = (l: StockLine) => (l.kind === "row" ? l.row.name : l.name);
   return lines.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));

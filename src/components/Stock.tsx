@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Item, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { useKitchen, useList } from "@/lib/app-data";
 import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
+import { groupsOf, namesOf, sectionOf, type Group as ListGroup } from "@/lib/groups";
 import { norm } from "@/lib/words";
 import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
@@ -56,7 +57,9 @@ export function StockScreen({ act }: { act: StockActions }) {
   const [showAll, setShowAll] = useState(false);
   const rows = useMemo(() => rowsOf(list, kitchen, { all: showAll }), [list, kitchen, showAll]);
   const staples = useMemo(() => list?.staples ?? [], [list]);
-  const groups = useMemo(() => groupsOf(staples), [staples]);
+  // Every group, empty ones too (Sam, Nov 24): kept until Remove group, so Show all groups and the pickers list them all.
+  const allGroups = useMemo(() => groupsOf(list?.groups, staples), [list, staples]);
+  const groups = useMemo(() => namesOf(allGroups), [allGroups]);
   const shownNames = useMemo(() => new Set(rows.map((r) => norm(r.name))), [rows]);
   const seen = useCallback(() => setAdded(""), []);
   const item = (r: StockRow) => <StockItem key={r.key} r={r} act={act} onRemove={setRemoving} onGroup={setGrouping} fresh={Boolean(added) && norm(r.name) === norm(added)} onSeen={seen} />;
@@ -64,23 +67,25 @@ export function StockScreen({ act }: { act: StockActions }) {
     <div className="space-y-5">
       {/* Add (Nov 16, Sam): a field as on Shop, with Specialty or Common and a group in one small row; marked Need at once.
           Pinned in the top bar, as on Shop (Sam, Nov 19). */}
-      <BrandBar below={<AddFields staples={staples} groups={groups} shown={shownNames} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(staples, t, act, more); setAdded(t); }} />} />
+      <BrandBar below={<AddFields staples={staples} groups={groups} shown={shownNames} label="Add item to the list" placeholder="Add item" onAdd={(t, more) => { addNeed(staples, t, act, more, allGroups); setAdded(t); }} />} />
       <h1 className="sr-only">List</h1>
       {/* The list's own ⋯, above the list on the right (Sam, Nov 17: not beside Add), the same as a row's. */}
-      {list && rows.length > 0 && (
+      {list && (rows.length > 0 || allGroups.length > 0) && (
         <div className="-mb-3 flex justify-end pr-2">
           <MoreMenu label="More for the list" title="List" onPick={(v) => { if (v === "all") setShowAll((s) => !s); }}
             options={[{ value: "all", label: showAll ? "✓ Show all groups" : "Show all groups" }]} />
         </div>
       )}
       {!list && <Held />}
-      {list && !rows.length && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
+      {list && !rows.length && !(showAll && allGroups.length) && <EmptyState icon="list" title="Nothing on the list yet">Add the things you always keep.</EmptyState>}
       {SECTIONS.map(({ id, name }) => {
         const here = rows.filter((r) => r.section === id).sort((a, b) => a.name.localeCompare(b.name));
-        if (!here.length) return null;
+        // Show all groups (Nov 24): a group with nothing in it shows too, its header alone.
+        const empty = showAll ? allGroups.filter((g) => g.section === id).map((g) => g.name) : [];
+        if (!here.length && !empty.length) return null;
         return (
           <Group key={id} header={name}>
-            {linesOf(here).flatMap((l, i, all) => {
+            {linesOf(here, empty).flatMap((l, i, all) => {
               if (l.kind === "row") return [item(l.row)];
               const key = `${id}|${norm(l.name)}`;
               // Closed, a group shows what's in the cart (Need) and what the planned dinners need (Sam, Nov 19: a dinner's
@@ -127,7 +132,7 @@ export function StockScreen({ act }: { act: StockActions }) {
   );
 }
 
-/** The groups already used, to tap one, and a box for a new one. */
+/** Every group (empty ones too), to tap one, and a box for a new one. */
 function GroupPicker({ groups, value, onChange }: { groups: string[]; value: string; onChange: (g: string) => void }) {
   const chip = (on: boolean) => `rounded-full px-3.5 py-1.5 t-sub font-semibold transition ${on ? "bg-accent text-on-accent" : "bg-sunk text-ink"}`;
   return (
@@ -146,15 +151,14 @@ function GroupPicker({ groups, value, onChange }: { groups: string[]; value: str
  * Something added as Need (Nov 16): a thing already kept is marked Need as it is; a new one is kept as specialty (it
  * leaves Stock after the shop; ⋯ makes it common or puts it in a group).
  */
-export function addNeed(staples: Staple[], text: string, act: Pick<StockActions, "keepAdd">, more: { kind?: StapleKind; group?: string } = {}) {
+export function addNeed(staples: Staple[], text: string, act: Pick<StockActions, "keepAdd">, more: { kind?: StapleKind; group?: string } = {}, groups: ListGroup[] = []) {
   const had = staples.find((s) => norm(s.item) === norm(text));
-  // Into a group: where the group's other things are, so it doesn't split across sections (Nov 16).
+  // Into a group: where the group's other things are, so it doesn't split across sections (Nov 16); an empty group's
+  // things go where the group sits (Nov 24).
   const with_ = more.group ? staples.find((s) => s.group && norm(s.group) === norm(more.group!)) : undefined;
-  act.keepAdd(had?.item ?? text, had ? undefined : with_?.section, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
+  const where = with_?.section ?? (more.group ? sectionOf(groups, more.group) : undefined);
+  act.keepAdd(had?.item ?? text, had ? undefined : where, had ? { need: true } : { need: true, kind: more.kind ?? "specialty", ...(more.group && { group: more.group }) });
 }
-
-/** The groups already used, A to Z, each once whatever its capitals. */
-const groupsOf = (staples: Staple[]) => [...new Map(staples.filter((s) => s.group).map((s) => [norm(s.group), s.group])).values()].sort((a, b) => a.localeCompare(b));
 
 const pillSelect = "h-9 appearance-none truncate rounded-full bg-sunk pl-3.5 pr-8 text-base font-semibold text-ink outline-none ring-accent focus:ring-2";
 

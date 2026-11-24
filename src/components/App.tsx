@@ -10,6 +10,7 @@ import { StockScreen, type StockActions } from "./Stock";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
+import { afterChange, groupsOf, renamed } from "@/lib/groups";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
 import { Alert, Button, Contained, Dialog, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
 import { todayIn } from "@/lib/time";
@@ -64,6 +65,8 @@ const atRest = () => !document.querySelector('[role="dialog"]:not([data-at-rest]
 let standIns = 0;
 const standInId = (kind: "new" | "saving" | "adding") => `${kind}-${Date.now()}-${++standIns}`;
 const isStandIn = (id: string) => id.startsWith("new-") || id.startsWith("saving-");
+/** The list with its kept things changed, and its groups with them (lib/groups.ts: a group stays until Remove group). */
+const keepGroups = (l: ListState, staples: ListState["staples"]): ListState => ({ ...l, staples, groups: afterChange(groupsOf(l.groups, l.staples), l.staples, staples) });
 /** A list row shown at once for something just added, filed where Simmer would file it, until the server's list comes back. */
 function standInItem(name: string, quantity: string, more: Partial<Item> = {}, store?: Store, section?: Section): Item {
   const f = known(name);
@@ -299,17 +302,19 @@ export default function App() {
             ? { ...had, ...(more.kind && { kind: more.kind }), ...(more.group !== undefined && { group: more.group }) }
             : { item: text, store: temp.store, section: temp.section, quantity: "", product: "", kind: more.kind ?? "common" as const, group: more.group ?? "" };
           const staples = had ? l.staples.map((x) => (x === had ? s : x)) : [...l.staples, s];
-          if (!more.need) return { ...l, staples };
+          const groups = afterChange(groupsOf(l.groups, l.staples), l.staples, staples); // a new group made here is kept (Nov 24)
+          if (!more.need) return { ...l, staples, groups };
           const row = l.items.find((x) => !x.checked && norm(x.item) === norm(text));
           const items = row ? l.items.map((x) => (x === row ? { ...x, check: false, have: false } : x)) : [...l.items, { ...temp, item: s.item, quantity: s.quantity, store: s.store, section: s.section }];
-          return { ...l, staples, items };
+          return { ...l, staples, groups, items };
         });
       },
-      keepGroup: (from, to) => void change({ op: "keepGroup", from, to }, (l) => ({ ...l, staples: l.staples.map((x) => (x.group && norm(x.group) === norm(from) ? { ...x, group: to } : x)) })),
-      keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)) })),
-      keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => ({ ...l, staples: l.staples.map((x) => (x.item === item ? { ...x, section } : x)) })),
+      // The groups change with the kept things, as on the server (lib/groups.ts, Nov 24): a group stays until Remove group.
+      keepGroup: (from, to) => void change({ op: "keepGroup", from, to }, (l) => ({ ...l, staples: l.staples.map((x) => (x.group && norm(x.group) === norm(from) ? { ...x, group: to } : x)), groups: renamed(groupsOf(l.groups, l.staples), from, to) })),
+      keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)))),
+      keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, section } : x)))),
       mealMove: (it, section) => void change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
-      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => ({ ...l, staples: l.staples.filter((x) => x.item !== st.item) })),
+      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => keepGroups(l, l.staples.filter((x) => x.item !== st.item))),
     };
     return { shop, stock };
   }, [lists, kitchens]);

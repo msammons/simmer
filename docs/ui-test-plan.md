@@ -82,6 +82,7 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 5.12 | A kept thing's ⋯ | Move to a section, Put in a group / Change group, Make common (always shows) / Make specialty (shows until bought), Remove from the list (asks, "You can add it again any time.") | L |
 | 5.13 | A specialty thing after the shop | Leaves the list once bought; Show all groups brings it back | L |
 | 5.14 | Recipe lines on the list | No sizes or cuts ("large onion" is "onion", "diced" and "chopped" go; "diced tomatoes" stays whole); "red wine or balsamic vinegar" is one thing; "salt and black pepper" is two; cumin and ground cumin are one line; never tap water | L |
+| 5.15 | Remove the last thing in a group, then Show all groups | The group stays (Nov 24): hidden normally, under Show all groups its header alone with no rows, in its section; Add item's Group pill and Put in a group list it; a new thing added into it lands in its section; only its ⋯ Remove group (asks first) takes it away | L |
 
 ## 6. Shop
 

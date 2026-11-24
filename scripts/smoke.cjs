@@ -579,6 +579,30 @@ const began = Date.now();
       await page.getByLabel("More for smoke swiss").selectOption("remove");
       await page.getByRole("dialog", { name: "Remove Smoke swiss from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await idle();
       ok("stock: with its group removed, a thing is on its own", (await page.getByRole("button", { name: "Smoke cheese" }).count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke cheddar" }).count()) === 1);
+      // A group with no things left stays until Remove group (Sam, Nov 24): Show all groups shows it, its header alone,
+      // and Add's group picker lists it.
+      await stockField.fill("smoke brie");
+      await page.getByLabel("Group", { exact: true }).selectOption({ label: "New group…" });
+      await page.getByLabel("New group").fill("Smoke empty"); await page.getByLabel("New group").press("Enter");
+      await until(async () => (await page.getByLabel("Group", { exact: true }).inputValue()) === "Smoke empty", 2000);
+      await page.getByRole("button", { name: "Add", exact: true }).first().tap(); await idle();
+      await page.getByLabel("More for smoke brie").selectOption("remove");
+      await page.getByRole("dialog", { name: "Remove Smoke brie from the list?" }).getByRole("button", { name: "Remove from the list" }).tap(); await idle();
+      const emptyGroup = page.locator('[data-group="Smoke empty"]');
+      ok("stock: a group whose last thing is removed doesn't show until Show all groups", (await emptyGroup.count()) === 0 && (await page.getByRole("group", { name: "Have or need smoke brie" }).count()) === 0);
+      await listMenu.selectOption("all");
+      ok("stock: Show all groups shows an emptied group, its header alone", await until(async () => (await emptyGroup.count()) === 1 && (await emptyGroup.locator("[role=group]").count()) === 0, 2000));
+      if (process.env.SHOT) { await emptyGroup.scrollIntoViewIfNeeded(); await frames(); await page.screenshot({ path: `${process.env.SHOT}/${tag}-empty-group.png` }); }
+      await stockField.fill("smoke camembert");
+      const pickerHas = async (name) => (await page.getByLabel("Group", { exact: true }).locator("option").allInnerTexts()).includes(name);
+      ok("stock: Add's group picker lists the emptied group", await until(() => pickerHas("Smoke empty"), 2000));
+      await stockField.fill("");
+      await page.getByLabel("More for the Smoke empty group").selectOption("remove");
+      await page.getByRole("dialog", { name: "Remove the Smoke empty group?" }).getByRole("button", { name: "Remove group" }).tap(); await idle();
+      await stockField.fill("smoke camembert");
+      ok("stock: Remove group takes an empty group off the list and out of the picker", (await emptyGroup.count()) === 0 && !(await pickerHas("Smoke empty")));
+      await stockField.fill("");
+      await listMenu.selectOption("all");
       await page.screenshot({ path: `${dir}/5-stock-behaviour.png`, fullPage: true });
 
       // Shop (Nov 12): one page grouped by store, with a store filter at the top. What's out in Stock is on the list. Safeway's side is
