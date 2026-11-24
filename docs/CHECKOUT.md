@@ -39,8 +39,8 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    signed out, when it was signed in with Pickup not chosen (Nov 23), and when the computer isn't answering, a press
    looking again). The button always reads "Check out" (Sam, Nov 24): its state shows by colour only, and the words
    ("Signed out", "Choose Pickup on Safeway", "Not connected", "Looking…" while it reads, "Still signed out" and the
-   like when it ends the same, the helper's step while the cart is read) are a small status line beside the cart's
-   price, in place, so the line never moves. Until ordering is
+   like when it ends the same, the helper's step while the cart is read) are a small status line beside it, in
+   place, so the line never moves (no price on that line, Sam, Nov 24; the total is on the sheet). Until ordering is
    set up and on in Settings → Ordering, the sheet says so and offers nothing else.
 2. A sheet: what Simmer knows at once (how many things in the cart and Simmer's estimate), then
    Safeway's pickup days and the day showing's free times, as on its site (Sam, Nov 14: "let me pick", then "picking a

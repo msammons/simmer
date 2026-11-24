@@ -10,6 +10,13 @@ export const fromDinner = (it: Pick<Item, "for" | "checked">) => {
   return !it.checked && Boolean(f) && f !== "every week" && !f.split(",").map((x) => x.trim()).includes("added by hand");
 };
 
+/**
+ * What Remove from the list takes off with a kept thing (Sam, Nov 24: sugar stayed on Shop after its kept thing was
+ * removed): its List rows not yet bought and not for a dinner (a dinner's thing stays, on the List as the dinner's).
+ */
+export const removedWith = (items: Item[], name: string): string[] =>
+  items.filter((i) => !i.checked && norm(i.item) === norm(name) && !fromDinner(i)).map((i) => i.id);
+
 /** check: not answered yet; have: checked and there (off every list); need: on the list. */
 export type Answer = "check" | "have" | "need";
 
@@ -57,6 +64,13 @@ export function rowsOf(list: ListState | null, kitchen: Kitchen | null, opts: { 
     if (known.has(norm(f.item))) continue;
     known.add(norm(f.item));
     rows.push(row(`f|${f.id}`, f.item, "freezer", (f.store as Store) || "safeway", find(f.item), null, f));
+  }
+  // Anything else on the list (Sam, Nov 24: sugar was on Shop but not here, its kept thing removed while it was Needed;
+  // the same for a thing added by hand): its own row in its section, so everything on Shop shows here and can be answered.
+  for (const it of items) {
+    if (known.has(norm(it.item))) continue;
+    known.add(norm(it.item));
+    rows.push(row(`l|${it.id}`, it.item, it.section, it.store, it, null, null));
   }
   return rows;
 }

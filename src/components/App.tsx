@@ -7,6 +7,7 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SafewayHost, useSafewayCart } from "./Safeway";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
+import { removedWith } from "@/lib/stock-rows";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
@@ -314,7 +315,10 @@ export default function App() {
       keepSet: (item, c) => void change({ op: "keepSet", item, ...c }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, ...(c.kind && { kind: c.kind }), ...(c.group !== undefined && { group: c.group }) } : x)))),
       keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, section } : x)))),
       mealMove: (it, section) => void change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
-      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => keepGroups(l, l.staples.filter((x) => x.item !== st.item))),
+      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) => {
+        const off = new Set(removedWith(l.items, st.item)); // its rows not bought and not a dinner's go with it (Nov 24)
+        return keepGroups({ ...l, items: l.items.filter((x) => !off.has(x.id)) }, l.staples.filter((x) => x.item !== st.item));
+      }),
     };
     return { shop, stock };
   }, [lists, kitchens]);

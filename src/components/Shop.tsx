@@ -63,13 +63,14 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
 }
 
 /**
- * One line above the list: a Check out button with a cart, then the Safeway cart's price and a small status line, in
- * place. (Show checked moved to the ⋯ by Add, Nov 17: on, what's ticked stays, struck through; off, it's hidden.) The
- * button always reads "Check out" (Sam, Nov 24): its state shows by colour only, and what's going on is said in the
- * status line to the right of the price, the same height, so the line never moves:
- * - something in the cart: orange Check out, then the price;
+ * One line above the list: a Check out button with a cart, then a small status line, in place (no price: Sam, Nov 24,
+ * "We can drop the dollar amount by cart"; the total is on the Check out sheet). (Show checked moved to the ⋯ by Add,
+ * Nov 17: on, what's ticked stays, struck through; off, it's hidden.) The button always reads "Check out" (Sam, Nov 24):
+ * its state shows by colour only, and what's going on is said in the status line beside it, the same height, so the
+ * line never moves:
+ * - something in the cart: orange Check out;
  * - nothing in the cart: Check out greyed, can't be pressed (Nov 21: with no button, Safeway looked not connected);
- * - Safeway signed out on the computer (Nov 16): greyed, no price, "Signed out"; pressing it looks again (Nov 21, Sam:
+ * - Safeway signed out on the computer (Nov 16): greyed, "Signed out"; pressing it looks again (Nov 21, Sam:
  *   signed in on the computer, Shop still said Signed out, since nothing tells an open screen);
  * - the computer not answering: greyed, "Not connected"; pressing it looks again, the same way;
  * - signed in on the computer with Pickup not chosen on Safeway (Nov 23: Safeway sent every page home and this said
@@ -81,7 +82,7 @@ function moreFor(it: Item, inCart: number, canPick: boolean) {
  * said in the status (`words`, Nov 23, Sam: "some sort of status message saying what the app is doing").
  */
 export type CartButton =
-  | { state: "ready"; price: string; onCheckOut: () => void; busy?: boolean; words?: string }
+  | { state: "ready"; onCheckOut: () => void; busy?: boolean; words?: string }
   | { state: "empty" }
   | { state: SafewayOff; onLook: () => void; busy?: boolean; still?: boolean; words?: string };
 /** Each state's words: in the status line, for screen readers, and after a look again that found it the same. */
@@ -91,7 +92,7 @@ const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
   "not-connected": ["Not connected", "Safeway not connected. Check again", "Still not connected"],
 };
 
-/** What's going on, in words, beside the price (never on the button). */
+/** What's going on, in words, beside Check out (never on the button). */
 function statusWords(cart: CartButton | null): string {
   const off = cart && cart.state !== "ready" && cart.state !== "empty" ? cart : null;
   return !cart ? "" : cart.state === "ready" ? (cart.busy && cart.words) || ""
@@ -99,14 +100,13 @@ function statusWords(cart: CartButton | null): string {
 }
 
 function TopLine({ cart, menu, add }: { cart: CartButton | null; menu: React.ReactNode; add?: React.ReactNode }) {
-  // With Add favorites beside the ⋯, a narrow phone (under 400 px) has no room for Check out's cart picture: it goes and
-  // the button's sides come in a little, so Check out, the price, Add favorites and the ⋯ all fit on one line whole.
-  const tight = Boolean(add);
-  const base = `flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold${tight ? " max-[399px]:px-3" : ""}`;
-  const icon = <Icon name="cart" className={`size-[18px]${tight ? " max-[399px]:hidden" : ""}`} strokeWidth={2} />;
+  // Check out always has its cart picture (Sam, Nov 24: with the price gone, Check out, Add favorites and the ⋯ fit whole
+  // at 375 wide); the buttons never shrink, the status words give way.
+  const base = "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 t-sub font-semibold";
+  const icon = <Icon name="cart" className="size-[18px]" strokeWidth={2} />;
   const status = statusWords(cart);
   return (
-    // Above the list (Sam, Nov 17): Check out and the cart's price on the left, away from Shop's own ⋯ on the right.
+    // Above the list (Sam, Nov 17): Check out on the left, away from Shop's own ⋯ on the right.
     <div className="flex min-h-10 items-center gap-2 pl-1 pr-2">
       {cart && (
         <span className="flex min-w-0 items-center gap-2">
@@ -119,8 +119,7 @@ function TopLine({ cart, menu, add }: { cart: CartButton | null; menu: React.Rea
             <button type="button" onClick={cart.onLook} disabled={cart.busy} aria-label={`Check out. ${cart.busy ? "Looking at Safeway" : cart.still ? `${OFF_WORDS[cart.state][2]}. Check again` : OFF_WORDS[cart.state][1]}`}
               className={`${base} ${cart.busy ? "bg-sunk text-muted" : "bg-sunk text-ink active:scale-95"}`}>{icon}Check out</button>
           )}
-          {/* Short of room, the status words give way first (shrinking far faster), and only then would the price be cut. */}
-          {cart.state === "ready" && cart.price && <span className="min-w-0 shrink truncate t-sub text-muted">{cart.price}</span>}
+          {/* Short of room, the status words give way, cut short; the buttons never shrink. */}
           <span data-cart-status aria-hidden="true" className="min-w-0 shrink-[1000] truncate t-foot text-muted empty:hidden">{status}</span>
         </span>
       )}
@@ -292,13 +291,13 @@ export function ShopScreen({ act }: { act: ShopActions }) {
     : sw.signedOut ? { state: "signed-out", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "signed-out", words: readingWords }
     : sw.noPickup ? { state: "no-pickup", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "no-pickup", words: readingWords }
     : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected", words: readingWords }
-    : count > 0 ? { state: "ready", price: `${estimate ? "about " : ""}${money(total)}`, onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0, words: sw.reading ? readingWords : undefined }
+    : count > 0 ? { state: "ready", onCheckOut: () => setCheckingOut(true), busy: sw.reading || Object.keys(pending).length > 0, words: sw.reading ? readingWords : undefined }
     : { state: "empty" };
 
   // Feedback's note of Shop (lib/feedback.ts): the store showing, the cart, and the status line's words.
   const status = statusWords(cartButton);
   useNote("state", "Shop", [`showing ${WHERE.find((w) => w.value === where)?.label ?? where}`,
-    !cartButton ? "cart not read yet" : cartButton.state === "ready" ? `cart ${count}, ${cartButton.price}` : cartButton.state === "empty" ? "cart empty" : `Check out: ${cartButton.state}`,
+    !cartButton ? "cart not read yet" : cartButton.state === "ready" ? `cart ${count}, ${estimate ? "about " : ""}${money(total)}` : cartButton.state === "empty" ? "cart empty" : `Check out: ${cartButton.state}`,
     status && `status "${status}"`, !live && sw.loaded && "Safeway rows are a plain checklist"].filter(Boolean).join("; "));
 
   const shown = (where === "all" ? STORES : [where]).filter((s) => visible.some((i) => i.store === s) || (s === "safeway" && loose.length > 0));

@@ -280,7 +280,7 @@ const StockItem = memo(function StockItem({ r, act, onRemove, onGroup, fresh = f
       </button>
     );
   };
-  const menu = r.staple || (r.meal && r.item);
+  const menu = r.staple || (r.item && !r.frozen); // a thing on the list without a kept row: move it, or keep it
   return (
     <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${fresh ? "sm-flash" : ""}`}>
       {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every

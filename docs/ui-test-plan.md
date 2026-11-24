@@ -79,10 +79,11 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 5.9 | A group whose items all show anyway | Starts open; tapping its name closes it to the name alone | L |
 | 5.10 | A group's ⋯ | Only Rename group and Remove group; Rename opens a small sheet; Remove asks "Remove the X group?" and the things stay kept | L |
 | 5.11 | The list's own ⋯ | Show all groups (✓ when on): every kept thing and every group opened, specialty things too | L |
-| 5.12 | A kept thing's ⋯ | Move to a section, Put in a group / Change group, Make common (always shows) / Make specialty (shows until bought), Remove from the list (asks, "You can add it again any time.") | L |
+| 5.12 | A kept thing's ⋯ | Move to a section, Put in a group / Change group, Make common (always shows) / Make specialty (shows until bought), Remove from the list (asks, "You can add it again any time."; a Need or Have on it goes too, off Shop as well) | L |
 | 5.13 | A specialty thing after the shop | Leaves the list once bought; Show all groups brings it back | L |
 | 5.14 | Recipe lines on the list | No sizes or cuts ("large onion" is "onion", "diced" and "chopped" go; "diced tomatoes" stays whole); "red wine or balsamic vinegar" is one thing; "salt and black pepper" is two; cumin and ground cumin are one line; never tap water | L |
 | 5.15 | Remove the last thing in a group, then Show all groups | The group stays (Nov 24): hidden normally, under Show all groups its header alone with no rows, in its section; Add item's Group pill and Put in a group list it; a new thing added into it lands in its section; only its ⋯ Remove group (asks first) takes it away | L |
+| 5.16 | Something on Shop with no kept thing behind it (added on Shop, or a kept thing removed while it was Need) | It shows on the List too, in its section, Need lit; ✓ or the cart answer it there; its ⋯ moves it or offers Always keep on the list | L |
 
 ## 6. Shop
 
@@ -94,19 +95,19 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 6.4 | Shop's ⋯ | "Show checked" with a ✓ when on (remembered on this phone); "Mark the Safeway cart bought" only with something in the cart | L |
 | 6.5 | A row's ⋯ | Pick another (Safeway rows with a product), Get it at Trader Joe's / Costco / Safeway; a thing in the cart can't move | L |
 | 6.6 | Add item on Shop | The row appears on its store with a guessed section; the same thing twice joins one row | L |
-| 6.7 | Safeway rows with known products | A + on each; an "Add favorites" button (no number, the same look as the row +) on the line above the list, just left of the ⋯ and centred with it and Check out, with more than one; at 375 and 390 wide the line fits whole (Check out, price, Add favorites, ⋯; status words cut short first); one tap puts them all in the cart and every row shows its count at once | R |
+| 6.7 | Safeway rows with known products | A + on each; an "Add favorites" button (no number, the same look as the row +) on the line above the list, just left of the ⋯ and centred with it and Check out, with more than one; at 375 and 390 wide the line fits whole (Check out with its cart picture, Add favorites, ⋯; no price on the line; status words cut short first); one tap puts them all in the cart and every row shows its count at once | R |
 | 6.8 | A Safeway row with nothing remembered | A "Find" button; Find opens Safeway's choices in a sheet, one item at a time ("3 of 8"), each starting at the top of the sheet | R |
 | 6.9 | Find | It searches when the item comes up and when Search is tapped, never on each letter typed; "Your favorite" first, then the best matches to her own words; wide screens show a grid | R |
 | 6.10 | Add in Find | The Add becomes − n +; Skip becomes "Next: <item>" in place in the bar at the bottom (nothing moves under the finger); Skip goes on without adding; ‹ goes back | R |
 | 6.10a | Scroll Find's results to the bottom, then tap the search field | The bar (‹, "3 of 8", Skip or Next) stays at the bottom of the sheet on a blurred backing while the results scroll, sits after the last product at the end (never over it), above the home indicator, and above the keyboard while typing; no Next or Skip at the top | L |
 | 6.11 | − / + on a row or in Find for something already in the cart | The number changes at once; the change is made on Safeway's cart page first (not from a search page); quick taps go as one change; − at one takes it out | R |
-| 6.12 | Compare with Safeway's cart page | Same products and quantities; the price beside Check out matches (with "about" when weighed) | R |
+| 6.12 | Compare with Safeway's cart page | Same products and quantities; the total on the Check out sheet matches (with "about" when weighed); no price beside Check out | R |
 | 6.13 | Put something in the cart on Safeway's own site | It shows at the end of the Safeway group with its price and a − n + | R |
 | 6.14 | Safeway cart emptied without ordering | Simmer's cart empties; the list rows stay; the helper visits Purchases → Online, then the cart again | R |
 | 6.15 | Order placed on Safeway, then Shop | The cart's rows come off Safeway's list by themselves and the trip is recorded | R |
 | 6.16 | Mark the Safeway cart bought | Asks "Mark the cart bought?"; the cart and what it was for come off at once | R |
 | 6.17 | Helper not running (two minutes or more) | "Can't reach Safeway right now. Check things off in the store instead."; Safeway rows are a plain checklist (no +, Find or −); back once it checks in | L |
-| 6.18 | Safeway signed out on the computer | The cart greyed, no price, Check out greyed (its words never change) with "Signed out" in the small status line beside it; pressing it looks again ("Looking…" there); rows are a checklist; coming back after signing in reads the cart again | R |
+| 6.18 | Safeway signed out on the computer | The cart greyed, Check out greyed (its words never change) with "Signed out" in the small status line beside it; pressing it looks again ("Looking…" there); rows are a checklist; coming back after signing in reads the cart again | R |
 | 6.19 | Find from the phone with Chrome idle | The search starts within a couple of seconds (a push wakes the helper) | R |
 
 ## 7. Ordering and Check out
