@@ -264,8 +264,14 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * every studio app): a headline, a muted line, then its buttons. Drawn by the app, so its buttons say what they do and a
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
-export function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
+export function Dialog({ title, message, children, onDismiss, above }: {
+  title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void;
+  above?: boolean; // over everything, sheets and other pop-ups too (Feedback, Nov 24)
+}) {
   useNote("popup", title, typeof message === "string" ? message : "");
+  // A pop-up with a field (Feedback) stays in the part of the screen the keyboard leaves, centred there.
+  const card = useRef<HTMLDivElement>(null);
+  const view = useTypingView(card);
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; });
   useEffect(() => {
@@ -276,8 +282,8 @@ export function Dialog({ title, message, children, onDismiss }: { title: string;
     return () => document.removeEventListener("keydown", key);
   }, []);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px] sm-dialog-dim" onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
-      <div role="dialog" aria-modal="true" aria-label={title}
+    <div style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className={`fixed inset-0 ${above ? "z-[60]" : "z-50"} flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px] sm-dialog-dim`} onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
+      <div ref={card} role="dialog" aria-modal="true" aria-label={title}
         className="sm-dialog w-full max-w-[20rem] space-y-4 rounded-[1.5rem] bg-card p-5 text-center shadow-2xl">
         <div className="space-y-1.5">
           <h2 className="t-headline">{title}</h2>
@@ -514,13 +520,12 @@ export function useSwipe(target: React.RefObject<HTMLElement | null>, handlers: 
  * (from the grabber, or anywhere once its content is scrolled to the top), tapping the dimmed area, or pressing Escape.
  */
 let openSheets = 0; // sheets open right now (see Sheet: the page behind stays still while any is)
-export function Sheet({ children, onClose, label, title, footer, wide, tall, note, above }: {
+export function Sheet({ children, onClose, label, title, footer, wide, tall, note }: {
   children: ReactNode; onClose: () => void; label: string; footer?: ReactNode;
   wide?: boolean; // on a wide screen, as wide as the screen allows (Safeway's choices show as a grid)
   tall?: boolean; // full height whatever it holds: a search keeps its box in one place while the results change
   title?: ReactNode; // a centered heading under the grabber, for picker sheets
   note?: string; // what it shows, in one line, for feedback (lib/feedback.ts); a written title is used when there's none
-  above?: boolean; // over everything, pop-ups too (Feedback, Nov 24)
 }) {
   useNote("sheet", label, note ?? (typeof title === "string" && title !== label ? title : ""));
   // Once per open: re-running on every new onClose would save "hidden" as the value to restore.
@@ -612,7 +617,7 @@ export function Sheet({ children, onClose, label, title, footer, wide, tall, not
     };
   }, []);
   return (
-    <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className={`fixed inset-0 ${above ? "z-[60]" : "z-20"} flex items-end`} role="dialog" aria-modal="true" aria-label={label}>
+    <div ref={root} style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className="fixed inset-0 z-20 flex items-end" role="dialog" aria-modal="true" aria-label={label}>
       {/* The dimmed area closes it by touch; the × below is the Close a screen reader or keyboard finds. */}
       <button type="button" aria-hidden tabIndex={-1} onClick={onClose} className="absolute inset-0 animate-[fade_.2s_ease-out] bg-black/25" />
       {/* Floats a little off the screen edges, with rounded corners all round, like iOS sheets. */}

@@ -138,7 +138,8 @@ Never press Place order for real. Everything here is **R**.
 | 8.9 | Slow or failing connection | Screens keep what they had and say so only if they have nothing; nothing shows as empty that isn't | L |
 | 8.10 | Console | No errors while using any screen | L |
 | 8.11 | Screen reader names | Buttons with only icons have names (⋯, −, +, Have, Need, Settings) | L |
-| 8.12 | Hold Settings for about a second on any tab, then let go | Feedback opens (not Settings): one box, the keyboard up, Send greyed until something's written, Cancel; no callout, selection or magnifier on the button | L |
-| 8.13 | With a sheet open (Add meal, Find, Check out, Settings) or a confirm or alert up, hold where Settings is | Feedback opens over it; Cancel or Send leaves the sheet or pop-up exactly as it was; a short tap there still does what it did (closes the sheet, or opens Settings) | L |
+| 8.12 | Hold Settings on any tab and keep holding | After about half a second Feedback appears in the middle of the screen while the finger is still down (not Settings): the title, one box, Cancel and Send side by side, Send greyed until something's written; no callout, selection or magnifier on the button | L |
+| 8.13 | Let go after Feedback appears | The keyboard comes up in the box at once; the pop-up stays in view above it at 390 and 375 wide; nothing under the finger reacts | L |
+| 8.13a | With a sheet open (Add meal, Find, Check out, Settings) or a confirm or alert up, hold where Settings is | Feedback appears over it; Cancel or Send leaves the sheet or pop-up exactly as it was; a short tap there still does what it did (closes the sheet, or opens Settings) | L |
 | 8.14 | Write something, Send | Closes at once, no "Sending…"; with no connection, an alert says so and Feedback comes back with the words in it | L |
 | 8.15 | Read it back: `node scripts/feedback.mjs <env file>` | The newest first: the words, the tab and screen, each open sheet and what it showed, Shop and Safeway's state, the helper, ordering on or off, recent alerts, theme, size, online | R |
