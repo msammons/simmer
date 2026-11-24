@@ -1,10 +1,12 @@
 // The helper's hands on safeway.com: Simmer queues small jobs (search, set a product's quantity in the cart, or read a
 // page so Simmer can learn how Safeway builds it), and this does one at a time in a Safeway tab, using the page details
 // each job carries (`PAGE` in Simmer's src/lib/safeway-helper.mjs). It only opens Safeway's pages and presses Safeway's
-// own buttons, at a person's pace. It never signs in (signed out, it opens Safeway's sign-in page for Sam and waits).
+// own buttons, at a person's pace. Signed out, it signs Sam in through Google once (Sam, Nov 24: "Yes build it"; it
+// never types a password or code), and failing that opens Safeway's sign-in page for him and waits.
 // Checkout (getting ready, test runs, placing) follows docs/CHECKOUT.md step by step; every wait watches the page or
 // Chrome's own events, with one limit (Nov 14, and the last pauses gone Nov 19).
 import { safewayPage } from "./page.js";
+import { googlePage } from "./google.js";
 
 export const SAFEWAY = "https://www.safeway.com";
 const SIGN_IN = `${SAFEWAY}/account/sign-in.html`;
@@ -303,11 +305,73 @@ async function runOne(job, windowId) {
     if (!again) return job.kind === "search" || job.kind === "cart" ? { ok: true, result: { products: [], signedIn: false, ...(job.kind === "cart" && { empty: false }) } } : { ok: false, error: "signed-out" };
     await store.set("parked", "looked");
   } else if (parked) await store.set("parked", "");
-  const r = await doJob(job, tabId);
+  let r = await doJob(job, tabId);
   // Signed in with Pickup not chosen isn't signed out: the tab stays where Safeway put it, for Sam to choose Pickup.
-  const out = r.error !== "no-pickup" && r.result?.noPickup !== true && (r.error === "signed-out" || r.result?.signedIn === false);
+  const signedOut = (x) => x.error !== "no-pickup" && x.result?.noPickup !== true && (x.error === "signed-out" || x.result?.signedIn === false);
+  let out = signedOut(r);
+  // Signed out: signed in through Google once (Sam, Nov 24: "Yes build it"; docs/CHECKOUT.md), as the account Simmer
+  // sent (`job.google`; none sent, none tried), then the job once more. Searches, cart reads and Adds only: never
+  // checkout, never placing.
+  let google = null;
+  if (out && looks && typeof job.google === "string" && job.google && job.page.google) {
+    google = await googleSignIn(tabId, job.page, job.google);
+    if (google.ok) { r = await doJob(job, tabId); out = signedOut(r); }
+  }
   if (out && looks) { await go(tabId, SIGN_IN); await store.set("parked", again ? "looked" : "fresh"); }
+  // Why Google didn't sign in, for Simmer's record (the phone says "Signed out", as before).
+  if (google && out) return r.ok ? { ...r, result: { ...r.result, google: google.why || "still signed out" } } : { ...r, why: `google: ${google.why || "still signed out"}` };
   return r;
+}
+
+/**
+ * Signs Sam in to Safeway through Google (Sam, Nov 24: "Yes build it"; docs/CHECKOUT.md), one try. On Safeway's sign-in
+ * page, its one "Sign in with Google" (page.js "googleStart"); Safeway's page then takes this tab to its sign-in service
+ * and on to Google (no window opens: Safeway sets the address). On Google, the one listed account whose address is
+ * `email` (google.js); Google then sends the tab back to Safeway. Nothing is typed or kept. Google asking for anything
+ * more, or no single account matching: { ok: false, why }, and the tab goes back to Safeway's sign-in page as before.
+ */
+async function googleSignIn(tabId, page, email) {
+  const G = page.google;
+  const signIn = `${page.site}${G.signInPath}`;
+  const at = (u, host) => { try { return new URL(u).host === host; } catch { return false; } };
+  // Back on Safeway from the round trip: any Safeway page but its sign-in page and its sign-in service's return address.
+  const home = (u) => at(u, new URL(page.site).host) && !new URL(u).pathname.startsWith(G.signInPath) && !new URL(u).pathname.startsWith(G.returnPath);
+  step("signin");
+  await go(tabId, signIn);
+  const s = await inTab(tabId, safewayPage, ["googleStart", { ms: 15000 }, page], 25_000);
+  // No answer can be the page leaving under the script (Safeway sends a signed-in tab home): judged by where it lands.
+  if (s && !s.pressed) return { ok: false, why: s.why ?? "no Google button" };
+  let url = await arrive(tabId, (u) => at(u, G.host) || home(u), 30_000);
+  if (!url) return { ok: false, why: "Google didn't open" };
+  if (!at(url, G.host)) return { ok: true, why: "" };
+  step("google");
+  const c = await inTab(tabId, googlePage, ["choose", { email, ms: 10000, G }], 25_000);
+  if (!c?.pressed) return { ok: false, why: c?.why ?? "Google's page didn't load" };
+  url = await arrive(tabId, home, 30_000);
+  if (url) return { ok: true, why: "" };
+  const w = await inTab(tabId, googlePage, ["why", { G }], 10_000);
+  return { ok: false, why: w?.why || "Google asked for more" };
+}
+/** Runs `func` in the tab with `args`, never longer than `limit`; no answer is null. */
+async function inTab(tabId, func, args, limit) {
+  let t;
+  const late = new Promise((done) => { t = setTimeout(() => done(null), limit); });
+  try {
+    const run = chrome.scripting.executeScript({ target: { tabId }, func, args }).then(([r]) => r?.result ?? null, () => null);
+    return await Promise.race([run, late]);
+  } finally { clearTimeout(t); }
+}
+/** Waits for the tab to finish loading an address `ok` accepts (Chrome's events, `ms` at most): that address, or null. */
+function arrive(tabId, ok, ms) {
+  return new Promise((resolve) => {
+    let t = null;
+    const done = (url) => { chrome.tabs.onUpdated.removeListener(on); clearTimeout(t); resolve(url); };
+    const fits = (tab) => tab?.url && tab.status === "complete" && ok(tab.url);
+    const on = (id, info, tab) => { if (id === tabId && fits(tab)) done(tab.url); };
+    chrome.tabs.onUpdated.addListener(on);
+    t = setTimeout(() => done(null), ms);
+    chrome.tabs.get(tabId).then((tab) => { if (fits(tab)) done(tab.url); }).catch(() => {});
+  });
 }
 
 /** Whether Sam is typing on the page: a field has the focus in the window he's using. Reads only. */

@@ -86,6 +86,24 @@ export const PAGE = {
   // line and one button, "Select" or "Selected". The helper switches Safeway to Pickup at the household's store with these
   // (Sam, Nov 23: "i want this process to be automated. ideally i never touch safeway"; docs/CHECKOUT.md).
   pickupBox: { open: "#openFulfillmentModalButton", box: "#storeFulfillmentModal", tab: "#modal-tab-pickup-btn", pane: "#fulfilmentPickup", card: ".card-store", close: "#closeFulfillmentModalButton" },
+  // Signing Sam in through Google (Sam, Nov 24: "Yes build it"; docs/CHECKOUT.md). Safeway's sign-in page (saved real
+  // pages, Nov 24) holds a box with one "Sign in with Google" button (its aria-label and its words both say so); its
+  // script sets the tab's address to Safeway's sign-in service, which goes on to Google in the same tab. Google's "Choose
+  // an account" list (saved Nov 24, safeway/google chooser.html) has one link per account, its address in
+  // `data-identifier`. Anything else Google shows (a password, a code, a check that it's a person, a consent screen) is
+  // a stop. `returnPath`: where the sign-in service sends the tab back to Safeway before Safeway's own page.
+  google: {
+    signInPath: "/account/sign-in.html",
+    returnPath: "/bin/",
+    button: "^(?:(?:sign in|continue) with google\\s*)+$",
+    openAfter: 3000,
+    host: "accounts.google.com",
+    account: "[data-identifier]",
+    password: "input[type=password]",
+    captcha: "iframe[src*='recaptcha'], iframe[title*='recaptcha' i], #captchaimg, img[src*='Captcha']",
+    captchaWords: "captcha|unusual traffic|not a robot",
+    fields: "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])",
+  },
   // Safeway's Purchases page, read after the cart page says it's empty (helper 1.3 on), to tell an order that went
   // through from a cart that only emptied (Nov 3). Its "Online" tab says exactly `none` when there are no orders. A
   // listed order has never been seen, so `entry` is a guess at what holds one, and an entry only counts when it has a

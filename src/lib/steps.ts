@@ -7,6 +7,8 @@ export const STEP_WORDS: Record<string, string> = {
   search: "Searching Safeway…",
   wait: "Waiting for Safeway…",
   pickup: "Choosing Pickup…",
+  signin: "Signing in to Safeway…",
+  google: "Signing in to Safeway…",
   add: "Changing the cart…",
   orders: "Reading your Safeway orders…",
   checkout: "Starting Safeway's checkout…",

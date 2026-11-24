@@ -1,6 +1,7 @@
 // Runs inside the safeway.com page, passed to chrome.scripting.executeScript, so it must not use anything from outside
 // itself. It only reads what's on screen and presses Safeway's own buttons, the same ones a person presses, one at a
-// time. It never signs in. Checkout: it presses the cart page's Checkout, the suggestions page's Continue, the checkout
+// time. It never types a password; signing in through Google it presses only the sign-in page's Sign In and "Sign in
+// with Google" (`googleStart`, docs/CHECKOUT.md). Checkout: it presses the cart page's Checkout, the suggestions page's Continue, the checkout
 // page's Order info Continue, its pickup step's Edit, a pickup day, More times, the one time picked, the bags switch,
 // and Place Order only in `placeOrder`, only on what Face ID approved (docs/CHECKOUT.md).
 //
@@ -324,6 +325,31 @@ export async function safewayPage(action, arg, P) {
     // Safeway saves the choice and closes the box (or reloads the page, which ends this script; the helper reads again).
     const after = await watch(() => !visible(box) || Boolean(P.session && session()?.mode === P.session.pickup), 10000);
     return { done: true, pressed: "select", mode: session()?.mode ?? "", closed: !visible(box), seen: Boolean(after) };
+  }
+
+  // Signing in through Google (Sam, Nov 24: "Yes build it"; docs/CHECKOUT.md). On Safeway's sign-in page only: its one
+  // showing "Sign in with Google" button; when Safeway's sign-in box isn't showing after a moment, its one showing Sign In
+  // first, once. Nothing typed, nothing else pressed. Safeway's page then takes the tab to Google itself.
+  if (action === "googleStart") {
+    const G = P.google;
+    if (!G || location.pathname !== G.signInPath) return { pressed: false, why: "not the sign-in page" };
+    const controls = () => [...new Set(deepAll(document, "button, a, [role=button]"))].filter((e) => visible(e) && !e.disabled && e.getAttribute("aria-disabled") !== "true");
+    const t0 = Date.now();
+    let opened = false;
+    const found = await watch((soon) => {
+      const g = controls().filter((e) => re(G.button).test(label(e)));
+      if (g.length === 1) return { g: g[0] };
+      if (g.length > 1) return { why: "more than one Google button" };
+      if (!opened && Date.now() - t0 >= (G.openAfter ?? 3000)) {
+        const s = controls().filter((e) => re(P.signIn).test(label(e)));
+        if (s.length === 1) { opened = true; s[0].click(); }
+      }
+      soon(500);
+      return null;
+    }, Number(arg?.ms) || 15000);
+    if (!found?.g) return { pressed: false, why: found?.why ?? "no Google button", opened };
+    found.g.click();
+    return { pressed: true, opened };
   }
 
   if (action === "pressCheckout") {

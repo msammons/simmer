@@ -47,7 +47,7 @@ const doc = win.document;
 const read = (f) => readFileSync(path.join(helperDir(), f), "utf8");
 let helperSource = null;
 function helperFn() {
-  helperSource ??= ["page.js", "safeway.js", "background.js"].map(read).join("\n")
+  helperSource ??= ["page.js", "google.js", "safeway.js", "background.js"].map(read).join("\n")
     .replace(/^import .*$/gm, "")
     .replace(/^export (async function|function|const|class|let)\b/gm, "$1");
   return new Function("chrome", "fetch", "self", `"use strict";\n${helperSource}\nreturn { runJob, check, store, safewayPage };`);
@@ -371,10 +371,58 @@ function serve(u) {
   if (p === "/erums/checkout") return shop.checkoutFor === "pickup" ? pickupCheckout(shop) : deliveryCheckout(shop);
   if (p === PAGE.orders.path) return ordersPage(shop);
   // Signed in, Safeway's sign-in page sends the tab on to its home page by itself (seen Nov 23).
-  if (p === "/account/sign-in.html") return { html: '<h1>Sign in</h1><input id="user"><button>Sign in</button>', run: (t) => { if (shop.signedIn && !shop.sessionGone) t.after(300, () => t.go("/")); } };
+  // Signed out, its box: an address field and "Sign in with Google" (saved real page, Nov 24), which sets the tab's address
+  // to Safeway's sign-in service. `shop.google.hidden`: the box shows only after the page's Sign In is pressed.
+  if (u.host === OKTA) return oktaPage(shop);
+  if (u.host === GOOGLE) return googlePage(shop, u);
+  if (p.startsWith("/bin/")) return { html: "<p>Signing in…</p>", run: (t) => { if (u.searchParams.get("code") === "ok") { shop.signedIn = true; shop.sessionGone = false; shop.cartGone = false; } t.after(200, () => t.go("/")); } };
+  if (p === "/account/sign-in.html") return signInPage(shop);
   // The home page signed out as on Nov 23: the name it remembers, Sign In there but hidden.
   if (shop.cartGone) return withBox(shop, { html: '<div class="menu-nav"><a href="/erums/cart" aria-label="Cart">Cart</a> <button aria-label="Account menu">Hi, Sam</button><div style="display:none"><a href="/account/sign-in.html">Sign In</a></div></div><h1>Safeway</h1>' });
   return withBox(shop, { html: `<div class="menu-nav">${shop.signedIn ? "<button>Account</button>" : "<button>Sign in</button>"}</div><h1>Safeway</h1>` });
+}
+
+/**
+ * Signing in through Google, as worked out from Safeway's real pages (Nov 24): Safeway's sign-in page, its sign-in
+ * service (a hop in the same tab), and Google's "Choose an account" list (safeway/google chooser.html). `shop.google`:
+ * `accounts`: the addresses listed; `signedIn`: the one Google signs straight back in (others ask for a password);
+ * `ask`: what Google asks instead of the list ("password", "consent", "captcha"); `straight`: Google sends the tab back
+ * without showing anything; `hidden`: Safeway's box needs its Sign In first. Every press counted in `shop.presses`.
+ */
+export const OKTA = "albertsons.okta.com", GOOGLE = "accounts.google.com";
+export const SAM = "sam@example.com", ROBIN = "robin@example.com";
+function signInPage(shop) {
+  const g = shop.google ?? {};
+  const box = `<div id="box" ${g.hidden ? 'style="display:none"' : ""}><h2>Welcome back!</h2><input id="user" aria-label="Email or mobile number"><button disabled>Sign in with password</button>
+    <button id="google" aria-label="Sign in with Google"><img alt=""> Sign in with Google </button></div>`;
+  return {
+    html: `<div class="menu-nav"><button id="open">Sign In</button></div><h1>Sign in</h1>${box}`,
+    run: (t) => {
+      if (shop.signedIn && !shop.sessionGone) { t.after(300, () => t.go("/")); return; }
+      doc.getElementById("open").addEventListener("click", () => { press(shop, "sign in"); doc.getElementById("box").style.display = "block"; });
+      doc.getElementById("google").addEventListener("click", () => { press(shop, "google button"); t.go(`https://${OKTA}/oauth2/x/v1/authorize?idp=google`); });
+    },
+  };
+}
+const oktaPage = (shop) => ({ html: "<p>Redirecting…</p>", run: (t) => t.after(200, () => t.go(shop.google?.straight ? `${SAFEWAY}/bin/safeway/unified/sso/authorize?code=ok` : `https://${GOOGLE}/v3/signin/accountchooser?flowName=GlifWebSignIn`)) });
+function googlePage(shop, u) {
+  const g = shop.google ?? {};
+  const ask = u.pathname.includes("/challenge/") ? "password" : g.ask;
+  if (ask === "password") return { html: '<h1>Welcome</h1><input type="email" style="display:none"><input type="password" name="Passwd"><button>Next</button>' };
+  if (ask === "captcha") return { html: '<h1>Sign in</h1><img id="captchaimg" src="x"><input type="text"><button>Next</button>' };
+  if (ask === "consent") return { html: "<h1>Sign in to Safeway</h1><p>Google will share your name and email address.</p><button id=\"go\">Continue</button>", run: () => doc.getElementById("go").addEventListener("click", () => press(shop, "consent")) };
+  const accounts = g.accounts ?? [SAM, ROBIN];
+  return {
+    html: `<h1>Choose an account</h1><ul>${accounts.map((a) => `<li><div role="link" tabindex="0" data-identifier="${a}" data-button-type="multipleChoiceIdentifier"><div>${a.split("@")[0]}</div><div>${a}</div></div></li>`).join("")}<li><div role="link" tabindex="0">Use another account</div></li></ul>`,
+    run: (t) => {
+      // Google builds its list a moment after the page loads.
+      for (const el of doc.querySelectorAll("[data-identifier]")) el.addEventListener("click", () => {
+        const a = el.getAttribute("data-identifier");
+        press(shop, `google ${a}`);
+        t.after(300, () => t.go(a === (g.signedIn ?? SAM) ? `${SAFEWAY}/bin/safeway/unified/sso/authorize?code=ok` : `https://${GOOGLE}/v3/signin/challenge/pwd`));
+      });
+    },
+  };
 }
 
 /**
