@@ -118,17 +118,19 @@ const began = Date.now();
       ok(`${tag}: tab bar on ${where}`, await page.getByRole("navigation", { name: "Main" }).isVisible());
     };
     /**
-     * A finger held on Settings and lifted (the long press that opens Feedback, Nov 24), as real touches, wherever the
-     * button is, whatever lies over it. On purpose a timed wait: the hold itself, 650 ms (Feedback needs 500).
+     * A finger held on Settings (the long press that opens Feedback, Nov 24), as real touches, wherever the button is,
+     * whatever lies over it: held until Feedback shows (it must, before the finger lifts), then lifted. True when it
+     * showed while still held. `quick`: a tap, lifted after 80 ms (on purpose a timed wait: a short press).
      */
-    const holdSettings = async (ms = 650) => {
+    const holdSettings = async (quick = false) => {
       const bx = await page.locator("[data-settings]").first().boundingBox();
       const at = { x: bx.x + bx.width / 2, y: bx.y + bx.height / 2 };
       const cdp = await ctx.newCDPSession(page);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at] });
-      await wait(ms);
+      const shown = quick ? (await wait(80), false) : await until(() => page.getByRole("dialog", { name: "Feedback" }).isVisible(), 3000);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await cdp.detach();
+      return shown;
     };
     // The behaviour run has Safeway stood in for from the start (Shop puts in its own below), so no cart read is left
     // waiting on this server, where no helper answers, to grey Check out or say Not connected partway through.
@@ -348,7 +350,11 @@ const began = Date.now();
         const fb = page.getByRole("dialog", { name: "Feedback" });
         const sent = () => page.waitForRequest((r) => r.url().endsWith("/api/feedback") && r.method() === "POST", { timeout: 5000 });
         await tabs.getByRole("button", { name: "Meals" }).tap(); await page.getByRole("heading", { name: "Meals" }).waitFor(); await idle();
-        await holdSettings(); await resting(fb);
+        const whileHeld = await holdSettings(); await resting(fb);
+        ok("feedback: appears while the finger is still on Settings, as a pop-up in the middle", whileHeld && await fb.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return Math.abs(r.left + r.width / 2 - innerWidth / 2) < 2 && Math.abs(r.top + r.height / 2 - innerHeight / 2) < 4;
+        }));
         const field = fb.getByLabel("Feedback");
         ok("feedback: a long press on Settings opens Feedback, not Settings, the box focused and Send waiting for words",
           (await page.getByRole("dialog", { name: "Settings" }).count()) === 0 && await field.evaluate((el) => el === document.activeElement)
@@ -363,8 +369,9 @@ const began = Date.now();
         // With a sheet open: Feedback over it, and the sheet still there after.
         const addSheet = page.getByRole("dialog", { name: "Add a meal" });
         await addOn(TODAY); await resting(addSheet);
-        await holdSettings(); await resting(fb);
-        ok("feedback: opens over an open sheet, which stays open", (await addSheet.isVisible()) && (await fb.isVisible()));
+        const overSheet = await holdSettings(); await resting(fb);
+        ok("feedback: opens over an open sheet before the finger lifts, and the sheet stays open", overSheet && (await addSheet.isVisible()) && (await fb.isVisible())
+          && await fb.evaluate((el) => document.activeElement === el.querySelector("textarea")));
         await fb.getByRole("button", { name: "Cancel" }).tap(); await gone(fb);
         ok("feedback: Cancel goes back to the sheet as it was", await addSheet.isVisible());
         await holdSettings(); await resting(fb);
@@ -376,7 +383,7 @@ const began = Date.now();
         ok("feedback: and the sheet under it is still open", await addSheet.isVisible());
         await addSheet.getByRole("button", { name: "Close" }).last().tap(); await gone(addSheet);
         // A short press is still a tap.
-        await holdSettings(80);
+        await holdSettings(true);
         ok("feedback: a short press on Settings opens Settings", await seen(page.getByRole("dialog", { name: "Settings" })) && (await fb.count()) === 0);
         await page.keyboard.press("Escape"); await gone(page.getByRole("dialog", { name: "Settings" }));
       }
@@ -869,10 +876,12 @@ const began = Date.now();
       await holdSettings(); await resting(fb);
       await fb.getByLabel("Feedback").fill("The Add meal sheet showed yesterday's day.");
       await page.screenshot({ path: `${dir}/4b-feedback-${tag}.png` });
-      ok(`${tag}: Feedback's Send and Cancel sit side by side in the sheet`, await fb.evaluate((el) => {
+      // Short enough to sit above the keyboard (about 380 of 844 left at 390 wide, about 330 of 667 at 375), with Cancel
+      // and Send side by side.
+      ok(`${tag}: Feedback is short enough for the space above the keyboard, Cancel and Send side by side`, await fb.evaluate((el) => {
         const [c, s] = [...el.querySelectorAll("button")].filter((b) => /^(Cancel|Send)$/.test(b.textContent.trim())).map((b) => b.getBoundingClientRect());
-        return Boolean(c && s) && Math.abs(c.top - s.top) < 1 && c.right <= s.left && s.right <= innerWidth;
-      }));
+        return el.getBoundingClientRect().height <= 320 && Boolean(c && s) && Math.abs(c.top - s.top) < 1 && c.right <= s.left && s.right <= innerWidth;
+      }), String(await fb.evaluate((el) => Math.round(el.getBoundingClientRect().height))));
       await page.keyboard.press("Escape"); await gone(fb);
     }
     await tabs.getByRole("button", { name: "List" }).tap(); await page.getByLabel("Add item to the list").waitFor(); await idle();

@@ -86,13 +86,16 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
 - **Recipes** (`Recipes.tsx`): Add recipe (from a link, photo, file or typed), then the collection. A recipe's page has
   Add to the plan (which asks for a day), its ingredients, steps and notes.
 - **Settings** (`Settings.tsx`, `Ordering.tsx`): the look, Ordering and the release.
-- **Feedback** (`Feedback.tsx`, `lib/feedback.ts`; Sam, Nov 24): holding Settings for half a second opens a Feedback sheet
-  (one box, Send and Cancel) over anything open. The hold is watched on the whole page by where the Settings button is
-  (press to release, no timer; a move cancels it), so it works through a sheet's or pop-up's dimmed area; the tap that
-  would follow is swallowed, so whatever was open stays as it was, and a short press is a tap as before. What was on
-  screen at the press goes with the words: each tab, screen (`useNote`), sheet (every `Sheet` notes its label and title,
-  or its `note`) and pop-up notes itself while it shows, Shop and Safeway add a line of state, and the last five alerts
-  are kept. A new sheet needs nothing, or one `note`.
+- **Feedback** (`Feedback.tsx`, `lib/feedback.ts`; Sam, Nov 24): holding Settings opens Feedback, the app's own pop-up
+  (title, one box, Cancel and Send side by side), over everything, sheets and pop-ups included. It appears while the
+  finger is still down, once the hold reaches half a second (one timeout started on the press, cleared on release, a move
+  of 10 px or a cancel). The hold is watched on the whole page by where the Settings button is, so it works through a
+  sheet's or pop-up's dimmed area. On the release the box takes the focus (iPhone raises the keyboard only from a
+  touch's own handler) and the tap that would follow is swallowed, so whatever was open stays as it was; a short press is
+  a tap as before. With the keyboard up the pop-up is centred in the part of the screen left above it (`Dialog`'s
+  `useTypingView`, as sheets do). What was on screen goes with the words: each tab, screen (`useNote`), sheet (every
+  `Sheet` notes its label and title, or its `note`) and pop-up notes itself while it shows, Shop and Safeway add a line
+  of state, and the last five alerts are kept. A new sheet needs nothing, or one `note`.
 
 ## Shop and Safeway
 
@@ -176,6 +179,7 @@ passcode by message from its parent, only from a Chrome helper page, never from 
 - No scheduled background jobs, and no timers, polling, intervals or alarms in the app or the helper (Sam, Nov 11). Work
   happens while someone is using the app (or right after a response, with `after()`), and screens load on open, on
   return, after a change, or when a push says so.
+- A long press's hold threshold is the one timer (Sam, Nov 24): Feedback's half-second hold on Settings, one timeout per press.
 - Every tap responds at once and saves behind it; risky actions ask first (a confirm, never an Undo); no note or info bars
   that move the page (problems are an alert); controls are plain and user-driven, never clever automatic ones.
 - No maintenance screens in the app. Data is changed in the app; the Sheet is only an export.
