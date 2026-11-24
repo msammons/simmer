@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Simmer",
-  "version": "26.11.23.2",
+  "version": "26.11.23.3",
   "description": "Finds groceries and fills your Safeway cart for Simmer.",
   "permissions": [
     "sidePanel",

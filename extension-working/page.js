@@ -29,7 +29,7 @@
  * safewayPage("placeOrder", { path, expect }) → { pressed, why, label } — on the checkout page only, the one press that
  *   orders (phase 3, Nov 14): the page read again first and checked against what was approved (`expect`); any
  *   difference, a card detail asked for, or not exactly one "Place Order": nothing is pressed
- * safewayPage("waitFor", { until, label?, dd?, count?, id?, qty?, own?, onlyInCart?, hold?, ms }) → { ok, held? } — reads
+ * safewayPage("waitFor", { until, label?, dd?, count?, id?, qty?, own?, onlyInCart?, hold?, path?, away?, ms }) → { ok, held?, away? } — reads
  *   only: answers as soon as the page shows what's named (watching the page change), or after `ms` at most with whether
  *   it does then
  *
@@ -420,6 +420,10 @@ export async function safewayPage(action, arg, P) {
       // reading (Nov 23: a read made a moment after could catch Sign In again while the page built).
       products: (soon) => {
         const r = readPage();
+        // On Safeway's home page or its sign-in page instead of the page asked for (`path`): answered at once, for the
+        // helper to judge (Nov 23: signed out, Safeway sends its cart address to its home page, which shows the name it
+        // remembers and no Sign In, so nothing else on it says signed out).
+        if (arg?.path && location.pathname !== arg.path && Array.isArray(arg.away) && arg.away.includes(location.pathname)) return { ok: true, away: true, page: r };
         if (r.signedIn === false) {
           noneSince = 0;
           outSince ||= Date.now();

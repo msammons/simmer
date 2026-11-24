@@ -7,8 +7,8 @@
 // Each saved page is served from this computer with its scripts taken out (what Chrome saved is the page as Safeway had
 // built it), every other address is blocked, and page.js's own reading runs on it: the products a search shows, the
 // cart page's products and counts, signed in, "no results", an empty cart that lists past purchases, the cart count,
-// which button Add / + / − would press, and Safeway's own boxes after an Add. Presses go nowhere: the page's click is
-// replaced by a note of what would have been pressed. Exits 1 on a failure.
+// which button Add / + / − would press, Safeway's own boxes after an Add, and a page reached instead of the one asked
+// for. Presses go nowhere: the page's click is replaced by a note of what would have been pressed. Exits 1 on a failure.
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -105,7 +105,15 @@ for (const f of pages) {
   expect(new Set(products.map((p) => p.id)).size === products.length, `${tag}: no product twice`);
   // A watch for the page's products answers as the helper's would.
   const hold = 400, outHold = 400;
-  const w = (await run(page, "waitFor", { until: "products", onlyInCart: P.onlyInCart === true, hold, outHold, ms: 3000 }, P)).result;
+  // As the helper asks (safeway.js): the page's own address, and Safeway's home and sign-in pages as "sent away".
+  const here = new URL(page.url()).pathname, AWAY = ["/", "/home.html", "/account/sign-in.html"];
+  const w = (await run(page, "waitFor", { until: "products", onlyInCart: P.onlyInCart === true, hold, outHold, path: here, away: AWAY, ms: 3000 }, P)).result;
+  expect(w && !w.away, `${tag}: on the page asked for, it isn't taken as sent away`);
+  // Safeway sending the tab here instead of the page asked for (Nov 23: signed out, the cart address goes to its home
+  // page): told at once by the address, though this page, like that one, holds Sign In links and a Session Expired box
+  // hidden and reads signed in.
+  const sent = (await run(page, "waitFor", { until: "products", onlyInCart: P.onlyInCart === true, hold, outHold, path: "/erums/cart", away: [...AWAY, here], ms: 3000 }, P)).result;
+  expect(sent?.ok === true && sent.away === true && sent.page?.signedIn === true, `${tag}: reached instead of the page asked for, it's told at once (its hidden Sign In and Session Expired don't count either way)`);
 
   if (kind === "search") {
     expect(products.length >= 5 && !read.noResults && !read.loading, `${tag}: products read (${products.length}), not "no results"`);
