@@ -60,10 +60,20 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    Each day shows five times and a "More times" button; the helper may press it (Nov 14, to match the site): only on the
    checkout page, only a button reading exactly "More times", only one, once per day read. It shows more times only. With one picked, what
    the helper reads from Safeway's checkout with it: the pickup store, the time, the card, the total. Tapping a time is
-   getting ready: the reading starts at once, its steps said in place, and lands on Place order · $X / Test run.
+   getting ready: the reading starts at once, its steps said in place, and lands on Place order · $X when the server
+   allows placing, or on Test run · $X while the helper's checkout fingerprint hasn't passed a test run (Sam, Nov 24:
+   "We only need the test run button if it's required"). The sheet only stops offering Test run once it isn't needed;
+   every check on the server is unchanged, and placing still needs a passed test run (phase 3).
    Changing the bags while a reading shows gets ready again with the same time (Pick another time goes back to the
    times); every reading has its own id, and Face ID approves only the one showing. Getting ready takes
    only a time Simmer just offered, and stops if Safeway's chosen time isn't the one picked. Shimmer while it reads.
+   A test run that passes doesn't ask for the time again (Sam, Nov 24: "don't need to pick another time on a test"):
+   the sheet gets ready again at once with the same time and bags, the same getting ready as a tap, so a new reading
+   with its own id (the approval the test run used is gone, and nothing from it is reused), and lands on Place order ·
+   $X. That reading is approved like any other: Face ID approves exactly it, within its 2 minutes, with the cart
+   unchanged, and every check before the press is made again. If Safeway no longer offers that time by then (or the
+   time is no longer one Simmer just offered), the times are read again and an alert says so. A test run that didn't
+   pass says why, with Try again (the same time and bags read again); there's no Pick another time after a test run.
 3. **Place order · $128.40** → the confirm sheet (store, time, card, bags, total; unusual items highlighted) → Face ID
    approves exactly the reading shown → the helper places it → "Ordered · pickup Thu 4–5 pm · $128.40", with Safeway's
    order number when its page shows one. The cart comes off the list as bought.
@@ -201,7 +211,7 @@ job's status, and nothing in checkout waits on them or decides by them. The phon
    items and $30.96 on both passes and stopped one press short.
 3. Turning on real orders, after dry runs match. Built Nov 14 (Sam: "Build it"), helper 26.11.14.7, still behind the
    server's switch (`CHECKOUT_ENABLED`, off until Sam turns it on):
-   - **Place order · $X** shows beside Test run only when the server allows it and this helper version has passed a
+   - **Place order · $X** shows (Test run then isn't offered, Sam, Nov 24) only when the server allows it and this helper version has passed a
      test run on the account, kept by the helper's checkout fingerprint (Sam, Nov 18): a hash of the helper's
      code, its manifest (without its version number: Sam, Nov 19, "I don't want constant test runs") and the page details
      Simmer sends it (`src/lib/safeway-helper.mjs`), with only the parts marked

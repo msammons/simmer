@@ -95,9 +95,10 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 6.5 | A row's ⋯ | Pick another (Safeway rows with a product), Get it at Trader Joe's / Costco / Safeway; a thing in the cart can't move | L |
 | 6.6 | Add item on Shop | The row appears on its store with a guessed section; the same thing twice joins one row | L |
 | 6.7 | Safeway rows with known products | A + on each; "Add usuals (N)" in the Safeway header with more than one; one tap puts them all in the cart and every row shows its count at once | R |
-| 6.8 | A Safeway row with nothing remembered | A "Find" button; Find opens Safeway's choices in a sheet, one item at a time ("3 of 8"), starting at the top of the screen | R |
+| 6.8 | A Safeway row with nothing remembered | A "Find" button; Find opens Safeway's choices in a sheet, one item at a time ("3 of 8"), each starting at the top of the sheet | R |
 | 6.9 | Find | It searches when the item comes up and when Search is tapped, never on each letter typed; "Your usual" first, then the best matches to her own words; wide screens show a grid | R |
-| 6.10 | Add in Find | The Add becomes − n +; "Next: <item>" appears in the row at the top (nothing moves under the finger); Skip goes on without adding; Back goes back | R |
+| 6.10 | Add in Find | The Add becomes − n +; Skip becomes "Next: <item>" in place in the bar at the bottom (nothing moves under the finger); Skip goes on without adding; ‹ goes back | R |
+| 6.10a | Scroll Find's results to the bottom, then tap the search field | The bar (‹, "3 of 8", Skip or Next) stays at the bottom of the sheet on a blurred backing while the results scroll, sits after the last product at the end (never over it), above the home indicator, and above the keyboard while typing; no Next or Skip at the top | L |
 | 6.11 | − / + on a row or in Find for something already in the cart | The number changes at once; the change is made on Safeway's cart page first (not from a search page); quick taps go as one change; − at one takes it out | R |
 | 6.12 | Compare with Safeway's cart page | Same products and quantities; the price beside Check out matches (with "about" when weighed) | R |
 | 6.13 | Put something in the cart on Safeway's own site | It shows at the end of the Safeway group with its price and a − n + | R |
@@ -120,8 +121,8 @@ Never press Place order for real. Everything here is **R**.
 | 7.4 | Check out after an approval made on another phone | "Set up Face ID on this phone" is offered | R |
 | 7.5 | Shop → Check out (with something in the cart) | A sheet: Cart (how many things, the estimate); with ordering not set up, one plain line pointing to Settings → Ordering; the button is greyed while the cart is changing | R |
 | 7.6 | Open Check out (set up) | Safeway's pickup days are read at once, no Get ready button and no explanatory lines; one tapped shows its free times (Flash is marked and priced); Bags: Bring my own or Safeway's bags; a time tapped reads Safeway's checkout at once (changing the bags reads it again): store, time, bags, card, items, total | R |
-| 7.7 | Test run · $X | Face ID, then goes through Safeway's checkout and stops one press short: "Would place $X · day time"; nothing is ordered | R |
-| 7.8 | Place order · $X | Shown only when the server allows it and the helper's checkout fingerprint has passed a test run, the helper counting only if it's the one Simmer ships; otherwise it isn't offered and no line says why (Sam, Nov 24) | R |
+| 7.7 | Test run · $X (only while the helper's checkout fingerprint hasn't passed one) | Face ID, then goes through Safeway's checkout and stops one press short; nothing is ordered. Once it passes, Safeway is read again at once with the same time and bags (its steps said in place) and the sheet lands on Place order · $X, no time picked again and no Pick another time; if the time has gone by then, the times show again with an alert saying so; one that didn't pass says why, with Try again | R |
+| 7.8 | Place order · $X | Shown only when the server allows it and the helper's checkout fingerprint has passed a test run, the helper counting only if it's the one Simmer ships; otherwise it isn't offered and no line says why (Sam, Nov 24). With the fingerprint passed, the reading offers only Place order · $X (no Test run) | R |
 | 7.9 | Change only a search or cart part of the helper | No new test run is needed; changing anything checkout runs makes Place order go away until a test run passes (docs/CHECKOUT.md) | R |
 | 7.10 | Anything over the limit, or Safeway showing a different store or card | Refused with the reason, before anything is pressed | R |
 

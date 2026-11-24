@@ -633,7 +633,7 @@ export function Sheet({ children, onClose, label, title, footer, wide, tall, not
           </button>
           {title && <h2 className="t-headline px-12 text-center text-balance">{title}</h2>}
         </div>
-        <div ref={body} className="overflow-y-auto overscroll-contain px-4 pb-4">{children}</div>
+        <div ref={body} data-sheet-body className="overflow-y-auto overscroll-contain px-4 pb-4">{children}</div>
         {footer && <div className="px-4 pb-4 pt-2">{footer}</div>}
       </div>
     </div>

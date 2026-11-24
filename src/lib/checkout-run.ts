@@ -44,6 +44,13 @@ export type ReadyView = {
   /** Placing for real is open (phase 3): the server allows it and this helper has passed a test run; else why not. */
   canOrder: boolean; orderWhy: string;
   /**
+   * A test run is needed (Sam, Nov 24: "We only need the test run button if it's required"): the helper's checkout
+   * fingerprint hasn't passed one on this account. The sheet offers Test run only then; the server's checks are unchanged.
+   */
+  needsTest: boolean;
+  /** Safeway no longer offers the pickup time or day picked (the helper said so): the sheet shows the times again. */
+  timeGone?: boolean;
+  /**
    * This reading's own id (Nov 19), sent back with the Face ID approval: it approves exactly these figures, never another
    * reading made meanwhile. Empty when there's nothing to approve.
    */
@@ -239,7 +246,7 @@ export async function prepare(jobId?: string, windowId?: string, ms = WAIT_MS, b
   const view: ReadyView = {
     store: final.store, window: r.chosen ? windowWords(r.chosen) : "", card: final.card, items: final.items, totalCents: final.totalCents,
     stops: reasons, highlights: highlights(lines, final.totalCents, final.feesCents), remember: !s.store || !s.card, feesCents: final.feesCents, bagsOwn: r.bagsOwn,
-    ...open, preparedId,
+    ...open, preparedId, timeGone: r.stopped === "pickup time gone" || r.stopped === "pickup day gone",
   };
   await record("test ready", { jobId: job.id, stopped: r.stopped, chosen: r.chosen, ...view, url: r.final?.url ?? "" });
   return view;
@@ -370,12 +377,14 @@ async function passedDryRun(version: string) {
  * Whether placing for real is open (docs/CHECKOUT.md): the server's own switch (CHECKOUT_ENABLED), and only a helper
  * version that has passed a test run on this account, with the helper on the computer up to date.
  */
-export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string }> {
-  if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now." };
+export async function orderOpen(): Promise<{ canOrder: boolean; orderWhy: string; needsTest: boolean }> {
   const [helper, passed] = await Promise.all([helperStatus(), passedVersions()]);
-  if (helper.outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first." };
-  if (!passed.includes(CHECKOUT_PRINT)) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed." };
-  return { canOrder: true, orderWhy: "" };
+  // Whether this checkout's fingerprint still needs a test run (Sam, Nov 24): only then does the sheet offer one.
+  const needsTest = !passed.includes(CHECKOUT_PRINT);
+  if (!serverOn()) return { canOrder: false, orderWhy: "Ordering is turned off for now.", needsTest };
+  if (helper.outdated) return { canOrder: false, orderWhy: "The helper on the computer needs updating first.", needsTest };
+  if (needsTest) return { canOrder: false, orderWhy: "Do a test run first: the helper's checkout steps changed.", needsTest };
+  return { canOrder: true, orderWhy: "", needsTest };
 }
 
 /** Safeway's order number on the page it lands on after Place Order, when it shows one. */
