@@ -399,6 +399,29 @@ describe("switching Safeway to Pickup (Sam, Nov 23: \"i want this process to be 
     expect(Object.keys(world.shop.presses).filter((k) => k.startsWith("select"))).toEqual([]);
   });
 
+  it("signed in with Pickup forgotten and a note that doesn't say customer (Nov 24): switches anyway, then reads the cart", async () => {
+    world.note({ userType: "G", preference: "" });
+    world.shop.cartGone = true;
+    world.shop.box = { selected: "", quietNote: true };
+    world.shop.cart = { "960001": 1 };
+    const { value: r, ms } = await drive(helper.runJob(withStore("cart"), null));
+    expect(r.result.signedIn).toBe(true);
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+    expect(ms).toBeLessThan(15_000); // the redirect is seen as the load finishes, not after a watch's whole limit
+  });
+
+  it("signed out for real: one Select tried, then signed out as before, and the sign-in page waits", async () => {
+    world.note(null);
+    world.shop.cartGone = true;
+    world.shop.sessionGone = true;
+    world.shop.box = { selected: "" };
+    const r = await runS("cart");
+    expect(r.result.signedIn).toBe(false);
+    expect(r.result.noPickup).toBeUndefined();
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+    expect(world.onSignIn()).toBe(true);
+  });
+
   it("no store known (Simmer sent none): no switch, said as before", async () => {
     noPickupNow();
     expect((await run("cart")).result.noPickup).toBe(true);
