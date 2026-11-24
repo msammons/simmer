@@ -355,6 +355,7 @@ const began = Date.now();
           const r = el.getBoundingClientRect();
           return Math.abs(r.left + r.width / 2 - innerWidth / 2) < 2 && Math.abs(r.top + r.height / 2 - innerHeight / 2) < 4;
         }));
+        ok("feedback: says how it opened, under the title", await fb.getByText("You held the Settings button, which opens this on any screen.").isVisible());
         const field = fb.getByLabel("Feedback");
         ok("feedback: a long press on Settings opens Feedback, not Settings, the box focused and Send waiting for words",
           (await page.getByRole("dialog", { name: "Settings" }).count()) === 0 && await field.evaluate((el) => el === document.activeElement)
@@ -421,9 +422,16 @@ const began = Date.now();
       ok("settings: Face ID starts at Set up", await settings.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible());
       // Adding a phone (Nov 12) only comes up once one has Face ID: nothing to approve or wait for yet.
       ok("settings: no phone to approve or set up after approving", (await settings.getByRole("button", { name: /^(Approve a new phone|Waiting for approval|Set up Face ID now)/ }).count()) === 0);
-      await page.getByRole("radio", { name: /^Apricot/ }).tap();
-      ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot"));
-      await page.getByRole("radio", { name: /^Simmer$/ }).tap();
+      // How Feedback opens, first (Sam, Nov 24); the look last, as one Theme row with the phone's own list.
+      ok("settings: starts with how to send feedback", (await settings.locator("p").first().innerText()).trim() === "Hold the Settings button on any screen to send feedback.");
+      const themePick = settings.getByLabel("Theme");
+      ok("settings: one Theme row, the themes in order, the look last before the release", (await page.getByRole("radio").count()) === 0
+        && (await themePick.locator("option").allInnerTexts()).join() === "Simmer,Apricot,Blue,Indigo,Pink,Orange,Teal,Green"
+        && await settings.evaluate((el) => { const looks = [...el.querySelectorAll("section")].filter((x) => x.querySelector("select[aria-label=Theme]")); const all = [...el.querySelectorAll("section")]; return looks.length === 1 && all.at(-1) === looks[0]; }));
+      await themePick.selectOption("apricot");
+      ok("settings: theme switches within 150 ms", await within150(async () => (await page.evaluate(() => document.documentElement.dataset.theme)) === "apricot")
+        && /Theme\s*Apricot/.test(await themePick.evaluate((el) => el.previousElementSibling.textContent)));
+      await themePick.selectOption("simmer");
       ok("settings: none of the old things are back (Add recipe)", (await settings.getByRole("button", { name: /^Add recipe/ }).count()) === 0);
       await page.keyboard.press("Escape"); await gone(settings);
 

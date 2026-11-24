@@ -37,7 +37,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   button top right (`OpenSettings`, set once in `App.tsx`, so screens don't pass it), pinned and blurred over the page.
   A tab has no visible title (its name is for screen readers). `TopBar` is the bar plus a large title for a screen you
   drill into (a recipe), with a round back chevron before the title, named for the screen below; swiping right also goes
-  back (`useSwipe`). Settings holds the look, Ordering (Face ID, limit per order, pickup store, card, on/off) and the release.
+  back (`useSwipe`). Settings holds a line on sending feedback, Ordering (Face ID, limit per order, pickup store, card, on/off), Safeway's sign-in, the look and the release.
 - Navigation is one back stack in `App.tsx`: a tab (Recipes, Meals, List or Shop; the List's code is `Stock.tsx`) with
   screens pushed on it (a recipe). Back pops; a tab tap starts that tab fresh. The tab bar shows on every screen, the stack's tab lit. Sheets
   name what they show (a week, a night, an item) rather than holding a copy, so a refresh shows in them. A passcode
@@ -85,9 +85,13 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   without "ground", kosher salt and salt).
 - **Recipes** (`Recipes.tsx`): Add recipe (from a link, photo, file or typed), then the collection. A recipe's page has
   Add to the plan (which asks for a day), its ingredients, steps and notes.
-- **Settings** (`Settings.tsx`, `Ordering.tsx`): the look, Ordering and the release.
+- **Settings** (`Settings.tsx`, `Ordering.tsx`): first a muted line, "Hold the Settings button on any screen to send
+  feedback."; then Ordering and Safeway's sign-in; then the look, one Theme row showing the theme's name that opens the
+  phone's own list (a hidden select, as ⋯ menus are; the themes in the same order; a pick shows at once and is kept here;
+  light or dark follows the phone); last the release (Sam, Nov 24).
 - **Feedback** (`Feedback.tsx`, `lib/feedback.ts`; Sam, Nov 24): holding Settings opens Feedback, the app's own pop-up
-  (title, one box, Cancel and Send side by side), over everything, sheets and pop-ups included. It appears while the
+  (title, a muted line saying how it opened, "You held the Settings button, which opens this on any screen.", one
+  box, Cancel and Send side by side), over everything, sheets and pop-ups included. It appears while the
   finger is still down, once the hold reaches half a second (one timeout started on the press, cleared on release, a move
   of 10 px or a cancel). The hold is watched on the whole page by where the Settings button is, so it works through a
   sheet's or pop-up's dimmed area. On the release the box takes the focus (iPhone raises the keyboard only from a

@@ -13,7 +13,8 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 1.2 | Get started with the box empty | The button stays disabled; no crash | L |
 | 1.3 | Wrong passcode | An alert over the page, "That passcode didn't work" and "Check it and try again."; the box keeps its place | L |
 | 1.4 | Right passcode | Opens on Meals; reload stays signed in | L |
-| 1.5 | Settings (gear, top right) | Opens a sheet: Look (themes, one ticked), Ordering, and the release as YY.M.D at the end; no sign-out, no copy to a Sheet; closes by pulling down or tapping outside | L |
+| 1.5 | Settings (gear, top right) | Opens a sheet: first "Hold the Settings button on any screen to send feedback." (muted), then Ordering and Safeway sign-in, then Look (one Theme row with the theme's name), and the release as YY.M.D at the end; no sign-out, no copy to a Sheet; closes by pulling down or tapping outside | L |
+| 1.5a | Settings → Theme | The phone's own list of the themes (Simmer, Apricot, Blue, Indigo, Pink, Orange, Teal, Green); a pick recolours the app at once, the row shows its name and swatch, and it's kept after a reload | L |
 | 1.6 | Change the passcode on the server, then tap anything | Everything closes and the passcode screen asks again | L |
 
 ## 2. Bottom bar and moving around
@@ -138,7 +139,7 @@ Never press Place order for real. Everything here is **R**.
 | 8.9 | Slow or failing connection | Screens keep what they had and say so only if they have nothing; nothing shows as empty that isn't | L |
 | 8.10 | Console | No errors while using any screen | L |
 | 8.11 | Screen reader names | Buttons with only icons have names (⋯, −, +, Have, Need, Settings) | L |
-| 8.12 | Hold Settings on any tab and keep holding | After about half a second Feedback appears in the middle of the screen while the finger is still down (not Settings): the title, one box, Cancel and Send side by side, Send greyed until something's written; nothing behind it is dimmed or blurred, and a tap outside it does nothing (only Cancel and Send close it); no callout, selection or magnifier on the button | L |
+| 8.12 | Hold Settings on any tab and keep holding | After about half a second Feedback appears in the middle of the screen while the finger is still down (not Settings): the title, "You held the Settings button, which opens this on any screen." under it, one box, Cancel and Send side by side, Send greyed until something's written; nothing behind it is dimmed or blurred, and a tap outside it does nothing (only Cancel and Send close it); no callout, selection or magnifier on the button | L |
 | 8.13 | Let go after Feedback appears | The keyboard comes up in the box at once; the pop-up stays in view above it at 390 and 375 wide; nothing under the finger reacts | L |
 | 8.13a | With a sheet open (Add meal, Find, Check out, Settings) or a confirm or alert up, hold where Settings is | Feedback appears over it; Cancel or Send leaves the sheet or pop-up exactly as it was; a short tap there still does what it did (closes the sheet, or opens Settings) | L |
 | 8.14 | Write something, Send | Closes at once, no "Sending…"; with no connection, an alert says so and Feedback comes back with the words in it | L |
