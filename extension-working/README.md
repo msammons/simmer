@@ -11,8 +11,8 @@ order Face ID approved, once, when the page says exactly what was approved.
 
 - **Signs Sam in through Google when Safeway has signed out (26.11.24.2).** Nov 23–24 Safeway signed out twice in
   about 12 hours, and Sam never wants to touch Safeway. Sam, Nov 24, approving these presses: "Yes build it". A search,
-  cart read or Add that finds Safeway signed out, when Simmer sent the Google account to use (`job.google`, kept only in
-  Vercel as SAFEWAY_GOOGLE; none sent, none tried), goes to Safeway's sign-in page and presses its one "Sign in with
+  cart read or Add that finds Safeway signed out, when Simmer sent the Google account to use (`job.google`, set in
+  Simmer's Settings → Safeway sign-in, else Vercel's SAFEWAY_GOOGLE; none sent, none tried), goes to Safeway's sign-in page and presses its one "Sign in with
   Google" (its one Sign In first if the box isn't showing). Safeway's own page sets the tab's address to its sign-in
   service, which goes on to Google in the same tab: no window opens (read from Safeway's saved script, Nov 24), so the
   helper may press on accounts.google.com (a new host permission). There `google.js` presses the one account in

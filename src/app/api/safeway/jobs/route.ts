@@ -4,6 +4,7 @@ import { loadSettings, record } from "@/lib/checkout";
 import { pushKey, wakeHelper } from "@/lib/push";
 import { PAGE, SETTINGS } from "@/lib/safeway-helper.mjs";
 import { api, body, clean, noStore, refuse } from "@/lib/ops/route";
+import { loadAccount } from "@/lib/safeway-signin";
 
 // A job's status can wait for the job to finish (?wait=1, about 20 seconds at most).
 export const maxDuration = 60;
@@ -102,10 +103,11 @@ export const POST = api(async (req) => {
       // `store`: the household's pickup store (learned from checkout), so the helper can switch Safeway to Pickup there
       // (Sam, Nov 23: "i want this process to be automated"). Never for placing, which doesn't switch (docs/CHECKOUT.md).
       const store = job && job.kind !== "checkoutPlace" ? (await loadSettings()).store : "";
-      // `google`: the Google account the helper signs Sam in to Safeway with when it finds Safeway signed out (Sam, Nov 24:
-      // "Yes build it"; docs/CHECKOUT.md). Kept only in Vercel (SAFEWAY_GOOGLE), never in this public code; sent with
-      // searches, cart reads and Adds only, never checkout. None set: the helper never tries.
-      const google = job && ["search", "cart", "setQty"].includes(job.kind) ? (process.env.SAFEWAY_GOOGLE ?? "").trim() : "";
+      // `google`: the Google account the helper signs in to Safeway with when it finds Safeway signed out (Sam, Nov 24:
+      // "Yes build it", then "i want the email to be set in settings"; docs/CHECKOUT.md). Set in Settings (src/lib/
+      // safeway-signin.ts), never in this public code; sent with searches, cart reads and Adds only, never checkout. None
+      // set: the helper never tries.
+      const google = job && ["search", "cart", "setQty"].includes(job.kind) ? (await loadAccount()).account : "";
       return Response.json({ job: job && { ...handOff(job), page: PAGE, settings: SETTINGS, store, ...(google && { google }) }, settings: SETTINGS, version: HELPER_VERSION, ...(key && { push: { key, have, at: have ? saved?.sub.endpoint ?? "" : "" } }) }, noStore);
     }
     case "push": {
