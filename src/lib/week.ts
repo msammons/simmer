@@ -17,14 +17,31 @@ export const KIND_NAMES: Record<Kind, string> = { quick: "Quick", regular: "Regu
 export type Dish = { id: string; kind: Kind; recipe: string; pinned: boolean; added: string; day?: string };
 
 /**
- * Old meal plans are kept (Sam, Nov 24): a meal is dimmed on Meals once it's shopped for (New plan gave it a made date)
- * or its day has passed. One put on a day that had already passed (added after it), or switched back on (added again
- * today), stays on until the next New plan. Answers whether it's dimmed.
+ * Old meal plans are kept (Sam, Nov 24: "past and shopped-for meals stay on Meals with their text dimmed"): a meal is
+ * dimmed once it's shopped for (New plan gave it a made date) or its day has passed. Answers whether it's dimmed.
  */
-export function isOld(d: { made?: string; day?: string; added?: string }, today: string): boolean {
-  if (d.made) return true;
-  if (!d.day || d.day >= today) return false;
-  return !d.added || d.added <= d.day;
+export function isOld(d: { made?: string; day?: string }, today: string): boolean {
+  return Boolean(d.made) || Boolean(d.day && d.day < today);
+}
+
+/**
+ * A recipe since deleted, still named on an old meal (Nov 24: "pumpkin-pie-recipe-pq0c5d" showed as it is): its name
+ * from the id ("Pumpkin pie recipe"). Free text she typed ("Dinner with G&G") stays as it is.
+ */
+export function plainName(id: string): string {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(id)) return id;
+  const words = id.replace(/-(?=[a-z0-9]*\d)[a-z0-9]{6,18}$/, "").replace(/-\d+$/, "").replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Whether a meal's things still belong on the list (Stock keeps what waits for it): until it's shopped for, and while
+ * its day is still to come. One put on a day that had already passed (added after it) keeps them till the next New
+ * plan (Sam, Nov 24: "any new meal goes on the list whatever its day").
+ */
+export function onTheList(d: { made?: string; day?: string; added?: string }, today: string): boolean {
+  if (d.made) return false;
+  return !d.day || d.day >= today || Boolean(d.added && d.added > d.day);
 }
 
 /** How many of each to plan, and how many lunches for each boy. */

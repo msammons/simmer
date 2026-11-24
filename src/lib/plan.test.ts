@@ -188,8 +188,9 @@ describe("a deleted recipe (Nov 14)", () => {
 describe("meals by day (Nov 16)", () => {
   it("keeps the day a meal is planned for, even when the tab had no day column", async () => {
     await clearPlanned();
-    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: "2026-11-20" }], [], null, "Robin");
-    expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day: "2026-11-20" });
+    const day = addDays(todayIn(), 4);
+    await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day }], [], null, "Robin");
+    expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day });
   });
 });
 
@@ -269,7 +270,7 @@ describe("old meal plans kept (Nov 24)", () => {
     expect((await forChili()).length).toBe(added);
   });
 
-  it("a meal's day passing dims it; switching it on keeps it on, and Stock keeps its things", async () => {
+  it("a meal's day passing dims it and Stock lets its things go; switched back on, it's on today with its things", async () => {
     await clearPlanned();
     const then = addDays(todayIn(), -5);
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -282,18 +283,26 @@ describe("old meal plans kept (Nov 24)", () => {
     expect(p.dishes.some((x) => x.id === d.id)).toBe(false);
     await tidyStock(); // a passed day's things waiting on Stock go
     expect(await forChili()).toEqual([]);
-    await switchOn(d.id, "Robin");
+    const { added } = await switchOn(d.id, "Robin");
     await tidyStock();
-    expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ day: then });
-    expect((await forChili()).length).toBeGreaterThan(3);
+    expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ day: todayIn() });
+    expect((await forChili()).length).toBe(added);
+    expect(added).toBeGreaterThan(3);
   });
 
-  it("a new meal on a day that's passed goes on, with its things, and stays there", async () => {
+  it("a new meal on a day that's passed shows dimmed, and its things go on the list and stay", async () => {
     await clearPlanned(false);
     const then = addDays(todayIn(), -3);
     await savePlan([{ kind: "regular", recipe: "turkey-chili-1", pinned: true, day: then }], [], null, "Sam");
     await tidyStock();
-    expect((await loadPlan()).dishes.find((d) => d.recipe === "turkey-chili-1")).toMatchObject({ day: then });
-    expect((await forChili()).length).toBeGreaterThan(3);
+    const p = await loadPlan();
+    const d = p.old.find((x) => x.recipe === "turkey-chili-1" && x.day === then)!;
+    expect(d).toBeTruthy();
+    const things = (await forChili()).length;
+    expect(things).toBeGreaterThan(3);
+    // Switched on, it moves to today; its things are on the list already, so nothing doubles.
+    expect((await switchOn(d.id, "Robin")).added).toBe(0);
+    expect((await forChili()).length).toBe(things);
+    expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ day: todayIn() });
   });
 });

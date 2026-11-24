@@ -434,8 +434,11 @@ throws away things still wanted. Proposed, to try after a real week confirms it:
   still logged for every dinner New plan dims (its day, or today for one still to come). The confirm names what wasn't
   bought, **Keep them** first or **Clear them**, and is a single New plan button when everything was bought. Ticked
   things come off as bought, Stock's answers and a dinner's waiting things go, the Safeway cart stays. A meal put on a
-  day that's passed, or switched back on, stays on (not dimmed) until the next New plan. Not done from the Nov 20 idea:
-  the button on the "Ordered" screen.
+  day that's passed keeps its things on the list until the next New plan.
+- **Nov 24, after the live check:** every meal whose day has passed is dimmed, as Sam asked (some showed full brightness
+  because they were added after their day). Switching a past meal back on moves it to today. A meal whose recipe was
+  deleted shows the name from its id ("Pumpkin pie recipe"). New plan is also on the "Ordered" screen after a Safeway
+  order (Sam: "do that too"): it closes Check out and asks as the top bar's does.
 
 ---
 

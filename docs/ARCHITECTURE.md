@@ -66,7 +66,8 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   one Add meal row; every past day with a meal sits above, kept for good (Nov 24). Add meal opens a sheet of her recipes
   (search, a pill for each kind with All first, every kind under its heading); a meal's ⋯ moves it to another day or
   takes it off (asking first). A meal shopped for, or whose day has passed, is dimmed (`isOld` in `lib/week.ts`); its ⋯
-  switches it back on, putting its things on the list again. Any new meal goes on, with its things, whatever its day.
+  switches it back on (on today, if its day has passed), putting its things on the list again. Any new meal's things go on
+  the list whatever its day (`onTheList`). New plan is also offered on Check out's "Ordered" result.
   New plan, in the top bar, asks first: every dinner stays, dimmed, and is logged as made; ticked things and Stock's
   answers come off; the Safeway cart stays; what wasn't bought is named, Keep them or Clear them. Simmer never picks
   meals. Rules in `lib/week.ts`, `lib/plan.ts`.
