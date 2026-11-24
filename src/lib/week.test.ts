@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromDraft, type Draft, type Recipe } from "./recipes";
-import { firstCounts, isOld, kindOf, lunchShopping, type LunchOption } from "./week";
+import { firstCounts, isOld, kindOf, onTheList, plainName, lunchShopping, type LunchOption } from "./week";
 
 const base: Draft = { name: "", effort: "quick", minutes: null, serves: null, protein: "", ingredients: [], steps: [], store: "", season: [], for: "everyone", kidOk: "", makeAhead: false, tags: [], source: "", rating: null, notes: "" };
 const r = (id: string, p: Partial<Draft>): Recipe => fromDraft({ ...base, name: id, id, ...p });
@@ -62,19 +62,30 @@ describe("the boys' lunches", () => {
 
 describe("old meals, kept and dimmed (Nov 24)", () => {
   const today = "2026-11-24";
-  it("dims a meal once it's shopped for, whatever its day", () => {
-    expect(isOld({ made: "2026-11-20", day: "2026-11-28", added: "2026-11-20" }, today)).toBe(true);
+  it("dims a meal once it's shopped for, whatever its day, and every meal whose day has passed", () => {
+    expect(isOld({ made: "2026-11-20", day: "2026-11-28" }, today)).toBe(true);
     expect(isOld({ made: "2026-10-01" }, today)).toBe(true);
+    expect(isOld({ day: "2026-11-23" }, today)).toBe(true);
+    expect(isOld({ day: today }, today)).toBe(false);
+    expect(isOld({ day: "2026-11-30" }, today)).toBe(false);
+    expect(isOld({ day: "" }, today)).toBe(false);
   });
-  it("dims a meal whose day has passed, but not today's or a later one", () => {
-    expect(isOld({ day: "2026-11-23", added: "2026-11-20" }, today)).toBe(true);
-    expect(isOld({ day: "2026-11-23", added: "2026-11-23" }, today)).toBe(true);
-    expect(isOld({ day: today, added: "2026-11-20" }, today)).toBe(false);
-    expect(isOld({ day: "2026-11-30", added: "2026-11-20" }, today)).toBe(false);
+  it("keeps a meal's things on the list till it's shopped for or its day passes; one put on a passed day keeps them", () => {
+    expect(onTheList({ day: today, added: "2026-11-20" }, today)).toBe(true);
+    expect(onTheList({ day: "2026-11-23", added: "2026-11-20" }, today)).toBe(false);
+    expect(onTheList({ day: "2026-11-23", added: "2026-11-23" }, today)).toBe(false);
+    expect(onTheList({ day: "2026-11-20", added: today }, today)).toBe(true);
+    expect(onTheList({ day: "2026-11-20", added: today, made: today }, today)).toBe(false);
+    expect(onTheList({ day: "", added: "2026-11-01" }, today)).toBe(true);
   });
-  it("keeps on a meal put on a past day, or switched back on, until it's shopped for", () => {
-    expect(isOld({ day: "2026-11-20", added: today }, today)).toBe(false);
-    expect(isOld({ day: "2026-11-20", added: "2026-11-21" }, today)).toBe(false);
-    expect(isOld({ day: "", added: "2026-11-01" }, today)).toBe(false);
+});
+
+describe("a deleted recipe's name on an old meal (Nov 24)", () => {
+  it("reads its name from the id; free text stays as typed", () => {
+    expect(plainName("pumpkin-pie-recipe-pq0c5d")).toBe("Pumpkin pie recipe");
+    expect(plainName("turkey-chili-1")).toBe("Turkey chili");
+    expect(plainName("sheet-pan-gnocchi-3f9a0c1b2d4e5f6a7b")).toBe("Sheet pan gnocchi");
+    expect(plainName("Dinner with G&G")).toBe("Dinner with G&G");
+    expect(plainName("tacos")).toBe("tacos");
   });
 });

@@ -15,7 +15,7 @@ import { newId, yes } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
 import { todayIn } from "./time";
 import { bothOf, listName, norm } from "./words";
-import { firstCounts, freezerMatch, isOld, KINDS, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
+import { firstCounts, freezerMatch, isOld, KINDS, onTheList, LUNCH_PARTS, lunchShopping, MAX_COUNT, type Counts, type Dish, type Frozen, type Kind, type Lunch, type LunchOption, type LunchPart, type Taste } from "./week";
 
 const PLANNED = strings("Planned", ["id", "kind", "recipe", "kid", ...LUNCH_PARTS, "added", "made", "pinned", "day"]);
 type PlannedRow = ReturnType<typeof PLANNED.row>;
@@ -47,10 +47,11 @@ const toOptions = (all: ReturnType<typeof LUNCHES.row>[]): LunchOption[] => all.
 
 /**
  * The Planned tab: what's on (still to make or pack), the old meals kept and dimmed (Sam, Nov 24: shopped for, or their
- * day passed; see isOld), and what was made when. An old meal from before days existed shows on the day it was made.
+ * day passed; see isOld), the dinners whose things still belong on the list (onTheList: a dimmed one put on a passed
+ * day among them), and what was made when. An old meal from before days existed shows on the day it was made.
  */
 function toPlanned(all: PlannedRow[], today = todayIn()) {
-  const dishes: Dish[] = [], old: Dish[] = [], lunches: Lunch[] = [], done: { recipe: string; date: string }[] = [];
+  const dishes: Dish[] = [], old: Dish[] = [], listed: Dish[] = [], lunches: Lunch[] = [], done: { recipe: string; date: string }[] = [];
   for (const r of all) {
     const kind = asKind(r.kind);
     if (!kind || !r.id) continue;
@@ -62,10 +63,11 @@ function toPlanned(all: PlannedRow[], today = todayIn()) {
     if (!r.recipe) continue;
     const day = DATE.test(r.day) ? r.day : "";
     const d: Dish = { id: r.id, kind, recipe: r.recipe, pinned: yes(r.pinned), added: r.added, day };
-    if (isOld({ made: r.made, day, added: r.added }, today)) old.push({ ...d, day: day || [r.made, r.added].find((x) => DATE.test(x)) || "" });
+    if (onTheList({ made: r.made, day, added: r.added }, today)) listed.push(d);
+    if (isOld({ made: r.made, day }, today)) old.push({ ...d, day: day || [r.made, r.added].find((x) => DATE.test(x)) || "" });
     else dishes.push(d);
   }
-  return { dishes, old, lunches, done };
+  return { dishes, old, listed, lunches, done };
 }
 
 /** When each recipe was last made: from the Made log, the Planned tab's made dates, and nights marked made in the old Plan tab. */
@@ -206,7 +208,7 @@ export const savePlan = atomically(async (dishes: NewDish[], lunches: NewLunch[]
 
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
-  await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
+  await dropHighlightsNotFor([...now.listed.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
   const need: Need[] = dishes.flatMap((d) => { const r = byId.get(d.recipe); return r ? needFor(r, freezer) : []; });
   for (const it of lunchShopping(lunches, toOptions(options))) need.push({ item: it, quantity: "", for: "lunches", check: false });
   return { added: need.length ? await addItems(need, by) : 0, removed };
@@ -282,15 +284,18 @@ export const clearPlanned = atomically(async (keep = false): Promise<{ removed: 
 });
 
 /**
- * An old meal switched back on (Sam, Nov 24): it's on again on its own day, past or not, until the next New plan, and
- * everything it needs goes on the list as a new meal's things do. Answers how many things went on.
+ * An old meal switched back on (Sam, Nov 24): it's on again, on its day or, if that has passed, today, until the next
+ * New plan; everything it needs goes on the list as a new meal's things do (unless they're there already: a meal put on
+ * a passed day keeps its things). Answers how many things went on.
  */
 export const switchOn = atomically(async (id: string, by: string): Promise<{ added: number }> => {
   const today = todayIn();
-  const d = toPlanned(await load(PLANNED), today).old.find((x) => x.id === id);
+  const now = toPlanned(await load(PLANNED), today);
+  const d = now.old.find((x) => x.id === id);
   if (!d) return { added: 0 };
-  // Added again today: a day that's passed no longer dims it (isOld).
-  await setPlanned(id, { made: "", added: today, day: d.day ?? "" });
+  const listed = now.listed.some((x) => x.id === id);
+  await setPlanned(id, { made: "", added: today, day: d.day && d.day > today ? d.day : today });
+  if (listed) return { added: 0 };
   const [recipes, freezer] = await Promise.all([loadRecipes(), loadFreezer()]);
   const r = recipes.find((x) => x.id === d.recipe);
   return { added: r ? await addItems(needFor(r, freezer), by) : 0 };
@@ -349,8 +354,8 @@ export const tidyStock = atomically(async (): Promise<void> => {
   const [planned, recipes] = await Promise.all([load(PLANNED), loadRecipes()]);
   const byId = new Map(recipes.map((r) => [r.id, r]));
   const now = toPlanned(planned);
-  // Only what's on: an old meal (shopped for, or its day passed) is done with (Nov 24, isOld).
-  await dropHighlightsNotFor([...now.dishes.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
+  // Only what's still on the list: a meal shopped for, or whose day passed, is done with (Nov 24, onTheList).
+  await dropHighlightsNotFor([...now.listed.map((d) => (byId.get(d.recipe)?.name ?? d.recipe).toLowerCase()), ...(now.lunches.length ? ["lunches"] : [])]);
 });
 
 /** The freezer, for Stock (Nov 19: the trips it also answered with were read for nothing; nothing shows them). */

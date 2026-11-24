@@ -7,13 +7,13 @@
 // is picked (Sam, Nov 14) and Safeway's checkout read with it, then "Test run · $X" approves those figures with Face ID and goes through Safeway's
 // checkout again, stopping one press short, and says what it would have placed. Place order (phase 3) asks first, then
 // Face ID approves exactly the reading shown (its preparedId, Nov 19), and the helper places it once.
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
 import { stepWords } from "@/lib/steps";
 import { usePrepared, useOrdering } from "./Ordering";
-import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet } from "./ui";
+import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet, StartPlan } from "./ui";
 
 /** Bags for this order (Nov 16, Sam: "user chooses bags"): picked with the time; the last choice comes back next time. */
 type Bags = "own" | "store";
@@ -42,7 +42,7 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
               <Row icon="bag" title="Estimate" value={`${estimate ? "about " : ""}${money(total)}`} />
             </Group>
             {o.hereRow && <Group>{o.hereRow}</Group>}
-            {ready ? <TestRun /> : <p className="px-4 t-sub text-muted">Set up ordering in Settings → Ordering: Face ID, a limit per order, then turn it on.</p>}
+            {ready ? <TestRun onClose={onClose} /> : <p className="px-4 t-sub text-muted">Set up ordering in Settings → Ordering: Face ID, a limit per order, then turn it on.</p>}
           </>
         )}
       </div>
@@ -55,7 +55,8 @@ export function CheckoutSheet({ count, total, estimate, onClose }: { count: numb
  * The test run. Each step waits on the helper on the server, up to 20 s a request, and the sheet asks again only while
  * an answer says it's still going (no timers). Closing the sheet stops following it.
  */
-function TestRun() {
+function TestRun({ onClose }: { onClose: () => void }) {
+  const startPlan = useContext(StartPlan);
   const [run, setRun] = useState<Run>({ stage: "idle" });
   const [problem, setProblem] = useState<string | null>(null);
   const check = usePrepared<PublicKeyCredentialRequestOptionsJSON>();
@@ -231,6 +232,8 @@ function TestRun() {
             : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
         </div>
       )}
+      {/* After an order, New plan is offered here too (Sam, Nov 24; docs/PLAN.md 4.11): this sheet closes and New plan asks first, as from the top bar. */}
+      {run.stage === "ordered" && run.result.ok && startPlan && <Button className="w-full" onClick={() => { onClose(); startPlan(); }}>New plan</Button>}
       {run.stage === "ready" && (
         <ConfirmSheet open={confirming} title={`Place order · ${cents(run.view.totalCents)}?`} confirm="Place order"
           message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, bagsWords(run.view.bagsOwn), ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}

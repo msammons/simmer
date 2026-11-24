@@ -223,7 +223,8 @@ export default function App() {
   /** A dinner picked on Meals: shown at once, saved behind it (Nov 10: no "Saving…"). One that fails comes back off. */
   function quickAdd(d: NewDish) {
     const temp = { ...d, id: standInId("adding"), added: "" };
-    plans.change(() => api.savePlan([d], [], null, "").then(planned), (p) => ({ ...p, dishes: [...p.dishes, temp] }));
+    // On a day that's passed it shows dimmed at once, as the server files it (Nov 24); its things still go on the list.
+    plans.change(() => api.savePlan([d], [], null, "").then(planned), (p) => (d.day && d.day < todayIn() ? { ...p, old: [...(p.old ?? []), temp] } : { ...p, dishes: [...p.dishes, temp] }));
   }
   /**
    * One planned thing changed (moved to another day, taken off, or an old meal switched back on), or a new plan: shown
@@ -234,7 +235,8 @@ export default function App() {
       const old = p.old ?? [];
       // New plan keeps every meal, dimmed (Nov 24); one with no day shows on today, as the server files it.
       if (c.op === "clear") return { ...p, dishes: [], old: [...old, ...p.dishes.map((d) => ({ ...d, day: d.day || todayIn() }))] };
-      if (c.op === "on") { const d = old.find((x) => x.id === c.id); return d ? { ...p, old: old.filter((x) => x.id !== c.id), dishes: [...p.dishes, { ...d, added: todayIn() }] } : p; }
+      // Switched back on: on its day, or today if that has passed, as the server moves it.
+      if (c.op === "on") { const d = old.find((x) => x.id === c.id), today = todayIn(); return d ? { ...p, old: old.filter((x) => x.id !== c.id), dishes: [...p.dishes, { ...d, added: today, day: d.day && d.day > today ? d.day : today }] } : p; }
       if (c.op === "made" || c.op === "remove") return { ...p, dishes: p.dishes.filter((d) => d.id !== c.id), lunches: p.lunches.filter((l) => l.id !== c.id) };
       if (c.op === "change" && "day" in c) return { ...p, dishes: p.dishes.map((d) => (d.id === c.id ? { ...d, day: c.day } : d)) };
       return p;

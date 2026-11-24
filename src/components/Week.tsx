@@ -2,7 +2,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
-import { KIND_NAMES, kindOf } from "@/lib/week";
+import { KIND_NAMES, kindOf, plainName } from "@/lib/week";
 import { addDays, todayIn } from "@/lib/time";
 import { BrandBar, ConfirmSheet, Group, Held, MoreMenu, Row, Sheet } from "./ui";
 import { Icon } from "./icons";
@@ -11,7 +11,7 @@ import { Icon } from "./icons";
 // Simmer doesn't pick meals itself). Kids' lunches, snacks and desserts are mostly Stock; Lunch stays as an option.
 
 /** A meal's name: the recipe's, or the free text she typed. */
-export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? id;
+export const mealName = (id: string, recipes: Recipe[]) => recipes.find((r) => r.id === id)?.name ?? plainName(id);
 
 
 // ---- Meals (tab)
@@ -33,7 +33,7 @@ function dayName(day: string): string {
  * hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first),
  * and what only it needed comes off the list (server side, lib/plan.ts). Old meal plans are kept (Sam, Nov 24): past
  * days with meals sit above today, scrolled past, and a meal shopped for or whose day has passed is dimmed; its ⋯
- * switches it back on, and its things go on the list again. Simmer doesn't pick meals (Sam, Nov 10; again with Robin,
+ * switches it back on (on today, if its day has passed), and its things go on the list again. Simmer doesn't pick meals (Sam, Nov 10; again with Robin,
  * Nov 15).
  */
 export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, onSwitchOn }: {
@@ -73,7 +73,7 @@ export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, on
   }, [plan, hasPast]);
   const meal = (d: Dish) => {
     const r = byId.get(d.recipe);
-    const name = r?.name ?? d.recipe;
+    const name = r?.name ?? plainName(d.recipe);
     const off = dim.has(d.id);
     const kind = d.kind === "quick" || d.kind === "regular" ? undefined : KIND_NAMES[d.kind];
     return (

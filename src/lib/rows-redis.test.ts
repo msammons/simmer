@@ -55,8 +55,8 @@ describe("columns by their headers", () => {
   it("a new plan keeps each dinner's day when Planned had no day column", async () => {
     const { loadPlan, savePlan } = await import("./plan");
     put("Planned", [["id", "kind", "recipe", "added", "made"]]);
-    await savePlan([{ kind: "regular", recipe: "r1", pinned: false, day: "2026-11-21" }], [], { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: {} }, "Robin");
-    expect((await loadPlan()).dishes).toMatchObject([{ recipe: "r1", day: "2026-11-21" }]);
+    await savePlan([{ kind: "regular", recipe: "r1", pinned: false, day: "2099-11-21" }], [], { quick: 1, regular: 1, kids: 0, dessert: 0, side: 0, breakfast: 0, lunchmeal: 0, lunches: {} }, "Robin");
+    expect((await loadPlan()).dishes).toMatchObject([{ recipe: "r1", day: "2099-11-21" }]);
   });
   it("a blank count reads as the usual number, not none", async () => {
     const { loadPlan } = await import("./plan");
