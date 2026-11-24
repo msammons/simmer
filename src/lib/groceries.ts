@@ -363,16 +363,21 @@ export const takeOffFor = atomically(async (needs: { item: string; quantity: str
 });
 
 /**
- * New plan (Nov 11, Sam: "I would expect the whole app to reset"): every list is emptied in one write, except what's in
- * the Safeway cart (`held`), which stays so the cart and the list agree. Answers how many came off.
+ * New plan (Nov 24: old meal plans are kept, and so is what wasn't bought, if she says Keep). What was ticked as got is
+ * written down as bought and comes off; what's in the Safeway cart (`held`) stays, so the cart and the list agree;
+ * Stock's answers and a dinner's things still waiting there go (the shop is done). What's on a list and wasn't bought
+ * stays for the next shop with `keep`, or goes too (Nov 11: "I would expect the whole app to reset"). Answers how many
+ * came off.
  */
-export const emptyLists = atomically(async (held: Set<string> = new Set()): Promise<number> => {
-  const off = (await load(LIST)).filter((x) => !held.has(x.id));
+export const finishShop = atomically(async (held: Set<string> = new Set(), keep = false): Promise<number> => {
+  const off = (await load(LIST)).filter((x) => !held.has(x.id) && (x.checked || x.check || !keep));
   // What was ticked as got is written down as bought first (Nov 14: Done shopping is gone, so this is where it's noted).
   await recordBought(off.filter((x) => x.checked));
   await editList([], new Set(off.map((x) => x.id)));
   return off.length;
 });
+/** Every list emptied but the Safeway cart's things. */
+export const emptyLists = (held: Set<string> = new Set()) => finishShop(held, false);
 
 /**
  * Many items at once (a recipe's ingredients, a planned week): the list is read once, each item merges into the same

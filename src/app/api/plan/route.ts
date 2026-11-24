@@ -1,4 +1,4 @@
-import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount, tidyStock } from "@/lib/plan";
+import { changePlanned, loadPlan, markMade, removePlanned, savePlan, type NewDish, type NewLunch, clearPlanned, setCount, switchOn, tidyStock } from "@/lib/plan";
 import { KINDS, LUNCH_PARTS, MAX_COUNT, type Counts, type Kind, type LunchPart } from "@/lib/week";
 import { backUpAfter, before } from "@/lib/ops/backup";
 import { api, body, clean as text, refuse } from "@/lib/ops/route";
@@ -28,6 +28,7 @@ export const GET = api((req) => freshRead(req, PLAN, loadPlan));
 /**
  * POST { op: "plan", dishes, lunches, counts, by }: more to make and pack, on top of what's there.
  * { op: "change", id, recipe?, pinned?, part?, item?, by }, { op: "made", id }, { op: "remove", id }: one planned thing.
+ * { op: "on", id, by }: an old meal switched back on. { op: "clear", keep }: New plan (keep: what wasn't bought stays).
  * Answers with everything as it is now, and `added`: how many things went on the grocery list. The change, the tidy-up
  * and the answer are one transaction (Nov 19): each tab is read once, and a change made elsewhere meanwhile isn't lost.
  */
@@ -47,7 +48,8 @@ export const POST = api(async (req) => {
       ({ added, removed = 0 } = await changePlanned(id, { ...(text(b.recipe) && { recipe: text(b.recipe), pinned: Boolean(b.pinned) }), ...(isPart(b.part) && { part: b.part, item: text(b.item) }), ...(/^\d{4}-\d{2}-\d{2}$/.test(text(b.day, 10)) && { day: text(b.day, 10) }) }, text(b.by, 20)));
     } else if (b?.op === "made" && id) await markMade(id);
     else if (b?.op === "remove" && id) ({ removed } = await removePlanned(id));
-    else if (b?.op === "clear") ({ removed } = await clearPlanned());
+    else if (b?.op === "on" && id) ({ added } = await switchOn(id, text(b.by, 20)));
+    else if (b?.op === "clear") ({ removed } = await clearPlanned(b.keep === true));
     else if (b?.op === "count" && text(b.recipe) && (KINDS as readonly string[]).includes(b.kind) && Number.isFinite(Number(b.count))) ({ added, removed } = await setCount(text(b.recipe), b.kind, Number(b.count), text(b.by, 20)));
     else return null;
     // A dinner's leftovers on Stock for dinners no longer planned come off (Nov 14).

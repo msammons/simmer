@@ -16,6 +16,17 @@ export const KIND_NAMES: Record<Kind, string> = { quick: "Quick", regular: "Regu
  */
 export type Dish = { id: string; kind: Kind; recipe: string; pinned: boolean; added: string; day?: string };
 
+/**
+ * Old meal plans are kept (Sam, Nov 24): a meal is dimmed on Meals once it's shopped for (New plan gave it a made date)
+ * or its day has passed. One put on a day that had already passed (added after it), or switched back on (added again
+ * today), stays on until the next New plan. Answers whether it's dimmed.
+ */
+export function isOld(d: { made?: string; day?: string; added?: string }, today: string): boolean {
+  if (d.made) return true;
+  if (!d.day || d.day >= today) return false;
+  return !d.added || d.added <= d.day;
+}
+
 /** How many of each to plan, and how many lunches for each boy. */
 export type Counts = Record<Kind, number> & { lunches: Record<string, number> };
 export const MAX_COUNT = 14;

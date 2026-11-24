@@ -261,7 +261,7 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * every studio app): a headline, a muted line, then its buttons. Drawn by the app, so its buttons say what they do and a
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
-function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
+export function Dialog({ title, message, children, onDismiss }: { title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void }) {
   const dismiss = useRef(onDismiss);
   useEffect(() => { dismiss.current = onDismiss; });
   useEffect(() => {

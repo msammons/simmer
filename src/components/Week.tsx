@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dish, Kind, NewDish, PlanData, Recipe } from "@/lib/client";
 import { searchRecipes } from "@/lib/search";
 import { KIND_NAMES, kindOf } from "@/lib/week";
@@ -28,43 +28,82 @@ function dayName(day: string): string {
 
 
 /**
- * The Meals tab (Nov 16, from Robin's run): a list of days starting today, 7 of them, with Show more for up to 14. Each
- * day ends with a quiet Add meal row, after its meals (Nov 18), which opens every recipe with kind pills. A
- * day can hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first), and what only it
- * needed comes off the list (server side, lib/plan.ts). Days before today drop off by themselves. Simmer
- * doesn't pick meals (Sam, Nov 10; again with Robin, Nov 15).
+ * The Meals tab (Nov 16, from Robin's run): a list of days, opened on today, 7 of them, with Show more for up to 14.
+ * Each day ends with a quiet Add meal row, after its meals (Nov 18), which opens every recipe with kind pills. A day can
+ * hold more than one thing. Tap a meal for its recipe; its ⋯ moves it to another day or takes it off (asking first),
+ * and what only it needed comes off the list (server side, lib/plan.ts). Old meal plans are kept (Sam, Nov 24): past
+ * days with meals sit above today, scrolled past, and a meal shopped for or whose day has passed is dimmed; its ⋯
+ * switches it back on, and its things go on the list again. Simmer doesn't pick meals (Sam, Nov 10; again with Robin,
+ * Nov 15).
  */
-export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, }: {
+export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, onSwitchOn }: {
   plan: PlanData | null; recipes: Recipe[];
   onOpen: (d: Dish) => void; onRemove: (d: Dish) => void; onMove: (d: Dish, day: string) => void; onAdd: (kind: Kind | null, day: string) => void;
+  onSwitchOn: (d: Dish) => void;
 }) {
   const dishes = useMemo(() => plan?.dishes ?? [], [plan]);
+  const old = useMemo(() => plan?.old ?? [], [plan]);
   const [taking, setTaking] = useState<Dish | null>(null); // waiting on "Take it off?"
   const [moving, setMoving] = useState<Dish | null>(null); // picking another day for this dinner
   const [long, setLong] = useState(false); // Show more: 14 days instead of 7
   const today = todayIn();
   const days = Array.from({ length: long ? 14 : 7 }, (_, i) => addDays(today, i));
   const undated = dishes.filter((d) => !d.day);
-  const later = dishes.filter((d) => d.day && d.day > days[days.length - 1]);
+  const oldUndated = old.filter((d) => !d.day);
+  const last = days[days.length - 1];
+  const later = [...old, ...dishes].filter((d) => d.day && d.day > last).sort((a, b) => a.day!.localeCompare(b.day!));
+  const dim = useMemo(() => new Set(old.map((d) => d.id)), [old]);
   // Looked up once per change, not once per meal (Nov 19).
   const byId = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
   const byDay = useMemo(() => {
     const m = new Map<string, Dish[]>();
-    for (const d of dishes) if (d.day) m.set(d.day, [...(m.get(d.day) ?? []), d]);
+    for (const d of [...old, ...dishes]) if (d.day) m.set(d.day, [...(m.get(d.day) ?? []), d]);
     return m;
-  }, [dishes]);
+  }, [old, dishes]);
+  // Every past day with a meal, oldest first (Sam, Nov 24: history kept for good; Meals opens on today).
+  const past = [...byDay.keys()].filter((d) => d < today).sort();
+  // Opened on today, once the plan is in: past days are above, scrolled past.
+  const todayRef = useRef<HTMLDivElement>(null);
+  const seeked = useRef(false);
+  const hasPast = past.length > 0;
+  useLayoutEffect(() => {
+    if (!plan || seeked.current) return;
+    seeked.current = true;
+    if (hasPast) todayRef.current?.scrollIntoView({ block: "start" });
+  }, [plan, hasPast]);
   const meal = (d: Dish) => {
     const r = byId.get(d.recipe);
     const name = r?.name ?? d.recipe;
+    const off = dim.has(d.id);
+    const kind = d.kind === "quick" || d.kind === "regular" ? undefined : KIND_NAMES[d.kind];
     return (
-      <div key={d.id} className="flex items-center gap-1 pr-3">
+      <div key={d.id} className="flex items-center gap-1 pr-3" data-old={off ? "yes" : undefined}>
         <div className="min-w-0 flex-1">
-          <Row title={name} value={d.kind === "quick" || d.kind === "regular" ? undefined : KIND_NAMES[d.kind]} onClick={r ? () => onOpen(d) : undefined} />
+          <Row title={off ? <span className="text-muted">{name}</span> : name} value={kind} onClick={r ? () => onOpen(d) : undefined} />
         </div>
-        {/* The dinner's ⋯ (Sam, Nov 17: row actions behind ⋯, as on every screen). */}
-        <MoreMenu label={`More for ${name}`} title={name} onPick={(v) => { if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}
-          options={[{ value: "move", label: "Move to another day" }, { value: "take", label: "Take off the plan" }]} />
+        {/* The dinner's ⋯ (Sam, Nov 17: row actions behind ⋯, as on every screen). A dimmed one's switches it back on. */}
+        {off ? (
+          <MoreMenu label={`More for ${name}`} title={name} onPick={(v) => { if (v === "on") onSwitchOn(d); }}
+            options={[{ value: "on", label: "Switch back on" }]} />
+        ) : (
+          <MoreMenu label={`More for ${name}`} title={name} onPick={(v) => { if (v === "move") setMoving(d); else if (v === "take") setTaking(d); }}
+            options={[{ value: "move", label: "Move to another day" }, { value: "take", label: "Take off the plan" }]} />
+        )}
       </div>
+    );
+  };
+  const day = (day: string) => {
+    // Every day ends with its own Add row, after its meals (Sam, Nov 18: back from the first meal's ⋯).
+    const name = dayName(day);
+    return (
+      <Group key={day} header={name}>
+        {(byDay.get(day) ?? []).map((d) => meal(d))}
+        {/* As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
+            One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first). */}
+        <button type="button" aria-label={`Add meal to ${name}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
+          <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
+        </button>
+      </Group>
     );
   };
   return (
@@ -74,20 +113,11 @@ export function MealsScreen({ plan, recipes, onOpen, onRemove, onMove, onAdd, }:
       {!plan && <Held groups={[2, 2, 2]} />}
       {plan && (
         <>
-          {days.map((day) => {
-            // Every day ends with its own Add row, after its meals (Sam, Nov 18: back from the first meal's ⋯).
-            const name = dayName(day);
-            return (
-              <Group key={day} header={name}>
-                {(byDay.get(day) ?? []).map((d) => meal(d))}
-                {/* As Recipes' Add recipe row: a grey + and grey words (Sam, Nov 17: the orange was still too bold).
-                    One Add; the sheet has every kind, with a filter (Sam, Nov 18: no picking the kind first). */}
-                <button type="button" aria-label={`Add meal to ${name}`} onClick={() => onAdd(null, day)} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-sunk">
-                  <Icon name="plus" className="size-5 text-muted" strokeWidth={2.2} /><span className="t-body text-muted">Add meal</span>
-                </button>
-              </Group>
-            );
-          })}
+          {oldUndated.length > 0 && <Group header="Earlier">{oldUndated.map((d) => meal(d))}</Group>}
+          {past.map(day)}
+          {/* Clear of the top bar when opened here. */}
+          <div ref={todayRef} className="scroll-mt-[calc(env(safe-area-inset-top)+4.5rem)]">{day(today)}</div>
+          {days.slice(1).map(day)}
           <button type="button" onClick={() => setLong(!long)} className="w-full py-2 t-sub font-semibold text-accent">{long ? "Show fewer days" : "Show more days"}</button>
           {later.length > 0 && <Group header="Later">{later.map((d) => meal(d))}</Group>}
           {undated.length > 0 && <Group header="Not on a day">{undated.map((d) => meal(d))}</Group>}
@@ -119,7 +149,7 @@ export function AddMealSheet({ kind, day, plan, recipes, onAdd, onClose }: { kin
   // Which kind to show: every kind at first, each under its heading (Sam, Nov 18: a filter in the sheet, not a pick before it).
   const [only, setOnly] = useState<Kind | "">(kind ?? "");
   // Already on this day: "Planned" (the same recipe can go on another day).
-  const planned = useMemo(() => new Set(plan.dishes.filter((d) => d.day === day).map((d) => d.recipe)), [plan.dishes, day]);
+  const planned = useMemo(() => new Set([...plan.dishes, ...(plan.old ?? [])].filter((d) => d.day === day).map((d) => d.recipe)), [plan.dishes, plan.old, day]);
   const term = q.trim();
   // Each recipe's kind worked out once (Nov 19); snacks, drinks and sauces (no kind) are never planned.
   const kinds = useMemo(() => new Map(recipes.map((r) => [r, kindOf(r)])), [recipes]);

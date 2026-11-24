@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- a plain Node script, run with node */
-// Browser smoke test: passcode, planning by number (one shop at a time: New plan in the top bar, no lunches, no Made it),
+// Browser smoke test: passcode, planning by number (one shop at a time: New plan in the top bar keeps old meals dimmed,
+// switching one back on, no lunches, no Made it),
 // the tabs, Settings on every screen, Stock (nothing comes back by itself), Shop (one page by store), Add a meal and a
 // recipe's Add to the plan, the Recipes tab, a recipe and back, adding recipes, saves that fail (the sheet keeps what was
 // entered), every tap answering at once (within ~150 ms, with the server slowed to prove it), and a passcode turned down
@@ -274,21 +275,45 @@ const began = Date.now();
       await addSheet.getByRole("button", { name: "Close" }).last().tap(); await gone(addSheet);
       await page.screenshot({ path: `${dir}/2-week-planned.png`, fullPage: true });
       await page.screenshot({ path: `${dir}/8e-meals-after-add.png`, fullPage: true });
-      // New plan (Nov 10): asks first; every dinner comes off; the grocery list stays.
-      const listNow = () => page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => (l?.items ?? []).filter((x) => !x.checked).map((x) => ({ item: x.item, for: x.for }))).catch(() => []));
+      // New plan (Nov 24: old meal plans are kept): asks first, naming what wasn't bought, Keep them first or Clear them;
+      // every dinner stays on Meals, dimmed; Keep leaves the unbought things on the list, and a dinner's waiting things go.
+      const listNow = () => page.evaluate(() => fetch("/api/list", { headers: { "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") } }).then((r) => r.ok ? r.json() : null).then((l) => (l?.items ?? []).filter((x) => !x.checked).map((x) => ({ item: x.item, for: x.for, check: x.check }))).catch(() => []));
       await page.evaluate(() => fetch("/api/list", { method: "POST", headers: { "content-type": "application/json", "x-passcode": JSON.parse(localStorage.getItem("sm.passcode") ?? "\"\"") }, body: JSON.stringify({ op: "add", text: "new-plan hand-added bread", by: "Sam" }) }).then((r) => r.text()));
-      const listBefore = await listNow();
+      const dimmed = () => page.locator('[data-old="yes"]');
+      const onMeals = async () => (await mealMenus(page).count()) - (await dimmed().count());
+      const mealsBefore = await onMeals();
       await page.getByRole("button", { name: "New plan", exact: true }).tap();
       const fresh = page.getByRole("dialog", { name: "Start a new plan?" });
-      ok("new plan: asks first, saying the dinners come off and the cart stays", (await seen(fresh, 2000)) && (await fresh.getByText(/dinners? comes? off/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/week/i).count()) === 0);
+      // The bread was added behind the phone's back: New plan reads the list again as it asks.
+      await seen(fresh.getByText(/new-plan hand-added bread/), 5000);
+      ok("new plan: asks first: the dinners stay, dimmed; the cart stays; what wasn't bought is named, Keep them first", (await seen(fresh, 2000)) && mealsBefore > 0
+        && (await fresh.getByText(/stays? on Meals, dimmed/).isVisible()) && (await fresh.getByText(/Safeway cart stays/).isVisible()) && (await fresh.getByText(/new-plan hand-added bread/).isVisible())
+        && (await fresh.getByRole("button").allInnerTexts()).join() === "Keep them,Clear them,Cancel", `${mealsBefore} on`);
+      await page.screenshot({ path: `${dir}/8f-new-plan-ask.png` });
       await slow("**/api/plan");
-      await fresh.getByRole("button", { name: "New plan" }).tap();
-      ok("new plan: the meals come off within 150 ms", await within150(async () => (await mealMenus(page).count()) === 0));
+      await fresh.getByRole("button", { name: "Keep them" }).tap();
+      ok("new plan: the meals dim within 150 ms, and none come off", await within150(async () => (await onMeals()) === 0 && (await dimmed().count()) === mealsBefore));
       await idle(); await page.unroute("**/api/plan");
-      await page.waitForFunction(() => !document.querySelector('button[aria-label^="Take "]'), null, { timeout: 8000 }).catch(() => {});
-      ok("new plan: every dinner comes off", (await mealMenus(page).count()) === 0 && (await page.getByRole("button", { name: /^One less / }).count()) === 0);
+      ok("new plan: every dinner stays on Meals, dimmed", mealsBefore > 0 && (await onMeals()) === 0 && (await dimmed().count()) === mealsBefore);
+      const kept = await listNow();
+      ok("new plan: Keep leaves what wasn't bought on the list; a dinner's things waiting on Stock go", kept.some((x) => x.item === "new-plan hand-added bread") && kept.every((x) => !x.check), kept.map((x) => x.item).join(", "));
+      ok("old meal: its ⋯ switches it back on, and nothing else", (await dimmed().first().getByLabel(/^More for /).locator("option").allInnerTexts()).slice(1).join() === "Switch back on");
+      await page.screenshot({ path: `${dir}/8g-meals-dimmed.png`, fullPage: true });
+      // Switching one back on (Nov 24): it shows on at once, and its things go on the list again.
+      const switched = ((await dimmed().first().getByLabel(/^More for /).getAttribute("aria-label")) ?? "").replace(/^More for /, "");
+      await slow("**/api/plan");
+      await dimmed().first().getByLabel(/^More for /).selectOption("on");
+      ok("old meal: switched back on shows on within 150 ms", await within150(async () => (await dimmed().count()) === mealsBefore - 1 && (await onMeals()) === 1));
+      await idle(); await page.unroute("**/api/plan");
+      const again = await listNow();
+      ok("old meal: switched back on puts its things on the list again", again.some((x) => x.for.toLowerCase().split(",").map((f) => f.trim()).includes(switched.toLowerCase())), switched);
+      // New plan again, Clear them: what wasn't bought comes off too; the meals stay, dimmed.
+      await page.getByRole("button", { name: "New plan", exact: true }).tap();
+      await seen(fresh, 2000);
+      await fresh.getByRole("button", { name: "Clear them" }).tap(); await gone(fresh);
+      await idle();
       const listAfter = await listNow();
-      ok("new plan: every list is emptied, hand-added things too", listAfter.length === 0 && listBefore.length > 0, `${listBefore.length} → ${listAfter.length}`);
+      ok("new plan: Clear empties every list, hand-added things too; the meals stay, dimmed", listAfter.length === 0 && (await dimmed().count()) === mealsBefore && (await onMeals()) === 0, `${listAfter.length} left`);
 
       // A request budget (Nov 11: bursts of reloads went over Google's limits). Going round the tabs twice in a row: the
       // second round asks the server for (almost) nothing, since what was just loaded is still fresh.
