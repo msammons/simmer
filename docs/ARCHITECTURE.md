@@ -92,7 +92,9 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   of 10 px or a cancel). The hold is watched on the whole page by where the Settings button is, so it works through a
   sheet's or pop-up's dimmed area. On the release the box takes the focus (iPhone raises the keyboard only from a
   touch's own handler) and the tap that would follow is swallowed, so whatever was open stays as it was; a short press is
-  a tap as before. With the keyboard up the pop-up is centred in the part of the screen left above it (`Dialog`'s
+  a tap as before. Nothing behind it fades, so what's open stays in view (Sam, Nov 24); a hairline (`--line`) and the
+  pop-up's shadow set it apart, and an invisible layer keeps taps off the page: a tap outside does nothing, only Cancel
+  and Send close it. With the keyboard up the pop-up is centred in the part of the screen left above it (`Dialog`'s
   `useTypingView`, as sheets do). What was on screen goes with the words: each tab, screen (`useNote`), sheet (every
   `Sheet` notes its label and title, or its `note`) and pop-up notes itself while it shows, Shop and Safeway add a line
   of state, and the last five alerts are kept. A new sheet needs nothing, or one `note`.

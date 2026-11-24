@@ -264,9 +264,12 @@ export function Row({ icon, lead, title, subtitle, value, accessory, onClick, hr
  * every studio app): a headline, a muted line, then its buttons. Drawn by the app, so its buttons say what they do and a
  * removal is red; the phone's own pop-up can only say OK and Cancel. Tapping outside or Escape is the way out.
  */
-export function Dialog({ title, message, children, onDismiss, above }: {
+export function Dialog({ title, message, children, onDismiss, above, clear }: {
   title: string; message?: ReactNode; children: ReactNode; onDismiss: () => void;
   above?: boolean; // over everything, sheets and other pop-ups too (Feedback, Nov 24)
+  // Nothing faded behind it, so what's open stays in view (Sam, Nov 24: Feedback); a hairline and shadow set it apart.
+  // Taps outside still stop at an invisible layer, and do nothing: only its own buttons close it.
+  clear?: boolean;
 }) {
   useNote("popup", title, typeof message === "string" ? message : "");
   // A pop-up with a field (Feedback) stays in the part of the screen the keyboard leaves, centred there.
@@ -282,9 +285,9 @@ export function Dialog({ title, message, children, onDismiss, above }: {
     return () => document.removeEventListener("keydown", key);
   }, []);
   return createPortal(
-    <div style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className={`fixed inset-0 ${above ? "z-[60]" : "z-50"} flex items-center justify-center bg-black/40 px-6 backdrop-blur-[2px] sm-dialog-dim`} onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
+    <div style={view ? { top: view.top, height: view.height, bottom: "auto" } : undefined} className={`fixed inset-0 ${above ? "z-[60]" : "z-50"} flex items-center justify-center px-6 ${clear ? "" : "bg-black/40 backdrop-blur-[2px] sm-dialog-dim"}`} onClick={(e) => { if (!clear && e.target === e.currentTarget) onDismiss(); }}>
       <div ref={card} role="dialog" aria-modal="true" aria-label={title}
-        className="sm-dialog w-full max-w-[20rem] space-y-4 rounded-[1.5rem] bg-card p-5 text-center shadow-2xl">
+        className={`sm-dialog w-full max-w-[20rem] space-y-4 rounded-[1.5rem] bg-card p-5 text-center shadow-2xl ${clear ? "border border-line" : ""}`}>
         <div className="space-y-1.5">
           <h2 className="t-headline">{title}</h2>
           {message && <p role="alert" className="whitespace-pre-line t-sub text-muted">{message}</p>}

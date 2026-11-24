@@ -107,7 +107,10 @@ export function FeedbackHost({ active, theme }: { active: boolean; theme: string
   );
 }
 
-/** The pop-up (Sam, Nov 24: the app's own pop-up, not a sheet), over everything: the title, the box, Cancel and Send. */
+/**
+ * The pop-up (Sam, Nov 24: the app's own pop-up, not a sheet), over everything: the title, the box, Cancel and Send.
+ * Nothing behind it fades ("so the user retains context"); a tap outside does nothing, so words are never lost by a slip.
+ */
 function FeedbackPopup({ initial, onSend, onCancel }: { initial: string; onSend: (text: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(initial);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -123,7 +126,7 @@ function FeedbackPopup({ initial, onSend, onCancel }: { initial: string; onSend:
   }, []);
   const ready = text.trim().length > 0;
   return (
-    <Dialog title="Feedback" above onDismiss={onCancel}>
+    <Dialog title="Feedback" above clear onDismiss={onCancel}>
       <textarea ref={box} data-feedback-box value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label="Feedback"
         placeholder="What happened, or what would be better?"
         className="block w-full resize-none rounded-[1rem] bg-sunk px-3.5 py-2.5 text-left text-[17px] leading-snug text-ink outline-none placeholder:text-muted" />
