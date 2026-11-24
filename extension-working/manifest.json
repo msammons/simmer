@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Simmer",
-  "version": "26.11.24.1",
+  "version": "26.11.24.2",
   "description": "Finds groceries and fills your Safeway cart for Simmer.",
   "permissions": [
     "sidePanel",
@@ -12,6 +12,7 @@
   ],
   "host_permissions": [
     "https://www.safeway.com/*",
+    "https://accounts.google.com/*",
     "https://*.vercel.app/*"
   ],
   "background": {

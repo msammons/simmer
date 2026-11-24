@@ -29,6 +29,8 @@ const { chromium } = createRequire(import.meta.url)("playwright");
 const { PAGE, SETTINGS } = await import("../src/lib/safeway-helper.mjs");
 // page.js as the helper runs it, without its `export` (it's a function Chrome copies into the page).
 const PAGE_JS = readFileSync(path.resolve("extension-working/page.js"), "utf8").replace(/^export async function safewayPage/m, "async function safewayPage");
+// google.js likewise (Google's sign-in page; Sam, Nov 24).
+const GOOGLE_JS = readFileSync(path.resolve("extension-working/google.js"), "utf8").replace(/^export async function googlePage/m, "async function googlePage");
 // The cart page is read with the search page's details and these over them, as safeway.js does (`cartPage`).
 const CART = { ...PAGE, ...(PAGE.cartItems ?? {}), noResults: PAGE.emptyCart || PAGE.noResults, onlyInCart: true };
 
@@ -50,16 +52,22 @@ for (const f of readdirSync(dir).filter((f) => /^signed out.*\.html?$/i.test(f))
   // Two can share an address (Safeway's home page, saved twice): `?saved=` says which, and the helper reads only the path.
   SIGNED_OUT.set(f, `${at ?? `/${encodeURIComponent(f)}`}?saved=${encodeURIComponent(f)}`);
 }
+// Safeway's sign-in box (Nov 24): kept, hidden, on its other pages too; the first saved page holding its Google button is
+// also served at the sign-in page's address, where the helper presses it.
+const SIGN_IN_BOX = readdirSync(dir).filter((f) => /\.html?$/i.test(f) && !/^(signed out|google)/i.test(f)).sort()
+  .find((f) => /aria-label="Sign in with Google"/.test(readFileSync(path.join(dir, f), "utf8"))) ?? null;
 const server = createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const saved = u.searchParams.get("saved");
-  const file = path.join(dir, saved && SIGNED_OUT.has(saved) ? saved : decodeURIComponent(u.pathname));
+  const file = path.join(dir, saved && (SIGNED_OUT.has(saved) || saved === SIGN_IN_BOX) ? saved : decodeURIComponent(u.pathname));
   if (!file.startsWith(dir + path.sep) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404).end(); return; }
   const ext = path.extname(file).toLowerCase();
   const type = TYPES[ext] ?? (/^[^.]+$/.test(path.basename(file)) ? "image/jpeg" : "");
   // Scripts never run; a file with no extension is a picture Chrome saved under the product's number.
   if (!type) { res.writeHead(404).end(); return; }
-  const body = type === "text/html" ? quiet(readFileSync(file, "utf8")) : readFileSync(file);
+  let body = type === "text/html" ? quiet(readFileSync(file, "utf8")) : readFileSync(file);
+  // Served at another address than its own: its pictures and styles still found where Chrome saved them.
+  if (saved && saved === SIGN_IN_BOX) body = body.replace(/<head([^>]*)>/i, '<head$1><base href="/">');
   res.writeHead(200, { "content-type": type }).end(body);
 });
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -112,6 +120,53 @@ async function pickupBox(page, f) {
   await page.reload({ waitUntil: "load" });
   const c = await run(page, "choosePickup", { store: "Safeway 1 Nowhere Lane Somewhere, CA 00000" }, PAGE);
   expect(c.result?.why === "store not found" && !c.clicked.some((x) => /select/i.test(x)), `pickup box (${f}): a store not listed presses no Select (${c.result?.why})`);
+}
+
+/** Runs google.js on the page, presses noted instead of made, as `run` does; `G` is told the page's own address. */
+async function runGoogle(page, action, arg) {
+  return page.evaluate(`(async () => {
+    window.__clicked = [];
+    HTMLElement.prototype.click = function () { window.__clicked.push(this.getAttribute("data-identifier") ?? (this.innerText ?? "").trim()); };
+    ${GOOGLE_JS}
+    const arg = ${JSON.stringify(arg)};
+    const result = await googlePage(${JSON.stringify(action)}, { ...arg, G: { ...arg.G, host: location.host } });
+    return { result, clicked: window.__clicked };
+  })()`);
+}
+
+/**
+ * Signing in through Google (Sam, Nov 24: "Yes build it"). Safeway's sign-in box, from a saved page, at the sign-in
+ * page's address: with the box showing, its one "Sign in with Google" pressed, once, nothing else; with it hidden and no
+ * Sign In showing (the saved page was signed in), nothing pressed. Google's saved "Choose an account" list: only the
+ * account asked for is pressed, once; one not listed presses nothing. Addresses come from the saved page, never this file.
+ */
+async function googleSignIn() {
+  if (SIGN_IN_BOX) {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${PAGE.google.signInPath}?saved=${encodeURIComponent(SIGN_IN_BOX)}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
+    seen.add("sign-in box");
+    const hidden = await run(page, "googleStart", { ms: 600 }, { ...PAGE, google: { ...PAGE.google, openAfter: 100 } });
+    expect(hidden.result?.pressed === false && !hidden.clicked.length, `sign-in box (${SIGN_IN_BOX}): hidden, nothing pressed (${hidden.result?.why})`);
+    await page.evaluate(() => { const m = document.getElementById("modal-authenticate"); m.classList.add("show"); m.style.display = "block"; m.removeAttribute("aria-hidden"); });
+    const a = await run(page, "googleStart", { ms: 3000 }, PAGE);
+    expect(a.result?.pressed === true && a.clicked.length === 1 && /^(sign in with google\s*)+$/i.test(a.clicked[0]), `sign-in box (${SIGN_IN_BOX}): its one "Sign in with Google" pressed, once (${a.clicked.join(" | ")})`);
+    await page.close();
+  }
+  const chooser = readdirSync(dir).find((f) => /^google chooser.*\.html?$/i.test(f));
+  if (!chooser) return;
+  seen.add("google chooser");
+  const page = await ctx.newPage();
+  await page.goto(`${origin}/${encodeURIComponent(chooser)}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
+  const listed = await page.evaluate(() => [...document.querySelectorAll("[data-identifier]")].map((e) => e.getAttribute("data-identifier")));
+  expect(listed.length >= 1, `google chooser (${chooser}): accounts listed (${listed.length})`);
+  const want = listed[listed.length - 1];
+  const a = await runGoogle(page, "choose", { email: want, ms: 2000, G: PAGE.google });
+  expect(a.result?.pressed === true && a.clicked.length === 1 && a.clicked[0] === want, `google chooser (${chooser}): only the account asked for is pressed, once (account ${listed.indexOf(want) + 1} of ${listed.length})`);
+  const b = await runGoogle(page, "choose", { email: "nobody@example.com", ms: 1000, G: PAGE.google });
+  expect(b.result?.pressed === false && b.result.why === "account not listed" && !b.clicked.length, `google chooser (${chooser}): an account not listed presses nothing (${b.result?.why})`);
+  const w = await runGoogle(page, "why", { G: PAGE.google });
+  expect(w.result?.why === "account not listed" && !w.clicked.length, `google chooser (${chooser}): reading it presses nothing`);
+  await page.close();
 }
 
 /** What kind of page Chrome saved: Safeway's search results, its cart page with things in it, or its empty cart. */
@@ -174,6 +229,7 @@ for (const f of pages) {
   await page.goto(`${origin}${SIGNED_OUT.get(f) ?? `/${encodeURIComponent(f)}`}`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
   if (SIGNED_OUT.has(f)) { await signedOut(page, f); await page.close(); continue; }
   if (/^pickup box/i.test(f)) { await pickupBox(page, f); await page.close(); continue; }
+  if (/^google/i.test(f)) { await page.close(); continue; }
   const kind = await kindOf(page);
   seen.add(kind);
   const P = kind === "search" ? PAGE : CART;
@@ -255,7 +311,8 @@ for (const f of pages) {
   expect(typeof (await run(page, "sample", null, P)).result === "string", `${tag}: a sample reads it`);
   await page.close();
 }
-for (const k of ["search", "cart", "empty cart", "signed out cart", "signed out home"]) if (!seen.has(k)) console.log(`(no saved ${k} page)`);
+await googleSignIn();
+for (const k of ["search", "cart", "empty cart", "signed out cart", "signed out home", "sign-in box", "google chooser"]) if (!seen.has(k)) console.log(`(no saved ${k} page)`);
 
 await browser.close();
 server.close();

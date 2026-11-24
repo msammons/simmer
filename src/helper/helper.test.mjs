@@ -4,7 +4,7 @@
 // browser can show (Chrome's own events, the panel, Simmer's screens) is in scripts/extension-test.mjs; whether Safeway's
 // real pages still read right is scripts/real-pages-test.mjs.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BREAD, makeWorld, OTHER_STREET, OUR_STREET, PAGE, SAFEWAY, SETTINGS, WINDOW } from "./world.mjs";
+import { BREAD, makeWorld, OTHER_STREET, OUR_STREET, PAGE, ROBIN, SAFEWAY, SAM, SETTINGS, WINDOW } from "./world.mjs";
 import { resetKv } from "../lib/kv";
 import { finishJob, jobStatus, queueJob, resetJobs, takeJob } from "../lib/jobs";
 
@@ -513,5 +513,113 @@ describe("progress told to Simmer as it goes (Nov 23, Sam: \"some sort of status
       expect(r.ms).toBeLessThan(base.ms + 1000);
       expect(stepsOf(r.id).length).toBeGreaterThan(3);
     }
+  });
+});
+
+describe("signing in through Google (Sam, Nov 24: \"Yes build it\")", () => {
+  const withGoogle = (kind, args = {}) => ({ id: `j${++ids}`, kind, args, page: PAGE, settings: SETTINGS, google: SAM });
+  const runG = async (kind, args) => (await drive(helper.runJob(withGoogle(kind, args), null))).value;
+  const signedOut = () => { world.shop.signedIn = false; world.shop.sessionGone = true; };
+  const presses = () => world.shop.presses;
+
+  it("signed out: Safeway's Google button, then Sam's account in Google's list, then the search reads", async () => {
+    signedOut();
+    world.shop.google = { accounts: [SAM, ROBIN] };
+    const r = await runG("search", { query: "milk" });
+    expect(r.result.signedIn).toBe(true);
+    expect(ids_(r)).toContain("960001");
+    expect(presses()).toEqual({ "google button": 1, [`google ${SAM}`]: 1 });
+    expect(world.onSignIn()).toBe(false);
+  });
+
+  it("an Add signed out: signs in, then adds", async () => {
+    signedOut();
+    world.shop.google = {};
+    const r = await runG("setQty", { productId: "960050", qty: 1, query: "bread", name: BREAD });
+    expect(r.result).toMatchObject({ ok: true, qty: 1 });
+    expect(world.shop.cart["960050"]).toBe(1);
+    expect(presses()[`google ${SAM}`]).toBe(1);
+  });
+
+  it("a cart read sent home signed out (as on Nov 23–24): signs in, then reads the cart", async () => {
+    world.shop.cartGone = true; world.shop.sessionGone = true; world.shop.signedIn = false;
+    world.shop.cart = { "960001": 2 };
+    world.shop.google = {};
+    const r = await runG("cart");
+    expect(r.result.signedIn).toBe(true);
+    expect(ids_(r)).toEqual(["960001"]);
+  });
+
+  it("Safeway's box not showing: its one Sign In first, then Google", async () => {
+    signedOut();
+    world.shop.google = { hidden: true };
+    expect((await runG("cart")).result.signedIn).toBe(true);
+    expect(presses()).toMatchObject({ "sign in": 1, "google button": 1, [`google ${SAM}`]: 1 });
+  });
+
+  it("Google sending the tab straight back (no list): signed in, nothing pressed on Google", async () => {
+    signedOut();
+    world.shop.google = { straight: true };
+    expect((await runG("cart")).result.signedIn).toBe(true);
+    expect(presses()).toEqual({ "google button": 1 });
+  });
+
+  it("a password asked after choosing: stops, nothing typed, the tab waits on Safeway's sign-in page", async () => {
+    signedOut();
+    world.shop.google = { signedIn: "nobody@example.com" };
+    const r = await runG("search", { query: "milk" });
+    expect(r.result).toMatchObject({ signedIn: false, google: "password" });
+    expect(presses()).toEqual({ "google button": 1, [`google ${SAM}`]: 1 });
+    expect(world.onSignIn()).toBe(true);
+  });
+
+  it("a password, a check that it's a person, or a consent screen instead of the list: nothing pressed on Google", async () => {
+    for (const [ask, why] of [["password", "password"], ["captcha", "captcha"], ["consent", "asks for more"]]) {
+      world.go("/");
+      await wait(500);
+      signedOut();
+      world.local.delete("parked");
+      world.shop.presses = {};
+      world.shop.google = { ask };
+      const r = await runG("search", { query: "milk" });
+      expect(r.result.google, ask).toBe(why);
+      expect(presses(), ask).toEqual({ "google button": 1 });
+    }
+  });
+
+  it("Sam's account not listed, or listed twice: nothing chosen", async () => {
+    signedOut();
+    world.shop.google = { accounts: [ROBIN] };
+    expect((await runG("cart")).result.google).toBe("account not listed");
+    world.go("/"); await wait(500); world.local.delete("parked"); world.shop.presses = {};
+    world.shop.google = { accounts: [SAM, SAM] };
+    expect((await runG("cart")).result.google).toBe("more than one account");
+    expect(Object.keys(presses()).filter((k) => k.includes("@"))).toEqual([]);
+  });
+
+  it("one try per job: the look after parking tries once more, then the sign-in page is left alone", async () => {
+    signedOut();
+    world.shop.google = { signedIn: "nobody@example.com" };
+    expect((await runG("search", { query: "milk" })).result.google).toBe("password");
+    expect(presses()["google button"]).toBe(1);
+    expect(await drive(helper.runJob(withGoogle("setQty", { productId: "960050", qty: 1, query: "bread", name: BREAD }), null)).then((x) => x.value)).toMatchObject({ ok: false, error: "signed-out", why: "google: password" });
+    expect(presses()["google button"]).toBe(2);
+    expect((await runG("cart")).result.signedIn).toBe(false);
+    expect(presses()["google button"]).toBe(2);
+  });
+
+  it("no account sent by Simmer: never tried, as before", async () => {
+    signedOut();
+    world.shop.google = {};
+    expect((await run("search", { query: "milk" })).result.signedIn).toBe(false);
+    expect(presses()).toEqual({});
+  });
+
+  it("never during checkout: getting ready signed out stops as before, nothing pressed on the sign-in page", async () => {
+    world.shop.cartGone = true; world.shop.sessionGone = true; world.shop.signedIn = false;
+    world.shop.google = {};
+    const r = await runG("checkoutPrepare", { list: true });
+    expect(r.result.stopped).not.toBe("ready");
+    expect(presses()["google button"]).toBeUndefined();
   });
 });

@@ -2,12 +2,27 @@
 
 Simmer's Shop tab searches Safeway (Find) and changes the Safeway cart, but Safeway can only be reached from a real
 browser where Robin is signed in. This helper is that browser's hands: in Chrome on a computer, it does Simmer's small
-Safeway jobs on safeway.com and reports back. It never signs in, and never types a card detail. It goes through checkout
+Safeway jobs on safeway.com and reports back. It never types a password, a code or a card detail; signed out, it signs
+Sam in through Google once by pressing, never typing (26.11.24.2). It goes through checkout
 only when Simmer's Check out asks (docs/CHECKOUT.md), and its one press that orders, Place Order, is made only for an
 order Face ID approved, once, when the page says exactly what was approved.
 
 ## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push; since 26.11.12 checkout)
 
+- **Signs Sam in through Google when Safeway has signed out (26.11.24.2).** Nov 23–24 Safeway signed out twice in
+  about 12 hours, and Sam never wants to touch Safeway. Sam, Nov 24, approving these presses: "Yes build it". A search,
+  cart read or Add that finds Safeway signed out, when Simmer sent the Google account to use (`job.google`, kept only in
+  Vercel as SAFEWAY_GOOGLE; none sent, none tried), goes to Safeway's sign-in page and presses its one "Sign in with
+  Google" (its one Sign In first if the box isn't showing). Safeway's own page sets the tab's address to its sign-in
+  service, which goes on to Google in the same tab: no window opens (read from Safeway's saved script, Nov 24), so the
+  helper may press on accounts.google.com (a new host permission). There `google.js` presses the one account in
+  "Choose an account" whose address is exactly that one, and Google sends the tab back to Safeway; the job then runs
+  once more. Google asking for a password, a code, anything typed, a consent screen or a check that it's a person, or
+  the account not listed exactly once: nothing pressed there, and the tab waits on Safeway's sign-in page as before,
+  with why kept in the job's record (the phone says "Signed out" as before). One try per job; the look after parking
+  is a job too, so at most two tries before the sign-in page is left alone. Never in checkout jobs, never placing.
+  Settled from saved pages only: whether Google adds a check for these presses, and whether it asks for a password on
+  this route (Safeway asks its sign-in service for a fresh sign-in), show only on the first live sign-out.
 - **Pickup tried whenever Safeway sends the cart home; the redirect seen at once (26.11.24.1).** Nov 24: Sam signed in
   again, Safeway had forgotten Pickup, its note didn't say "customer", and the helper said signed out, after about 40 s,
   because each look sat out a watch's whole limit while Safeway had already redirected. Now a page that has already
