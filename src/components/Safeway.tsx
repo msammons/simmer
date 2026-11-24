@@ -462,18 +462,17 @@ export function FindView({ store, items, index, onIndex, sw, onCart, onList, onG
       </form>
       {(!s || s.state === "loading") && (
         <section className="space-y-1.5">
+          {/* What's being done (Sam, Nov 24: "status messages on item search just below the search box"): one line, part of
+              the loading block, so it goes when the results come and moves nothing else. */}
+          <p className="h-5 truncate px-5 t-sub leading-5 text-muted" role="status" data-find-step>{stepWords(s?.step, `Looking on ${store}…`)}</p>
           <div className={GRID}>
             {[0, 1, 2].map((k) => (
               <div key={k} className={TILE} aria-hidden>
                 <span className="shimmer size-14 shrink-0 rounded-xl min-[640px]:h-32 min-[640px]:w-full" />
-                {/* The first row says what's being done (Nov 23), in its first line's place, one line high either way. */}
-                <span className="min-w-0 flex-1 space-y-2">{k === 0
-                  ? <span className="block h-5 truncate t-sub leading-5 text-muted" data-find-step>{stepWords(s?.step, `Looking on ${store}…`)}</span>
-                  : <span className="shimmer block h-3.5 w-3/4 rounded-full" />}<span className="shimmer block h-3 w-1/4 rounded-full" /></span>
+                <span className="min-w-0 flex-1 space-y-2"><span className="shimmer block h-3.5 w-3/4 rounded-full" /><span className="shimmer block h-3 w-1/4 rounded-full" /></span>
               </div>
             ))}
           </div>
-          <p className="sr-only" role="status">{stepWords(s?.step, `Looking on ${store}`)}</p>
         </section>
       )}
       {s?.state === "failed" && (

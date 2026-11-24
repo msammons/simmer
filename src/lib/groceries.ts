@@ -223,8 +223,11 @@ export const addItem = atomically(async (text: string, by: string, forWhat: stri
     const q = addUp(same.quantity, quantity);
     // Added by hand onto a dinner's line: it says so, so taking the dinner off leaves it.
     const f = forWhat ? joinFor(same.for, forWhat) : same.for && !forOf(same.for).includes(BY_HAND) ? [BY_HAND, ...forOf(same.for)].join(", ") : same.for;
-    if (q !== same.quantity || f !== same.for) await editList([[same.id, { quantity: q, for: f }]], new Set(), true);
-    return { ...same, quantity: q, for: f };
+    // Typed in by hand, it's wanted (Nov 24, Sam: "eggs" added on Shop showed a moment and went): a dinner's thing
+    // waiting on Have or Need, or answered Have, becomes Need, so it shows on Shop and the List.
+    const need = same.check ? { check: false, have: false } : {};
+    if (q !== same.quantity || f !== same.for || same.check) await editList([[same.id, { quantity: q, for: f, ...need }]], new Set(), true);
+    return { ...same, quantity: q, for: f, ...need };
   }
   const { filings: [f], unknown } = filing?.section ? { filings: [{ store: filing.store, section: filing.section }], unknown: [] } : await fileAll([{ name: item, store: filing?.store }]);
   const row: Item = { id: newId(), item, quantity, store: f.store, section: f.section, for: forWhat, addedBy: by, addedAt: stamp(), checked: false, check: false };
