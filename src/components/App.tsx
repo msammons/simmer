@@ -11,7 +11,7 @@ import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
 import { AddRecipesSheet, type AddStep, EditSheet, RecipeScreen, RecipesScreen } from "./Recipes";
-import { Alert, Contained, OpenSettings, Splash, TabBar, type TabDef, scrollAppTo } from "./ui";
+import { Alert, ConfirmSheet, Contained, OpenSettings, Splash, StartPlan, TabBar, type TabDef, scrollAppTo } from "./ui";
 
 // Settings (with ordering) loads on its own, after the app is up (see `preload`), not with the first screen. A load that
 // fails (offline) is said in the shared alert, with Try again, and is tried afresh next time.
@@ -86,6 +86,9 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(() => (browser ? store.theme() : "simmer"));
   const [settings, setSettings] = useState(false);
   const [SettingsSheet, setSettingsSheet] = useState<SettingsSheetType | null>(null);
+  // New plan, in every screen's top bar (Sam, Nov 24; only the count is read, so a tick doesn't redraw the app): shown when there's a plan or a list to clear; it asks first.
+  const listLines = useStore<ListState, number>("lists", (l) => l?.items.length ?? 0);
+  const [startingPlan, setStartingPlan] = useState(false);
   const openSettings = useCallback(function open() {
     loadSettings().then((C) => { setSettingsSheet(() => C); setSettings(true); }, () => setProblem({ ...NO_SETTINGS, retry: open }));
   }, []);
@@ -385,10 +388,10 @@ export default function App() {
         }} />
       )}
       <OpenSettings.Provider value={phase === "app" ? openSettings : null}>
+      <StartPlan.Provider value={phase === "app" && plan && ((plan.dishes.length ?? 0) > 0 || listLines > 0) ? () => setStartingPlan(true) : null}>
       {phase === "app" && top.kind === "week" && (
         <MealsScreen key={visit} plan={plan} recipes={recipes ?? []}
           onOpen={(d) => openRecipe(d.recipe)} onAdd={(kind, day) => setAddingOne({ kind, day })}
-          onNewPlan={() => changePlan({ op: "clear" })}
           onRemove={(d) => changePlan({ op: "remove", id: d.id })}
           onMove={(d, day) => changePlan({ op: "change", id: d.id, day })} />
       )}
@@ -403,7 +406,15 @@ export default function App() {
           planned={Boolean(plan?.dishes.some((d) => d.recipe === open.id))} onSection={isStandIn(open.id) ? undefined : (item, section) => moveIngredient(open, item, section)}
           onAddToWeek={kindOf(open) && !isStandIn(open.id) ? () => setPickingDay(open) : undefined} />
       )}
+      </StartPlan.Provider>
       </OpenSettings.Provider>
+      {/* A new plan asks first: every meal comes off and the list is emptied; the Safeway cart stays. */}
+      <ConfirmSheet open={startingPlan} title="Start a new plan?" confirm="New plan" danger
+        message={`${[
+          plan?.dishes.length ? (plan.dishes.length === 1 ? "The dinner comes off" : `All ${plan.dishes.length} dinners come off`) : "",
+          listLines ? `${plan?.dishes.length ? "the" : "The"} list empties` : "",
+        ].filter(Boolean).join(" and ")}. The Safeway cart stays.`}
+        onConfirm={() => { void changePlan({ op: "clear" }); setStartingPlan(false); }} onCancel={() => setStartingPlan(false)} />
       {panel.log ? <ActivityScreen jobs={panel.jobs} onUse={panel.dismiss} /> : panel.phoneNow && <PhoneNote job={panel.phoneNow} onOpen={panel.open} />}
       {/* A sheet that fails to draw closes with the alert, never Next's error page. */}
       <Contained onError={() => { setSettings(false); setSheet(null); setAddingOne(null); setPickingDay(null); setProblem({ title: "Something went wrong", message: "That didn't open. Try again." }); }}>

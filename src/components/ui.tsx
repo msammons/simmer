@@ -134,6 +134,8 @@ function BackButton({ onBack, label, className = "" }: { onBack: () => void; lab
 
 /** Opens Settings; set by the app so every screen's top bar has the same Settings button at the right. */
 export const OpenSettings = createContext<(() => void) | null>(null);
+/** Starts a new plan (asks first); set by the app when there's a plan or a list to clear, so every screen's top bar has New plan beside Settings (Sam, Nov 24: "move new plan into the permanent top nav globally"). */
+export const StartPlan = createContext<(() => void) | null>(null);
 
 /**
  * Where the top bar sits: held still at the top of the screen while the list under it scrolls and stretches on a pull
@@ -167,6 +169,7 @@ function PinnedBar({ children, className = "", space = "" }: { children: ReactNo
  */
 export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: ReactNode }) {
   const settings = useContext(OpenSettings);
+  const startPlan = useContext(StartPlan);
   return (
     // Content starts 16px under the bar (the screens' own spacing is wider): 8px under a pinned switch plus its 8px.
     <PinnedBar space={below ? "!mb-2" : "!mb-4"}>
@@ -176,7 +179,9 @@ export function BrandBar({ trailing, below }: { trailing?: ReactNode; below?: Re
       <span aria-hidden className={`pointer-events-none absolute -bottom-3 left-[calc(50%-50vw)] w-screen -top-[calc(env(safe-area-inset-top)+0.5rem)] -z-10 wash opacity-30 ${below ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_1rem),transparent)]" : "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]"}`} />
       <div className="flex h-11 items-center justify-between">
         <Brand />
-        <div className="flex gap-2">{trailing}{settings && <IconButton icon="gear" label="Settings" onClick={settings} />}</div>
+        <div className="flex gap-2">{trailing}
+          {startPlan && <button type="button" onClick={startPlan} className="glass flex h-11 shrink-0 items-center rounded-full px-4 t-sub font-semibold text-accent transition active:scale-[0.97]">New plan</button>}
+          {settings && <IconButton icon="gear" label="Settings" onClick={settings} />}</div>
       </div>
       {below && <div className="pb-2 pt-3">{below}</div>}
     </PinnedBar>
