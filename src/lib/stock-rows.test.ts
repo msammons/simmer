@@ -2,7 +2,7 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { afterRemoval, fromDinner, linesOf, removalOf, rowsOf } from "./stock-rows";
+import { afterRemoval, cartLinesOf, fromDinner, leavingBy, linesOf, removalOf, rowsOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -70,10 +70,27 @@ describe("Stock rows", () => {
     expect(rowsOf(list(afterRemoval(rows, "Eggs")), null)).toMatchObject([{ name: "eggs", meal: true, answer: "check" }]);
   });
 
-  it("leaves a row with a line in the Safeway cart alone (review, Nov 24)", () => {
-    const rows = [item({ id: "cart", item: "Sugar", for: "", check: false }), item({ id: "loose", item: "sugar", for: "added by hand", check: false })];
-    expect(removalOf(rows, "sugar", new Set(["cart"]))).toEqual({ drop: ["loose"], keep: [] });
-    expect(afterRemoval(rows, "sugar", new Set(["cart"])).map((r) => r.id)).toEqual(["cart"]);
+  it("takes a row with a line in the Safeway cart off too, and its cart line to 0; a dinner's part keeps its line (Sam, Nov 24 night)", () => {
+    const rows = [
+      item({ id: "cart", item: "Bread", for: "", check: false }), item({ id: "loose", item: "bread", for: "added by hand", check: false }),
+      item({ id: "both", item: "bread", for: "added by hand, Toast", check: false }),
+    ];
+    const cart = [{ itemId: "cart", qty: 1 }, { itemId: "both", qty: 2 }, { itemId: "", qty: 1 }, { itemId: "other", qty: 1 }];
+    const { drop } = removalOf(rows, "bread");
+    expect(drop).toEqual(["cart", "loose"]);
+    expect(afterRemoval(rows, "bread").map((r) => r.id)).toEqual(["both"]);
+    expect(cartLinesOf(cart, drop)).toEqual([{ itemId: "cart", qty: 1 }]); // queued to 0; the dinner's part keeps its line
+  });
+
+  it("an answer that takes a Need off the shopping list takes its cart line out (Sam, Nov 24 night)", () => {
+    const need = { item: item({ id: "b", item: "bread", check: false }), answer: "need" as const };
+    expect(leavingBy(need, "check")).toBe("b"); // the lit cart tapped again
+    expect(leavingBy(need, "have")).toBe("b");
+    expect(leavingBy(need, "need")).toBeNull();
+    expect(leavingBy({ ...need, answer: "check" }, "have")).toBeNull(); // wasn't on the shopping list
+    expect(leavingBy({ ...need, answer: "have" }, "check")).toBeNull();
+    expect(leavingBy({ item: null, answer: "check" }, "have")).toBeNull();
+    expect(cartLinesOf([{ itemId: "b", qty: 1 }, { itemId: "b", qty: 0 }], ["b"])).toEqual([{ itemId: "b", qty: 1 }]);
   });
 });
 

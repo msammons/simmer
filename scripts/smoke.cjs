@@ -943,6 +943,21 @@ const began = Date.now();
       ok("shop: and it stays off on coming back", (await showCheckedText()) === "Show checked" && (await page.getByRole("checkbox", { name: /^(Eggs|Coffee)/ }).count()) === 0);
       await shopMenu.selectOption("checked");
       ok("shop: Show brings them back within 150 ms", await within150(async () => (await tick("Eggs").getAttribute("aria-checked")) === "true" && (await tick("Coffee").count()) === 1));
+      // A thing in the cart taken off the list on the List (Sam, Nov 24 night: "isn't removing from list enough signal?"):
+      // its cart line comes out too, with no question, so Shop has no loose line. Milk is put back on the list after.
+      {
+        await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
+        const milkInCart = fake.cart.some((l) => l.productId === "p-milk" && l.qty > 0);
+        await page.getByRole("button", { name: /^Need: Milk$/ }).tap();
+        const asked = await page.getByRole("dialog").count();
+        await idle();
+        ok("list: clearing Need on a thing in the cart takes its cart line out, with no question", milkInCart && !asked && await until(async () => !fake.cart.some((l) => l.productId === "p-milk"), 3000), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
+        await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
+        ok("shop: and no loose line is left for it", (await swGroup.getByText(/Lucerne 2% Reduced Fat Milk/).count()) === 0 && (await tick("Milk").count()) === 0);
+        await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
+        await page.getByRole("button", { name: /^Need: Milk$/ }).tap(); await idle();
+        await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
+      }
       // An empty cart: Check out shows greyed, and can't be pressed (Sam, Nov 21).
       {
         const kept = fake.cart.splice(0);

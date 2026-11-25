@@ -358,7 +358,7 @@ describe("filing new things (review, Nov 19)", () => {
 // Remove from the list (Sam, Nov 24; review, Nov 24): the kept thing and its rows in one transaction, a dinner's part
 // kept, cart rows left alone.
 describe("Remove from the list", () => {
-  it("takes the kept thing and its rows off in one write, keeping a dinner's part and leaving a cart row alone", async () => {
+  it("takes the kept thing and its rows off in one write, keeping a dinner's part; a row in the cart goes too (its line is the phone's to take out)", async () => {
     const { useTabStore } = await import("./store");
     const { memoryStore } = await import("./store/memory");
     const { setCartLine } = await import("./safeway");
@@ -383,7 +383,7 @@ describe("Remove from the list", () => {
       const { staples } = await loadList();
       expect(staples.some((s) => s.item.startsWith("rm "))).toBe(false);
       expect(await row("rm sugar")).toMatchObject({ for: "Cookies", check: true, have: false }); // back to the dinner's, waiting
-      expect(await row("rm flour")).toMatchObject({ id: flour.id }); // in the Safeway cart: left alone
+      expect(await row("rm flour")).toBeUndefined(); // in the Safeway cart: off the list too (Nov 24 night), the phone takes the line to 0
       expect(await row("rm salt")).toBeUndefined();
     } finally {
       useTabStore(null);

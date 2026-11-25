@@ -10,7 +10,6 @@ import { withinCap } from "./ops/caps";
 import { newId, yes } from "./parse";
 import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
 import { afterChange, groupsOf, putInGroup, renamed, union, type Group } from "./groups";
-import { loadCart } from "./safeway";
 import { removalOf } from "./stock-rows";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
@@ -539,14 +538,13 @@ export const renameGroup = (from: string, to: string) =>
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
 /**
  * Remove from the list (Sam, Nov 24): the kept thing, and its List rows as `removalOf` says (stock-rows.ts, the phone
- * uses the same rule): rows with no dinner go, a dinner's part stays waiting for it, rows in the Safeway cart are left
- * alone. A dinner's part keeps only the dinners' own amount (`amountOf`, plan.ts dinnerAmount, from their recipes),
+ * uses the same rule): rows with no dinner go, a dinner's part stays waiting for it. A row that goes and had a Safeway
+ * cart line has that line taken to 0 by the phone, through the helper as Shop's − does (Nov 24 night). A dinner's part keeps only the dinners' own amount (`amountOf`, plan.ts dinnerAmount, from their recipes),
  * the hand-added amount dropped; unknown, the amount stays. One transaction: everything read together, written together.
  */
 export const removeKept = atomically(async (item: string, amountOf?: (item: string, dinners: string[]) => Promise<string | null>) => {
   await removeStaple(item);
-  const [items, cart] = await Promise.all([load(LIST), loadCart()]);
-  const { drop, keep } = removalOf(items, item, new Set(cart.map((l) => l.itemId).filter(Boolean)));
+  const { drop, keep } = removalOf(await load(LIST), item);
   const changes: Changes = [];
   for (const k of keep) {
     const amount = amountOf ? await amountOf(item, k.for.split(",").map((x) => x.trim())) : null;
