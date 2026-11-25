@@ -85,7 +85,11 @@ export const PAGE = {
   // "Pickup at … / Delivery to …" button opens it; its Pickup tab shows store cards, each with its street on the first
   // line and one button, "Select" or "Selected". The helper switches Safeway to Pickup at the household's store with these
   // (Sam, Nov 23: "i want this process to be automated. ideally i never touch safeway"; docs/CHECKOUT.md).
-  pickupBox: { open: "#openFulfillmentModalButton", box: "#storeFulfillmentModal", tab: "#modal-tab-pickup-btn", pane: "#fulfilmentPickup", card: ".card-store", close: "#closeFulfillmentModalButton" },
+  // Set to In Store (live, Nov 25, Robin's account): the same button, showing the store ("Instore at <street>"), one copy
+  // per screen size with one showing; the box opens on its In Store tab, whose cards say "Selected" for the store, while
+  // the Pickup tab's cards for it say "Select" (Sam, Nov 25: In Store is switched too). Safeway builds the header a moment
+  // after its home page loads: `wait` is how long each part is watched for.
+  pickupBox: { open: "#openFulfillmentModalButton", box: "#storeFulfillmentModal", tab: "#modal-tab-pickup-btn", pane: "#fulfilmentPickup", card: ".card-store", close: "#closeFulfillmentModalButton", wait: 8000 },
   // Signing Sam in through Google (Sam, Nov 24: "Yes build it"; docs/CHECKOUT.md). Safeway's sign-in page (saved real
   // pages, Nov 24) holds a box with one "Sign in with Google" button (its aria-label and its words both say so); its
   // script sets the tab's address to Safeway's sign-in service, which goes on to Google in the same tab. Google's "Choose

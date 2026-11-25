@@ -15,6 +15,12 @@ card whose street is the household's pickup store (the one checkout learned; Sim
 when exactly one fits; never Delivery, In Store or another store; a store already "Selected" isn't pressed; no store
 known, no switch. Searches, cart reads, Adds, getting ready and test runs switch; placing never does (it stops as before,
 on exactly what Face ID approved). Only if the switch doesn't take does Simmer show the words above.
+Safeway set to In Store gets switched the same way (Sam, Nov 25, asked directly: "Yes"; helper 26.11.24.4): In Store,
+like Delivery or no choice, becomes Pickup at the household's store, by the same three presses; the In Store tab and its
+store cards are never pressed, and it still never chooses Delivery, In Store or another store. Safeway builds the
+header's button a moment after its home page loads, so each part is watched for up to `PAGE.pickupBox.wait`, and the
+store's card is read only from the Pickup tab's own pane, once that tab is chosen (the In Store pane lists the store as
+"Selected"). Why a switch didn't take is kept in the job's record.
 
 Signing in through Google (helper 26.11.24.2; Sam, Nov 24, asked directly about exactly these presses: "Yes build it").
 When a search, cart read or Add finds Safeway signed out, the helper signs Sam in once per job: on Safeway's sign-in

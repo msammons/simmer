@@ -9,6 +9,12 @@ order Face ID approved, once, when the page says exactly what was approved.
 
 ## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push; since 26.11.12 checkout)
 
+- **In Store is switched to Pickup (26.11.24.4).** Nov 25 live, Robin's account set to In Store: cart reads were sent
+  home, and the Pickup switch gave up in 0.2 s because it looked before Safeway had built the header's button on the
+  just-opened home page. Now it waits for the home page to load, then watches for the one button, the box, and the
+  Pickup tab's own pane holding the household's card (each up to `PAGE.pickupBox.wait`), and presses the same three
+  controls as before (Sam, Nov 25: In Store gets switched too). When it doesn't take, why goes in the job's record
+  (`pickup`).
 - **A take-out sticks (26.11.24.3).** Nov 24 evening, 4 of 9 take-outs on the cart page failed: each pressed − 0.7–1.3 s
   after the cart page finished loading, and Safeway still had 1 after 17–35 s (every press 2.5 s or more after a load
   took). Now, before the first + or −, the product's part of the page is watched until the page is 4 s old and that
@@ -179,7 +185,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.3.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.4.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on

@@ -447,28 +447,43 @@ function googlePage(shop, u) {
  * the header button opens it; the Pickup tab shows store cards (street first, then "Select" or "Selected"). Select saves
  * Pickup there: the note says "Dug" and the cart works again. `shop.box.stores`: the streets; `selected`: the one chosen.
  * `shop.box.noTake`: Select does nothing (Safeway didn't take it).
+ * `mode: "InStore"` (live, Nov 25, Robin's account): the header button shows the store ("Instore at <street>"), twice (one
+ * per screen size, one showing), with Safeway's own div and span inside; the box opens on its In Store tab, whose cards
+ * say "Selected" for the store, and the Pickup tab's cards (street, town, "DriveUp & Go", distance) say "Select" for
+ * it. `late`: the header's button is built this long after the page loads (as Safeway's script does).
  */
 export const OUR_STREET = "100 Main St", OTHER_STREET = "200 Oak Ave";
 function withBox(shop, page) {
   const b = shop.box;
   if (!b) return page;
   const stores = b.stores ?? [OUR_STREET, OTHER_STREET];
-  const card = (st) => `<div class="card-store row"><div class="caption"><p>${st}</p><p>Petaluma, CA 00000</p></div><div class="caption">${st === b.selected
+  const inStore = b.mode === "InStore";
+  const chosen = (st) => st === b.selected && !inStore;
+  const card = (st) => `<div class="card-store row"><div class="caption"><p>${st}</p><p>Petaluma, CA 00000</p>${inStore ? "<p>DriveUp &amp; Go</p><p>1.2 mi</p>" : ""}</div><div class="caption">${chosen(st)
     ? '<a href="#" role="button" aria-disabled="true" class="card-store-btn-disabled">Selected</a>'
     : `<a href="#" role="button" class="card-store-btn" data-street="${st}">Select</a>`}</div></div>`;
-  const html = `<button id="openFulfillmentModalButton">${b.mode === "Delivery" ? "Delivery to 00000" : "Pickup at somewhere"}</button>${page.html}
-    <div id="storeFulfillmentModal" role="dialog" style="display:none"><button id="closeFulfillmentModalButton" aria-label="Close">x</button>
+  const storeCard = (st) => `<div class="card-store row"><div class="caption"><p>${st}</p><p>Petaluma, CA 00000</p></div><div class="caption"><a href="#" role="button" class="card-store-btn" data-instore="${st}">${st === b.selected ? "Selected" : "Select"}</a></div></div>`;
+  const header = inStore
+    ? [true, false].map((wide) => `<button id="openFulfillmentModalButton" ${wide ? "" : 'style="display:none"'}><div id="fulFillMentAddressNav" role="button"><span class="s_nav_fulfillment_address-text" aria-label="Instore at ${b.selected}">${b.selected}</span></div></button>`).join("")
+    : `<button id="openFulfillmentModalButton">${b.mode === "Delivery" ? "Delivery to 00000" : "Pickup at somewhere"}</button>`;
+  const html = `<div id="hdr">${b.late ? "" : header}</div>${page.html}
+    <div id="storeFulfillmentModal" role="dialog" aria-label="Store Fulfilment Modal" style="display:none"><button id="closeFulfillmentModalButton" aria-label="Close">x</button>
+      <a id="modal-tab-instore-btn" role="tab" aria-selected="${inStore}">In Store</a>
       <a id="modal-tab-delivery-btn" role="tab" aria-selected="${b.mode === "Delivery"}">Delivery</a>
       <a id="modal-tab-pickup-btn" role="tab" aria-selected="false">Pickup</a>
+      <div id="fulfilmentInstore" style="display:${inStore ? "block" : "none"}">${inStore ? stores.map(storeCard).join("") : ""}</div>
       <div id="fulfilmentDelivery" style="display:${b.mode === "Delivery" ? "block" : "none"}"><p>Deliver to 00000</p></div>
       <div id="fulfilmentPickup" style="display:none">${stores.map(card).join("")}</div></div>`;
   return { ...page, html, run: (t) => {
     page.run?.(t);
     const box = doc.getElementById("storeFulfillmentModal");
-    doc.getElementById("openFulfillmentModalButton").onclick = () => { press(shop, "box"); box.style.display = "block"; };
+    const wire = () => { for (const o of doc.querySelectorAll("#openFulfillmentModalButton")) o.onclick = () => { press(shop, "box"); box.style.display = "block"; }; };
+    if (b.late) t.after(b.late, () => { doc.getElementById("hdr").innerHTML = header; wire(); }); else wire();
     doc.getElementById("closeFulfillmentModalButton").onclick = () => { press(shop, "close"); box.style.display = "none"; };
     doc.getElementById("modal-tab-delivery-btn").onclick = () => press(shop, "delivery tab");
-    doc.getElementById("modal-tab-pickup-btn").onclick = (e) => { press(shop, "pickup tab"); e.target.setAttribute("aria-selected", "true"); doc.getElementById("fulfilmentDelivery").style.display = "none"; t.after(300, () => { doc.getElementById("fulfilmentPickup").style.display = "block"; }); };
+    doc.getElementById("modal-tab-instore-btn").onclick = () => press(shop, "instore tab");
+    for (const a of doc.querySelectorAll("#fulfilmentInstore a[data-instore]")) a.onclick = () => press(shop, `instore select ${a.dataset.instore}`);
+    doc.getElementById("modal-tab-pickup-btn").onclick = (e) => { press(shop, "pickup tab"); e.target.setAttribute("aria-selected", "true"); doc.getElementById("modal-tab-instore-btn").setAttribute("aria-selected", "false"); doc.getElementById("fulfilmentDelivery").style.display = "none"; t.after(300, () => { doc.getElementById("fulfilmentInstore").style.display = "none"; doc.getElementById("fulfilmentPickup").style.display = "block"; }); };
     for (const a of doc.querySelectorAll("#fulfilmentPickup a[data-street]")) a.onclick = () => {
       press(shop, `select ${a.dataset.street}`);
       if (b.noTake) return;

@@ -536,7 +536,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
     const noPickup = raw.noPickup === true || signedInAfterAll(raw);
-    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, noResults: raw.noResults === true, ...(noPickup && { noPickup }) };
+    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, noResults: raw.noResults === true, ...(noPickup && { noPickup }), ...(str(raw.pickup, 40) && { pickup: str(raw.pickup, 40) }) };
     // Signed out (or Pickup not chosen), noted; signed in leaves it to the cart page, which also puts the cart right.
     if (noPickup) await noteSafeway("no-pickup");
     else if (!result.signedIn) await noteSignedIn(false);
@@ -566,8 +566,9 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     // Signed in with Pickup not chosen (Nov 23): Safeway showed no cart, so Simmer's copy stays as it is.
     const noPickup = raw.noPickup === true || signedInAfterAll(raw);
-    // Why Google didn't sign in, kept for reading the record (Nov 25: it was dropped, and had to be worked out).
-    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, ...(noPickup && { noPickup }), ...(str(raw.google, 60) && { google: str(raw.google, 60) }) };
+    // Why Google didn't sign in, and why the Pickup switch didn't take, kept for reading the record (Nov 25: both were
+    // dropped, and had to be worked out).
+    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, ...(noPickup && { noPickup }), ...(str(raw.google, 60) && { google: str(raw.google, 60) }), ...(str(raw.pickup, 40) && { pickup: str(raw.pickup, 40) }) };
     await noteSafeway(noPickup ? "no-pickup" : result.signedIn === true ? "in" : "out");
     if (result.signedIn && raw.empty === true) result = { ...result, ...(await emptied(raw.orders)) };
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));

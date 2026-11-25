@@ -385,21 +385,50 @@ describe("the background: jobs in order, reports kept, a job lost when Chrome st
 void SAFEWAY;
 
 describe("signed in, set to In Store (live, Nov 25)", () => {
-  // Robin's account on the Mac: signed in, Safeway set to In Store (the header shows only the store, no Delivery/Pickup
-  // button), and Safeway's note not a customer's. The cart is sent home; the Pickup switch finds no box button, so
-  // nothing's pressed; Safeway's sign-in page sends the signed-in tab straight home, so Google's button is never there.
+  // Robin's account on the Mac: signed in, Safeway set to In Store, and Safeway's note not a customer's. The cart is sent
+  // home; the header's button (showing the store) is built a moment after the home page loads. Sam, Nov 25: In Store is
+  // switched to Pickup at the household's store by the same presses as Delivery.
   const STORE = `Safeway ${OUR_STREET} Petaluma, CA 00000`;
   const live = (kind, args = {}) => ({ id: `j${++ids}`, kind, args, page: PAGE, settings: SETTINGS, store: STORE, google: SAM });
   let told;
   beforeEach(() => { told = []; world.simmer = async (op, b) => { if (op === "step") told.push(b); return { ok: true }; }; });
   const stepsOf = (id) => told.filter((t) => t.id === id).map((t) => t.step);
-  const inStore = () => { world.note(null); world.shop.cartGone = true; world.shop.signedIn = true; world.shop.sessionGone = false; world.shop.signInAtOnce = true; };
+  const inStore = (box) => { world.note(null); world.shop.cartGone = true; world.shop.signedIn = true; world.shop.sessionGone = false; world.shop.signInAtOnce = true; world.shop.box = box; };
+  const never = ["delivery tab", "instore tab", `instore select ${OUR_STREET}`, `instore select ${OTHER_STREET}`, `select ${OTHER_STREET}`];
 
-  it("a cart read says why Google wasn't tried (the sign-in page went home), and nothing is pressed", async () => {
-    inStore();
+  it("switches to Pickup at the household's store (its header built late), then reads the cart", async () => {
+    inStore({ mode: "InStore", selected: OUR_STREET, late: 1500 });
+    world.shop.cart = { "960001": 2 };
     const j = live("cart");
     const { value } = await drive(helper.runJob(j, null));
-    expect(value.result).toMatchObject({ signedIn: false, products: [], google: "not the sign-in page" });
+    expect(value.result).toMatchObject({ signedIn: true });
+    expect(value.result.products.map((p) => p.id)).toContain("960001");
+    expect(value.result.pickup).toBeUndefined();
+    expect(world.shop.presses).toMatchObject({ box: 1, "pickup tab": 1, [`select ${OUR_STREET}`]: 1 });
+    for (const k of never) expect(world.shop.presses[k]).toBeUndefined();
+    expect(stepsOf(j.id).slice(-3)).toEqual(["pickup", "cart", "wait"]);
+  });
+
+  it("an Add set to In Store switches, then adds", async () => {
+    inStore({ mode: "InStore", selected: OUR_STREET, late: 1500 });
+    expect((await drive(helper.runJob(live("setQty", { productId: "960001", qty: 1, query: "milk", name: "", on: "cart" }), null))).value).toMatchObject({ ok: true });
+    expect(world.shop.presses[`select ${OUR_STREET}`]).toBe(1);
+    for (const k of never) expect(world.shop.presses[k]).toBeUndefined();
+  });
+
+  it("the household's store not in the Pickup list: nothing selected, and the record says why", async () => {
+    inStore({ mode: "InStore", selected: OUR_STREET, stores: [OTHER_STREET, "300 Elm Rd"] });
+    const { value } = await drive(helper.runJob(live("cart"), null));
+    expect(value.result).toMatchObject({ signedIn: false, products: [], pickup: "store not found", google: "not the sign-in page" });
+    expect(Object.keys(world.shop.presses).filter((k) => k.includes("select"))).toEqual([]);
+    for (const k of never) expect(world.shop.presses[k]).toBeUndefined();
+  });
+
+  it("no box button ever: nothing pressed, and the record says why", async () => {
+    inStore(undefined);
+    const j = live("cart");
+    const { value } = await drive(helper.runJob(j, null));
+    expect(value.result).toMatchObject({ signedIn: false, products: [], pickup: "no box button", google: "not the sign-in page" });
     expect(world.shop.presses).toEqual({});
     expect(stepsOf(j.id)).toEqual(["cart", "wait", "cart", "wait", "pickup", "signin"]);
   });

@@ -298,23 +298,32 @@ export async function safewayPage(action, arg, P) {
     const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const want = norm(arg?.store);
     if (!C || !want) return { done: false, why: "no store" };
+    const wait = Number(C.wait) || 8000;
     const shown = (sel, root = document) => deepAll(root, sel).filter(visible);
+    // Safeway builds its header a moment after its home page loads (live, Nov 25: In Store, the switch looked 0.2 s after
+    // being sent home, found no button, and gave up), so the one button is watched for, up to the limit.
     let box = shown(C.box)[0];
     if (!box) {
-      const open = shown(C.open);
-      if (open.length !== 1) return { done: false, why: "no box button", found: open.length };
-      open[0].click();
-      box = await watch(() => shown(C.box)[0], 8000);
-      if (!box) return { done: false, why: "box didn't open" };
+      const found = await watch(() => (shown(C.box)[0] ? { box: true } : shown(C.open).length === 1 ? { open: shown(C.open)[0] } : null), wait);
+      if (found?.open) {
+        found.open.click();
+        box = await watch(() => shown(C.box)[0], wait);
+        if (!box) return { done: false, why: "box didn't open" };
+      } else if (found?.box) box = shown(C.box)[0];
+      else return { done: false, why: "no box button", found: shown(C.open).length };
     }
     const close = () => { const x = shown(C.close); if (x.length === 1) x[0].click(); };
     const tab = shown(C.tab, box);
     if (tab.length !== 1) { close(); return { done: false, why: "no pickup tab", found: tab.length }; }
     if (tab[0].getAttribute("aria-selected") !== "true") tab[0].click();
-    const pane = await watch(() => { const p = shown(C.pane, box)[0]; return p && shown(C.card, p).length ? p : null; }, 8000);
-    if (!pane) { close(); return { done: false, why: "no stores" }; }
     const street = (card) => (card.innerText ?? card.textContent ?? "").split(/\n+/).map((l) => l.trim()).find((l) => /^\d+\s+\S/.test(l)) ?? "";
-    const mine = shown(C.card, pane).filter((c) => { const s = norm(street(c)); return s.length > 4 && ` ${want} `.includes(` ${s} `); });
+    const ours = (p) => shown(C.card, p).filter((c) => { const s = norm(street(c)); return s.length > 4 && ` ${want} `.includes(` ${s} `); });
+    // The Pickup pane's own cards only: its tab chosen and its pane showing (the In Store pane before it lists the same
+    // stores, the household's "Selected" there, Nov 25), and the household's card in it; at the limit, read as it is.
+    const ready = () => { const p = shown(C.pane, box)[0]; return tab[0].getAttribute("aria-selected") === "true" && p && shown(C.card, p).length ? p : null; };
+    const pane = (await watch(() => { const p = ready(); return p && ours(p).length ? p : null; }, wait)) ?? ready();
+    if (!pane) { close(); return { done: false, why: "no stores" }; }
+    const mine = ours(pane);
     if (mine.length !== 1) { close(); return { done: false, why: "store not found", found: mine.length }; }
     const btns = buttons(mine[0]).concat(deepAll(mine[0], "a[role=button]").filter(visible)).filter((b, i, all) => all.indexOf(b) === i);
     const said = (b) => (b.innerText ?? b.textContent ?? "").replace(/\s+/g, " ").trim();
