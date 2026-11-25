@@ -6,7 +6,7 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => { void fn(); } }))
 
 import { resetKv } from "./kv";
 import { resetLockout } from "./ops/lockout";
-import { addNote, dropNote, KEEP_ALERTS, noteAlert, placeNow, resetNotes } from "./feedback";
+import { addNote, dropNote, KEEP_ALERTS, noteAlert, placeNow, popupDetail, resetNotes, startsHold } from "./feedback";
 import { feedbackOf, hide, KEEP_FEEDBACK, latestFeedback, MAX_TEXT, recordFeedback } from "./ops/feedback";
 import * as route from "@/app/api/feedback/route";
 import { describe as describeEntry } from "../../scripts/feedback.mjs";
@@ -99,5 +99,27 @@ describe("the script", () => {
       "  recent alerts: Couldn't add that",
       "  online · simmer, light · 390x844 · UA",
     ]);
+  });
+});
+
+// Review, Nov 24: holding Settings while Feedback was open opened a fresh, empty box over the words being typed.
+describe("Feedback's hold", () => {
+  const finger = { isPrimary: true, pointerType: "touch", button: 0 };
+  it("starts on a primary press on Settings", () => {
+    expect(startsHold(finger, true, false)).toBe(true);
+    expect(startsHold(finger, false, false)).toBe(false);
+    expect(startsHold({ ...finger, isPrimary: false }, true, false)).toBe(false);
+    expect(startsHold({ isPrimary: true, pointerType: "mouse", button: 2 }, true, false)).toBe(false);
+  });
+  it("is ignored while Feedback (or its alert) is showing", () => {
+    expect(startsHold(finger, true, true)).toBe(false);
+  });
+});
+
+describe("ordering's pop-ups", () => {
+  it("note only their title: a private pop-up's line (store, card, limit, a code) stays out", () => {
+    expect(popupDetail("100 Main St · Fri 6–7 AM · •••• 4242", true)).toBe("");
+    expect(popupDetail("Orders still need Face ID, and nothing over $50.00 goes through.", true)).toBe("");
+    expect(popupDetail("You can add it again any time.")).toBe("You can add it again any time.");
   });
 });

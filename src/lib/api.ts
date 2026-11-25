@@ -113,7 +113,7 @@ export const api = {
   faceIdRegister: (response: unknown) => passkey<{ ok: true; count: number }>({ op: "register", response }),
   faceIdCheck: (response: unknown) => passkey<{ ok: boolean; credentialId?: string; why?: string }>({ op: "check", response }),
   /**
-   * Test runs (Nov 13): get ready (the helper reads Safeway's checkout; follow it with the job while it's going), approve
+   * Test runs (Nov 13): getting ready with a time (the helper reads Safeway's checkout; follow it with the job while it's going), approve
    * with a Face ID answer, then the test run (followed the same way). Nothing orders.
    */
   // `since` (Nov 23): following a job, the step time already showing (the last answer's `stepAt`), so the answer comes

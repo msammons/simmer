@@ -268,6 +268,7 @@ export function useOrdering() {
   const sheets = (
     <>
       <ConfirmSheet
+        private
         open={sheet === "on"}
         title="Turn on ordering?"
         message={`Orders still need Face ID, and nothing over ${dollars(s.limitCents)} goes through.`}
@@ -276,6 +277,7 @@ export function useOrdering() {
         onCancel={() => { setSheet(null); checkOptions.clear(); }}
       />
       <ConfirmSheet
+        private
         open={sheet === "setup"}
         title={faceIds ? "Set up Face ID here?" : "Set up Face ID?"}
         message={faceIds ? "Face ID on this phone will also be able to place orders." : "Face ID on this phone will be needed to place each order."}
@@ -284,6 +286,7 @@ export function useOrdering() {
         onCancel={() => { setSheet(null); setupOptions.clear(); }}
       />
       <ConfirmSheet
+        private
         open={sheet === "ask"}
         title="Add this phone?"
         message="A phone that already has Face ID will need to approve it."
@@ -292,6 +295,7 @@ export function useOrdering() {
         onCancel={() => setSheet(null)}
       />
       <ConfirmSheet
+        private
         open={sheet === "approve"}
         title="Approve a new phone?"
         message={`Check the new phone shows ${approveCode}. Face ID here approves it.`}

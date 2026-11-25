@@ -2,6 +2,7 @@
 // code with tests (checkout-sheet.test.ts). The server's checks (checkout-run.ts) are unchanged by any of this: these
 // only choose what the sheet shows.
 import type { ReadyView, RunResult } from "./checkout-run";
+// TIMES_RAN_OUT is also the server's words (checkout-run.ts imports it), so the two can't drift apart.
 
 /** Nothing stops it and there's a reading of its own to approve. */
 const approvable = (v: ReadyView) => !v.stops.length && v.totalCents !== null && Boolean(v.preparedId);
@@ -12,7 +13,9 @@ const approvable = (v: ReadyView) => !v.stops.length && v.totalCents !== null &&
  * greyed while something stops the reading.
  */
 export function readyButtons(v: ReadyView): { place: boolean; test: boolean; enabled: boolean } {
-  return { place: v.canOrder, test: v.needsTest, enabled: approvable(v) };
+  // An out-of-date helper's run wouldn't count (checkout-run.ts followTestRun), so none is offered then: the muted line
+  // says the helper needs updating instead (review, Nov 24).
+  return { place: v.canOrder, test: v.needsTest && !v.helperOutdated, enabled: approvable(v) };
 }
 
 /**
@@ -24,3 +27,31 @@ export const afterTestRun = (r: RunResult): "read again" | "show" => (r.ok ? "re
 
 /** A reading made again: the time gone by then shows the times again (with an Alert saying so); else it's shown. */
 export const afterReadAgain = (v: ReadyView): "times" | "ready" => (v.timeGone ? "times" : "ready");
+
+/**
+ * The times read again after the picked one went (review, Nov 24): the same day when only the time went, else Safeway's
+ * first day (undefined), since the day itself is gone.
+ */
+export const dayAfterGone = (v: Pick<ReadyView, "dayGone">, day: string | undefined): string | undefined => (v.dayGone ? undefined : day || undefined);
+
+/**
+ * Getting ready refuses a time that isn't among those just offered (they're kept 10 minutes from the last reading). The
+ * sheet then reads the times afresh rather than showing the old ones, where every tap would be refused again.
+ */
+export const TIMES_RAN_OUT = "Those pickup times are out of date, so they've been read again. Pick a time.";
+export const timesRanOut = (problem: string) => problem === TIMES_RAN_OUT;
+
+/** Safeway no longer offers the time or day: the words checkout.ts uses for those stops. */
+const GONE = /isn't offered any more/;
+
+/**
+ * The controls under what stopped a reading, a test run or placing (review, Nov 24), so that every message names a
+ * control that's showing: Pick another time always (the times read afresh); Try again (the same time and bags read
+ * again) only with a time picked and when that time hasn't gone, since a gone time must offer the times instead.
+ * None after "not sure the order went through": nothing that could lead to a second order.
+ */
+export function stopButtons(reasons: string[], picked: boolean, unsure = false): { pickTime: boolean; tryAgain: boolean } {
+  if (unsure) return { pickTime: false, tryAgain: false };
+  return { pickTime: true, tryAgain: picked && !reasons.some((r) => GONE.test(r)) };
+}
+

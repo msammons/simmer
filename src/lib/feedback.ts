@@ -68,6 +68,20 @@ export function placeNow(): Pick<FeedbackContext, "tab" | "screens" | "sheets" |
   };
 }
 
+/**
+ * What a pop-up notes beside its title: its line, unless it's `private` (Nov 24: ordering's pop-ups, whose lines name the
+ * store, card, limit or a code, which feedback never carries).
+ */
+export const popupDetail = (message: unknown, hidden?: boolean) => (!hidden && typeof message === "string" ? message : "");
+
+/**
+ * Whether a press starts Feedback's hold: a primary press (a mouse's main button) on the Settings button, and only while
+ * Feedback (or its "Couldn't send that" alert) isn't already showing (review, Nov 24: holding Settings again opened a
+ * fresh, empty box over the words being typed).
+ */
+export const startsHold = (p: { isPrimary: boolean; pointerType: string; button: number }, onSettings: boolean, showing: boolean) =>
+  !showing && onSettings && p.isPrimary && !(p.pointerType === "mouse" && p.button !== 0);
+
 /** Everything the phone knows at the moment of the long press (browser only). */
 export function contextNow(theme: string): FeedbackContext {
   const dark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;

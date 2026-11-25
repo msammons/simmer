@@ -9,7 +9,9 @@ import { AppError } from "./errors";
 import { withinCap } from "./ops/caps";
 import { newId, yes } from "./parse";
 import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
-import { afterChange, groupsOf, renamed, union, type Group } from "./groups";
+import { afterChange, groupsOf, putInGroup, renamed, union, type Group } from "./groups";
+import { loadCart } from "./safeway";
+import { removalOf } from "./stock-rows";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
@@ -496,9 +498,9 @@ export const removeItems = (ids: string[]): Promise<Item[]> => editList([], new 
  * The kept things changed by `f`, and the groups with them (Nov 24): one transaction, the Groups tab written only when
  * its groups change. `groups` works them out; by default a group stays until Remove group (groups.ts afterChange).
  */
-const writeStaples = (f: (all: Staple[]) => Staple[], groups: (kept: Group[], before: Staple[], after: Staple[]) => Group[] = afterChange) => transact(async () => {
+const writeStaples = (f: (all: Staple[], kept: Group[]) => Staple[], groups: (kept: Group[], before: Staple[], after: Staple[]) => Group[] = afterChange) => transact(async () => {
   const [before, kept] = await loadAll(STAPLES, GROUPS);
-  const after = f(before);
+  const after = f(before, kept);
   if (after !== before) await save(STAPLES, after);
   const next = groups(kept, before, after);
   const same = (gs: Group[]) => JSON.stringify(union(gs));
@@ -518,9 +520,15 @@ export const addStaple = atomically(async (text: string, section?: Section, opts
     : [...all, { item, store: f.store, section: section ?? f.section, quantity: "", product: "", kind: opts.kind ?? "common", group: opts.group ?? "" }]));
   if (!section) await guessLater(unknown);
 });
-/** A kept thing made common or specialty, or put in a group ("" for none) (Nov 16). */
+/**
+ * A kept thing made common or specialty, or put in a group ("" for none) (Nov 16); put in a group, it moves to the part
+ * of the list the group is in (groups.ts putInGroup, Nov 24).
+ */
 export const setStaple = (item: string, change: { kind?: StapleKind; group?: string }) =>
-  writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, ...(change.kind && { kind: change.kind }), ...(change.group !== undefined && { group: change.group }) } : s)));
+  writeStaples((all, kept) => {
+    const kinded = all.map((s) => (norm(s.item) === norm(item) && change.kind ? { ...s, kind: change.kind } : s));
+    return change.group !== undefined ? putInGroup(kinded, kept, item, change.group) : kinded;
+  });
 /**
  * A group renamed, or removed with `to` "" (Nov 16, Sam): every thing in it moves with it; the things stay kept. The
  * group itself is renamed or goes (Nov 24: an empty one too).
@@ -529,6 +537,17 @@ export const renameGroup = (from: string, to: string) =>
   writeStaples((all) => all.map((s) => (s.group && norm(s.group) === norm(from) ? { ...s, group: to } : s)),
     (kept, before, after) => union(renamed(groupsOf(kept, before), from, to), groupsOf([], after)));
 export const removeStaple = (item: string) => writeStaples((all) => all.filter((s) => norm(s.item) !== norm(item)));
+/**
+ * Remove from the list (Sam, Nov 24): the kept thing, and its List rows as `removalOf` says (stock-rows.ts, the phone
+ * uses the same rule): rows with no dinner go, a dinner's part stays waiting for it, rows in the Safeway cart are left
+ * alone. One transaction: the kept thing, the rows and the cart read together, written together.
+ */
+export const removeKept = atomically(async (item: string) => {
+  await removeStaple(item);
+  const [items, cart] = await Promise.all([load(LIST), loadCart()]);
+  const { drop, keep } = removalOf(items, item, new Set(cart.map((l) => l.itemId).filter(Boolean)));
+  await editList(keep.map((k) => [k.id, { for: k.for, check: true, have: false }]), new Set(drop));
+});
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 
 /**

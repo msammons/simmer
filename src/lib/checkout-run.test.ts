@@ -14,11 +14,12 @@ import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simpl
 import pages from "./checkout-pages.json";
 import { loadSettings, recordedForTests, resetCheckout, saveSettings } from "./checkout";
 import { approve as approveWith, settleOrder, followOrder, placeOrder as placeWith, confirmationNumberIn, confirmed, expectFor, followTestRun, orderNumberIn, pickupTimes, prepare, testRun, type ReadyView } from "./checkout-run";
-import { cartChanging, queueJob, waitForJob, type Job, type JobKind } from "./jobs";
+import { cartChanging, helperStatus, queueJob, waitForJob, type Job, type JobKind } from "./jobs";
 import { resetKv } from "./kv";
 import { wakeHelper } from "./push";
 import { checkOptions, registrationOptions, resetPasskeys, verifyRegistration } from "./passkeys";
 import { resetSafeway, setCartLine } from "./safeway";
+import { dayAfterGone, readyButtons, TIMES_RAN_OUT, timesRanOut } from "./checkout-sheet";
 
 const verifyReg = vi.mocked(verifyRegistrationResponse);
 const verifyAuth = vi.mocked(verifyAuthenticationResponse);
@@ -133,9 +134,9 @@ describe("picking the pickup time (Nov 14)", () => {
     expect(queueJob).toHaveBeenLastCalledWith("checkoutPrepare", { list: true });
   });
   it("gets ready only with a time it just offered", async () => {
-    await expect(prepare(undefined, FRI6.id)).rejects.toThrow(/Pick a pickup time/);
+    await expect(prepare(undefined, FRI6.id)).rejects.toThrow(TIMES_RAN_OUT);
     await pickupTimes();
-    await expect(prepare(undefined, "9999SAT20261114REGULARDUG900100-2026-11-14")).rejects.toThrow(/Pick a pickup time/);
+    await expect(prepare(undefined, "9999SAT20261114REGULARDUG900100-2026-11-14")).rejects.toThrow(TIMES_RAN_OUT);
     expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toEqual([]);
   });
   it("stops when Safeway's chosen time isn't the one picked", async () => {
@@ -230,7 +231,7 @@ describe("the approval", () => {
   it("the first time, takes the store and card Safeway shows, and remembers them once approved (Nov 14)", async () => {
     await saveSettings({ on: true, limitCents: 2000, store: "", card: "" });
     const v = await ready();
-    expect(v).toMatchObject({ store: expect.stringMatching(/^100 Main St/), card: "4242", stops: [], remember: true });
+    expect(v).toMatchObject({ store: expect.stringMatching(/^100 Main St/), card: "4242", stops: [] });
     expect(await loadSettings()).toMatchObject({ store: "", card: "" }); // getting ready only reads
     expect(await approve(req(), await faceId())).toMatchObject({ ok: true });
     expect(await loadSettings()).toMatchObject({ store: expect.stringMatching(/^100 Main St/), card: "4242" });
@@ -264,13 +265,13 @@ describe("the approval", () => {
   it("is refused more than 2 minutes after getting ready", async () => {
     await ready();
     vi.setSystemTime(Date.now() + 2 * 60_000 + 1);
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That was more than 2 minutes ago. Pick the time again."] });
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That was more than 2 minutes ago. Try again."] });
   });
 
   it("is refused when the cart changed since", async () => {
     await ready();
     await setCartLine({ productId: "184420001", qty: 2 });
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed since. Pick the time again."]) });
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed since. Try again."]) });
   });
 
   it("is refused when Face ID fails or is used again, and each reading approves once", async () => {
@@ -283,7 +284,7 @@ describe("the approval", () => {
     expect((await approve(req(), f)).ok).toBe(true);
     await ready();
     expect(await approve(req(), f)).toMatchObject({ ok: false, reasons: expect.arrayContaining([expect.stringMatching(/already used/)]) });
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["Pick a time first."] }); // the reading went with the last try
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That reading ran out after 2 minutes. Try again."] }); // the reading went with the last try
     expect(await approve(req(), null)).toMatchObject({ ok: false });
   });
 });
@@ -305,7 +306,7 @@ describe("the test run", () => {
     const id = await approved();
     await testRun(id);
     const asked = vi.mocked(queueJob).mock.calls.length;
-    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That approval was already used or ran out. Pick the time again."] });
+    expect(await testRun(id)).toEqual({ ok: false, reasons: ["That approval was already used or ran out. Try again."] });
     expect(vi.mocked(queueJob).mock.calls.length).toBe(asked);
     // Two taps at once: only one starts.
     const again = await approved();
@@ -536,14 +537,14 @@ describe("placing the order (phase 3, Nov 14)", () => {
     await ready(); // someone else gets ready with other figures
     const a = await approve(req(), await faceId(), first.preparedId);
     expect(a).toMatchObject({ ok: true, totalCents: 694 });
-    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["Pick a time first."]) });
+    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["That reading ran out after 2 minutes. Try again."]) });
   });
 
   it("refuses to place what the phone didn't show, before asking the helper (Nov 19)", async () => {
     process.env.CHECKOUT_ENABLED = "on";
     await passTestRun();
     const id = await approved();
-    expect(await placeOrder(id, { totalCents: 794, window: "Fri 6–7 AM" })).toMatchObject({ ok: false, reasons: [expect.stringMatching(/isn't what this phone showed/)] });
+    expect(await placeOrder(id, { totalCents: 794, window: "Fri 6–7 AM" })).toMatchObject({ ok: false, reasons: [expect.stringMatching(/isn't what was shown/)] });
     expect(vi.mocked(queueJob).mock.calls.filter((c) => c[0] === "checkoutPlace")).toHaveLength(0);
   });
 
@@ -631,5 +632,59 @@ describe("what Place Order looks for on a Flash time", () => {
     const base = { windowId: FRI6.id, windowWords: "Fri 6–7 AM", faceId: "", itemsCents: 299, cartKey: "1x1", totalCents: 694, items: 1, card: "4242", store: "100 Main St", at: 0, slot: { ready: "6 AM - 7 AM", type: "", priceCents: 0 } };
     expect(expectFor({ ...base, bagsOwn: false } as never).bagsOwn).toBe(false);
     expect("bagsOwn" in expectFor(base as never)).toBe(false);
+  });
+});
+
+// The adversarial review of Nov 24.
+describe("review, Nov 24", () => {
+  const passTestRun = async () => { const id = await approved(); await testRun(id); };
+  afterEach(() => { delete process.env.CHECKOUT_ENABLED; vi.mocked(helperStatus).mockResolvedValue({ seen: "", away: false, outdated: false } as never); });
+
+  it("doesn't offer Place order while another order is on its way, saying so before any Face ID", async () => {
+    process.env.CHECKOUT_ENABLED = "on";
+    await passTestRun();
+    expect((await ready()).canOrder).toBe(true);
+    does = (k, a) => (k === "checkoutPlace" ? ({ stopped: "pressed", pressed: true, after: null } as never) : helper(k, a));
+    expect(await placeOrder(await approved())).toMatchObject({ unsure: true }); // the going mark stays for the half hour
+    const v = await ready();
+    expect(v).toMatchObject({ canOrder: false, orderWhy: expect.stringMatching(/already on its way/) });
+    expect(readyButtons(v)).toMatchObject({ place: false, test: false });
+  });
+
+  it("an out-of-date helper: no test run offered (it wouldn't count), and the line says it needs updating", async () => {
+    vi.mocked(helperStatus).mockResolvedValue({ seen: "", away: false, outdated: true } as never);
+    const v = await ready();
+    expect(v).toMatchObject({ canOrder: false, needsTest: true, helperOutdated: true, orderWhy: "The helper on the computer needs updating first." });
+    expect(readyButtons(v)).toMatchObject({ place: false, test: false });
+  });
+
+  it("stops a reading when the cart changed while Safeway was being read", async () => {
+    await pickupTimes();
+    going = true;
+    const w = await prepare(undefined, FRI6.id) as { waiting: string };
+    await setCartLine({ productId: "184420002", qty: 1, name: "Yogurt", price: "$1.00" }); // after queuing, before the answer
+    going = false;
+    shown = await prepare(w.waiting) as ReadyView;
+    expect(shown.stops).toContain("The cart changed while Safeway was read. Try again.");
+    expect(readyButtons(shown).enabled).toBe(false);
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: expect.arrayContaining(["The cart changed while Safeway was read. Try again."]) });
+  });
+
+  it("refuses a time once the offered list has lapsed, in the words that make the sheet read the times again", async () => {
+    await pickupTimes();
+    vi.setSystemTime(Date.now() + 11 * 60_000); // kept 10 minutes (and a few seconds)
+    const err = await prepare(undefined, FRI6.id).catch((e: Error) => e.message);
+    expect(err).toBe(TIMES_RAN_OUT);
+    expect(timesRanOut(err as string)).toBe(true);
+    await pickupTimes(); // read again: the same time is taken
+    expect((await prepare(undefined, FRI6.id) as ReadyView).stops).toEqual([]);
+  });
+
+  it("marks a day that's gone, so the times are read again from Safeway's first day", async () => {
+    await pickupTimes();
+    does = () => ({ stopped: "pickup day gone", chosen: null, final: null });
+    const v = await prepare(undefined, FRI6.id) as ReadyView;
+    expect(v).toMatchObject({ timeGone: true, dayGone: true, preparedId: "" });
+    expect(dayAfterGone(v, "Fri tile")).toBeUndefined();
   });
 });

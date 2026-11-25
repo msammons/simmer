@@ -7,6 +7,7 @@ import { groupsOf, namesOf, sectionOf, type Group as ListGroup } from "@/lib/gro
 import { norm } from "@/lib/words";
 import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
+import { useSafewayCart } from "./Safeway";
 import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField, sameProps } from "./ui";
 
 /**
@@ -37,13 +38,15 @@ export type StockActions = {
   keepGroup: (from: string, to: string) => void;
   /** A dinner's thing that isn't kept in Stock: moved to another section (it's on the list under that section too). */
   mealMove: (it: Item, section: Section) => void;
-  keepRemove: (s: Staple) => void;
+  /** Remove from the list: `inCart`, the list rows with a line in the Safeway cart, which stay (Nov 24). */
+  keepRemove: (s: Staple, inCart: Set<string>) => void;
 };
 
 /** The list and the freezer come from their stores; each row is drawn again only when it changes. */
 export function StockScreen({ act }: { act: StockActions }) {
   const list = useList();
   const kitchen = useKitchen();
+  const sw = useSafewayCart();
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   // Groups she opened or closed by hand (Nov 19): kept as she left them, so a group never pops open or shut when its
@@ -127,7 +130,7 @@ export function StockScreen({ act }: { act: StockActions }) {
         onConfirm={() => { if (ungrouping) act.keepGroup(ungrouping, ""); setUngrouping(null); }} onCancel={() => setUngrouping(null)} />
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
       <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="You can add it again any time." confirm="Remove from the list" danger
-        onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
+        onConfirm={() => { if (removing) act.keepRemove(removing, new Set(sw.cart.map((l) => l.itemId).filter(Boolean))); setRemoving(null); }} onCancel={() => setRemoving(null)} />
     </div>
   );
 }
@@ -283,12 +286,13 @@ const StockItem = memo(function StockItem({ r, act, onRemove, onGroup, fresh = f
   const menu = r.staple || (r.item && !r.frozen); // a thing on the list without a kept row: move it, or keep it
   return (
     <div ref={own} data-fresh={fresh || undefined} onAnimationEnd={fresh ? onSeen : undefined} data-meal={r.meal || undefined} className={`flex h-[3.75rem] items-center gap-2 pl-4 pr-2 ${fresh ? "sm-flash" : ""}`}>
-      {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"), so the name stays whole. Every
-          row is one fixed height, room for both lines, so rows are even ("uneven heights is annoying too"). */}
+      {/* A meal thing's amount on its own line (Sam, Nov 11: "we need to know amounts"). Every row is one fixed height,
+          room for both lines, so rows are even ("uneven heights is annoying too"); the name is one line, cut short with …
+          (review, Nov 24: a long one wrapped out of the row), as on Shop. */}
       {/* A planned dinner's thing (Sam, Nov 18): how much all the planned dinners need, on its own line under the name;
           no asterisk. Its name is in the highlight colour (Nov 19: its ⋯ differs from a kept thing's, so it looks different). */}
       <span className="min-w-0 flex-1">
-        <span className={`block break-words t-body ${r.meal ? "text-accent" : ""}`}>{cap(r.name)}</span>
+        <span data-row-name className={`block truncate t-body ${r.meal ? "text-accent" : ""}`}>{cap(r.name)}</span>
         {r.meal && shownAmount(r.amount) && <span className="block truncate t-foot text-muted">{shownAmount(r.amount)}</span>}
       </span>
       <span role="group" aria-label={`Have or need ${r.name}`} className="flex shrink-0 rounded-full bg-sunk p-0.5">

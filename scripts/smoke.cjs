@@ -384,6 +384,18 @@ const began = Date.now();
         ok("feedback: Cancel goes back to the sheet as it was", await addSheet.isVisible());
         await holdSettings(); await resting(fb);
         await fb.getByLabel("Feedback").fill("Smoke: with Add a meal open");
+        {
+          // Holding Settings again while it's open (review, Nov 24: it opened a fresh, empty box): a timed wait on purpose,
+          // past the half-second hold, then lifted; what's typed stays.
+          const bx = await page.locator("[data-settings]").first().boundingBox();
+          const cdp = await ctx.newCDPSession(page);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bx.x + bx.width / 2, y: bx.y + bx.height / 2 }] });
+          await wait(700);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          await cdp.detach();
+          ok("feedback: holding Settings again while it's open keeps what's typed", (await page.getByRole("dialog", { name: "Feedback" }).count()) === 1
+            && (await fb.getByLabel("Feedback").inputValue()) === "Smoke: with Add a meal open");
+        }
         req = sent();
         await fb.getByRole("button", { name: "Send" }).tap(); await gone(fb);
         body = (await req).postDataJSON();
@@ -737,7 +749,7 @@ const began = Date.now();
         // Test run only when one is required (Sam, Nov 24), and after one passes, Safeway read again with the same time and
         // bags, landing on Place order with no time picked again. Face ID stood in for (the page's own credentials call).
         {
-          let passed = true, reads = 0, closed = false;
+          let passed = true, reads = 0, closed = false, outdated = false, stopsAgain = false, timeGone = false, bagsRead = null;
           const bodies = [];
           const DAY = "select slots for TUESDAY Nov, 24";
           await page.route("**/api/checkout", async (r) => {
@@ -747,8 +759,11 @@ const began = Date.now();
             if (b.op === "times") return r.fulfill({ json: { days: [{ key: DAY, label: "Tue, Nov 24" }], day: DAY, times: [{ id: "w1", time: "6–7 PM", price: "Free", flash: false }] } });
             if (b.op === "prepare") {
               reads++;
-              return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", window: "Tue 6–7 PM", card: "4242", items: 3, totalCents: 694, stops: [], highlights: [], remember: false, bagsOwn: b.bagsOwn !== false, feesCents: null,
-                canOrder: passed && !closed, orderWhy: closed ? "The helper on the computer needs updating first." : passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, preparedId: `reading${reads}` } });
+              if (timeGone) return r.fulfill({ json: { store: "", window: "", card: "", items: null, totalCents: null, stops: ["That pickup time isn't offered any more. Pick another time."], highlights: [], bagsOwn: null, feesCents: null,
+                canOrder: false, orderWhy: "", needsTest: false, timeGone: true, preparedId: "" } });
+              const stops = stopsAgain && reads > 1 ? ["Safeway's bags couldn't be set. Try again."] : [];
+              return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", window: "Tue 6–7 PM", card: "4242", items: 3, totalCents: 694, stops, highlights: [], bagsOwn: bagsRead ?? b.bagsOwn !== false, feesCents: null,
+                canOrder: passed && !closed && !outdated, orderWhy: closed || outdated ? "The helper on the computer needs updating first." : passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, helperOutdated: outdated, preparedId: stops.length ? "" : `reading${reads}` } });
             }
             if (b.op === "approve") return r.fulfill({ json: { ok: true, approvalId: `ok-${b.preparedId}`, totalCents: 694, window: "Tue 6–7 PM" } });
             if (b.op === "test-run") { passed = true; return r.fulfill({ json: { ok: true, would: "Would place $6.94 · Tue 6–7 PM" } }); }
@@ -795,6 +810,51 @@ const began = Date.now();
           ok("checkout: with neither Test run nor Place order, one line says why", await seen(co.getByText("The helper on the computer needs updating first.", { exact: true }), 3000)
             && (await co.getByRole("button", { name: /^(Test run|Place order)/ }).count()) === 0);
           await page.keyboard.press("Escape"); await gone(co);
+          // A test run is required but the helper is out of date (review, Nov 24): no Test run (it wouldn't count), the line says why.
+          closed = false; passed = false; outdated = true;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          ok("checkout: with the helper out of date, no Test run, and the line says it needs updating", await seen(co.getByText("The helper on the computer needs updating first.", { exact: true }), 3000)
+            && (await co.getByRole("button", { name: /^(Test run|Place order)/ }).count()) === 0);
+          // Bags is one control, showing the reading's bags (review, Nov 24): no second Bags row under it.
+          ok("checkout: one Bags control with a reading showing, no Bags row", (await co.getByText("Bags", { exact: true }).count()) === 1 && (await co.getByRole("radiogroup", { name: "Bags" }).count()) === 1);
+          await page.keyboard.press("Escape"); await gone(co);
+          bagsRead = false; outdated = false;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await co.getByRole("radiogroup", { name: "Bags" }).getByRole("radio", { name: "Bring my own" }).tap();
+          await pickTime(co);
+          ok("checkout: the Bags control shows the bags Safeway read, not only the ones picked", await seen(co.getByRole("button", { name: /^Test run/ }), 3000)
+            && (await co.getByRole("radiogroup", { name: "Bags" }).getByRole("radio", { name: "Safeway's bags" }).getAttribute("aria-checked")) === "true");
+          await page.keyboard.press("Escape"); await gone(co);
+          // A test run passed but the reading again stopped (review, Nov 24: a dead end): its words name Try again, and
+          // Pick another time shows too, reading the times afresh.
+          bagsRead = null; reads = 0; stopsAgain = true; bodies.length = 0;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          await co.getByRole("button", { name: "Test run · $6.94" }).tap();
+          ok("checkout: a reading that stops after a test run passed offers Try again and Pick another time", await seen(co.getByText("Safeway's bags couldn't be set. Try again.", { exact: true }), 4000)
+            && await co.getByRole("button", { name: "Try again" }).isVisible() && await co.getByRole("button", { name: "Pick another time" }).isVisible());
+          await co.getByRole("button", { name: "Pick another time" }).tap();
+          ok("checkout: Pick another time after a stop reads the times afresh", await seen(co.getByRole("button", { name: /6–7 PM/ }), 4000) && bodies.filter((x) => x.op === "times").length === 2, JSON.stringify(bodies.map((x) => x.op)));
+          await page.keyboard.press("Escape"); await gone(co);
+          // The time gone once picked: the times are read again and the alert says so (never Try again with that time).
+          stopsAgain = false; timeGone = true; bodies.length = 0;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          const goneAlert = page.getByRole("dialog", { name: "That didn't go through" });
+          ok("checkout: a time that's gone reads the times again, saying so, with no Try again", await seen(goneAlert.getByText("That pickup time isn't offered any more. Pick another time."), 4000)
+            && await until(async () => bodies.filter((x) => x.op === "times").length === 2, 3000) && (await co.getByRole("button", { name: "Try again" }).count()) === 0);
+          await goneAlert.getByRole("button", { name: "OK" }).tap(); await gone(goneAlert);
+          timeGone = false;
+          await page.keyboard.press("Escape"); await gone(co);
           await page.unroute("**/api/checkout"); await page.unroute("**/api/checkout/passkey");
         }
       }
@@ -806,6 +866,9 @@ const began = Date.now();
       ok("shop: Add shows − 1 + within 150 ms", await within150(async () => (await page.getByLabel("1 in the cart").count()) >= 2 && (await page.getByRole("button", { name: "One more Milk" }).isVisible())));
       await page.getByRole("button", { name: "One more Milk" }).tap();
       ok("shop: + shows within 150 ms", await within150(() => page.getByLabel("2 in the cart").first().isVisible()));
+      // While the change is on its way, Check out is greyed and its status line says so (review, Nov 24: it was empty).
+      ok("shop: while a change is on its way, the status line beside Check out says Changing the cart…", await within150(async () => (await page.locator("[data-cart-status]").innerText()).trim() === "Changing the cart…"
+        && await page.getByRole("button", { name: /^Check out/ }).first().isDisabled()));
       await idle();
       ok("shop: and Safeway has them: Add favorites gone with one favorite left", await until(async () => (await page.getByRole("button", { name: "Add favorites" }).count()) === 0 && fake.cart.some((l) => l.productId === "p-milk" && l.qty === 2)), JSON.stringify(fake.cart.map((l) => [l.productId, l.qty])));
       ok("shop: Find on a row with no favorite", (await page.getByRole("button", { name: /^Find .* at Safeway$/ }).count()) + (await page.getByRole("button", { name: /^Add .* to the cart$/ }).count()) >= 1);
@@ -1060,6 +1123,16 @@ const began = Date.now();
         && (await meal.first().evaluate((e) => getComputedStyle(e).backgroundColor)) === "rgba(0, 0, 0, 0)", amounts.slice(0, 3).join(" | "));
     }
     ok(`${tag}: every Stock row is the same height`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => new Set(gs.map((g) => Math.round(g.parentElement.getBoundingClientRect().height))).size === 1));
+    // A long name is one line, cut short, inside its row (review, Nov 24: it wrapped and overflowed the fixed height):
+    // tried with the first row's name made long for a moment.
+    ok(`${tag}: a Stock row's name is one line, cut short, inside the row`, await page.getByRole("group", { name: /^Have or need / }).first().evaluate((g) => {
+      const row = g.parentElement, name = row.querySelector("[data-row-name]"), was = name.textContent;
+      name.textContent = "Extra large organic heirloom tomatoes for the big salad on Sunday";
+      const r = row.getBoundingClientRect(), n = name.getBoundingClientRect();
+      const fits = n.height <= parseFloat(getComputedStyle(name).lineHeight) + 1 && n.top >= r.top - 0.5 && n.bottom <= r.bottom + 0.5 && g.getBoundingClientRect().right <= r.right + 0.5;
+      name.textContent = was;
+      return fits;
+    }));
     // Every row has ⋯ or its space, so the switches line up (Nov 11).
     ok(`${tag}: every Stock row keeps the ⋯ column`, await page.getByRole("group", { name: /^Have or need / }).evaluateAll((gs) => gs.length > 3 && gs.every((g) => { const n = g.nextElementSibling; return Boolean(n) && Math.round(n.getBoundingClientRect().width) === 36; })));
     await page.screenshot({ path: `${dir}/5-stock-${tag}.png`, fullPage: true });

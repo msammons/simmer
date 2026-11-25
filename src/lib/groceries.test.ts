@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadList, moveStaple, norm, parseEntry, removeItems, removeStaple, renameGroup } from "./groceries";
+import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadList, moveStaple, norm, parseEntry, removeItems, removeKept, removeStaple, renameGroup, setStaple } from "./groceries";
 
 describe("the grocery list", () => {
   it("reads what's typed", () => {
@@ -352,5 +352,55 @@ describe("filing new things (review, Nov 19)", () => {
     expect(await file("zzq gadget")).toEqual({ store: "safeway", section: "pantry" });
     spy.mockRestore();
     delete process.env.GEMINI_API_KEY;
+  });
+});
+
+// Remove from the list (Sam, Nov 24; review, Nov 24): the kept thing and its rows in one transaction, a dinner's part
+// kept, cart rows left alone.
+describe("Remove from the list", () => {
+  it("takes the kept thing and its rows off in one write, keeping a dinner's part and leaving a cart row alone", async () => {
+    const { useTabStore } = await import("./store");
+    const { memoryStore } = await import("./store/memory");
+    const { setCartLine } = await import("./safeway");
+    const mem = memoryStore();
+    let commits = 0;
+    useTabStore({ ...mem, eval: async (...a: Parameters<NonNullable<typeof mem.eval>>) => { commits++; return mem.eval!(...a); } });
+    try {
+      for (const n of ["rm sugar", "rm flour", "rm salt"]) await addStaple(n, "pantry");
+      await addItems([{ item: "rm sugar", quantity: "1 cup", for: "Cookies" }], "Robin");
+      await addItem("rm sugar", "Sam"); // by hand onto the dinner's line: "added by hand, Cookies", Need
+      const flour = await addItem("rm flour", "Sam");
+      await setCartLine({ productId: "184420001", qty: 1, name: "Flour", price: "$3.00", itemId: flour.id, item: "rm flour" });
+      await addItem("rm salt", "Sam");
+      const row = async (n: string) => (await loadList()).items.find((x) => x.item === n);
+      expect(await row("rm sugar")).toMatchObject({ for: "added by hand, Cookies", check: false });
+
+      for (const n of ["rm sugar", "rm flour", "rm salt"]) {
+        commits = 0;
+        await removeKept(n);
+        expect(commits).toBe(1); // the kept thing and the rows, written together
+      }
+      const { staples } = await loadList();
+      expect(staples.some((s) => s.item.startsWith("rm "))).toBe(false);
+      expect(await row("rm sugar")).toMatchObject({ for: "Cookies", check: true, have: false }); // back to the dinner's, waiting
+      expect(await row("rm flour")).toMatchObject({ id: flour.id }); // in the Safeway cart: left alone
+      expect(await row("rm salt")).toBeUndefined();
+    } finally {
+      useTabStore(null);
+    }
+  });
+});
+
+describe("Put in a group (review, Nov 24)", () => {
+  it("moves the thing to the part of the list the group is in", async () => {
+    await addStaple("grp cheddar", "fresh", { group: "Grp cheese" });
+    await addStaple("grp crackers", "pantry");
+    await setStaple("grp crackers", { group: "grp cheese" });
+    expect((await loadList()).staples.find((s) => s.item === "grp crackers")).toMatchObject({ section: "fresh", group: "grp cheese" });
+    // A new group leaves it where it is.
+    await setStaple("grp crackers", { group: "Grp snacks" });
+    expect((await loadList()).staples.find((s) => s.item === "grp crackers")).toMatchObject({ section: "fresh", group: "Grp snacks" });
+    for (const n of ["grp cheddar", "grp crackers"]) await removeStaple(n);
+    for (const g of ["grp cheese", "grp snacks"]) await renameGroup(g, "");
   });
 });

@@ -39,12 +39,12 @@ const windowId = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9:-]{10,12
 const id = (s: unknown) => (typeof s === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(s) ? s : "");
 
 /**
- * Test runs (docs/CHECKOUT.md phase 2, Nov 13). prepare { jobId? }: get ready (or follow it) → the figures and what
+ * Test runs (docs/CHECKOUT.md phase 2, Nov 13). prepare { windowId, bagsOwn? } or { jobId } (following): getting ready with a pickup time → the figures and what
  * stops them (with its preparedId), or { waiting: jobId }. approve { faceId, preparedId }: Face ID approves exactly that
  * reading's figures → { ok, approvalId } or
  * { ok: false, reasons }. test-run { approvalId } or { jobId } (following): → { ok, would } or { ok: false, reasons }, or
  * { waiting: jobId }. look { jobId? }: the store and card Safeway's checkout shows, to pick (Nov 14) → { store, card } or
- * { waiting: jobId }. place { approvalId, totalCents, window } (what the phone showed, Nov 19) or { jobId } (following):
+ * { waiting: jobId }. place { approvalId, totalCents, window } (what the sheet showed, Nov 19) or { jobId } (following):
  * placing for real, only as approved.
  */
 async function run(req: Request, b: Record<string, unknown>) {

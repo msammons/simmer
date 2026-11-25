@@ -10,12 +10,33 @@ export const fromDinner = (it: Pick<Item, "for" | "checked">) => {
   return !it.checked && Boolean(f) && f !== "every week" && !f.split(",").map((x) => x.trim()).includes("added by hand");
 };
 
+/** The dinners a row names, without "added by hand" or "every week" ("added by hand, Tacos" names Tacos). */
+const dinnersOf = (f: string) => f.split(",").map((x) => x.trim()).filter((x) => x && x.toLowerCase() !== "added by hand" && x.toLowerCase() !== "every week");
+
 /**
- * What Remove from the list takes off with a kept thing (Sam, Nov 24: sugar stayed on Shop after its kept thing was
- * removed): its List rows not yet bought and not for a dinner (a dinner's thing stays, on the List as the dinner's).
+ * What Remove from the list does to the thing's List rows (Sam, Nov 24: sugar stayed on Shop after its kept thing was
+ * removed), on the phone and the server alike. Only rows not yet bought: a row with no dinner goes; a row a dinner also
+ * needs ("added by hand, Tacos") keeps the dinner's part and goes back to waiting for it, as the dinner's alone; a
+ * dinner's own row stays as it is; and a row with a line in the Safeway cart (`inCart`, by list item id) is left alone,
+ * so no cart line is left without its thing.
  */
-export const removedWith = (items: Item[], name: string): string[] =>
-  items.filter((i) => !i.checked && norm(i.item) === norm(name) && !fromDinner(i)).map((i) => i.id);
+export function removalOf(items: Item[], name: string, inCart: Set<string> = new Set()): { drop: string[]; keep: { id: string; for: string }[] } {
+  const drop: string[] = [], keep: { id: string; for: string }[] = [];
+  for (const i of items) {
+    if (i.checked || norm(i.item) !== norm(name) || inCart.has(i.id) || fromDinner(i)) continue;
+    const dinners = dinnersOf(i.for);
+    if (dinners.length) keep.push({ id: i.id, for: dinners.join(", ") });
+    else drop.push(i.id);
+  }
+  return { drop, keep };
+}
+
+/** The List rows after Remove from the list (`removalOf` applied): what the phone shows at once. */
+export function afterRemoval(items: Item[], name: string, inCart: Set<string> = new Set()): Item[] {
+  const { drop, keep } = removalOf(items, name, inCart);
+  const gone = new Set(drop), back = new Map(keep.map((k) => [k.id, k.for]));
+  return items.filter((i) => !gone.has(i.id)).map((i) => (back.has(i.id) ? { ...i, for: back.get(i.id)!, check: true, have: false } : i));
+}
 
 /** check: not answered yet; have: checked and there (off every list); need: on the list. */
 export type Answer = "check" | "have" | "need";

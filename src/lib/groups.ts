@@ -61,3 +61,18 @@ export function namesOf(groups: Group[]): string[] {
 
 /** Where a group sits: the section of its first copy, if it has one. */
 export const sectionOf = (groups: Group[], name: string): Section | undefined => groups.find((g) => norm(g.name) === norm(name))?.section;
+
+/**
+ * A kept thing put in a group ("" takes it out of one): it moves to the part of the list the group sits in (review, Nov
+ * 24: a thing put in a group from another section split the group across two sections). A group that's new, or one
+ * already in the thing's own section, leaves it where it is.
+ */
+export function putInGroup<S extends Pick<Staple, "item" | "section" | "group">>(staples: S[], kept: Group[] | undefined, item: string, group: string): S[] {
+  const others = staples.filter((s) => norm(s.item) !== norm(item));
+  const here = group ? groupsOf(kept, others).filter((g) => norm(g.name) === norm(group)) : [];
+  return staples.map((s) => {
+    if (norm(s.item) !== norm(item)) return s;
+    const to = here.some((g) => g.section === s.section) ? s.section : here[0]?.section ?? s.section;
+    return { ...s, group, section: to };
+  });
+}

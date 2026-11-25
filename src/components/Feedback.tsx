@@ -11,7 +11,7 @@
 // behind it.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorText } from "@/lib/client";
-import { contextNow, type FeedbackContext } from "@/lib/feedback";
+import { contextNow, startsHold, type FeedbackContext } from "@/lib/feedback";
 import { Alert, Button, Dialog } from "./ui";
 
 export const HOLD_MS = 500;
@@ -36,6 +36,8 @@ export function FeedbackHost({ active, theme }: { active: boolean; theme: string
   const [failed, setFailed] = useState<{ ctx: FeedbackContext; text: string; why: string } | null>(null);
   const themeNow = useRef(theme);
   useEffect(() => { themeNow.current = theme; }, [theme]);
+  const showing = useRef(false); // Feedback, or its alert, is up: holds are ignored
+  useEffect(() => { showing.current = Boolean(open || failed); }, [open, failed]);
 
   useEffect(() => {
     if (!active) return;
@@ -46,12 +48,13 @@ export function FeedbackHost({ active, theme }: { active: boolean; theme: string
     const down = (e: PointerEvent) => {
       stop();
       held = false; swallow = false;
-      if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
       const r = settingsBox();
-      if (!r || !inside(r, e.clientX, e.clientY)) return;
+      // Not while Feedback is showing: a second hold would replace what's being typed with an empty box.
+      if (!startsHold(e, Boolean(r && inside(r, e.clientX, e.clientY)), showing.current)) return;
       // The hold's threshold (Sam, Nov 24): one timeout for this press, cleared on release, move or cancel.
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, hold: setTimeout(() => {
         press = null;
+        if (showing.current) return;
         held = true;
         setFailed(null);
         setOpen({ ctx: contextNow(themeNow.current), text: "" });

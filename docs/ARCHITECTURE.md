@@ -77,8 +77,10 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   planned dinners need shows in its own section with its name in the accent colour and the amount all of them need
   underneath, and waits there until she says Need. Anything else on the list (added on Shop, say) has a plain row in its
   section, so everything on Shop's lists shows here and can be answered (Sam, Nov 24: sugar was on Shop but not here,
-  its kept thing removed while it was Need); Remove from the list takes the thing's rows not bought and not a dinner's
-  off the list with it (`removedWith`). Things in a group sit together: the header row is tinted and the group
+  its kept thing removed while it was Need); Remove from the list takes the thing's rows not bought off the list with
+  it, except that a row a dinner also needs keeps the dinner's part (waiting on Have or Need again), a dinner's own row
+  stays, and a row in the Safeway cart is left alone (`removalOf`, the same on the phone and the server, Nov 24).
+  Put in a group, a thing moves to the part of the list the group is in (`putInGroup`). Things in a group sit together: the header row is tinted and the group
   has a faint outline; tapping its name switches between all its items and only the ones in the cart or needed by a dinner
   (the arrow shows which); a group whose things all show anyway starts open and closes to its name alone. A group's ⋯ has
   Rename group and Remove group only; the list's own ⋯ has Show all groups. A group is kept in its own place (the Groups
@@ -106,7 +108,7 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   touch's own handler) and the tap that would follow is swallowed, so whatever was open stays as it was; a short press is
   a tap as before. Nothing behind it fades, so what's open stays in view (Sam, Nov 24); a hairline (`--line`) and the
   pop-up's shadow set it apart, and an invisible layer keeps taps off the page: a tap outside does nothing, only Cancel
-  and Send close it. With the keyboard up the pop-up is centred in the part of the screen left above it (`Dialog`'s
+  and Send close it. Holding Settings again while it's open does nothing, so what's typed is never lost. With the keyboard up the pop-up is centred in the part of the screen left above it (`Dialog`'s
   `useTypingView`, as sheets do). What was on screen goes with the words: each tab, screen (`useNote`), sheet (every
   `Sheet` notes its label and title, or its `note`) and pop-up notes itself while it shows, Shop and Safeway add a line
   of state, and the last five alerts are kept. A new sheet needs nothing, or one `note`.
@@ -119,13 +121,13 @@ filter pinned under the top bar (All or one store). Every row is the same height
 delivered), the household's name for the thing, and one small line: for a Safeway thing with a chosen product, Safeway's
 product name and "Need …"; otherwise the amount. While Safeway can be reached, a Safeway row also has + (its favorite into
 the cart), Find (Safeway's choices with pictures, in a sheet, one item at a time) or − n + once it's in the cart; the
-line above the list has an Add favorites button just left of Shop's ⋯ (no count, styled like the row +; Sam, Nov 24) when more than one favorite product (Find shows it as "Your favorite"; Sam, Nov 24: "Yes update usual to favorite") is not in the cart yet, on All or Safeway; Check out always has its cart picture and the line fits whole at 375 and 390 wide, the status words being what give way; and things put in the cart on Safeway's own site end the Safeway group. Above the list,
-Check out and a small status line sit on the left and Shop's ⋯ on the right (no price there, Sam, Nov 24: "We can drop
-the dollar amount by cart"; the total is on the Check out sheet. Check out always reads
-"Check out", its state shown by colour only, Sam, Nov 24; what's going on is said in the status line beside it,
-in place, so the line never moves): Show checked (on
-unless this phone turned it off: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought
-(for when Simmer can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
+line above the list has an Add favorites button just left of Shop's ⋯ (no count, styled like the row +; Sam, Nov 24) when more than one favorite product (Find shows it as "Your favorite"; Sam, Nov 24: "Yes update usual to favorite") is not in the cart yet, on All or Safeway; Check out always has its cart picture and the line fits whole at 375 and 390 wide, the status words being what give way; and things put in the cart on Safeway's own site end the Safeway group. On the line above the list,
+Check out and a small status line sit on the left and Shop's ⋯ on the right. There's no price there (Sam, Nov 24: "We
+can drop the dollar amount by cart"; the total is on the Check out sheet). Check out always reads "Check out", its state
+shown by colour only (Sam, Nov 24); what's going on is said in the status line beside it, in place, so the line never
+moves ("Changing the cart…" while changes are on their way to Safeway, Nov 24). Shop's ⋯ holds Show checked (on unless
+turned off here: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought (for when Simmer
+can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
 Opening the app, bringing it back to the front (on any tab, Nov 23) and opening Shop read Safeway's own cart (at most once
 a minute unless signed out or not connected), so Simmer's copy matches it and Shop already knows when it opens. A change to something already in the cart (a −, a +
 or taking it out) is made on Safeway's cart page first, where the product is listed, from Shop's rows and from Find alike;
@@ -137,8 +139,12 @@ the last product at the end, so it never covers one; the sheet rides above the k
 `?open=lists` addresses land on Shop, as the helper panel's `?open=shop` does. Check out and ordering are in
 docs/CHECKOUT.md: Face ID, a limit, test runs, and a checkout fingerprint of the helper (`scripts/checkout-print.mjs`,
 `src/lib/checkout-print.json`) that decides when a new test run is needed (a search or cart fix to the helper needs
-none). The sheet offers Test run only while one is needed, and after one passes reads Safeway again with the same time
-and bags and lands on Place order (Sam, Nov 24); what it offers is plain code in `lib/checkout-sheet.ts`, with tests.
+none). The sheet offers Test run only while one is needed (and not while the helper is out of date, when it wouldn't count),
+and after one passes reads Safeway again with the same time and bags and lands on Place order (Sam, Nov 24); Place
+order isn't offered while another order is on its way. Whatever stops a reading, a test run or placing shows the
+controls its words name: Pick another time (the times read afresh) and, unless the time itself has gone, Try again (the
+same time and bags); "not sure the order went through" offers neither. What it offers is plain code in
+`lib/checkout-sheet.ts`, with tests.
 
 Safeway can't be reached from Simmer's server, so searches and cart changes are **jobs** done by the Safeway helper in
 Chrome on a computer (`extension-working/`): Simmer queues a job (`/api/safeway/jobs`, `lib/jobs.ts`, the "Safeway jobs" rows,
@@ -260,7 +266,8 @@ Safety that runs on events, never on a schedule, and shows nothing on screen (No
   `/api/feedback` through `api()`): the time, the words, the release, the tab, the screens, the open sheets and pop-ups
   with what they showed, Shop's and Safeway's state, the last few alerts, online, theme, size and the browser's own
   description, plus the server's side: the release live, the helper's last check-in and version, and whether ordering is
-  on in Settings and on the server. Never the passcode, a card number, the limit, store or Face ID. Read with `vercel
+  on in Settings and on the server. Never the passcode, a card number, the limit, store or Face ID: ordering's pop-ups
+  (Place order's confirm, Settings → Ordering's) are `private`, so only their titles are noted (Nov 24). Read with `vercel
   env pull /tmp/simmer.env --environment=production && node scripts/feedback.mjs /tmp/simmer.env [N]` (newest first,
   default 10; the file is deleted as it's read).
 - **The helper's state** (read-only, Nov 23): `vercel env pull /tmp/simmer.env --environment=production && node
