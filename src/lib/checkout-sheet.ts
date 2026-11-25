@@ -44,14 +44,18 @@ export const timesRanOut = (problem: string) => problem === TIMES_RAN_OUT;
 /** Safeway no longer offers the time or day: the words checkout.ts uses for those stops. */
 const GONE = /isn't offered any more/;
 
+/** "Check Safeway": an order may be on its way or may have gone through (not sure, or another order going). */
+const CHECK_SAFEWAY = /Check Safeway/;
+
 /**
  * The controls under what stopped a reading, a test run or placing (review, Nov 24), so that every message names a
  * control that's showing: Pick another time always (the times read afresh); Try again (the same time and bags read
  * again) only with a time picked and when that time hasn't gone, since a gone time must offer the times instead.
- * None after "not sure the order went through": nothing that could lead to a second order.
+ * None after "not sure the order went through", or when another order may be on its way ("Check Safeway"): nothing
+ * that could lead to a second order.
  */
 export function stopButtons(reasons: string[], picked: boolean, unsure = false): { pickTime: boolean; tryAgain: boolean } {
-  if (unsure) return { pickTime: false, tryAgain: false };
+  if (unsure || reasons.some((r) => CHECK_SAFEWAY.test(r))) return { pickTime: false, tryAgain: false };
   return { pickTime: true, tryAgain: picked && !reasons.some((r) => GONE.test(r)) };
 }
 

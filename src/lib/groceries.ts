@@ -540,13 +540,19 @@ export const removeStaple = (item: string) => writeStaples((all) => all.filter((
 /**
  * Remove from the list (Sam, Nov 24): the kept thing, and its List rows as `removalOf` says (stock-rows.ts, the phone
  * uses the same rule): rows with no dinner go, a dinner's part stays waiting for it, rows in the Safeway cart are left
- * alone. One transaction: the kept thing, the rows and the cart read together, written together.
+ * alone. A dinner's part keeps only the dinners' own amount (`amountOf`, plan.ts dinnerAmount, from their recipes),
+ * the hand-added amount dropped; unknown, the amount stays. One transaction: everything read together, written together.
  */
-export const removeKept = atomically(async (item: string) => {
+export const removeKept = atomically(async (item: string, amountOf?: (item: string, dinners: string[]) => Promise<string | null>) => {
   await removeStaple(item);
   const [items, cart] = await Promise.all([load(LIST), loadCart()]);
   const { drop, keep } = removalOf(items, item, new Set(cart.map((l) => l.itemId).filter(Boolean)));
-  await editList(keep.map((k) => [k.id, { for: k.for, check: true, have: false }]), new Set(drop));
+  const changes: Changes = [];
+  for (const k of keep) {
+    const amount = amountOf ? await amountOf(item, k.for.split(",").map((x) => x.trim())) : null;
+    changes.push([k.id, { for: k.for, check: true, have: false, ...(amount !== null && { quantity: amount }) }]);
+  }
+  await editList(changes, new Set(drop));
 });
 export const moveStaple = (item: string, section: Section) => writeStaples((all) => all.map((s) => (norm(s.item) === norm(item) ? { ...s, section } : s)));
 

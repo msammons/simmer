@@ -118,7 +118,7 @@ Never press Place order for real. Everything here is **R**.
 |---|----|--------|-------|
 | 7.1 | Settings → Ordering | Face ID, Limit per order, Pickup store, Card, Order from Simmer (Off); a change that raises spending (turn on, higher limit, other store or card) asks for Face ID, turning off and lowering don't; with no Face ID set up, an alert says to set it up first | R |
 | 7.2 | Face ID, first phone | "Set up Face ID?" then Face ID; the row says On | R |
-| 7.3 | Face ID, a second phone | "Add this phone?"; the row says "Waiting for approval" with a code; reload: it's still there; tapping too soon says "Not approved yet" instead of failing; the other phone shows "Approve a new phone" with the same code and Face ID approves it; then "Set up Face ID now" | R |
+| 7.3 | Face ID, a second phone | "Add this device?"; the row says "Waiting for approval" with a code; reload: it's still there; tapping too soon says "Not approved yet" instead of failing; the other phone shows "Approve a new device" with the same code and Face ID approves it; then "Set up Face ID now" | R |
 | 7.4 | Check out after an approval made on another phone | "Set up Face ID on this phone" is offered | R |
 | 7.5 | Shop → Check out (with something in the cart) | A sheet: Cart (how many things, the estimate); with ordering not set up, one plain line pointing to Settings → Ordering; the button is greyed while the cart is changing | R |
 | 7.6 | Open Check out (set up) | Safeway's pickup days are read at once, no Get ready button and no explanatory lines; one tapped shows its free times (Flash is marked and priced); Bags: Bring my own or Safeway's bags; a time tapped reads Safeway's checkout at once (changing the bags reads it again): store, time, bags, card, items, total | R |

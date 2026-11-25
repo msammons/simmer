@@ -436,7 +436,7 @@ const began = Date.now();
       // Face ID (Nov 12): none set up on a fresh server, so the row offers Set up (Face ID itself can't be driven here).
       ok("settings: Face ID starts at Set up", await settings.getByRole("button", { name: /^Face ID.*Set up$/ }).isVisible());
       // Adding a phone (Nov 12) only comes up once one has Face ID: nothing to approve or wait for yet.
-      ok("settings: no phone to approve or set up after approving", (await settings.getByRole("button", { name: /^(Approve a new phone|Waiting for approval|Set up Face ID now)/ }).count()) === 0);
+      ok("settings: no phone to approve or set up after approving", (await settings.getByRole("button", { name: /^(Approve a new device|Waiting for approval|Set up Face ID now)/ }).count()) === 0);
       // How Feedback opens, first (Sam, Nov 24); the look last, as one Theme row with the phone's own list.
       ok("settings: starts with how to send feedback", (await settings.locator("p").first().innerText()).trim() === "Hold the Settings button on any screen to send feedback.");
       const themePick = settings.getByLabel("Theme");

@@ -71,6 +71,9 @@ describe("the controls under what stopped it (every message names one that's sho
   it("after a test run passed but the reading again stopped, Pick another time shows (no dead end)", () => {
     expect(stopButtons(["Safeway's bags couldn't be set. Try again."], true).pickTime).toBe(true);
   });
+  it("nothing when another order may be on its way (Nov 24): no Try again under Check Safeway", () => {
+    expect(stopButtons(["An order is already on its way, or the last one may not have gone through. Check Safeway."], true)).toEqual({ pickTime: false, tryAgain: false });
+  });
   it("nothing after not sure the order went through", () => {
     expect(stopButtons(["Not sure the order went through. Check Safeway before trying again."], true, true)).toEqual({ pickTime: false, tryAgain: false });
   });

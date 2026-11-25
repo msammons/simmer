@@ -305,12 +305,16 @@ export function Dialog({ title, message, children, onDismiss, above, clear, priv
  * A problem, shown over the page (never a bar that pushes it down): a short headline, the reason, OK. The same in every
  * studio app, so it can be copied across.
  */
-export function Alert({ open, title, message, onClose, onRetry }: { open: boolean; title: string; message: ReactNode; onClose: () => void; onRetry?: () => void }) {
+export function Alert({ open, title, message, onClose, onRetry, private: hidden }: {
+  open: boolean; title: string; message: ReactNode; onClose: () => void; onRetry?: () => void;
+  /** Feedback keeps only its title (ordering's alerts can carry a new device's approval code or the limit). */
+  private?: boolean;
+}) {
   // The last few alerts go with any feedback (Nov 24).
-  useEffect(() => { if (open) noteAlert(title, message); }, [open, title, message]);
+  useEffect(() => { if (open) noteAlert(title, message, hidden); }, [open, title, message, hidden]);
   if (!open || typeof document === "undefined") return null;
   return (
-    <Dialog title={title} message={message} onDismiss={onClose}>
+    <Dialog title={title} message={message} onDismiss={onClose} private={hidden}>
       {onRetry && <Button className="w-full" onClick={onRetry}>Try again</Button>}
       <Button variant={onRetry ? "secondary" : undefined} className="w-full" onClick={onClose}>OK</Button>
     </Dialog>

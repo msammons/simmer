@@ -37,7 +37,7 @@ const readMine = (): MyAdd | null => {
 let myAdd: MyAdd | null = null;
 const FIELD = "w-full rounded-2xl bg-card px-4 py-3 text-base outline-none ring-accent focus:ring-2";
 type Problem = { title: string; message: string };
-const NO_FACE_ID: Problem = { title: "Set up Face ID first", message: "Face ID on a phone is needed to change that. Set it up first." };
+const NO_FACE_ID: Problem = { title: "Set up Face ID first", message: "Face ID on a device is needed to change that. Set it up first." };
 
 /**
  * What a Face ID prompt needs, fetched before the tap: Safari shows Face ID only straight from a tap, so it's fetched
@@ -188,8 +188,8 @@ export function useOrdering() {
     // Not seen approved yet: ask, and only go on if it is (Nov 18: tapped too soon, she got an error and asked again).
     api.faceIdAddStatus(token).then(({ status }) => {
       if (status === "approved") { setApproved(true); openSetup(token); }
-      else if (status === "gone") { keepMine(null); setProblem({ title: "That request ran out", message: "Tap Face ID to ask again; the other phone approves the new code." }); }
-      else setProblem({ title: "Not approved yet", message: `Approve ${myAdd?.code ?? "this phone"} on the phone with Face ID, then come back here.` });
+      else if (status === "gone") { keepMine(null); setProblem({ title: "That request ran out", message: "Tap Face ID to ask again; the other device approves the new code." }); }
+      else setProblem({ title: "Not approved yet", message: `Approve ${myAdd?.code ?? "this device"} on the device with Face ID, then come back here.` });
     }).catch((e) => setProblem({ title: "Face ID wasn't set up", message: errorText(e) }));
   }
   async function setUpFace() {
@@ -220,7 +220,7 @@ export function useOrdering() {
     setApproved(false);
     api.faceIdAsk().then((r) => { if (myAdd === asked) keepMine({ ...r, at: asked.at }); }).catch((e) => {
       if (myAdd === asked) keepMine(null);
-      setProblem({ title: "This phone wasn't added", message: errorText(e) });
+      setProblem({ title: "This device wasn't added", message: errorText(e) });
     });
   }
 
@@ -230,7 +230,7 @@ export function useOrdering() {
     approveOptions.prepare(() => api.faceIdApproveOptions().then((r) => { setApproveCode(r.code); return r; }), (e) => {
       setSheet(null);
       setAdding(null);
-      setProblem({ title: "The new phone wasn't approved", message: errorText(e) });
+      setProblem({ title: "The new device wasn't approved", message: errorText(e) });
     });
     setSheet("approve");
   }
@@ -243,7 +243,7 @@ export function useOrdering() {
       await approveWithFaceId((await approveOptions.take()).options, () => setAdding(null));
     } catch (e) {
       setAdding(before);
-      setProblem({ title: "The new phone wasn't approved", message: errorText(e) });
+      setProblem({ title: "The new device wasn't approved", message: errorText(e) });
     } finally {
       approveOptions.clear();
       busy.current = false;
@@ -255,9 +255,9 @@ export function useOrdering() {
   const onOffRow = <Row icon="cart" title="Order from Simmer" value={s.on ? "On" : "Off"} onClick={tapOnOff} accessory="chevron" />;
   const faceIdRows = (
     <>
-      <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} phones`} onClick={tapFaceId} accessory="chevron" />
-      {fresh && <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other phone." : "Approve this code on the phone with Face ID."} value={fresh.code} onClick={setUpAfterApproving} />}
-      {adding && faceIds > 0 && adding.code !== fresh?.code && <Row icon="face" title="Approve a new phone" value={adding.code} onClick={() => openApprove(adding.code)} />}
+      <Row icon="face" title="Face ID" value={faceIds === 0 ? "Set up" : faceIds === 1 ? "On" : `${faceIds} devices`} onClick={tapFaceId} accessory="chevron" />
+      {fresh && <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other device." : "Approve this code on the device with Face ID."} value={fresh.code} onClick={setUpAfterApproving} />}
+      {adding && faceIds > 0 && adding.code !== fresh?.code && <Row icon="face" title="Approve a new device" value={adding.code} onClick={() => openApprove(adding.code)} />}
     </>
   );
   const limitRow = <Row icon="sliders" title="Limit per order" value={dollars(s.limitCents)} onClick={() => edit("limit")} accessory="chevron" />;
@@ -280,7 +280,7 @@ export function useOrdering() {
         private
         open={sheet === "setup"}
         title={faceIds ? "Set up Face ID here?" : "Set up Face ID?"}
-        message={faceIds ? "Face ID on this phone will also be able to place orders." : "Face ID on this phone will be needed to place each order."}
+        message={faceIds ? "Face ID on this device will also be able to place orders." : "Face ID on this device will be needed to place each order."}
         confirm="Set up"
         onConfirm={setUpFace}
         onCancel={() => { setSheet(null); setupOptions.clear(); }}
@@ -288,22 +288,22 @@ export function useOrdering() {
       <ConfirmSheet
         private
         open={sheet === "ask"}
-        title="Add this phone?"
-        message="A phone that already has Face ID will need to approve it."
-        confirm="Add this phone"
+        title="Add this device?"
+        message="A device that already has Face ID will need to approve it."
+        confirm="Add this device"
         onConfirm={askToAdd}
         onCancel={() => setSheet(null)}
       />
       <ConfirmSheet
         private
         open={sheet === "approve"}
-        title="Approve a new phone?"
-        message={`Check the new phone shows ${approveCode}. Face ID here approves it.`}
+        title="Approve a new device?"
+        message={`Check the new device shows ${approveCode}. Face ID here approves it.`}
         confirm="Approve"
         onConfirm={approve}
         onCancel={() => { setSheet(null); approveOptions.clear(); }}
       />
-      <Alert open={Boolean(problem)} title={problem?.title ?? ""} message={problem?.message ?? ""} onClose={() => setProblem(null)} />
+      <Alert private open={Boolean(problem)} title={problem?.title ?? ""} message={problem?.message ?? ""} onClose={() => setProblem(null)} />
     </>
   );
 
@@ -315,7 +315,7 @@ export function useOrdering() {
 
   // Offered on Check out after an approval made on another phone (Nov 18): set it up here, approved there once.
   const hereRow = faceIds > 0 && (where === "elsewhere" || fresh) && (
-    fresh ? <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other phone." : "Approve this code on the phone with Face ID."} value={fresh.code} onClick={setUpAfterApproving} /> : <Row icon="face" title="Set up Face ID on this phone" subtitle="Then approve here, without the other phone." onClick={tapFaceId} accessory="chevron" />
+    fresh ? <Row icon="face" title={approved ? "Set up Face ID now" : "Waiting for approval"} subtitle={approved ? "Approved on the other device." : "Approve this code on the device with Face ID."} value={fresh.code} onClick={setUpAfterApproving} /> : <Row icon="face" title="Set up Face ID on this device" subtitle="Then approve here, without the other device." onClick={tapFaceId} accessory="chevron" />
   );
 
   return { loaded, s, server, faceIds, onOffRow, faceIdRows, hereRow, limitRow, storeRow, cardRow, sheets, editor, turnOn: tapOnOff };

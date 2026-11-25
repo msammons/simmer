@@ -284,7 +284,7 @@ describe("the approval", () => {
     expect((await approve(req(), f)).ok).toBe(true);
     await ready();
     expect(await approve(req(), f)).toMatchObject({ ok: false, reasons: expect.arrayContaining([expect.stringMatching(/already used/)]) });
-    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That reading ran out after 2 minutes. Try again."] }); // the reading went with the last try
+    expect(await approve(req(), await faceId())).toMatchObject({ ok: false, reasons: ["That reading was already used or ran out. Try again."] }); // the reading went with the last try
     expect(await approve(req(), null)).toMatchObject({ ok: false });
   });
 });
@@ -537,7 +537,7 @@ describe("placing the order (phase 3, Nov 14)", () => {
     await ready(); // someone else gets ready with other figures
     const a = await approve(req(), await faceId(), first.preparedId);
     expect(a).toMatchObject({ ok: true, totalCents: 694 });
-    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["That reading ran out after 2 minutes. Try again."]) });
+    expect(await approve(req(), await faceId(), "nope")).toMatchObject({ ok: false, reasons: expect.arrayContaining(["That reading was already used or ran out. Try again."]) });
   });
 
   it("refuses to place what the phone didn't show, before asking the helper (Nov 19)", async () => {

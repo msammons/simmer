@@ -332,7 +332,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
           {after.pickTime && <Button variant="plain" className="w-full" onClick={() => timesAgain(true)}>Pick another time</Button>}
         </>
       ) : run.stage === "ready" && !run.tested && <Button variant="plain" className="w-full" onClick={() => timesAgain(false)}>Pick another time</Button>}
-      <Alert open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
+      <Alert private open={Boolean(problem)} title="That didn't go through" message={problem ?? ""} onClose={() => setProblem(null)} />
     </>
   );
 }

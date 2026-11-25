@@ -123,3 +123,12 @@ describe("ordering's pop-ups", () => {
     expect(popupDetail("You can add it again any time.")).toBe("You can add it again any time.");
   });
 });
+
+describe("ordering's alerts (Nov 24)", () => {
+  beforeEach(() => resetNotes());
+  it("are kept by their title alone: a new device's approval code never goes with feedback", () => {
+    noteAlert("Not approved yet", "Approve 123456 on the device with Face ID, then come back here.", true);
+    noteAlert("Couldn't send that", "No connection.");
+    expect(placeNow().alerts).toEqual(["Not approved yet", "Couldn't send that: No connection."]);
+  });
+});
