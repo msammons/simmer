@@ -749,8 +749,13 @@ const began = Date.now();
         // Test run only when one is required (Sam, Nov 24), and after one passes, Safeway read again with the same time and
         // bags, landing on Place order with no time picked again. Face ID stood in for (the page's own credentials call).
         {
-          let passed = true, reads = 0, closed = false, outdated = false, stopsAgain = false, timeGone = false, bagsRead = null;
+          let passed = true, reads = 0, closed = false, outdated = false, stopsAgain = false, timeGone = false, bagsRead = null, slow = false;
           const bodies = [];
+          // Held answers (Nov 24, Sam: "status messages don't always show"): each wait is held open until the check
+          // has looked at what the sheet says, then let go.
+          const gates = {};
+          const hold = (k) => new Promise((res) => { gates[k] = res; });
+          const letGo = async (k) => { await until(async () => Boolean(gates[k]), 4000); gates[k]?.(); delete gates[k]; };
           const DAY = "select slots for TUESDAY Nov, 24";
           await page.route("**/api/checkout", async (r) => {
             if (r.request().method() === "GET") return r.fulfill({ json: { settings: { on: true, limitCents: 5000, store: "100 Main St", card: "4242" }, server: true, faceId: 1, adding: null } });
@@ -759,14 +764,20 @@ const began = Date.now();
             if (b.op === "times") return r.fulfill({ json: { days: [{ key: DAY, label: "Tue, Nov 24" }], day: DAY, times: [{ id: "w1", time: "6–7 PM", price: "Free", flash: false }] } });
             if (b.op === "prepare") {
               reads++;
+              if (slow && reads === 2) await hold("prep2");
               if (timeGone) return r.fulfill({ json: { store: "", window: "", card: "", items: null, totalCents: null, stops: ["That pickup time isn't offered any more. Pick another time."], highlights: [], bagsOwn: null, feesCents: null,
                 canOrder: false, orderWhy: "", needsTest: false, timeGone: true, preparedId: "" } });
               const stops = stopsAgain && reads > 1 ? ["Safeway's bags couldn't be set. Try again."] : [];
               return r.fulfill({ json: { store: "100 Main St, Springfield, CA 90000", window: "Tue 6–7 PM", card: "4242", items: 3, totalCents: 694, stops, highlights: [], bagsOwn: bagsRead ?? b.bagsOwn !== false, feesCents: null,
                 canOrder: passed && !closed && !outdated, orderWhy: closed || outdated ? "The helper on the computer needs updating first." : passed ? "" : "Do a test run first: the helper's checkout steps changed.", needsTest: !passed, helperOutdated: outdated, preparedId: stops.length ? "" : `reading${reads}` } });
             }
-            if (b.op === "approve") return r.fulfill({ json: { ok: true, approvalId: `ok-${b.preparedId}`, totalCents: 694, window: "Tue 6–7 PM" } });
-            if (b.op === "test-run") { passed = true; return r.fulfill({ json: { ok: true, would: "Would place $6.94 · Tue 6–7 PM" } }); }
+            if (b.op === "approve") { if (slow) await hold("approve"); return r.fulfill({ json: { ok: true, approvalId: `ok-${b.preparedId}`, totalCents: 694, window: "Tue 6–7 PM" } }); }
+            if (b.op === "test-run" && slow && !b.jobId) return r.fulfill({ json: { waiting: "dry1" } });
+            if (b.op === "test-run" && slow && b.since === "") { await hold("dry"); return r.fulfill({ json: { waiting: "dry1", step: "check", stepAt: "2026-11-24T18:00:01.000Z" } }); }
+            if (b.op === "test-run") { if (slow) await hold("dry2"); passed = true; return r.fulfill({ json: { ok: true, would: "Would place $6.94 · Tue 6–7 PM" } }); }
+            // Placing is only ever this stand-in here: nothing reaches Safeway.
+            if (b.op === "place" && !b.jobId) { await hold("place"); return r.fulfill({ json: { waiting: "order1", step: "confirm", stepAt: "2026-11-24T18:00:02.000Z" } }); }
+            if (b.op === "place") { await hold("place2"); return r.fulfill({ json: { ok: true, ordered: "Ordered for Tue 6–7 PM", number: "12345" } }); }
             return r.fallback();
           });
           await page.route("**/api/checkout/passkey", (r) => r.fulfill({ json: { options: { challenge: "c21va2U", rpId: "localhost", allowCredentials: [], userVerification: "preferred" } } }));
@@ -842,6 +853,40 @@ const began = Date.now();
             && await co.getByRole("button", { name: "Try again" }).isVisible() && await co.getByRole("button", { name: "Pick another time" }).isVisible());
           await co.getByRole("button", { name: "Pick another time" }).tap();
           ok("checkout: Pick another time after a stop reads the times afresh", await seen(co.getByRole("button", { name: /6–7 PM/ }), 4000) && bodies.filter((x) => x.op === "times").length === 2, JSON.stringify(bodies.map((x) => x.op)));
+          await page.keyboard.press("Escape"); await gone(co);
+          // Every wait says something in place (Nov 24, Sam: "status messages don't always show when something is
+          // happening with checkout"): Face ID, the test run before and at its steps, reading again, placing and
+          // Safeway's confirmation; once a wait ends, its words go.
+          stopsAgain = false; passed = false; reads = 0; slow = true;
+          await checkOut.tap();
+          co = page.getByRole("dialog", { name: "Check out" });
+          await seen(co.getByRole("radio", { name: "Tue, Nov 24" }), 4000);
+          await pickTime(co);
+          await co.getByRole("button", { name: "Test run · $6.94" }).tap();
+          const says = (w) => seen(co.getByRole("status", { name: w }), 3000);
+          ok("checkout: while Face ID is checked, the sheet says Checking with Face ID…", await says("Checking with Face ID…"));
+          await letGo("approve");
+          ok("checkout: before the test run's first step, Starting the test run…", await says("Starting the test run…"));
+          await letGo("dry");
+          ok("checkout: then the test run's step in its words", await says("Checking everything before ordering…"));
+          await letGo("dry2");
+          ok("checkout: after it passes, Reading Safeway's checkout…, the test run's last step gone", await says("Reading Safeway's checkout…")
+            && (await co.getByText("Checking everything before ordering…").count()) === 0);
+          await letGo("prep2");
+          const placeIt = co.getByRole("button", { name: "Place order · $6.94" });
+          await seen(placeIt, 4000);
+          await placeIt.tap();
+          const confirmIt = page.getByRole("dialog", { name: "Place order · $6.94?" });
+          await confirmIt.getByRole("button", { name: "Place order", exact: true }).tap();
+          ok("checkout: placing says Checking with Face ID… while Face ID is checked", await says("Checking with Face ID…"));
+          await letGo("approve");
+          ok("checkout: then Placing the order… before the helper's first step", await says("Placing the order…"));
+          await letGo("place");
+          ok("checkout: then Waiting for Safeway to confirm…", await says("Waiting for Safeway to confirm…"));
+          await letGo("place2");
+          ok("checkout: once it's ordered, the result in place of the words, none left", await seen(co.getByText("Ordered for Tue 6–7 PM", { exact: true }), 3000)
+            && (await co.getByRole("status").count()) === 0);
+          slow = false;
           await page.keyboard.press("Escape"); await gone(co);
           // The time gone once picked: the times are read again and the alert says so (never Try again with that time).
           stopsAgain = false; timeGone = true; bodies.length = 0;

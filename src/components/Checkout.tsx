@@ -17,7 +17,7 @@ import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/brow
 import { api, errorText, faceIdAnswer, type OrderResult, type ReadyView, type RunResult, type TimesView } from "@/lib/client";
 import { money } from "@/lib/shop";
 import { afterReadAgain, afterTestRun, dayAfterGone, readyButtons, stopButtons, timesRanOut } from "@/lib/checkout-sheet";
-import { stepWords } from "@/lib/steps";
+import { waitWords, type CheckoutWait } from "@/lib/steps";
 import { usePrepared, useOrdering } from "./Ordering";
 import { Alert, Button, ConfirmSheet, Group, Held, Row, Segmented, Sheet, StartPlan } from "./ui";
 
@@ -75,8 +75,13 @@ function TestRun({ onClose }: { onClose: () => void }) {
   const pickedOwn = useRef(true); // the bags it was read with
   const [confirming, setConfirming] = useState(false); // Place order's confirm sheet (docs/CHECKOUT.md)
   const [bags, setBagsState] = useState<Bags>(lastBags);
-  // The step the helper is at while a step here is going (Nov 23, Sam: "some sort of status message"), said in place.
-  const [step, setStep] = useState<string | undefined>(undefined);
+  // What's being waited for and the helper's step in it (Nov 23, Sam: "some sort of status message"; Nov 24: "status
+  // messages don't always show"), said in place: every wait starts with `follow`, which drops the last wait's step, so
+  // there's always words while busy and never a step left from an earlier wait.
+  const [wait, setWait] = useState<{ on: CheckoutWait; step?: string }>({ on: "times" });
+  const follow = (on: CheckoutWait) => setWait({ on });
+  const stepTo = (step: string | undefined) => setWait((w) => ({ on: w.on, step }));
+  const words = waitWords(wait.on, wait.step);
   const setBags = (b: Bags) => { setBagsState(b); try { localStorage.setItem(BAGS_KEY, b); } catch { /* kept for this order only */ } };
   // Opening the sheet reads the pickup times at once (Sam, Nov 24): no Get ready button. Closing it stops following.
   useEffect(() => {
@@ -104,11 +109,11 @@ function TestRun({ onClose }: { onClose: () => void }) {
     busy.current = true;
     const back = offered.current;
     setRun(day && back ? { stage: "times", times: { ...back, day, times: [] }, loading: day } : { stage: "reading", times: true });
-    setStep(undefined);
+    follow(day && back ? "day" : "times");
     const ac = (stop.current = new AbortController());
     try {
       let r = await api.checkoutTimes(undefined, day, ac.signal);
-      while ("waiting" in r) { setStep(r.step); r = await api.checkoutTimes(r.waiting, undefined, ac.signal, r.stepAt ?? ""); }
+      while ("waiting" in r) { stepTo(r.step); r = await api.checkoutTimes(r.waiting, undefined, ac.signal, r.stepAt ?? ""); }
       offered.current = r;
       setRun({ stage: "times", times: r, picked: Boolean(day) });
     } catch (e) {
@@ -123,7 +128,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
   /** Safeway's checkout read with a time and bags: a new reading, with its own id. */
   async function readWith(windowId: string, own: boolean, signal: AbortSignal): Promise<ReadyView> {
     let r = await api.checkoutPrepare(undefined, windowId, signal, own);
-    while ("waiting" in r) { setStep(r.step); r = await api.checkoutPrepare(r.waiting, undefined, signal, undefined, r.stepAt ?? ""); }
+    while ("waiting" in r) { stepTo(r.step); r = await api.checkoutPrepare(r.waiting, undefined, signal, undefined, r.stepAt ?? ""); }
     return r;
   }
 
@@ -134,7 +139,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     pickedId.current = windowId;
     pickedOwn.current = own;
     setRun({ stage: "reading" });
-    setStep(undefined);
+    follow("read");
     const ac = (stop.current = new AbortController());
     let fresh: { day: string | undefined } | null = null; // the times to read again: the time went, or the list ran out
     try {
@@ -164,7 +169,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "running", view });
-    setStep(undefined);
+    follow("faceid");
     const ac = (stop.current = new AbortController());
     let approved = false;
     let again = false; // passed, and Safeway is being read again
@@ -176,12 +181,13 @@ function TestRun({ onClose }: { onClose: () => void }) {
       const a = await api.checkoutApprove(answer, view.preparedId);
       approved = true;
       if (!a.ok) { setRun({ stage: "done", view, result: a }); return; }
+      follow("test");
       let r = await api.checkoutTestRun({ approvalId: a.approvalId }, ac.signal);
-      while ("waiting" in r) { setStep(r.step); r = await api.checkoutTestRun({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
+      while ("waiting" in r) { stepTo(r.step); r = await api.checkoutTestRun({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
       if (afterTestRun(r) === "show" || !pickedId.current) { setRun({ stage: "done", view, result: r }); return; }
       again = true;
       setRun({ stage: "reading" });
-      setStep(undefined);
+      follow("read");
       const own = typeof view.bagsOwn === "boolean" ? view.bagsOwn : pickedOwn.current;
       const v = await readWith(pickedId.current, own, ac.signal);
       if (afterReadAgain(v) === "times") { fresh = { day: dayAfterGone(v, offered.current?.day) }; setProblem(v.stops[0] ?? "That pickup time isn't offered any more. Pick another time."); }
@@ -215,7 +221,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
     if (busy.current) return;
     busy.current = true;
     setRun({ stage: "ordering", view });
-    setStep(undefined);
+    follow("faceid");
     const ac = (stop.current = new AbortController());
     let approved = false;
     try {
@@ -229,8 +235,9 @@ function TestRun({ onClose }: { onClose: () => void }) {
         return;
       }
       const shown = { approvalId: a.approvalId, totalCents: view.totalCents, window: view.window };
+      follow("place");
       let r = await api.checkoutPlace(shown, ac.signal);
-      while ("waiting" in r) { setStep(r.step); r = await api.checkoutPlace({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
+      while ("waiting" in r) { stepTo(r.step); r = await api.checkoutPlace({ jobId: r.waiting, since: r.stepAt ?? "" }, ac.signal); }
       setRun({ stage: "ordered", view, result: r });
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -269,8 +276,8 @@ function TestRun({ onClose }: { onClose: () => void }) {
         </div>
       )}
       {run.stage === "reading" ? (run.times
-        ? <Held groups={[5]} label="Reading pickup times" words={stepWords(step, "Reading pickup times…")} />
-        : <Held groups={[5]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} />) : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={stepWords(step, "Reading that day's times…")}
+        ? <Held groups={[5]} label="Reading pickup times" words={words} />
+        : <Held groups={[5]} label="Reading Safeway's checkout" words={words} />) : run.stage === "times" ? <TimesList view={run.times} picked={Boolean(run.picked)} loading={run.loading} words={words}
         onDay={(d) => (d === offered.current?.day ? setRun({ stage: "times", times: offered.current, picked: true }) : getTimes(d))} onPick={pick} /> : (
       <Group header="Order">
         {view ? (
@@ -303,7 +310,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
       {run.stage === "ready" && buttons?.test && (
         <Button className="w-full" disabled={!buttons.enabled} onClick={() => testRun(run.view)}>Test run · {cents(run.view.totalCents)}</Button>
       )}
-      {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" words={stepWords(step, "Placing the order…")} />}
+      {run.stage === "ordering" && <Held groups={[1]} label="Placing the order" words={words} />}
       {run.stage === "ordered" && (
         <div className="space-y-1 px-4">
           {run.result.ok
@@ -318,7 +325,7 @@ function TestRun({ onClose }: { onClose: () => void }) {
           message={[`${run.view.store.split(",")[0]} · ${run.view.window} · •••• ${run.view.card}`, bagsWords(run.view.bagsOwn), ...run.view.highlights.map((h) => `Check: ${h}`)].join("\n")}
           onConfirm={() => placeIt(run.view)} onCancel={() => setConfirming(false)} />
       )}
-      {run.stage === "running" && <Held groups={[1]} label="Test run going" words={stepWords(step, "Test run going…")} />}
+      {run.stage === "running" && <Held groups={[1]} label="Test run going" words={words} />}
       {run.stage === "done" && (
         <div className="space-y-1 px-4">
           {run.result.ok ? <p className="t-body font-semibold">{run.result.would}</p> : run.result.reasons.map((r) => <p key={r} className="t-sub text-alert">{r}</p>)}
