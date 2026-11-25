@@ -72,7 +72,7 @@ export const POST = api(async (req) => {
         // Safeway: what's in the cart counts as bought too, and the cart starts empty again.
         // Ticked in the store (cart: false) leaves the online cart alone.
         const cart = b.store === "safeway" && b.cart !== false ? await loadCart() : [];
-        await doneShopping(b.store, new Set(cart.map((l) => l.itemId).filter(Boolean)));
+        await doneShopping(b.store, cart);
         if (cart.length) await clearCart();
       } await recordTrip(b.store).catch((e) => console.error("couldn't record the trip", e)); break;
       default: return null;

@@ -543,7 +543,7 @@ export async function settleOrder(job: Job | null, gaveUp = false): Promise<Orde
   if (result.ok) {
     let lines: CartLine[] = [];
     await tryTo("read the cart", async () => { lines = await loadCart(); });
-    await tryTo("take the cart off the list", () => doneShopping("safeway", new Set(lines.map((l) => l.itemId).filter(Boolean))));
+    await tryTo("take the cart off the list", () => doneShopping("safeway", lines));
     await tryTo("empty the cart", () => clearCart());
     await tryTo("record the trip", () => recordTrip("safeway")); // as an emptied cart does (Nov 18)
   }

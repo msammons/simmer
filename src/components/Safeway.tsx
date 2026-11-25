@@ -7,7 +7,7 @@ import { useNote } from "@/lib/feedback";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, AuthError, errorText, type CartLine, type Job, type JobKind, type Pick } from "@/lib/client";
 import { PAGE } from "@/lib/safeway-helper.mjs";
-import { addedFor, shownAmount, nextAfter, qtyFor, rankResults, type FindItem, type Product } from "@/lib/shop";
+import { addedFor, askOf, notTaken, shownAmount, nextAfter, qtyFor, rankResults, type Ask, type FindItem, type Product } from "@/lib/shop";
 import { stepWords } from "@/lib/steps";
 import { Icon } from "./icons";
 import { Button, EmptyState, Group, scrollAppTo } from "./ui";
@@ -23,18 +23,6 @@ function problemText(error: string): string {
   if (error === "not-found") return "Couldn't find that product on Safeway just now. Try again.";
   if (error === "not-loaded") return "Safeway didn't load. Try again in a minute.";
   return "That didn't go through on Safeway. Try again.";
-}
-
-/**
- * Plain words for a change Safeway didn't take (Nov 23: an Add left the cart as it was and the phone said only that it
- * didn't take all): Safeway's own words when it said something, or that nothing changed.
- */
-function notTaken(result: Record<string, unknown>): string {
-  const said = typeof result.said === "string" ? result.said.trim() : "";
-  if (result.why === "said" && said) return `Safeway didn't add it. It said: “${said}”`;
-  if (result.why === "not-added") return "Safeway didn't add it: nothing changed on its page. Look at the Safeway tab on the computer, then try again.";
-  if (result.why === "no-add") return "Safeway shows no Add for that just now. Try again in a minute.";
-  return "Safeway didn't take all of that. The cart shows what's there now.";
 }
 
 /** The hook is still there (its life's controller set and not stopped). */
@@ -190,41 +178,62 @@ export function useSafeway() {
    * so the buttons never wait, and two changes for one product still never cross). One that fails puts the cart back
    * and says why. Simmer's copy is read once when nothing's left on its way (each answer already has the number).
    */
-  const latest = useRef<Record<string, number>>({});
+  // The newest tap for each product with a change on its way (Sam, Nov 24 night: a − then a + on the bread while the −
+  // was on its way went as one change for no list item, so the bread came back as a loose line beside its own row): its
+  // number and how to find the product, still for the list item any of the taps was for, on the cart page first if any
+  // said so.
+  const latest = useRef<Record<string, Ask>>({});
   const sending = useRef<Record<string, boolean>>({});
   const busy = useRef(0);
   const settle = useCallback(() => { if (--busy.current === 0) void refresh(); }, [refresh]);
   const setQty = useCallback(async (p: Product, qty: number, query: string, forItem?: { id: string; item: string } | null, how?: { alt?: string; on?: "cart" }) => {
     setProblem(null);
     setPending((x) => ({ ...x, [p.id]: qty }));
-    latest.current[p.id] = qty;
+    latest.current[p.id] = askOf(latest.current[p.id], { p, qty, query, forItem: forItem ?? null, how });
     if (sending.current[p.id]) return;
     sending.current[p.id] = true;
     busy.current++;
-    let sent = qty;
+    let ask = latest.current[p.id];
     let r: JobOutcome;
     for (;;) {
-      r = await run("setQty", { productId: p.id, qty: sent, query, name: p.name, price: p.price, image: p.image, ...(forItem && { itemId: forItem.id, item: forItem.item }), ...how }, life.current?.signal);
-      if (!r.ok || !isAlive(life) || latest.current[p.id] === sent) break;
-      sent = latest.current[p.id];
+      r = await run("setQty", { productId: p.id, qty: ask.qty, query: ask.query, name: p.name, price: p.price, image: p.image, ...(ask.forItem && { itemId: ask.forItem.id, item: ask.forItem.item }), ...ask.how }, life.current?.signal);
+      const next = latest.current[p.id];
+      if (!r.ok || !isAlive(life) || next.qty === ask.qty) break;
+      ask = next;
     }
+    const forItemNow = latest.current[p.id]?.forItem ?? ask.forItem;
     sending.current[p.id] = false;
     delete latest.current[p.id];
     if (!isAlive(life)) return;
     setPending((x) => { const { [p.id]: _gone, ...rest } = x; void _gone; return rest; });
     if (r.ok) {
-      const now = Number(r.result.qty ?? sent);
+      const now = Number(r.result.qty ?? ask.qty);
       cartAt.current++;
       setCart((c) => {
         const at = c.find((l) => l.productId === p.id);
         if (!now) return c.filter((l) => l.productId !== p.id);
-        if (at) return c.map((l) => (l.productId === p.id ? { ...l, qty: now } : l));
-        return [...c, { cart: "safeway", productId: p.id, name: p.name, price: p.price, image: p.image, qty: now, itemId: forItem?.id ?? "", item: forItem?.item ?? "", updated: "" }];
+        if (at) return c.map((l) => (l.productId === p.id ? { ...l, qty: now, ...(!l.itemId && forItemNow && { itemId: forItemNow.id, item: forItemNow.item }) } : l));
+        return [...c, { cart: "safeway", productId: p.id, name: p.name, price: p.price, image: p.image, qty: now, itemId: forItemNow?.id ?? "", item: forItemNow?.item ?? "", updated: "" }];
       });
-      if (r.result.reached === false) setProblem(notTaken(r.result));
+      if (r.result.reached === false) setProblem(notTaken(r.result, ask.qty));
     } else if (r.problem) setProblem(r.problem);
     settle();
   }, [run, settle]);
+
+  /**
+   * The cart as it stands with the changes on their way (a + not answered yet comes in as a line for its list item), for
+   * the List taking a thing's line out as it leaves the list (Sam, Nov 24 night): read when asked, so it never redraws.
+   */
+  const cartNow = useRef(cart);
+  const pendingNow = useRef(pending);
+  useEffect(() => { cartNow.current = cart; pendingNow.current = pending; }, [cart, pending]);
+  const linesNow = useCallback((): CartLine[] => {
+    const lines = cartNow.current.map((l) => ({ ...l, qty: pendingNow.current[l.productId] ?? l.qty }));
+    for (const [id, a] of Object.entries(latest.current)) {
+      if (!lines.some((l) => l.productId === id) && a.qty > 0) lines.push({ cart: "safeway", productId: id, name: a.p.name, price: a.p.price, image: a.p.image, qty: a.qty, itemId: a.forItem?.id ?? "", item: a.forItem?.item ?? "", updated: "" });
+    }
+    return lines;
+  }, []);
 
   /** Add favorites: every row shows its number at once; Safeway takes them one after another, then the cart is read once. */
   const fill = useCallback(async (wants: CartWant[]) => {
@@ -243,7 +252,7 @@ export function useSafeway() {
   /** How many of a product are in the cart, counting a change on its way. */
   const qtyOf = (productId: string, fallback = 0) => pending[productId] ?? cart.find((l) => l.productId === productId)?.qty ?? fallback;
 
-  return { cart, picks, away, signedOut, noPickup, still, loaded, pending, reading, readingStep, problem, setProblem, refresh, look, lookAgain, run, setQty, fill, qtyOf, forget };
+  return { cart, picks, away, signedOut, noPickup, still, loaded, pending, reading, readingStep, problem, setProblem, refresh, look, lookAgain, run, setQty, fill, qtyOf, forget, linesNow };
 }
 export type Safeway = ReturnType<typeof useSafeway>;
 

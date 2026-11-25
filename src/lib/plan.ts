@@ -179,7 +179,7 @@ async function takeOffDishes(recipeIds: string[], still: Set<string> = new Set()
   // A cart that can't be read stops the change (Nov 19: read as empty, what was in the cart came off the list).
   const [recipes, freezer, cart] = await Promise.all([read?.recipes ?? loadRecipes(), read?.freezer ?? loadFreezer(), loadCart()]);
   const needs = recipeIds.flatMap((id) => { const r = recipes.find((x) => x.id === id); return r ? needFor(r, freezer).map((n) => ({ ...n, stay: still.has(id) })) : []; });
-  return takeOffFor(needs, new Set(cart.map((l) => l.itemId).filter(Boolean)));
+  return takeOffFor(needs, cart);
 }
 
 export type NewDish = Pick<Dish, "kind" | "recipe" | "pinned" | "day">;
@@ -288,7 +288,7 @@ export const clearPlanned = atomically(async (keep = false): Promise<{ removed: 
   const today = todayIn();
   const all = await load(PLANNED);
   const cart = await loadCart(); // can't be read: nothing changes, rather than the cart's things coming off too
-  const removed = await finishShop(new Set(cart.map((l) => l.itemId).filter(Boolean)), keep);
+  const removed = await finishShop(cart, keep);
   // Every dinner without a made date, including ones dimmed only because their day passed.
   const open = all.filter((r) => r.id && r.recipe && !r.made && asKind(r.kind) && asKind(r.kind) !== "lunch");
   if (!open.length) return { removed };

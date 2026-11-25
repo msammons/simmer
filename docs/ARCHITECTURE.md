@@ -84,7 +84,11 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   hand (Need cleared, Have on a Need, Remove from the list), its Safeway cart line comes out too, with no question (Sam,
   Nov 24 night: "isn't removing from list enough signal?"): the List takes it to 0 the way Shop's − does (`leavingBy`,
   `cartLinesOf`), shown at once, with Shop's "Changing the cart…" and, if it doesn't go through, the same alert; a row a
-  dinner keeps keeps its line. Bought rows, New plan, Done shopping and Mark bought keep their own cart rules.
+  dinner keeps keeps its line; a + still on its way counts (`linesNow`). A cart line is for the row it was put in for while
+  that row is on the list; otherwise for the row of the same name, else the row whose chosen product it is (`tiesOf`, Sam,
+  Nov 24 night: Dave's Killer Bread showed twice, its new row and the old line whose row had gone), so a thing never
+  shows twice on Shop; a new row made for a thing still in the cart takes the line in the same change (`retieCart`), and
+  orders, Mark bought and New plan count it (`heldIds`). Bought rows, New plan, Done shopping and Mark bought keep their own cart rules.
   Put in a group, a thing moves to the part of the list the group is in (`putInGroup`). Things in a group sit together: the header row is tinted and the group
   has a faint outline; tapping its name switches between all its items and only the ones in the cart or needed by a dinner
   (the arrow shows which); a group whose things all show anyway starts open and closes to its name alone. A group's ⋯ has
@@ -130,7 +134,8 @@ line above the list has an Add favorites button just left of Shop's ⋯ (no coun
 Check out and a small status line sit on the left and Shop's ⋯ on the right. There's no price there (Sam, Nov 24: "We
 can drop the dollar amount by cart"; the total is on the Check out sheet). Check out always reads "Check out", its state
 shown by colour only (Sam, Nov 24); what's going on is said in the status line beside it, in place, so the line never
-moves ("Changing the cart…" while changes are on their way to Safeway, Nov 24). Shop's ⋯ holds Show checked (on unless
+moves ("Changing the cart…" while changes are on their way to Safeway, Nov 24, with an empty cart too: the first thing going
+in and the last going out). Shop's ⋯ holds Show checked (on unless
 turned off here: ticked rows stay struck through; off, they're hidden) and Mark the Safeway cart bought (for when Simmer
 can't tell the order went through). A new plan empties the lists and writes what was got down as bought.
 Opening the app, bringing it back to the front (on any tab, Nov 23) and opening Shop read Safeway's own cart (at most once

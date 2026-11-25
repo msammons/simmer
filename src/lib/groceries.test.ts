@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { loadCart, resetSafeway, savePick, setCartLine } from "./safeway";
 import { addItem, addItems, addUp, takeAway, takeOffFor, addStaple, checkItem, dropHighlightsNotFor, doneShopping, file, loadList, moveStaple, norm, parseEntry, removeItems, removeKept, removeStaple, renameGroup, setStaple } from "./groceries";
 
 describe("the grocery list", () => {
@@ -42,6 +43,32 @@ describe("the grocery list", () => {
     expect(await file("peanut butter")).toEqual({ store: "safeway", section: "pantry" });
     expect(await file("graham crackers")).toEqual({ store: "safeway", section: "pantry" });
     expect(await file("vanilla ice cream")).toEqual({ store: "safeway", section: "freezer" });
+  });
+  // Sam, Nov 24 night: "bread: whole wheat" taken off the list while Safeway kept Dave's Killer Bread (the take-out didn't
+  // take), then put back: the new row and the old line (its row 09ff3f90c4b24ce7a7 gone) showed as two on Shop.
+  it("ties a cart line whose row has gone to the new row made for its thing, in the same change", async () => {
+    resetSafeway();
+    await setCartLine({ productId: "960147370", qty: 1, name: "Daves Killer Bread Organic Thin Sliced 100% Whole Wheat - 20.5", price: "$7.49 each", image: "", itemId: "09ff3f90c4b24ce7a7", item: "bread: whole wheat" });
+    const row = await addItem("bread: whole wheat", "Sam");
+    expect((await loadCart()).map((l) => [l.productId, l.itemId, l.item])).toEqual([["960147370", row.id, "bread: whole wheat"]]);
+    await removeItems([row.id]);
+    // A line that came in for no row: tied by the product chosen for the thing.
+    resetSafeway();
+    await savePick({ item: "Bread: sliced loaf", id: "960050655", name: "Daves Killer Bread 21 Whole Grains", image: "" });
+    await setCartLine({ productId: "960050655", qty: 1, name: "Daves Killer Bread 21 Whole Grains", price: "", image: "", itemId: "", item: "" });
+    await setCartLine({ productId: "111", qty: 1, name: "Sparkling water", price: "", image: "", itemId: "", item: "" });
+    const loaf = await addItem("Bread: sliced loaf", "Sam");
+    expect((await loadCart()).map((l) => [l.productId, l.itemId])).toEqual([["960050655", loaf.id], ["111", ""]]);
+    await removeItems([loaf.id]);
+    resetSafeway();
+  });
+  it("takes the cart's things off as bought, a line whose row was taken off and put back going with the row now there (Nov 24 night)", async () => {
+    const bread = await addItem("cart-test bread", "Sam");
+    const other = await addItem("cart-test jam", "Sam");
+    expect(await doneShopping("safeway", [{ itemId: "gone-row", item: "Cart-test bread" }, { itemId: "", item: "" }])).toBe(1);
+    expect((await loadList()).items.map((i) => i.id)).toContain(other.id);
+    expect((await loadList()).items.map((i) => i.id)).not.toContain(bread.id);
+    await removeItems([other.id]);
   });
   it("merges the same thing, checks it off, and clears a store's checked items when the trip is done", async () => {
     const a = await addItem("2 lemons", "Robin");

@@ -634,7 +634,7 @@ async function emptied(read: unknown): Promise<{ ordered: boolean; orders?: Retu
   const filled = cart.map((l) => l.updated).filter(Boolean).sort().at(-1);
   const ordered = Boolean(cart.length && orders?.signedIn && orderSince(orders, filled ? todayIn(new Date(filled)) : "", todayIn()));
   if (ordered) {
-    await doneShopping("safeway", new Set(cart.map((l) => l.itemId).filter(Boolean)));
+    await doneShopping("safeway", cart);
     await recordTrip("safeway").catch((e) => console.error("couldn't record the trip", e));
   }
   await clearCart();
