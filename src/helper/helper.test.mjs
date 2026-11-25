@@ -291,6 +291,34 @@ describe("Add, + and −", () => {
     expect((await setQty("960001", 0, "milk", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", { on: "cart" })).result).toMatchObject({ ok: true, qty: 0 });
     expect(world.shop.cart).toEqual({});
   });
+
+  it("the cart page just loaded (Nov 24 evening, a press then did nothing): − and + wait for it, then take, each pressed once", async () => {
+    world.shop.cart = { "960050": 1, "960001": 2 };
+    world.shop.chaos = { deafFor: 3000 };
+    await run("search", { query: "bread" }); // the tab on a search, as after an Add: the cart page opens fresh
+    expect((await setQty("960050", 0, "bread", BREAD, { on: "cart" })).result).toMatchObject({ ok: true, qty: 0 });
+    world.go("/erums/cart");
+    expect((await setQty("960001", 3, "milk", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", { on: "cart" })).result).toMatchObject({ ok: true, qty: 3 });
+    expect(world.shop.cart).toEqual({ "960001": 3 });
+    expect(world.shop.presses).toEqual({ "960050": 1, "960001": 1 });
+  });
+
+  it("a take-out Safeway doesn't take: − once more on its control as read now, then out; never past 0, never toward another count", async () => {
+    world.shop.cart = { "960050": 1, "960001": 2 };
+    await run("cart");
+    await wait(10_000); // a page loaded a while ago, pressed at once
+    world.shop.chaos = { deafOnce: true };
+    expect((await setQty("960050", 0, "bread", BREAD, { on: "cart" })).result).toMatchObject({ ok: true, qty: 0 });
+    expect(world.shop.presses).toEqual({ ignored: 1, "960050": 1 });
+    // A − toward 1 that doesn't take isn't pressed again (a page showing an old count could take it past 1): the cart is
+    // read afresh, and it says so.
+    world.go("/erums/cart");
+    await wait(10_000);
+    world.shop.presses = {};
+    expect((await setQty("960001", 1, "milk", "Lucerne Milk Reduced Fat 2% - 1/2 Gallon", { on: "cart" })).result).toMatchObject({ ok: false, qty: 2 });
+    expect(world.shop.presses).toEqual({ ignored: 1 });
+    expect(world.shop.cart).toEqual({ "960001": 2 });
+  });
 });
 
 describe("the background: jobs in order, reports kept, a job lost when Chrome stops it", () => {

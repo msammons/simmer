@@ -291,7 +291,8 @@ expect(cj?.status === "done" && cj.result?.noPickup === true && !onSignIn() && a
 await phone.reload();
 await phone.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Shop" }).click();
 const pickBtn = phone.getByRole("button", { name: "Pickup isn't chosen on Safeway. Check again" });
-expect(await pickBtn.waitFor({ timeout: 30_000 }).then(() => true, () => false) && (await pickBtn.innerText()).includes("Choose Pickup on Safeway"), "…Shop's button says Choose Pickup on Safeway");
+// The words are in the status line beside Check out, never on the button (Sam, Nov 24).
+expect(await pickBtn.waitFor({ timeout: 30_000 }).then(() => true, () => false) && (await phone.locator("[data-cart-status]").innerText()).includes("Choose Pickup on Safeway"), "…Shop's status line says Choose Pickup on Safeway");
 await pickBtn.click().catch(() => {});
 expect(await phone.getByRole("button", { name: "Looking at Safeway" }).waitFor({ timeout: 2000 }).then(() => true, () => false), "…pressed, it says Looking… at once");
 const stillBtn = phone.getByRole("button", { name: "Pickup still not chosen. Check again" });

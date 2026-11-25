@@ -54,7 +54,10 @@ function helperFn() {
 }
 /** A function the helper hands executeScript, made again from its source as Chrome does (nothing outside it comes). */
 const copies = new Map();
-const copied = (func) => { const s = func.toString(); if (!copies.has(s)) copies.set(s, new Function(`"use strict"; return (${s});`)()); return copies.get(s); };
+/** The page's own clock (`performance.now()` in the page): ms since its load began, on the test's clock. */
+let pageStart = 0;
+const pagePerformance = { now: () => Date.now() - pageStart };
+const copied = (func) => { const s = func.toString(); if (!copies.has(s)) copies.set(s, new Function("performance", `"use strict"; return (${s});`)(pagePerformance)); return copies.get(s); };
 
 /**
  * The world for one test: a Safeway tab, Safeway's state (`shop`), the computer's storage, and the background, started
@@ -81,6 +84,7 @@ export function makeWorld() {
     const spec = serve(new URL(url));
     shop.loads.push(new URL(url).pathname + new URL(url).search);
     tab.url = url; tab.status = "loading";
+    pageStart = Date.now();
     fire({ status: "loading", url });
     changed();
     setTimeout(() => {
@@ -291,22 +295,31 @@ function cartPage(shop) {
           + `<div class="qty"><button aria-label="Decrease quantity">-</button><div role="button" class="stepper-amount"><span>${shop.cart[id]} </span><span>- click to specify a quantity</span></div>`
           + `<button aria-label="Increase quantity">+</button><div style="display:none"><div role="button" class="stepper-qty-round"><span>${shop.cart[id]} </span></div></div></div></div>`).join("")
           : `<p>Your shopping cart is empty.</p><h2>Buy it again</h2>${past}`;
-        for (const r of doc.querySelectorAll(".row")) for (const b of r.querySelectorAll("button")) b.addEventListener("click", () => t.after(250, () => {
-          const id = r.dataset.id, step = /Increase/.test(b.getAttribute("aria-label")) ? 1 : -1;
-          press(shop, id);
-          // Emptying the cart asks first, and only "Yes, remove" takes it out (as the real cart page, Oct 31).
-          if (step < 0 && shop.cart[id] === 1 && Object.keys(shop.cart).length === 1) {
-            const box = doc.createElement("div");
-            box.innerHTML = "<p>Empty Safeway cart</p><p>Are you sure you want to remove all the items from your order?</p><button>No, don't remove</button><button>Yes, remove</button>";
-            doc.body.append(box);
-            const [no, yes] = box.querySelectorAll("button");
-            no.addEventListener("click", () => box.remove());
-            yes.addEventListener("click", () => { box.remove(); put(shop, id, 0); draw(); });
-            return;
-          }
-          put(shop, id, (shop.cart[id] || 0) + step); draw();
-        }));
+        for (const r of doc.querySelectorAll(".row")) for (const b of r.querySelectorAll("button")) b.addEventListener("click", () => {
+          // Safeway's real cart page not taking a press yet (Nov 24 evening): `deafFor` ms after its load began, a press
+          // does nothing at all; `deafOnce`: the first press on this page does nothing, however old the page is.
+          if (shop.chaos.deafFor && Date.now() - built < shop.chaos.deafFor) { press(shop, "ignored"); return; }
+          if (shop.chaos.deafOnce && !heard) { heard = true; press(shop, "ignored"); return; }
+          t.after(250, () => pressed(r, b));
+        });
       };
+      const pressed = (r, b) => {
+        const id = r.dataset.id, step = /Increase/.test(b.getAttribute("aria-label")) ? 1 : -1;
+        press(shop, id);
+        // Emptying the cart asks first, and only "Yes, remove" takes it out (as the real cart page, Oct 31).
+        if (step < 0 && shop.cart[id] === 1 && Object.keys(shop.cart).length === 1) {
+          const box = doc.createElement("div");
+          box.innerHTML = "<p>Empty Safeway cart</p><p>Are you sure you want to remove all the items from your order?</p><button>No, don't remove</button><button>Yes, remove</button>";
+          doc.body.append(box);
+          const [no, yes] = box.querySelectorAll("button");
+          no.addEventListener("click", () => box.remove());
+          yes.addEventListener("click", () => { box.remove(); put(shop, id, 0); draw(); });
+          return;
+        }
+        put(shop, id, (shop.cart[id] || 0) + step); draw();
+      };
+      const built = pageStart;
+      let heard = false;
       t.after(400, draw);
     },
   };
