@@ -450,7 +450,8 @@ function googlePage(shop, u) {
  * `mode: "InStore"` (live, Nov 25, Robin's account): the header button shows the store ("Instore at <street>"), twice (one
  * per screen size, one showing), with Safeway's own div and span inside; the box opens on its In Store tab, whose cards
  * say "Selected" for the store, and the Pickup tab's cards (street, town, "DriveUp & Go", distance) say "Select" for
- * it. `late`: the header's button is built this long after the page loads (as Safeway's script does).
+ * it. `late`: the header's button is built this long after the page loads (as Safeway's script does). `tabsLate`: the
+ * box's tabs and panes are built this long after it opens (live, Nov 25: the box showed at 0.2 s, its tabs at 0.4 s).
  */
 export const OUR_STREET = "100 Main St", OTHER_STREET = "200 Oak Ave";
 function withBox(shop, page) {
@@ -466,20 +467,24 @@ function withBox(shop, page) {
   const header = inStore
     ? [true, false].map((wide) => `<button id="openFulfillmentModalButton" ${wide ? "" : 'style="display:none"'}><div id="fulFillMentAddressNav" role="button"><span class="s_nav_fulfillment_address-text" aria-label="Instore at ${b.selected}">${b.selected}</span></div></button>`).join("")
     : `<button id="openFulfillmentModalButton">${b.mode === "Delivery" ? "Delivery to 00000" : "Pickup at somewhere"}</button>`;
-  const html = `<div id="hdr">${b.late ? "" : header}</div>${page.html}
-    <div id="storeFulfillmentModal" role="dialog" aria-label="Store Fulfilment Modal" style="display:none"><button id="closeFulfillmentModalButton" aria-label="Close">x</button>
-      <a id="modal-tab-instore-btn" role="tab" aria-selected="${inStore}">In Store</a>
+  const inner = `<a id="modal-tab-instore-btn" role="tab" aria-selected="${inStore}">In Store</a>
       <a id="modal-tab-delivery-btn" role="tab" aria-selected="${b.mode === "Delivery"}">Delivery</a>
       <a id="modal-tab-pickup-btn" role="tab" aria-selected="false">Pickup</a>
       <div id="fulfilmentInstore" style="display:${inStore ? "block" : "none"}">${inStore ? stores.map(storeCard).join("") : ""}</div>
       <div id="fulfilmentDelivery" style="display:${b.mode === "Delivery" ? "block" : "none"}"><p>Deliver to 00000</p></div>
-      <div id="fulfilmentPickup" style="display:none">${stores.map(card).join("")}</div></div>`;
+      <div id="fulfilmentPickup" style="display:none">${stores.map(card).join("")}</div>`;
+  const html = `<div id="hdr">${b.late ? "" : header}</div>${page.html}
+    <div id="storeFulfillmentModal" role="dialog" aria-label="Store Fulfilment Modal" style="display:none"><button id="closeFulfillmentModalButton" aria-label="Close">x</button>
+      <div id="boxInner">${b.tabsLate ? "" : inner}</div></div>`;
   return { ...page, html, run: (t) => {
     page.run?.(t);
     const box = doc.getElementById("storeFulfillmentModal");
-    const wire = () => { for (const o of doc.querySelectorAll("#openFulfillmentModalButton")) o.onclick = () => { press(shop, "box"); box.style.display = "block"; }; };
+    const opened = () => { press(shop, "box"); box.style.display = "block"; if (b.tabsLate && !doc.getElementById("modal-tab-pickup-btn")) t.after(b.tabsLate, () => { doc.getElementById("boxInner").innerHTML = inner; wireInner(); }); };
+    const wire = () => { for (const o of doc.querySelectorAll("#openFulfillmentModalButton")) o.onclick = opened; };
     if (b.late) t.after(b.late, () => { doc.getElementById("hdr").innerHTML = header; wire(); }); else wire();
     doc.getElementById("closeFulfillmentModalButton").onclick = () => { press(shop, "close"); box.style.display = "none"; };
+    if (!b.tabsLate) wireInner();
+    function wireInner() {
     doc.getElementById("modal-tab-delivery-btn").onclick = () => press(shop, "delivery tab");
     doc.getElementById("modal-tab-instore-btn").onclick = () => press(shop, "instore tab");
     for (const a of doc.querySelectorAll("#fulfilmentInstore a[data-instore]")) a.onclick = () => press(shop, `instore select ${a.dataset.instore}`);
@@ -490,5 +495,6 @@ function withBox(shop, page) {
       // Signed out for real (`shop.sessionGone`), Safeway takes the choice for a guest, and its cart still sends the tab home.
       t.after(400, () => { b.selected = a.dataset.street; b.mode = "Dug"; if (!shop.sessionGone) { shop.cartGone = false; if (!b.quietNote) current.note({ userType: "C", preference: "Dug" }); } box.style.display = "none"; });
     };
+    }
   } };
 }

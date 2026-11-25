@@ -9,6 +9,10 @@ order Face ID approved, once, when the page says exactly what was approved.
 
 ## How it works (1.0; 1.2 adds the cart page; 1.3 the Purchases page and push; since 26.11.12 checkout)
 
+- **The box's Pickup tab is waited for (26.11.24.5).** Nov 25 live, 26.11.24.4 stopped "no pickup tab": Safeway shows
+  its Delivery-or-Pickup box first and builds its tabs inside it a moment later (seen live: the box at 0.2 s, the Pickup
+  tab at 0.4 s), and the switch looked for the tab the moment the box showed. Now the one Pickup tab is watched for too,
+  up to `PAGE.pickupBox.wait`. Same presses.
 - **In Store is switched to Pickup (26.11.24.4).** Nov 25 live, Robin's account set to In Store: cart reads were sent
   home, and the Pickup switch gave up in 0.2 s because it looked before Safeway had built the header's button on the
   just-opened home page. Now it waits for the home page to load, then watches for the one button, the box, and the
@@ -185,7 +189,7 @@ Simmer knows the version it ships (`extension-working/manifest.json`) and the on
 older, Find and Cart say so and link the zip. Bump the version here whenever the helper's files change: the release date as
 YY.M.D, no leading zeros (26.11.10; a second release that day 26.11.10.1), as every Morales app does since Nov 10.
 
-1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.4.zip`), rebuilt from this folder on every deploy
+1. Get the helper: Simmer serves it at `/simmer-helper-v<version>.zip` (now `/simmer-helper-v26.11.24.5.zip`), rebuilt from this folder on every deploy
    (`scripts/zip-helper.mjs`), so it always matches Simmer. Opening the zip gives a folder named **Simmer**.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right). New install: **Load unpacked** and
    pick the folder. Update: put the new folder's contents in place of the old folder's, then press the reload arrow on
