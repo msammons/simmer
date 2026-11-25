@@ -163,6 +163,8 @@ export function useSafeway() {
       r.busy = false;
       r.at = Date.now();
       if (!isAlive(life)) return;
+      // The helper's last step is over: Simmer's copy is read with Looking… said, not that step (Nov 24).
+      setReadingStep(undefined);
       if (x.ok) await refresh();
       // Pressed, and still the same when it ends: said on the button (Shop), until the next press or a change.
       const was = pressedIn.current;

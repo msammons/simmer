@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
-import { STEP_WORDS, stepWords } from "@/lib/steps";
+import { LOOKING, STEP_WORDS, cartReadWords } from "@/lib/steps";
 import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway, type SafewayOff } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
@@ -96,7 +96,7 @@ const OFF_WORDS: Record<SafewayOff, readonly [string, string, string]> = {
 function statusWords(cart: CartButton | null): string {
   const off = cart && cart.state !== "ready" && cart.state !== "empty" ? cart : null;
   return !cart ? "" : cart.state === "ready" ? (cart.busy && cart.words) || ""
-    : off ? (off.busy ? off.words || "Looking…" : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
+    : off ? (off.busy ? off.words || LOOKING : off.still ? OFF_WORDS[off.state][2] : OFF_WORDS[off.state][0]) : "";
 }
 
 function TopLine({ cart, menu, add }: { cart: CartButton | null; menu: React.ReactNode; add?: React.ReactNode }) {
@@ -284,8 +284,9 @@ export function ShopScreen({ act }: { act: ShopActions }) {
     return <ShopItemRow key={it.id} it={it} sub={sub} control={control} qty={qty} inCart={n} canPick={canPick} onTap={onTap} />;
   };
 
-  /** The helper's step while Safeway's cart is read (Nov 23), in words; none until its first step. */
-  const readingWords = sw.reading && sw.readingStep ? stepWords(sw.readingStep, "") || undefined : undefined;
+  /** The helper's step while Safeway's cart is read (Nov 23), in words; Looking… before its first step and after its
+   * last (Nov 24, Sam: "status messages don't always show": with something in the cart, the line was blank then). */
+  const readingWords = sw.reading ? cartReadWords(sw.readingStep) : undefined;
   const changing = Object.keys(pending).length > 0;
   /** The Check out button's look (TopLine): nothing until Safeway's first answer, so it never flashes the wrong one. */
   const cartButton: CartButton | null = !sw.loaded ? null

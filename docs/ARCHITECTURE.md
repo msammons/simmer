@@ -53,7 +53,8 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   actions ask first with one `ConfirmSheet` (headline, one muted line, the action, Cancel). No Undo, no toasts, no
   "Saving…": a change shows at once (every tap, within about 150 ms) and saves behind it; one that fails is put back and
   the alert says why. A first load with nothing saved here shows `Held`, grey rows with Head Out's `.shimmer`; no spinners,
-  and no loading words except the helper's steps while a Safeway job runs (Nov 23). No sentence on screen speaks of the app in the third person.
+  and no loading words except the helper's steps and each wait's own plain words while a Safeway job or checkout runs
+  (Nov 23, Nov 24). No sentence on screen speaks of the app in the third person.
 - Settings ends with the release as YY.M.D (`NEXT_PUBLIC_VERSION`, worked out in `next.config.ts`).
 - Type scale `t-*` utilities and colors as CSS variables in `app/globals.css`. Themes set `--accent` and a brand gradient
   (`--g1..g3`) used only on non-interactive brand surfaces. Simmer (tomato, matching the icon; the default), Apricot (the original warm orange), then plain iOS colors.
@@ -175,7 +176,14 @@ message saying what the app is doing as it goes"): at each step of a job it send
 step changes from the one the asker has (`since`, its last `stepAt`), so each step reaches the phone through the same
 wait, with no timer. The words (`lib/steps.ts`) show where she's waiting, in place of what was there: Shop's status line
 beside Check out while the cart is read, the checkout sheet's reading, test run and placing, the store and card
-reading in Settings, and Find's loading row. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
+reading in Settings, and Find's loading row. Something is always said while busy (Nov 24, Sam: "status messages don't
+always show when something is happening with checkout"): each of the checkout sheet's waits (`CheckoutWait`: the times,
+a day's times, a reading, Face ID, the test run, placing) has its own words for when the helper hasn't said a step (queued
+or behind another job, before its first step) and while the phone waits on Simmer itself ("Checking with Face ID…" while
+Face ID is asked and approved, "Starting the test run…", "Placing the order…"); `waitWords` picks them, and each wait
+starts with `follow`, which drops the last wait's step, so a step never outlives its wait. Shop's status says "Looking…"
+while the cart is read before the helper's first step and after its last (`cartReadWords`), never blank beside a greyed
+Check out. `lib/steps.test.ts` checks that every step key in extension-working/safeway.js has words. When Simmer has VAPID keys, queuing a job also sends the helper an empty Web Push so it starts at
 once (`lib/push.ts`). When Safeway's cart page reads empty, the helper reads the Purchases page (Online) too, and an
 order placed since the cart was filled takes the cart's things off the list (`finishJob` in `lib/jobs.ts`). Mark the Safeway cart bought takes what's in the cart off the list and empties the cart. Simmer may be
 framed only by itself and by the helper's panel (`frame-ancestors` in `next.config.ts`); framed there, it takes the
