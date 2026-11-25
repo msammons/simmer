@@ -619,10 +619,38 @@ export async function safewayPage(action, arg, P) {
         return { ok: false, why: "not-added", qty: 0, ...about };
       }
     }
-    for (let n = 0; n < 40 && p && now() !== want; n++) {
-      const before = now();
+    // A page Safeway has only just loaded doesn't take a press yet (Nov 24 evening: 4 of 9 take-outs on the cart page
+    // pressed − 0.7–1.3 s after it finished loading, and Safeway still had 1 after 17–35 s; every press 2.5 s or more
+    // after a load took). Before the first + or −, the product's part of the page is watched until the page is a few
+    // seconds old (`ready`, from when its load began) and that part has been still for a moment (`still`), at most
+    // `wait`; an older page that isn't changing is pressed at once.
+    const { ready: readyAge = 4000, still = 1000 } = arg;
+    const age = () => performance.now();
+    const settled = async () => {
+      let card = p.card, last = age() < readyAge ? Date.now() : -Infinity;
+      const moved = new MutationObserver(() => { last = Date.now(); });
+      const follow = (el) => moved.observe(el, { subtree: true, childList: true, attributes: true, characterData: true });
+      follow(card);
+      try {
+        await watch((soon) => {
+          const q = find();
+          if (!q) return false;
+          // Safeway built the product's part again: the new one is watched, and it starts still from now.
+          if (q.card !== card) { moved.disconnect(); card = q.card; follow(card); last = Date.now(); }
+          p = q;
+          const left = Math.max(readyAge - age(), still - (Date.now() - last));
+          if (left <= 0) return true;
+          soon(left + 10);
+          return false;
+        }, wait);
+      } finally { moved.disconnect(); }
+      p = find() ?? p;
+    };
+    if (p && now() !== want) await settled();
+    /** One press toward `want` on the product's control as it is now, and its change watched for: null with no control. */
+    const step = async (before) => {
       const button = before < want ? plusButton(p.card) : minusButton(p.card);
-      if (!button) break;
+      if (!button) return null;
       button.click();
       // Taking out the last one can ask "Are you sure?" (when it empties the cart): the trash in Simmer already said so.
       // Only on −: a + from 1 waited 3 s for a question that never comes (Nov 18: every change after Add took ~16 s).
@@ -633,7 +661,19 @@ export async function safewayPage(action, arg, P) {
           return !find();
         }, 3000);
       }
-      if (!(await settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before))) break;
+      return settle((x) => !x || (x.inCart ? x.qty || 1 : 0) !== before);
+    };
+    let again = false;
+    for (let n = 0; n < 40 && p && now() !== want; n++) {
+      const before = now();
+      let moved = await step(before);
+      if (moved === null) break;
+      // A − toward taking it out that Safeway didn't take (the count still where it was, the product still there):
+      // pressed once more on its control as read now, once per job. Only toward 0, which a second − can't go past
+      // (Oct 31: + took on Safeway while the page still showed the old count, so a second + or − toward another count
+      // could overshoot it; those end as before, and the cart is read afresh).
+      if (!moved && !again && want === 0 && (p = find()) && now() === before) { again = true; moved = await step(before); }
+      if (!moved) break;
     }
     p = find();
     return { ok: now() === want, qty: now(), ...about };
