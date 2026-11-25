@@ -7,6 +7,8 @@
 //   which cart a row belongs to ("safeway" for now), so more than one can be kept later.
 import { change, load, resetTabs, table } from "./store";
 import { norm } from "./words";
+import { cartRows, tiesOf } from "./stock-rows";
+import type { Item } from "./groceries";
 
 export type Pick = { item: string; id: string; name: string; image?: string };
 
@@ -109,6 +111,22 @@ export async function matchCart(seen: { id: string; name: string; price: string;
     })];
   });
   return after.filter((l) => l.cart === cart);
+}
+
+/**
+ * A thing put back on the list while its product is still in the Safeway cart (Sam, Nov 24 night: Dave's Killer Bread
+ * showed twice on Shop, its new row and the old line, whose row had gone): each line whose row has gone is tied to the
+ * row now there for it (the same name, or the product chosen for it; `tiesOf`), in the same change as the new row.
+ */
+export async function retieCart(items: Item[], cart = "safeway"): Promise<void> {
+  const ids = new Set(items.map((i) => i.id));
+  const [all, picks] = await Promise.all([load(CART), load(PICKS)]);
+  const loose = all.filter((l) => l.cart === cart && !(l.itemId && ids.has(l.itemId)));
+  if (!loose.length) return;
+  const rows = cartRows(items), to = new Map<CartLine, Item>();
+  for (const [id, ls] of tiesOf(loose, rows, picks)) for (const l of ls) to.set(l, rows.find((r) => r.id === id)!);
+  if (!to.size) return;
+  await change(CART, (now) => now.map((l) => { const r = [...to].find(([x]) => x.productId === l.productId && x.cart === l.cart)?.[1]; return r ? { ...l, itemId: r.id, item: r.item } : l; }));
 }
 
 /** Checked out (Done shopping for Safeway): the cart starts empty again. */

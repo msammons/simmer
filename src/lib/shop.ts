@@ -96,3 +96,27 @@ export function shownAmount(quantity: string): string {
   const q = String(quantity ?? "").replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
   return q.replace(/\b(\d+)\s+(\d\/\d)\b/g, (m, n, f) => (FRACTIONS[f] ? `${n}${FRACTIONS[f]}` : m)).replace(/\b\d\/\d\b/g, (m) => FRACTIONS[m] ?? m);
 }
+
+/** A product's newest tap while a change is on its way (`setQty`). */
+export type Ask = { p: Product; qty: number; query: string; forItem: { id: string; item: string } | null; how?: { alt?: string; on?: "cart" } };
+/** A tap on top of the one before it: the newest number and words, the list item and the cart page from either. */
+export function askOf(was: Ask | undefined, now: Ask): Ask {
+  if (!was) return now;
+  const on = was.how?.on === "cart" || now.how?.on === "cart";
+  const how = was.how || now.how ? { ...was.how, ...now.how, ...(on && { on: "cart" as const }) } : undefined;
+  return { ...now, query: now.query || was.query, forItem: now.forItem ?? was.forItem, how };
+}
+
+/**
+ * Plain words for a change Safeway didn't take (Nov 23: an Add left the cart as it was and the phone said only that it
+ * didn't take all): Safeway's own words when it said something, or that nothing changed.
+ */
+export function notTaken(result: Record<string, unknown>, wanted?: number): string {
+  const said = typeof result.said === "string" ? result.said.trim() : "";
+  // A take-out Safeway didn't take (Sam, Nov 24 night: the bread came back with words about adding).
+  if (wanted === 0) return said && result.why === "said" ? `Safeway kept it in the cart. It said: “${said}”` : "Safeway still has it in the cart: taking it out didn't go through. Try again.";
+  if (result.why === "said" && said) return `Safeway didn't add it. It said: “${said}”`;
+  if (result.why === "not-added") return "Safeway didn't add it: nothing changed on its page. Look at the Safeway tab on the computer, then try again.";
+  if (result.why === "no-add") return "Safeway shows no Add for that just now. Try again in a minute.";
+  return "Safeway didn't take all of that. The cart shows what's there now.";
+}

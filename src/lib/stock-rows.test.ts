@@ -2,7 +2,7 @@
 // everything stays in its section, a dinner's things highlighted): each row answered Have, Need or not yet.
 import { describe, expect, it } from "vitest";
 import type { Item, ListState } from "./client";
-import { afterRemoval, cartLinesOf, fromDinner, leavingBy, linesOf, removalOf, rowsOf } from "./stock-rows";
+import { afterRemoval, cartLinesOf, fromDinner, heldIds, leavingBy, linesOf, removalOf, rowsOf, tiesOf } from "./stock-rows";
 
 const item = (p: Partial<Item>): Item => ({
   id: "x", item: "tomato paste", quantity: "1 can", store: "safeway", section: "pantry", for: "Turkey chili", addedBy: "Robin",
@@ -75,11 +75,11 @@ describe("Stock rows", () => {
       item({ id: "cart", item: "Bread", for: "", check: false }), item({ id: "loose", item: "bread", for: "added by hand", check: false }),
       item({ id: "both", item: "bread", for: "added by hand, Toast", check: false }),
     ];
-    const cart = [{ itemId: "cart", qty: 1 }, { itemId: "both", qty: 2 }, { itemId: "", qty: 1 }, { itemId: "other", qty: 1 }];
+    const cart = [{ itemId: "cart", item: "Bread", qty: 1 }, { itemId: "both", item: "bread", qty: 2 }, { itemId: "", item: "", qty: 1 }, { itemId: "other", item: "milk", qty: 1 }];
     const { drop } = removalOf(rows, "bread");
     expect(drop).toEqual(["cart", "loose"]);
     expect(afterRemoval(rows, "bread").map((r) => r.id)).toEqual(["both"]);
-    expect(cartLinesOf(cart, drop)).toEqual([{ itemId: "cart", qty: 1 }]); // queued to 0; the dinner's part keeps its line
+    expect(cartLinesOf(cart, drop, rows)).toEqual([cart[0]]); // queued to 0; the dinner's part keeps its line
   });
 
   it("an answer that takes a Need off the shopping list takes its cart line out (Sam, Nov 24 night)", () => {
@@ -90,7 +90,37 @@ describe("Stock rows", () => {
     expect(leavingBy({ ...need, answer: "check" }, "have")).toBeNull(); // wasn't on the shopping list
     expect(leavingBy({ ...need, answer: "have" }, "check")).toBeNull();
     expect(leavingBy({ item: null, answer: "check" }, "have")).toBeNull();
-    expect(cartLinesOf([{ itemId: "b", qty: 1 }, { itemId: "b", qty: 0 }], ["b"])).toEqual([{ itemId: "b", qty: 1 }]);
+    expect(cartLinesOf([{ itemId: "b", item: "bread", qty: 1 }, { itemId: "b", item: "bread", qty: 0 }], ["b"], [need.item])).toEqual([{ itemId: "b", item: "bread", qty: 1 }]);
+  });
+
+  // Sam, Nov 24 night: bread taken off the list while Safeway kept it (the take-out didn't take), then put back on the
+  // list as a new row: Shop showed the new row with + and the old line loose beside it, and clearing Need again left
+  // the line in the cart.
+  it("ties a cart line whose row has gone to the row of the same name now on the list", () => {
+    const back = item({ id: "new", item: "Bread: whole wheat", for: "", check: false });
+    const line = { itemId: "old", item: "bread: whole wheat", qty: 1 };
+    const site = { itemId: "", item: "", qty: 1 }; // put in on Safeway's own site: for no row
+    expect([...tiesOf([line, site], [back])]).toEqual([["new", [line]]]);
+    expect(cartLinesOf([line, site], ["new"], [back])).toEqual([line]);
+    expect(heldIds([line, site], [back])).toEqual(new Set(["old", "new"]));
+    // A line whose own row is still there stays with it, even beside another row of the same name.
+    const own = item({ id: "old", item: "bread: whole wheat", for: "", check: false, checked: true });
+    expect([...tiesOf([line], [own, back])]).toEqual([["old", [line]]]);
+    // Gone and back twice: an unticked row before a ticked one of the same name.
+    expect([...tiesOf([line], [{ ...back, id: "got", checked: true }, back])]).toEqual([["new", [line]]]);
+    // A dinner's thing still waiting on Have or Need isn't on Shop, so it holds no line.
+    expect(cartLinesOf([line], ["new"], [{ ...back, check: true }])).toEqual([]);    // Sam's own: Dave's Killer Bread for "bread: whole wheat", its row 09ff3f90c4b24ce7a7 gone, the thing back on the list.
+    const dkb = { itemId: "09ff3f90c4b24ce7a7", item: "bread: whole wheat", productId: "960147370", qty: 1 };
+    expect([...tiesOf([dkb], [{ ...back, item: "bread: whole wheat" }])]).toEqual([["new", [dkb]]]);
+    // A line for no row ties by the product chosen for the thing; one matching nothing stays loose.
+    const noRow = { itemId: "", item: "", productId: "960147370", qty: 1 }, other = { itemId: "", item: "", productId: "111", qty: 1 };
+    expect([...tiesOf([noRow, other], [back], [{ item: "bread: whole wheat", id: "960147370" }])]).toEqual([["new", [noRow]]]);
+  });
+
+  it("takes out a change still on its way for a row leaving the list", () => {
+    const row = item({ id: "b", item: "bread", for: "", check: false });
+    const coming = { itemId: "b", item: "bread", qty: 1, productId: "p" }; // a + not answered yet
+    expect(cartLinesOf([coming], ["b"], [row])).toEqual([coming]);
   });
 });
 

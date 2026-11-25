@@ -5,6 +5,7 @@ import { store, type CartLine, type Item, type Store } from "@/lib/client";
 import { useList } from "@/lib/app-data";
 import { cartTotal, findItems, money, shownAmount, type FindItem } from "@/lib/shop";
 import { LOOKING, STEP_WORDS, cartReadWords } from "@/lib/steps";
+import { cartRows, heldIds, tiesOf } from "@/lib/stock-rows";
 import { CartPlus, FindView, Stepper, useSafewayCart, type Safeway, type SafewayOff } from "./Safeway";
 import { Alert, BrandBar, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Segmented, Sheet, AddField, sameProps, type MoreOption } from "./ui";
 import { Icon } from "./icons";
@@ -218,15 +219,14 @@ export function ShopScreen({ act }: { act: ShopActions }) {
   const { cart, pending } = sw;
   const { lines, total, estimate, count, lineOf, inCartOf, loose } = useMemo(() => {
     const lines = signedOut ? [] : cart.map((l) => ({ ...l, qty: pending[l.productId] ?? l.qty })).filter((l) => l.qty > 0);
-    // Each list item's cart line (its first, when there are more) and how many in all; every other line ends the
-    // Safeway group.
-    const byItem = new Map<string, CartLine>(), inCartOf = new Map<string, number>();
-    for (const l of lines) if (l.itemId) { if (!byItem.has(l.itemId)) byItem.set(l.itemId, l); inCartOf.set(l.itemId, (inCartOf.get(l.itemId) ?? 0) + l.qty); }
-    const lineOf = new Map<string, CartLine>();
-    for (const it of items) { const l = it.store === "safeway" && byItem.get(it.id); if (l) lineOf.set(it.id, l); }
+    // Each list item's cart line (its first, when there are more) and how many in all, a line whose row was taken off and
+    // put back going with the row now there (`tiesOf`, Nov 24 night: the bread showed loose beside its own row); every
+    // other line ends the Safeway group.
+    const lineOf = new Map<string, CartLine>(), inCartOf = new Map<string, number>();
+    for (const [id, ls] of tiesOf(lines, cartRows(items), sw.picks)) { lineOf.set(id, ls[0]); inCartOf.set(id, ls.reduce((n, l) => n + l.qty, 0)); }
     const tied = new Set([...lineOf.values()].map((l) => l.productId));
     return { lines, ...cartTotal(lines), count: lines.reduce((n, l) => n + l.qty, 0), lineOf, inCartOf, loose: lines.filter((l) => !tied.has(l.productId)) };
-  }, [cart, pending, signedOut, items]);
+  }, [cart, pending, signedOut, items, sw.picks]);
   const inCart = (it: Item) => (it.store === "safeway" ? inCartOf.get(it.id) ?? 0 : 0);
 
   const product = (p: { id: string; name: string; image?: string }) => ({ id: p.id, name: p.name, price: "", image: p.image ?? "" });
@@ -295,7 +295,9 @@ export function ShopScreen({ act }: { act: ShopActions }) {
     : sw.away ? { state: "not-connected", onLook: sw.lookAgain, busy: sw.reading, still: sw.still === "not-connected", words: readingWords }
     // Greyed while changes are on their way to the cart, saying so in the helper's own words for it (review, Nov 24: the
     // status line was empty, so it looked broken).
-    : count > 0 ? { state: "ready", onCheckOut: () => setCheckingOut(true), busy: sw.reading || changing, words: sw.reading ? readingWords : changing ? STEP_WORDS.add : undefined }
+    // With nothing in the cart yet, or its last thing on its way out, too (Sam, Nov 24 night: "didn't always see status":
+    // the first bread going in and the last going out showed a bare greyed Check out).
+    : count > 0 || changing || sw.reading ? { state: "ready", onCheckOut: () => setCheckingOut(true), busy: sw.reading || changing, words: sw.reading ? readingWords : changing ? STEP_WORDS.add : undefined }
     : { state: "empty" };
 
   // Feedback's note of Shop (lib/feedback.ts): the store showing, the cart, and the status line's words.
@@ -358,7 +360,7 @@ export function ShopScreen({ act }: { act: ShopActions }) {
         onConfirm={() => {
           setOrdering(false);
           // Shown at once: the cart and what it was for come off, then Safeway's cart is read again.
-          const ids = sw.cart.map((l) => l.itemId).filter(Boolean);
+          const ids = [...heldIds(sw.cart, list?.items ?? [], sw.picks)];
           sw.forget();
           act.done("safeway", ids).then(() => sw.refresh());
         }} onCancel={() => setOrdering(false)} />

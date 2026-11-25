@@ -10,7 +10,8 @@ import { withinCap } from "./ops/caps";
 import { newId, yes } from "./parse";
 import { known, norm, parseEntry, plainFractions, UNIT_NAMES } from "./words";
 import { afterChange, groupsOf, putInGroup, renamed, union, type Group } from "./groups";
-import { removalOf } from "./stock-rows";
+import { heldIds, removalOf } from "./stock-rows";
+import { retieCart } from "./safeway";
 
 export const STORES = ["safeway", "trader-joes", "costco"] as const;
 export type Store = (typeof STORES)[number];
@@ -246,6 +247,7 @@ export const addItem = atomically(async (text: string, by: string, forWhat: stri
   const { filings: [f], unknown } = filing?.section ? { filings: [{ store: filing.store, section: filing.section }], unknown: [] } : await fileAll([{ name: item, store: filing?.store }]);
   const row: Item = { id: newId(), item, quantity, store: f.store, section: f.section, for: forWhat, addedBy: by, addedAt: stamp(), checked: false, check: false };
   await append(LIST, [row]);
+  await retieCart([...(await load(LIST)).filter((x) => x.id !== row.id), row]);
   await guessLater(unknown);
   return row;
 });
@@ -338,14 +340,23 @@ const joinFor = (now: string, what: string) => {
 };
 
 /**
+ * What's in the Safeway cart, for the changes that leave it alone or take it off as bought: list item ids, or the cart's
+ * lines, each then for its own row or, once that row has gone and the thing is back on the list, the row now there
+ * (`heldIds`, Nov 24 night: the bread).
+ */
+export type Held = Set<string> | { itemId: string; item: string }[];
+const heldOf = (h: Held, items: Item[]): Set<string> => (h instanceof Set ? h : heldIds(h, items));
+
+/**
  * A dinner off the plan (taken off, swapped, or replaced by starting over; Nov 10): what only it needed comes off the
  * list, and what it shared with another dinner is cut back by its amount. Never something ticked off or in the Safeway
- * cart (`held`: list item ids), which may be bought already; never something added by hand (it's for no dinner).
+ * cart (`inCart`, `Held`), which may be bought already; never something added by hand (it's for no dinner).
  * Answers how many things came off.
  */
-export const takeOffFor = atomically(async (needs: { item: string; quantity: string; for: string; stay?: boolean }[], held: Set<string> = new Set()): Promise<number> => {
+export const takeOffFor = atomically(async (needs: { item: string; quantity: string; for: string; stay?: boolean }[], inCart: Held = new Set()): Promise<number> => {
   if (!needs.length) return 0;
   const items = await load(LIST);
+  const held = heldOf(inCart, items);
   // Each dinner's helpings of a thing together: planned twice and taken off, both amounts come off.
   const helpings = new Map<string, { key: string; for: string; amounts: string[]; stay: boolean }>();
   for (const n of needs) {
@@ -383,15 +394,16 @@ export const takeOffFor = atomically(async (needs: { item: string; quantity: str
  * stays for the next shop with `keep`, or goes too (Nov 11: "I would expect the whole app to reset"). Answers how many
  * came off.
  */
-export const finishShop = atomically(async (held: Set<string> = new Set(), keep = false): Promise<number> => {
-  const off = (await load(LIST)).filter((x) => !held.has(x.id) && (x.checked || x.check || !keep));
+export const finishShop = atomically(async (inCart: Held = new Set(), keep = false): Promise<number> => {
+  const items = await load(LIST), held = heldOf(inCart, items);
+  const off = items.filter((x) => !held.has(x.id) && (x.checked || x.check || !keep));
   // What was ticked as got is written down as bought first (Nov 14: Done shopping is gone, so this is where it's noted).
   await recordBought(off.filter((x) => x.checked));
   await editList([], new Set(off.map((x) => x.id)));
   return off.length;
 });
 /** Every list emptied but the Safeway cart's things. */
-export const emptyLists = (held: Set<string> = new Set()) => finishShop(held, false);
+export const emptyLists = (held: Held = new Set()) => finishShop(held, false);
 
 /**
  * Many items at once (a recipe's ingredients, a planned week): the list is read once, each item merges into the same
@@ -428,6 +440,7 @@ export const addItems = atomically(async (entries: { item: string; quantity: str
   fresh.forEach((x, i) => Object.assign(x, filings[i], { check: kept.has(norm(x.item)) || x.check }));
   await editList([...merged].map((x) => [x.id, { quantity: x.quantity, for: x.for, check: x.check }]));
   await append(LIST, fresh);
+  if (fresh.length) await retieCart(await load(LIST));
   await guessLater(unknown);
   // How many rows changed, waiting on Stock or on a list (Nov 14: a dinner's things all wait on Stock, and the screens
   // read the list again whenever this isn't 0).
@@ -479,8 +492,9 @@ const recordBought = (gone: Item[]) => append(BOUGHT, gone.map((x) => ({ item: x
  * Finishing a trip: the store's checked items come off the list, and `alsoIds` (for Safeway, what's in the cart);
  * everything else stays, other stores' too.
  */
-export const doneShopping = atomically(async (store: Store, alsoIds: Set<string> = new Set()): Promise<number> => {
-  const gone = (await load(LIST)).filter((x) => x.store === store && (x.checked || alsoIds.has(x.id)));
+export const doneShopping = atomically(async (store: Store, inCart: Held = new Set()): Promise<number> => {
+  const items = await load(LIST), also = heldOf(inCart, items);
+  const gone = items.filter((x) => x.store === store && (x.checked || also.has(x.id)));
   await recordBought(gone);
   await editList([], new Set(gone.map((x) => x.id)));
   return gone.length;

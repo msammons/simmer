@@ -1,6 +1,6 @@
 "use client";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Item, type Section, type Staple, type StapleKind } from "@/lib/client";
+import { type CartLine, type Item, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { useKitchen, useList } from "@/lib/app-data";
 import { cartLinesOf, leavingBy, linesOf, removalOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { groupsOf, namesOf, sectionOf, type Group as ListGroup } from "@/lib/groups";
@@ -49,23 +49,25 @@ export function StockScreen({ act: given }: { act: StockActions }) {
   const sw = useSafewayCart();
   // When a thing leaves the shopping list by her own hand (Need cleared, Have on a Need, Remove from the list), its
   // Safeway cart line comes out too, with no question (Sam, Nov 24 night: "isn't removing from list enough signal?"):
-  // taken to 0 as Shop's − does, shown at once, "Changing the cart…" on Shop while it's on its way. The cart is read
-  // through a ref so the rows' actions stay the same and a cart change doesn't redraw every row.
-  const cartNow = useRef(sw.cart);
+  // taken to 0 as Shop's − does, shown at once, "Changing the cart…" on Shop while it's on its way. Its lines are worked
+  // out from the list as it was before the change, with a + still on its way counted and a line whose row was taken off
+  // and put back tied to the row now there (`cartLinesOf`, Nov 24 night: the bread). The cart and the list are read when
+  // asked, so the rows' actions stay the same and a cart change doesn't redraw every row.
   const listNow = useRef(list);
-  useEffect(() => { listNow.current = list; }, [list]);
-  useEffect(() => { cartNow.current = sw.cart; }, [sw.cart]);
-  const { setQty } = sw;
+  const picksNow = useRef(sw.picks);
+  useEffect(() => { listNow.current = list; picksNow.current = sw.picks; }, [list, sw.picks]);
+  const { setQty, linesNow } = sw;
   const act = useMemo<StockActions>(() => {
-    const takeOut = (ids: Iterable<string>) => {
-      for (const l of cartLinesOf(cartNow.current, ids)) void setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, 0, l.item || l.name, null, { alt: l.name, on: "cart" });
+    const linesFor = (ids: string[]) => (ids.length ? cartLinesOf(linesNow(), ids, listNow.current?.items ?? [], picksNow.current) : []);
+    const takeOut = (lines: CartLine[]) => {
+      for (const l of lines) void setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, 0, l.item || l.name, null, { alt: l.name, on: "cart" });
     };
     return {
       ...given,
-      answer: (r, a) => { const id = leavingBy(r, a); given.answer(r, a); if (id) takeOut([id]); },
-      keepRemove: (s) => { const { drop } = removalOf(listNow.current?.items ?? [], s.item); given.keepRemove(s); takeOut(drop); },
+      answer: (r, a) => { const id = leavingBy(r, a); const lines = linesFor(id ? [id] : []); given.answer(r, a); takeOut(lines); },
+      keepRemove: (s) => { const lines = linesFor(removalOf(listNow.current?.items ?? [], s.item).drop); given.keepRemove(s); takeOut(lines); },
     };
-  }, [given, setQty]);
+  }, [given, setQty, linesNow]);
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   // Groups she opened or closed by hand (Nov 19): kept as she left them, so a group never pops open or shut when its

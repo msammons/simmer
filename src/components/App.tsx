@@ -7,7 +7,7 @@ import { PasscodeScreen } from "./PasscodeScreen";
 import { SafewayHost, useSafewayCart } from "./Safeway";
 import { ShopScreen, type ShopActions } from "./Shop";
 import { StockScreen, type StockActions } from "./Stock";
-import { afterRemoval } from "@/lib/stock-rows";
+import { afterRemoval, heldIds } from "@/lib/stock-rows";
 import { AddMealSheet, MealsScreen, PickDaySheet } from "./Week";
 import { kindOf } from "@/lib/week";
 import { known, norm, parseEntry, parseIngredient } from "@/lib/words";
@@ -476,8 +476,8 @@ const unbought = (items: Item[], cart: Set<string>) => items.filter((x) => !x.ch
  */
 function NewPlanSheet({ dinners, onConfirm, onCancel }: { dinners: number; onConfirm: (keep: boolean, cart: string[]) => void; onCancel: () => void }) {
   const list = useList();
-  const { cart: lines } = useSafewayCart();
-  const cart = useMemo(() => lines.map((l) => l.itemId).filter(Boolean), [lines]);
+  const { cart: lines, picks } = useSafewayCart();
+  const cart = useMemo(() => [...heldIds(lines, list?.items ?? [], picks)], [lines, list, picks]);
   const left = useMemo(() => unbought(list?.items ?? [], new Set(cart)), [list, cart]);
   const names = left.slice(0, 4).map((x) => x.item);
   const more = left.length - names.length;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addedFor, shownAmount, cartTotal, findItems, nextAfter, priceOf, rankResults } from "./shop";
+import { addedFor, askOf, notTaken, shownAmount, cartTotal, findItems, nextAfter, priceOf, rankResults } from "./shop";
 import type { Item } from "./groceries";
 import type { CartLine } from "./safeway";
 
@@ -71,5 +71,24 @@ describe("ranking by her own words (Nov 18)", () => {
     const ps = [{ id: "1", name: "Kraft Grated Parmesan Cheese - 8 Oz" }, { id: "2", name: "BelGioioso Fresh Parmesan Wedge - 8 Oz" }] as never[];
     expect(rankResults(ps, { item: "grated parmesan", query: "Fresh parmesan wedge" })[0].product).toMatchObject({ id: "2" });
     expect(rankResults(ps, { item: "grated parmesan", query: "grated parmesan" })[0].product).toMatchObject({ id: "1" });
+  });
+});
+
+// Sam, Nov 24 night: adding and taking out bread over and over.
+describe("Cart changes on their way", () => {
+  const p = { id: "960147370", name: "Whole wheat bread", price: "", image: "" };
+  it("sends taps made while a change is on its way as one, still for the list item and on the cart page", () => {
+    // − on the row's cart line (no list item, the cart page), then + on the same row (its list item, a search).
+    const minus = { p, qty: 0, query: "bread: whole wheat", forItem: null, how: { alt: p.name, on: "cart" as const } };
+    const plus = { p, qty: 1, query: "bread: whole wheat", forItem: { id: "row", item: "bread: whole wheat" } };
+    expect(askOf(minus, plus)).toEqual({ p, qty: 1, query: "bread: whole wheat", forItem: plus.forItem, how: { alt: p.name, on: "cart" } });
+    // The other way round: the list item from the first tap stays.
+    expect(askOf(plus, minus)).toMatchObject({ qty: 0, forItem: plus.forItem, how: { on: "cart" } });
+    expect(askOf(undefined, plus)).toBe(plus);
+  });
+  it("says a take-out Safeway didn't take in its own words", () => {
+    expect(notTaken({ qty: 1, reached: false }, 0)).toBe("Safeway still has it in the cart: taking it out didn't go through. Try again.");
+    expect(notTaken({ qty: 1, reached: false, why: "said", said: "Try later" }, 0)).toContain("It said: “Try later”");
+    expect(notTaken({ qty: 1, reached: false }, 2)).toBe("Safeway didn't take all of that. The cart shows what's there now.");
   });
 });

@@ -1010,7 +1010,29 @@ const began = Date.now();
         await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
         const greyCo = page.getByRole("button", { name: "Check out" });
         ok("shop: with an empty cart, Check out shows greyed and can't be pressed", (await greyCo.count()) === 1 && (await greyCo.isDisabled()));
-        fake.cart.push(...kept);
+        // The first thing going in says so too (Sam, Nov 24 night: "didn't always see status": with nothing in the cart
+        // yet, the line beside the greyed Check out stayed bare).
+        await page.getByRole("button", { name: "Add Milk to the cart" }).tap();
+        ok("shop: with an empty cart, a first Add says Changing the cart… beside Check out", await within150(async () => (await page.locator("[data-cart-status]").innerText()).trim() === "Changing the cart…"));
+        await idle();
+        ok("shop: and the words go once it's in", await until(async () => (await page.locator("[data-cart-status]").innerText()).trim() === "" && fake.cart.some((l) => l.productId === "p-milk"), 3000));
+        fake.cart.push(...kept.filter((l) => !fake.cart.some((x) => x.productId === l.productId)));
+      }
+      // The same thing never shows twice (Sam, Nov 24 night: "I did see bread twice"): a cart line whose row was taken off
+      // and put back as a new row (its item id gone), or that came in for no row, goes with the row now there, not loose.
+      {
+        const milk = fake.cart.find((l) => l.productId === "p-milk");
+        const was = milk && { itemId: milk.itemId, item: milk.item };
+        for (const [itemId, item] of [["gone-row", "Milk"], ["", ""]]) {
+          if (!milk) break;
+          Object.assign(milk, { itemId, item });
+          await tabBar.getByRole("button", { name: "List" }).tap(); await idle();
+          await tabBar.getByRole("button", { name: "Shop" }).tap(); await idle();
+          ok(`shop: a cart line ${itemId ? "whose row has gone" : "for no row"} shows on the row of its thing, once`, await until(async () => (await page.getByRole("button", { name: "One more Milk" }).count()) === 1
+            && (await page.getByRole("button", { name: /^One more Lucerne/ }).count()) === 0 && (await swGroup.getByText(/Lucerne 2% Reduced Fat Milk/).count()) === 1, 3000));
+        }
+        ok("shop: a cart line to tie (milk in the cart)", Boolean(milk));
+        if (milk) Object.assign(milk, was);
       }
       // Safeway out of reach: no Safeway controls, nothing extra in its header; its rows are a plain checklist.
       await fake.stop();
