@@ -409,6 +409,18 @@ describe("signed in, set to In Store (live, Nov 25)", () => {
     expect(stepsOf(j.id).slice(-3)).toEqual(["pickup", "cart", "wait"]);
   });
 
+  for (const tabsLate of [200, 1500]) it(`the box's tabs built ${tabsLate} ms after the box shows (live, Nov 25: 0.2 s; slower in a tab behind others): still switches`, async () => {
+    {
+      inStore({ mode: "InStore", selected: OUR_STREET, late: 1500, tabsLate });
+      world.shop.cart = { "960001": 1 };
+      const { value } = await drive(helper.runJob(live("cart"), null));
+      expect(value.result).toMatchObject({ signedIn: true });
+      expect(value.result.pickup).toBeUndefined();
+      expect(world.shop.presses).toMatchObject({ box: 1, "pickup tab": 1, [`select ${OUR_STREET}`]: 1 });
+      for (const k of never) expect(world.shop.presses[k]).toBeUndefined();
+    }
+  });
+
   it("an Add set to In Store switches, then adds", async () => {
     inStore({ mode: "InStore", selected: OUR_STREET, late: 1500 });
     expect((await drive(helper.runJob(live("setQty", { productId: "960001", qty: 1, query: "milk", name: "", on: "cart" }), null))).value).toMatchObject({ ok: true });

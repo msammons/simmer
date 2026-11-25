@@ -20,7 +20,8 @@ like Delivery or no choice, becomes Pickup at the household's store, by the same
 store cards are never pressed, and it still never chooses Delivery, In Store or another store. Safeway builds the
 header's button a moment after its home page loads, so each part is watched for up to `PAGE.pickupBox.wait`, and the
 store's card is read only from the Pickup tab's own pane, once that tab is chosen (the In Store pane lists the store as
-"Selected"). Why a switch didn't take is kept in the job's record.
+"Selected"). Why a switch didn't take is kept in the job's record. The box shows before its tabs are built in it, so
+its one Pickup tab is watched for too (helper 26.11.24.5).
 
 Signing in through Google (helper 26.11.24.2; Sam, Nov 24, asked directly about exactly these presses: "Yes build it").
 When a search, cart read or Add finds Safeway signed out, the helper signs Sam in once per job: on Safeway's sign-in

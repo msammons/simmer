@@ -313,7 +313,9 @@ export async function safewayPage(action, arg, P) {
       else return { done: false, why: "no box button", found: shown(C.open).length };
     }
     const close = () => { const x = shown(C.close); if (x.length === 1) x[0].click(); };
-    const tab = shown(C.tab, box);
+    // The box shows before its tabs are in it (live, Nov 25: the box at 0.2 s, its Pickup tab at 0.4 s; 26.11.24.4 looked
+    // at once and said "no pickup tab"), so the one tab is watched for too.
+    const tab = (await watch(() => { const t = shown(C.tab, box); return t.length === 1 ? t : null; }, wait)) ?? shown(C.tab, box);
     if (tab.length !== 1) { close(); return { done: false, why: "no pickup tab", found: tab.length }; }
     if (tab[0].getAttribute("aria-selected") !== "true") tab[0].click();
     const street = (card) => (card.innerText ?? card.textContent ?? "").split(/\n+/).map((l) => l.trim()).find((l) => /^\d+\s+\S/.test(l)) ?? "";
