@@ -79,7 +79,7 @@ describe("Face ID for ordering", () => {
     expect(await setUp()).toEqual({ ok: true, credentialId: "cred-1" });
     expect(verifyReg.mock.calls[0][0]).toMatchObject({ expectedOrigin: "https://simmer.example.com", expectedRPID: "simmer.example.com", requireUserVerification: true });
     const [key] = await loadPasskeys();
-    expect(key).toMatchObject({ id: "cred-1", publicKey: "AQID", counter: 0, name: "Face ID on this phone, Nov 12" });
+    expect(key).toMatchObject({ id: "cred-1", publicKey: "AQID", counter: 0, name: "Face ID on this device, Nov 12" });
     const c = await checkOptions(req());
     verifyAuth.mockResolvedValueOnce(checked("cred-1", 0));
     expect(await verifyCheck(req(), answer(c.challenge))).toEqual({ ok: true, credentialId: "cred-1" });
@@ -279,10 +279,10 @@ describe("Face ID for ordering", () => {
 
     it("no token, a wrong one, or one not approved yet is refused", async () => {
       await setUp("cred-1");
-      await expect(registrationOptions(req())).rejects.toThrow(/Add this phone/);
+      await expect(registrationOptions(req())).rejects.toThrow(/Add this device/);
       const { token, code } = await askToAdd();
-      await expect(registrationOptions(req(), "x".repeat(43))).rejects.toThrow(/Add this phone/);
-      await expect(registrationOptions(req(), token)).rejects.toThrow(new RegExp(`other phone first: it shows ${code}`));
+      await expect(registrationOptions(req(), "x".repeat(43))).rejects.toThrow(/Add this device/);
+      await expect(registrationOptions(req(), token)).rejects.toThrow(new RegExp(`other device first: it shows ${code}`));
       expect((await recordedForTests()).filter((r) => r[1] === "face id set up refused").length).toBe(3);
       expect((await loadPasskeys()).length).toBe(1);
     });
@@ -292,7 +292,7 @@ describe("Face ID for ordering", () => {
       const { token } = await askToAdd();
       vi.setSystemTime(Date.now() + ADD_MS + 1);
       expect(await addWaiting()).toBeNull();
-      await expect(approveOptions(req())).rejects.toThrow(/no new phone waiting/);
+      await expect(approveOptions(req())).rejects.toThrow(/no new device waiting/);
       const t2 = await approvedToken();
       const o = await registrationOptions(req(), t2); // asked for in time…
       vi.setSystemTime(Date.now() + ADD_MS + 1);
@@ -328,13 +328,13 @@ describe("Face ID for ordering", () => {
       expect(second.token).not.toBe(first.token);
       verifyAuth.mockResolvedValueOnce(checked("cred-1", 0));
       expect(await verifyApprove(req(), answer(options.challenge))).toMatchObject({ ok: false, why: expect.stringMatching(/replaced/) });
-      await expect(registrationOptions(req(), second.token)).rejects.toThrow(/other phone first/);
-      await expect(registrationOptions(req(), first.token)).rejects.toThrow(/Add this phone/);
+      await expect(registrationOptions(req(), second.token)).rejects.toThrow(/other device first/);
+      await expect(registrationOptions(req(), first.token)).rejects.toThrow(/Add this device/);
       expect(JSON.parse((await recordedForTests()).filter((r) => r[1] === "face id add approved").at(-1)![2])).toMatchObject({ ok: false });
       // Approving the second, then asking again: the approved one is gone with it.
       expect((await approve()).ok).toBe(true);
       await askToAdd();
-      await expect(registrationOptions(req(), second.token)).rejects.toThrow(/Add this phone/);
+      await expect(registrationOptions(req(), second.token)).rejects.toThrow(/Add this device/);
     });
 
     it("approving needs Face ID from a phone already set up", async () => {
@@ -350,7 +350,7 @@ describe("Face ID for ordering", () => {
       expect((await verifyApprove(req(), answer(options.challenge))).ok).toBe(true);
       verifyAuth.mockResolvedValueOnce(checked("cred-1", 0));
       expect((await verifyApprove(req(), answer(options.challenge))).ok).toBe(false); // its challenge is used up
-      await expect(approveOptions(req())).rejects.toThrow(/no new phone waiting/); // already approved
+      await expect(approveOptions(req())).rejects.toThrow(/no new device waiting/); // already approved
       expect((await recordedForTests()).filter((r) => r[1] === "face id add approved").map((r) => JSON.parse(r[2]).ok)).toEqual([false, false, true, false]);
       expect((await setUp("cred-2", 0, token)).ok).toBe(true);
     });

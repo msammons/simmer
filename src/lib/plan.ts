@@ -9,7 +9,7 @@
 // else survives.
 import { append, atomically, change, load, loadAll, save, strings } from "./store";
 import { loadHousehold, PROFILE_TAB } from "./data";
-import { addItems, dropHighlightsNotFor, finishShop, takeOffFor, type Store } from "./groceries";
+import { addItems, addUp, dropHighlightsNotFor, finishShop, takeOffFor, type Store } from "./groceries";
 import { loadCart } from "./safeway";
 import { newId, yes } from "./parse";
 import { loadRecipes, type Recipe } from "./recipes";
@@ -154,6 +154,21 @@ const needFor = (r: Recipe, freezer: Frozen[]): Need[] =>
     const both = bothOf(i.item).map(listName);
     return both.map((item) => ({ item, quantity: both.length > 1 ? "" : [i.quantity, i.unit].filter(Boolean).join(" "), for: r.name.toLowerCase(), check: true }));
   });
+
+/**
+ * What the planned dinners named in `dinners` need of `item`, from their recipes, each time one is planned (Nov 24:
+ * Remove from the list keeps only this of a row a dinner and a hand-added amount shared); null when none is found.
+ */
+export async function dinnerAmount(item: string, dinners: string[]): Promise<string | null> {
+  const [planned, recipes, freezer] = await Promise.all([load(PLANNED), loadRecipes(), loadFreezer()]);
+  const names = new Set(dinners.map((d) => d.trim().toLowerCase()));
+  const byId = new Map(recipes.map((r) => [r.id, r]));
+  const amounts = toPlanned(planned).listed.flatMap((d) => {
+    const r = byId.get(d.recipe);
+    return r && names.has(r.name.toLowerCase()) ? needFor(r, freezer).filter((n) => norm(n.item) === norm(item)).map((n) => n.quantity) : [];
+  });
+  return amounts.length ? amounts.reduce((a, b) => addUp(a, b)) : null;
+}
 
 /**
  * These dinners are off the plan: what only they needed comes off the list (see takeOffFor). `still`: recipes still

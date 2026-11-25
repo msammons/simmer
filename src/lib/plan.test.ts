@@ -306,3 +306,25 @@ describe("old meal plans kept (Nov 24)", () => {
     expect((await loadPlan()).dishes.find((x) => x.id === d.id)).toMatchObject({ day: todayIn() });
   });
 });
+
+// Remove from the list on a row a dinner and a hand-added amount share (Nov 24): only the dinner's amount stays.
+describe("Remove from the list keeps only the dinner's amount", () => {
+  it("drops the hand-added amount from the combined total, back to what the recipe needs", async () => {
+    const { removeKept } = await import("./groceries");
+    const { dinnerAmount } = await import("./plan");
+    await savePlan([{ kind: "quick", recipe: "tacos-1", pinned: false }], [], null, "Sam");
+    const rows = (await loadList()).items.filter((i) => !i.checked && i.for === "tacos" && /^\d/.test(i.quantity));
+    expect(rows.length).toBeGreaterThan(0);
+    const row = rows[0];
+    await addItem(row.item, "Sam", "", undefined, row.quantity); // by hand onto the dinner's line, the amounts added up
+    const combined = (await loadList()).items.find((i) => i.id === row.id)!;
+    expect(combined).toMatchObject({ for: "added by hand, tacos", check: false });
+    expect(combined.quantity).not.toBe(row.quantity);
+    expect(await dinnerAmount(row.item, ["tacos"])).toBe(row.quantity);
+    await addStaple(row.item);
+    await removeKept(row.item, dinnerAmount);
+    expect((await loadList()).items.find((i) => i.id === row.id)).toMatchObject({ for: "tacos", check: true, have: false, quantity: row.quantity });
+    const tacos = (await loadPlan()).dishes.find((d) => d.recipe === "tacos-1");
+    if (tacos) await removePlanned(tacos.id);
+  });
+});

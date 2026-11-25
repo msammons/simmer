@@ -201,7 +201,8 @@ passcode by message from its parent, only from a Chrome helper page, never from 
 
 - No technical words in anything a person sees: no "Gemini", "Google", "Sheet", "tab", "web", "API".
 - No device names in anything a person sees either: not "iPhone", "iPad" or "phone". Say "saved", "here" or "your
-  settings" instead.
+  settings" instead. Where a device must be named (Face ID on more than one, in Settings → Ordering), it's "device"
+  (Sam, Nov 24: "Add this device?", "Approve a new device?").
 - No scheduled background jobs, and no timers, polling, intervals or alarms in the app or the helper (Sam, Nov 11). Work
   happens while someone is using the app (or right after a response, with `after()`), and screens load on open, on
   return, after a change, or when a push says so.

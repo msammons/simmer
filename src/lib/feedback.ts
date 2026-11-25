@@ -32,9 +32,12 @@ export const KEEP_ALERTS = 5;
 export function addNote(n: Note): number { notes.set(++added, n); return added; }
 export function dropNote(key: number) { notes.delete(key); }
 
-/** An alert's words as it's shown, kept as one of the last five. */
-export function noteAlert(title: string, message?: unknown) {
-  const text = [title, typeof message === "string" ? message : ""].filter(Boolean).join(": ").replace(/\s+/g, " ").trim().slice(0, 200);
+/**
+ * An alert's words as it's shown, kept as one of the last five. `hidden`: a private alert (ordering's: a new device's
+ * approval code, the limit), kept by its title alone.
+ */
+export function noteAlert(title: string, message?: unknown, hidden = false) {
+  const text = [title, !hidden && typeof message === "string" ? message : ""].filter(Boolean).join(": ").replace(/\s+/g, " ").trim().slice(0, 200);
   if (!text || alerts[alerts.length - 1] === text) return;
   alerts.push(text);
   if (alerts.length > KEEP_ALERTS) alerts.splice(0, alerts.length - KEEP_ALERTS);

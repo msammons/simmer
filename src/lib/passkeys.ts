@@ -119,8 +119,8 @@ const moveCounter = atomically(async (id: string, from: number, counter: number)
   return true;
 });
 
-/** "Face ID on this phone, Nov 12", by the household's calendar. */
-const nameNow = (at: Date) => `Face ID on this phone, ${at.toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })}`;
+/** "Face ID on this device, Nov 12", by the household's calendar. */
+const nameNow = (at: Date) => `Face ID on this device, ${at.toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" })}`;
 
 // ---- adding a phone once one has Face ID: the new phone asks, a phone with Face ID approves, the new one sets up
 
@@ -142,7 +142,7 @@ const isApproved = async (token: string) => Boolean(await kv().get(APPROVED_KEY 
 
 /** The new phone: ask to be added. Only once a phone has Face ID; the first sets up with the passcode alone. */
 export async function askToAdd(): Promise<{ token: string; code: string }> {
-  if (!(await passkeyCount())) throw new AppError("No phone has Face ID yet, so this one can set it up straight away.");
+  if (!(await passkeyCount())) throw new AppError("No device has Face ID yet, so this one can set it up straight away.");
   const add: Add = { token: randomBytes(32).toString("base64url"), code: String(randomInt(0, 1_000_000)).padStart(6, "0"), created: Date.now() };
   await kv().set(ADD_KEY, JSON.stringify(add), { ex: secs(ADD_MS) });
   await record("face id add asked", { code: add.code });
@@ -165,7 +165,7 @@ export async function addWaiting(): Promise<{ code: string } | null> {
 /** A phone with Face ID: a Face ID check to approve the request waiting now (and only that one). */
 export async function approveOptions(req: Request): Promise<{ options: PublicKeyCredentialRequestOptionsJSON; code: string }> {
   const a = await currentAdd();
-  if (!a || (await isApproved(a.token))) throw new AppError("There's no new phone waiting. Tap Add this phone on it first.");
+  if (!a || (await isApproved(a.token))) throw new AppError("There's no new device waiting. Tap Add this device on it first.");
   return { options: await authOptions(req, "approve", a.token), code: a.code };
 }
 
@@ -174,7 +174,7 @@ export async function verifyApprove(req: Request, response: unknown): Promise<Ch
   let out: Inner & { code?: string; token?: string } = await checking(req, response, "approve");
   if (out.ok) {
     const a = await currentAdd();
-    if (!a || !out.token || a.token !== out.token) out = { ok: false, credentialId: out.credentialId, why: "That new phone's request ran out or was replaced. Ask again on the new phone." };
+    if (!a || !out.token || a.token !== out.token) out = { ok: false, credentialId: out.credentialId, why: "That new device's request ran out or was replaced. Ask again on the new device." };
     else {
       await kv().set(APPROVED_KEY + a.token, JSON.stringify({ by: out.credentialId, at: Date.now() }), { ex: secs(ADD_MS - (Date.now() - a.created)) });
       out = { ...out, code: a.code };
@@ -187,8 +187,8 @@ export async function verifyApprove(req: Request, response: unknown): Promise<Ch
 /** Why a new phone can't set up with this token yet, or null when it can (unexpired, and approved). */
 async function addRefused(token: string | undefined): Promise<string | null> {
   const a = await currentAdd();
-  if (!token || !TOKEN.test(token) || !a || a.token !== token) return "Another phone already has Face ID. Tap Add this phone, then approve it there.";
-  if (!(await isApproved(token))) return `Approve this phone on the other phone first: it shows ${a.code}.`;
+  if (!token || !TOKEN.test(token) || !a || a.token !== token) return "Another device already has Face ID. Tap Add this device, then approve it there.";
+  if (!(await isApproved(token))) return `Approve this device on the other device first: it shows ${a.code}.`;
   return null;
 }
 
@@ -249,7 +249,7 @@ async function registering(req: Request, response: unknown): Promise<Inner> {
     // so of two set-ups sent at once with one approval only one is added.
     const why = await addRefused(good.token);
     if (why) return { ok: false, credentialId: credential.id, why };
-    if (!(await kv().getdel(APPROVED_KEY + good.token))) return { ok: false, credentialId: credential.id, why: "That approval was already used. Ask again on this phone." };
+    if (!(await kv().getdel(APPROVED_KEY + good.token))) return { ok: false, credentialId: credential.id, why: "That approval was already used. Ask again on this device." };
     await kv().del(ADD_KEY);
   }
   const now = new Date();

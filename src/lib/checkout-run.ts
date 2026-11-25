@@ -278,7 +278,7 @@ export async function approve(req: Request, faceId: unknown, preparedId: string)
   const now = Date.now();
   const reasons: string[] = [];
   if (!check.ok) reasons.push(check.why ?? "Face ID didn't match.");
-  if (!p) reasons.push("That reading ran out after 2 minutes. Try again.");
+  if (!p) reasons.push("That reading was already used or ran out. Try again.");
   else {
     if (now - p.at > APPROVAL_MS) reasons.push("That was more than 2 minutes ago. Try again.");
     const cart = await cartNow();

@@ -32,7 +32,7 @@ export const POST = api(async (req) => {
       return Response.json(await approveOptions(req), noStore);
     case "approve": {
       const r = await verifyApprove(req, answerOf(b.response));
-      if (!r.ok) return refuse(r.why ?? "The new phone wasn't approved.");
+      if (!r.ok) return refuse(r.why ?? "The new device wasn't approved.");
       return Response.json({ ok: true }, noStore);
     }
     case "check": {

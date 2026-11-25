@@ -99,7 +99,7 @@ export function PhoneNote({ job, onOpen }: { job: Activity; onOpen: () => void }
     <button onClick={onOpen} aria-live="polite"
       className="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+0.5rem)] z-30 mx-auto flex max-w-[26rem] items-center gap-2.5 rounded-full bg-card px-4 py-2.5 text-left t-sub shadow-[0_6px_24px_rgba(0,0,0,.14)]">
       <span aria-hidden className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />
-      <span className="min-w-0 flex-1 truncate"><span className="text-muted">For the phone: </span>{describe(job)}</span>
+      <span className="min-w-0 flex-1 truncate"><span className="text-muted">For the device: </span>{describe(job)}</span>
     </button>
   );
 }
@@ -115,7 +115,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
         <div className="rounded-[1.375rem] bg-card px-5 py-4" aria-live="polite">
           <p className="flex items-center gap-2 t-foot text-muted">
             <span aria-hidden className={`size-2 rounded-full ${now ? "animate-pulse bg-accent" : "bg-muted/50"}`} />
-            {now ? (now.from === "app" ? "Working for the phone" : "Working") : "Ready"}
+            {now ? (now.from === "app" ? "Working for the device" : "Working") : "Ready"}
           </p>
           <p className="mt-1 t-headline">{now ? describe(now) : "Nothing to do right now"}</p>
         </div>
@@ -123,7 +123,7 @@ export function ActivityScreen({ jobs, onUse }: { jobs: Activity[]; onUse: () =>
           <Group header="Recent">
             {done.map((j) => (
               <Row key={j.id} title={<span className={j.status === "failed" || (j.kind === "search" && !j.signedIn) ? "text-warn-ink" : ""}>{describe(j)}</span>}
-                subtitle={[j.from === "app" ? "From the phone" : "From here", ago(j.updated), j.status === "failed" ? why(j.error) : j.kind === "search" && !j.signedIn ? why(j.noPickup ? "no-pickup" : "signed-out") : ""].filter(Boolean).join(" · ")} />
+                subtitle={[j.from === "app" ? "From the device" : "From here", ago(j.updated), j.status === "failed" ? why(j.error) : j.kind === "search" && !j.signedIn ? why(j.noPickup ? "no-pickup" : "signed-out") : ""].filter(Boolean).join(" · ")} />
             ))}
           </Group>
         ) : (
