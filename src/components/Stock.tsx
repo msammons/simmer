@@ -2,13 +2,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Item, type Section, type Staple, type StapleKind } from "@/lib/client";
 import { useKitchen, useList } from "@/lib/app-data";
-import { linesOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
+import { cartLinesOf, leavingBy, linesOf, removalOf, rowsOf, type Answer, type StockRow } from "@/lib/stock-rows";
 import { groupsOf, namesOf, sectionOf, type Group as ListGroup } from "@/lib/groups";
 import { norm } from "@/lib/words";
 import { shownAmount } from "@/lib/shop";
 import { Icon } from "./icons";
 import { useSafewayCart } from "./Safeway";
-import { BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField, sameProps } from "./ui";
+import { Alert, BrandBar, Button, ConfirmSheet, EmptyState, Group, Held, MoreMenu, Row, Sheet, AddField, sameProps } from "./ui";
 
 /**
  * Stock (the redesign, Nov 2): what the house keeps, by section, A to Z (an answer never moves a row). Checking the house
@@ -38,15 +38,34 @@ export type StockActions = {
   keepGroup: (from: string, to: string) => void;
   /** A dinner's thing that isn't kept in Stock: moved to another section (it's on the list under that section too). */
   mealMove: (it: Item, section: Section) => void;
-  /** Remove from the list: `inCart`, the list rows with a line in the Safeway cart, which stay (Nov 24). */
-  keepRemove: (s: Staple, inCart: Set<string>) => void;
+  /** Remove from the list: the thing and its rows not bought, a dinner's part staying (Nov 24). */
+  keepRemove: (s: Staple) => void;
 };
 
 /** The list and the freezer come from their stores; each row is drawn again only when it changes. */
-export function StockScreen({ act }: { act: StockActions }) {
+export function StockScreen({ act: given }: { act: StockActions }) {
   const list = useList();
   const kitchen = useKitchen();
   const sw = useSafewayCart();
+  // When a thing leaves the shopping list by her own hand (Need cleared, Have on a Need, Remove from the list), its
+  // Safeway cart line comes out too, with no question (Sam, Nov 24 night: "isn't removing from list enough signal?"):
+  // taken to 0 as Shop's − does, shown at once, "Changing the cart…" on Shop while it's on its way. The cart is read
+  // through a ref so the rows' actions stay the same and a cart change doesn't redraw every row.
+  const cartNow = useRef(sw.cart);
+  const listNow = useRef(list);
+  useEffect(() => { listNow.current = list; }, [list]);
+  useEffect(() => { cartNow.current = sw.cart; }, [sw.cart]);
+  const { setQty } = sw;
+  const act = useMemo<StockActions>(() => {
+    const takeOut = (ids: Iterable<string>) => {
+      for (const l of cartLinesOf(cartNow.current, ids)) void setQty({ id: l.productId, name: l.name, price: l.price, image: l.image }, 0, l.item || l.name, null, { alt: l.name, on: "cart" });
+    };
+    return {
+      ...given,
+      answer: (r, a) => { const id = leavingBy(r, a); given.answer(r, a); if (id) takeOut([id]); },
+      keepRemove: (s) => { const { drop } = removalOf(listNow.current?.items ?? [], s.item); given.keepRemove(s); takeOut(drop); },
+    };
+  }, [given, setQty]);
   const [removing, setRemoving] = useState<Staple | null>(null); // waiting on "Remove from Stock?" (a confirm, never an Undo)
   const [grouping, setGrouping] = useState<Staple | null>(null); // "Put in a group" open for this thing
   // Groups she opened or closed by hand (Nov 19): kept as she left them, so a group never pops open or shut when its
@@ -130,7 +149,9 @@ export function StockScreen({ act }: { act: StockActions }) {
         onConfirm={() => { if (ungrouping) act.keepGroup(ungrouping, ""); setUngrouping(null); }} onCancel={() => setUngrouping(null)} />
       {grouping && <GroupSheet staple={grouping} groups={groups} onClose={() => setGrouping(null)} onSave={(group) => { const s = grouping; setGrouping(null); act.keepSet(s.item, { group }); }} />}
       <ConfirmSheet open={Boolean(removing)} title={removing ? `Remove ${cap(removing.item)} from the list?` : ""} message="You can add it again any time." confirm="Remove from the list" danger
-        onConfirm={() => { if (removing) act.keepRemove(removing, new Set(sw.cart.map((l) => l.itemId).filter(Boolean))); setRemoving(null); }} onCancel={() => setRemoving(null)} />
+        onConfirm={() => { if (removing) act.keepRemove(removing); setRemoving(null); }} onCancel={() => setRemoving(null)} />
+      {/* A cart change from here that didn't happen (the helper not answering, say): the same alert as Shop's. */}
+      <Alert open={Boolean(sw.problem)} title="That didn't go through" message={sw.problem ?? ""} onClose={() => sw.setProblem(null)} />
     </div>
   );
 }

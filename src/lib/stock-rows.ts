@@ -17,13 +17,13 @@ const dinnersOf = (f: string) => f.split(",").map((x) => x.trim()).filter((x) =>
  * What Remove from the list does to the thing's List rows (Sam, Nov 24: sugar stayed on Shop after its kept thing was
  * removed), on the phone and the server alike. Only rows not yet bought: a row with no dinner goes; a row a dinner also
  * needs ("added by hand, Tacos") keeps the dinner's part and goes back to waiting for it, as the dinner's alone; a
- * dinner's own row stays as it is; and a row with a line in the Safeway cart (`inCart`, by list item id) is left alone,
- * so no cart line is left without its thing.
+ * dinner's own row stays as it is. A row that goes takes its Safeway cart line with it (`cartLinesOf`, Nov 24 night:
+ * "isn't removing from list enough signal?"); a row that stays keeps its line.
  */
-export function removalOf(items: Item[], name: string, inCart: Set<string> = new Set()): { drop: string[]; keep: { id: string; for: string }[] } {
+export function removalOf(items: Item[], name: string): { drop: string[]; keep: { id: string; for: string }[] } {
   const drop: string[] = [], keep: { id: string; for: string }[] = [];
   for (const i of items) {
-    if (i.checked || norm(i.item) !== norm(name) || inCart.has(i.id) || fromDinner(i)) continue;
+    if (i.checked || norm(i.item) !== norm(name) || fromDinner(i)) continue;
     const dinners = dinnersOf(i.for);
     if (dinners.length) keep.push({ id: i.id, for: dinners.join(", ") });
     else drop.push(i.id);
@@ -32,10 +32,23 @@ export function removalOf(items: Item[], name: string, inCart: Set<string> = new
 }
 
 /** The List rows after Remove from the list (`removalOf` applied): what the phone shows at once. */
-export function afterRemoval(items: Item[], name: string, inCart: Set<string> = new Set()): Item[] {
-  const { drop, keep } = removalOf(items, name, inCart);
+export function afterRemoval(items: Item[], name: string): Item[] {
+  const { drop, keep } = removalOf(items, name);
   const gone = new Set(drop), back = new Map(keep.map((k) => [k.id, k.for]));
   return items.filter((i) => !gone.has(i.id)).map((i) => (back.has(i.id) ? { ...i, for: back.get(i.id)!, check: true, have: false } : i));
+}
+
+/**
+ * The list row an answer takes off the shopping list (Sam, Nov 24 night): Have, or the lit cart tapped again, on a row
+ * marked Need. Its Safeway cart line comes out with it, with no question.
+ */
+export const leavingBy = (r: Pick<StockRow, "item" | "answer">, a: Answer): string | null =>
+  r.item && r.answer === "need" && a !== "need" ? r.item.id : null;
+
+/** The Safeway cart lines tied to list rows leaving the list (`ids`): each is taken to 0, as Shop's − does. */
+export function cartLinesOf<L extends { itemId: string; qty: number }>(cart: L[], ids: Iterable<string>): L[] {
+  const gone = new Set(ids);
+  return cart.filter((l) => l.itemId && gone.has(l.itemId) && l.qty > 0);
 }
 
 /** check: not answered yet; have: checked and there (off every list); need: on the list. */

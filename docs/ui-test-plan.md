@@ -79,11 +79,12 @@ Redis, no Safeway). **R** = needs the real data, the helper and Safeway; **never
 | 5.9 | A group whose items all show anyway | Starts open; tapping its name closes it to the name alone | L |
 | 5.10 | A group's ⋯ | Only Rename group and Remove group; Rename opens a small sheet; Remove asks "Remove the X group?" and the things stay kept | L |
 | 5.11 | The list's own ⋯ | Show all groups (✓ when on): every kept thing and every group opened, specialty things too | L |
-| 5.12 | A kept thing's ⋯ | Move to a section, Put in a group / Change group, Make common (always shows) / Make specialty (shows until bought), Remove from the list (asks, "You can add it again any time."; a Need or Have on it goes too, off Shop as well) | L |
+| 5.12 | A kept thing's ⋯ | Move to a section, Put in a group / Change group, Make common (always shows) / Make specialty (shows until bought), Remove from the list (asks, "You can add it again any time."; a Need or Have on it goes too, off Shop as well, and its Safeway cart line comes out; a dinner's part stays, with its line) | L |
 | 5.13 | A specialty thing after the shop | Leaves the list once bought; Show all groups brings it back | L |
 | 5.14 | Recipe lines on the list | No sizes or cuts ("large onion" is "onion", "diced" and "chopped" go; "diced tomatoes" stays whole); "red wine or balsamic vinegar" is one thing; "salt and black pepper" is two; cumin and ground cumin are one line; never tap water | L |
 | 5.15 | Remove the last thing in a group, then Show all groups | The group stays (Nov 24): hidden normally, under Show all groups its header alone with no rows, in its section; Add item's Group pill and Put in a group list it; a new thing added into it lands in its section; only its ⋯ Remove group (asks first) takes it away | L |
 | 5.16 | Something on Shop with no kept thing behind it (added on Shop, or a kept thing removed while it was Need) | It shows on the List too, in its section, Need lit; ✓ or the cart answer it there; its ⋯ moves it or offers Always keep on the list | L |
+| 5.17 | A thing marked Need that's in the Safeway cart: tap its lit cart (or ✓) on the List | No question; it leaves Shop's list and its cart line comes out at once ("Changing the cart…" on Shop while it goes), no loose line left; with the helper not answering, the list change stays and the line shows as after any − that didn't go through, with the same alert | L |
 
 ## 6. Shop
 

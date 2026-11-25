@@ -319,9 +319,10 @@ export default function App() {
       }),
       keepMove: (item, section) => void change({ op: "keepMove", item, section }, (l) => keepGroups(l, l.staples.map((x) => (x.item === item ? { ...x, section } : x)))),
       mealMove: (it, section) => void change({ op: "move", id: it.id, section }, (l) => ({ ...l, items: l.items.map((x) => (x.id === it.id ? { ...x, section } : x)) })),
-      // Its rows go with it as on the server (stock-rows.ts removalOf, Nov 24): a dinner's part stays, cart rows are left alone.
-      keepRemove: (st, inCart) => void change({ op: "keepRemove", item: st.item }, (l) =>
-        keepGroups({ ...l, items: afterRemoval(l.items, st.item, inCart) }, l.staples.filter((x) => norm(x.item) !== norm(st.item)))),
+      // Its rows go with it as on the server (stock-rows.ts removalOf, Nov 24): a dinner's part stays. Stock takes the
+      // cart lines of the rows that go to 0.
+      keepRemove: (st) => void change({ op: "keepRemove", item: st.item }, (l) =>
+        keepGroups({ ...l, items: afterRemoval(l.items, st.item) }, l.staples.filter((x) => norm(x.item) !== norm(st.item)))),
     };
     return { shop, stock };
   }, [lists, kitchens]);

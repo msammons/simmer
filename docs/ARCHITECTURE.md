@@ -78,8 +78,12 @@ Everything comes from `components/ui.tsx`, so every screen looks and behaves the
   underneath, and waits there until she says Need. Anything else on the list (added on Shop, say) has a plain row in its
   section, so everything on Shop's lists shows here and can be answered (Sam, Nov 24: sugar was on Shop but not here,
   its kept thing removed while it was Need); Remove from the list takes the thing's rows not bought off the list with
-  it, except that a row a dinner also needs keeps the dinner's part (waiting on Have or Need again), a dinner's own row
-  stays, and a row in the Safeway cart is left alone (`removalOf`, the same on the phone and the server, Nov 24).
+  it, except that a row a dinner also needs keeps the dinner's part (waiting on Have or Need again) and a dinner's own row
+  stays (`removalOf`, the same on the phone and the server, Nov 24). When a thing leaves the shopping list by her own
+  hand (Need cleared, Have on a Need, Remove from the list), its Safeway cart line comes out too, with no question (Sam,
+  Nov 24 night: "isn't removing from list enough signal?"): the List takes it to 0 the way Shop's − does (`leavingBy`,
+  `cartLinesOf`), shown at once, with Shop's "Changing the cart…" and, if it doesn't go through, the same alert; a row a
+  dinner keeps keeps its line. Bought rows, New plan, Done shopping and Mark bought keep their own cart rules.
   Put in a group, a thing moves to the part of the list the group is in (`putInGroup`). Things in a group sit together: the header row is tinted and the group
   has a faint outline; tapping its name switches between all its items and only the ones in the cart or needed by a dinner
   (the arrow shows which); a group whose things all show anyway starts open and closes to its name alone. A group's ⋯ has
@@ -131,7 +135,8 @@ can't tell the order went through). A new plan empties the lists and writes what
 Opening the app, bringing it back to the front (on any tab, Nov 23) and opening Shop read Safeway's own cart (at most once
 a minute unless signed out or not connected), so Simmer's copy matches it and Shop already knows when it opens. A change to something already in the cart (a −, a +
 or taking it out) is made on Safeway's cart page first, where the product is listed, from Shop's rows and from Find alike;
-only adding something new goes through a search. Find searches when an item comes up and on Search, never on each letter
+only adding something new goes through a search. Taking a thing off the list on the List takes its cart line out too (see List), so
+Shop is never left with a loose line for it. Find searches when an item comes up and on Search, never on each letter
 typed, ranks results by her own words, and starts each item at the top of its sheet. Find's Back (‹), where it is
 ("3 of 8") and Skip, Next: <item> or Got it float at the bottom of the sheet (Sam, Nov 24: "It needs to float somehow"):
 a bar on the top bar's blurred backing, pinned to the bottom of the results while they scroll and in its own place after
