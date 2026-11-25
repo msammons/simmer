@@ -511,6 +511,15 @@ async function noteTime(j: Job, at: string, ok: boolean, why: string) {
  * sent twice (the helper keeps one until Simmer has it, Nov 19) counts once: it's claimed on the job in one step first
  * (Nov 19, review: two copies at once both changed the cart), and only the copy that claimed it does anything.
  */
+/**
+ * Signed in after all, with Safeway sending its pages home (live, Nov 25: Robin's account set to In Store, not Pickup).
+ * The helper, judging signed out, went to Safeway's sign-in page to sign in through Google, and Safeway answered that
+ * address with its home page: it does that only for a signed-in tab (seen Nov 23). So it's Pickup not chosen, never
+ * signed out ("Choose Pickup on Safeway", not "Signed out"). The helper's words for it: "not the sign-in page".
+ */
+const SIGNED_IN_AFTER_ALL = "not the sign-in page";
+const signedInAfterAll = (raw: Record<string, unknown>) => raw.google === SIGNED_IN_AFTER_ALL || raw.why === `google: ${SIGNED_IN_AFTER_ALL}`;
+
 export async function finishJob(id: string, reported: boolean, reportedRaw: Record<string, unknown>): Promise<Job | null> {
   if (!(await getJob(id))) return null;
   const at = now();
@@ -526,7 +535,7 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   const raw: Record<string, unknown> = gone ? { ok: true, qty: 0 } : reportedRaw;
   let result: Record<string, unknown> = ok ? {} : { error: str(raw.error, 40) || "failed", ...(str(raw.why, 300) && { why: str(raw.why, 300) }) };
   if (ok && j.kind === "search") {
-    const noPickup = raw.noPickup === true;
+    const noPickup = raw.noPickup === true || signedInAfterAll(raw);
     result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, noResults: raw.noResults === true, ...(noPickup && { noPickup }) };
     // Signed out (or Pickup not chosen), noted; signed in leaves it to the cart page, which also puts the cart right.
     if (noPickup) await noteSafeway("no-pickup");
@@ -556,8 +565,9 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind === "cart") {
     // Safeway's cart page: Simmer's cart becomes what's there (added on Safeway itself too; gone if no longer there).
     // Signed in with Pickup not chosen (Nov 23): Safeway showed no cart, so Simmer's copy stays as it is.
-    const noPickup = raw.noPickup === true;
-    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, ...(noPickup && { noPickup }) };
+    const noPickup = raw.noPickup === true || signedInAfterAll(raw);
+    // Why Google didn't sign in, kept for reading the record (Nov 25: it was dropped, and had to be worked out).
+    result = { products: noPickup ? [] : productsOf(raw), signedIn: !noPickup && raw.signedIn !== false, ...(noPickup && { noPickup }), ...(str(raw.google, 60) && { google: str(raw.google, 60) }) };
     await noteSafeway(noPickup ? "no-pickup" : result.signedIn === true ? "in" : "out");
     if (result.signedIn && raw.empty === true) result = { ...result, ...(await emptied(raw.orders)) };
     else if (result.signedIn) await matchCart((result.products as ReturnType<typeof productsOf>).filter((p) => p.inCart));
@@ -588,7 +598,8 @@ export async function finishJob(id: string, reported: boolean, reportedRaw: Reco
   if (ok && j.kind.startsWith("checkout") && raw.stopped === "signed out") await noteSignedIn(false);
   if (ok && j.kind.startsWith("checkout") && raw.stopped === "no pickup chosen") await noteSafeway("no-pickup");
   // An Add Safeway answered with its session expired (Nov 23): signed out, as a cart read seeing it would note.
-  if (!ok && j.kind === "setQty" && raw.error === "signed-out") await noteSignedIn(false);
+  if (!ok && j.kind === "setQty" && raw.error === "signed-out" && signedInAfterAll(raw)) { result = { error: "no-pickup" }; await noteSafeway("no-pickup"); }
+  else if (!ok && j.kind === "setQty" && raw.error === "signed-out") await noteSignedIn(false);
   if (!ok && j.kind === "setQty" && raw.error === "no-pickup") await noteSafeway("no-pickup");
   if (ok && (j.kind === "checkoutPrepare" || j.kind === "checkoutDry")) {
     const c = raw.chosen && typeof raw.chosen === "object" ? raw.chosen as Record<string, unknown> : null;

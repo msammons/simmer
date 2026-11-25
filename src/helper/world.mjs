@@ -82,6 +82,8 @@ export function makeWorld() {
   function navigate(url) {
     const g = ++gen;
     const spec = serve(new URL(url));
+    // Answered by Safeway's server with another address (the browser never shows the first one).
+    if (spec.redirect) { navigate(spec.redirect.startsWith("/") ? SAFEWAY + spec.redirect : spec.redirect); return; }
     shop.loads.push(new URL(url).pathname + new URL(url).search);
     tab.url = url; tab.status = "loading";
     pageStart = Date.now();
@@ -389,6 +391,8 @@ function serve(u) {
   if (u.host === OKTA) return oktaPage(shop);
   if (u.host === GOOGLE) return googlePage(shop, u);
   if (p.startsWith("/bin/")) return { html: "<p>Signing in…</p>", run: (t) => { if (u.searchParams.get("code") === "ok") { shop.signedIn = true; shop.sessionGone = false; shop.cartGone = false; } t.after(200, () => t.go("/")); } };
+  // `signInAtOnce` (live, Nov 25): signed in, Safeway's server answers its sign-in address with its home page.
+  if (p === "/account/sign-in.html" && shop.signInAtOnce && shop.signedIn && !shop.sessionGone) return { redirect: "/" };
   if (p === "/account/sign-in.html") return signInPage(shop);
   // The home page signed out as on Nov 23: the name it remembers, Sign In there but hidden.
   if (shop.cartGone) return withBox(shop, { html: '<div class="menu-nav"><a href="/erums/cart" aria-label="Cart">Cart</a> <button aria-label="Account menu">Hi, Sam</button><div style="display:none"><a href="/account/sign-in.html">Sign In</a></div></div><h1>Safeway</h1>' });

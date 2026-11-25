@@ -8,7 +8,7 @@ vi.mock("@simplewebauthn/server", async (real) => ({
   verifyRegistrationResponse: vi.fn(),
   verifyAuthenticationResponse: vi.fn(),
 }));
-vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), cartChanging: vi.fn(async () => false), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ seen: "", away: false, outdated: false })) }));
+vi.mock("./jobs", () => ({ queueJob: vi.fn(), waitForJob: vi.fn(), cartChanging: vi.fn(async () => false), safewaySignedOut: vi.fn(async () => false), safewayNoPickup: vi.fn(async () => false), HELPER_VERSION: "9.9.9", helperStatus: vi.fn(async () => ({ seen: "", away: false, outdated: false })) }));
 vi.mock("./push", () => ({ wakeHelper: vi.fn(async () => {}) }));
 import { verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import pages from "./checkout-pages.json";
@@ -373,6 +373,30 @@ describe("picking the store and card (Nov 14)", () => {
     expect(choicesOf([{ text: "Your cart 3 items Checkout" }, pages.pickup])).toEqual({ store: "100 Main St, Springfield, CA 90000", card: "4242" });
     expect(choicesOf([{ text: "Your cart" }])).toEqual({ store: "", card: "" });
     expect(choicesOf([{ text: 7 }, {}])).toEqual({ store: "", card: "" });
+  });
+});
+
+describe("the look says why it found nothing (live, Nov 25)", () => {
+  const home = { url: "https://www.safeway.com/", text: "We are experiencing technical difficulties and orders may be delayed. Account menu Robin" };
+  const cart = (text: string) => ({ url: "https://www.safeway.com/erums/cart", text });
+  it("sent home: Pickup not chosen, unless Simmer last saw Safeway signed out; Safeway's trouble banner added", async () => {
+    const { lookProblem } = await import("./checkout-run");
+    expect(lookProblem([home], "looked", { signedOut: false, noPickup: true })).toMatch(/^Safeway isn't set to Pickup.*In Store.*having trouble/);
+    expect(lookProblem([home], "looked", { signedOut: true, noPickup: false })).toMatch(/^Signed out on Safeway/);
+    expect(lookProblem([{ url: "https://www.safeway.com/" }], "looked", { signedOut: false, noPickup: false })).not.toMatch(/trouble/);
+  });
+  it("an empty cart, no Checkout, a checkout without them, nothing loaded", async () => {
+    const { lookProblem } = await import("./checkout-run");
+    const seen = { signedOut: false, noPickup: false };
+    expect(lookProblem([cart("Your shopping cart is empty.")], "no button to press", seen)).toMatch(/^Safeway's cart is empty/);
+    expect(lookProblem([cart("Cart 2 items")], "no button to press", seen)).toMatch(/didn't show Checkout/);
+    expect(lookProblem([cart("Cart"), { url: "https://www.safeway.com/erums/checkout?cartId=1", text: "Order info" }], "looked", seen)).toMatch(/didn't show the pickup store or card/);
+    expect(lookProblem([], "page didn't load", seen)).toMatch(/didn't load/);
+  });
+  it("a finished look with nothing found is an error with the reason, not an empty pick", async () => {
+    const { lookUp } = await import("./checkout-run");
+    vi.mocked(waitForJob).mockResolvedValueOnce({ id: "l1", kind: "checkoutLook", status: "done", args: {}, result: { pages: [home], stopped: "looked", pressed: [] }, created: "", updated: "" } as unknown as Job);
+    await expect(lookUp("l1", 0)).rejects.toThrow(/isn't set to Pickup/);
   });
 });
 
