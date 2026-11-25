@@ -384,6 +384,27 @@ describe("the background: jobs in order, reports kept, a job lost when Chrome st
 
 void SAFEWAY;
 
+describe("signed in, set to In Store (live, Nov 25)", () => {
+  // Robin's account on the Mac: signed in, Safeway set to In Store (the header shows only the store, no Delivery/Pickup
+  // button), and Safeway's note not a customer's. The cart is sent home; the Pickup switch finds no box button, so
+  // nothing's pressed; Safeway's sign-in page sends the signed-in tab straight home, so Google's button is never there.
+  const STORE = `Safeway ${OUR_STREET} Petaluma, CA 00000`;
+  const live = (kind, args = {}) => ({ id: `j${++ids}`, kind, args, page: PAGE, settings: SETTINGS, store: STORE, google: SAM });
+  let told;
+  beforeEach(() => { told = []; world.simmer = async (op, b) => { if (op === "step") told.push(b); return { ok: true }; }; });
+  const stepsOf = (id) => told.filter((t) => t.id === id).map((t) => t.step);
+  const inStore = () => { world.note(null); world.shop.cartGone = true; world.shop.signedIn = true; world.shop.sessionGone = false; world.shop.signInAtOnce = true; };
+
+  it("a cart read says why Google wasn't tried (the sign-in page went home), and nothing is pressed", async () => {
+    inStore();
+    const j = live("cart");
+    const { value } = await drive(helper.runJob(j, null));
+    expect(value.result).toMatchObject({ signedIn: false, products: [], google: "not the sign-in page" });
+    expect(world.shop.presses).toEqual({});
+    expect(stepsOf(j.id)).toEqual(["cart", "wait", "cart", "wait", "pickup", "signin"]);
+  });
+});
+
 describe("switching Safeway to Pickup (Sam, Nov 23: \"i want this process to be automated\")", () => {
   const STORE = `Safeway ${OUR_STREET} Petaluma, CA 00000`;
   const withStore = (kind, args = {}) => ({ id: `j${++ids}`, kind, args, page: PAGE, settings: SETTINGS, store: STORE });

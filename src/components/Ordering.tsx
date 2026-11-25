@@ -397,13 +397,18 @@ function PickField({ field, value, onFound, onSave }: { field: "store" | "card";
   const [found, setFound] = useState<Choices | null>(null);
   const [problem, setProblem] = useState("");
   const [step, setStep] = useState<string | undefined>(lookStep);
+  // Why the look found nothing, said once as an alert (Nov 25: it came back empty with no reason and seemed stuck);
+  // Try again looks afresh.
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const found0 = useRef(onFound);
   useEffect(() => {
     let live = true;
     lookWatchers.add(setStep);
-    lookAtSafeway().then((c) => { if (live) { setFound(c); found0.current(); } }, (e) => live && setProblem(errorText(e)));
+    lookAtSafeway().then((c) => { if (live) { setFound(c); found0.current(); } }, (e) => { if (live) { setProblem(errorText(e)); setAlertOpen(true); } });
     return () => { live = false; lookWatchers.delete(setStep); };
-  }, []);
+  }, [attempt]);
+  const retry = () => { looked = null; lookStep = undefined; setStep(undefined); setAlertOpen(false); setProblem(""); setAttempt((n) => n + 1); };
   const current = field === "store" ? value.store : value.card;
   const shown = (v: string) => (field === "card" ? `•••• ${v}` : v);
   const fromSafeway = found ? (field === "store" ? found.store : found.card) : "";
@@ -411,7 +416,15 @@ function PickField({ field, value, onFound, onSave }: { field: "store" | "card";
   const footer = field === "store"
     ? "Orders go to the store Safeway is set to. To pick up somewhere else, change the store on Safeway, then come back."
     : "Orders use the card Safeway has. To use another, change it on Safeway, then come back.";
-  if (problem) return <Group header={FIELDS[field]} footer={footer}><Row title="Safeway couldn't be read" subtitle={problem} /></Group>;
+  if (problem) return (
+    <>
+      <Group header={FIELDS[field]} footer={footer}>
+        {current ? <Row title={shown(current)} subtitle="Saved before" role="radio" checked accessory="check" /> : <Row title="Safeway couldn't be read" subtitle={problem} />}
+        <Row title="Try again" onClick={retry} />
+      </Group>
+      <Alert private open={alertOpen} title="Safeway couldn't be read" message={problem} onRetry={retry} onClose={() => setAlertOpen(false)} />
+    </>
+  );
   if (!found) return <Held groups={[2]} label="Reading Safeway's checkout" words={stepWords(step, "Reading Safeway's checkout…")} />;
   return (
     <Group header={FIELDS[field]} footer={footer}>

@@ -16,7 +16,8 @@ import {
   type Approval, type CheckoutSettings, type Final,
 } from "./checkout";
 import { AppError } from "./errors";
-import { HELPER_VERSION, cartChanging, helperStatus, queueJob, waitForJob, type Job } from "./jobs";
+import { HELPER_VERSION, cartChanging, helperStatus, queueJob, safewayNoPickup, safewaySignedOut, waitForJob, type Job } from "./jobs";
+import { PAGE } from "./safeway-helper.mjs";
 import { doneShopping } from "./groceries";
 import { clearCart, loadCart, type CartLine } from "./safeway";
 import { json, kv, secs, swap } from "./kv";
@@ -591,6 +592,29 @@ export function choicesOf(pages: { text?: unknown; buttons?: unknown }[]): Choic
   return { store, card };
 }
 
+type LookPage = { url?: unknown; text?: unknown; buttons?: unknown };
+/**
+ * Why the look found neither the store nor the card, in plain words (live, Nov 25: Robin's account was set to In Store,
+ * Safeway sent its cart home, and the look came back with nothing to pick and no reason, so it seemed stuck). From where
+ * the look ended up and what Simmer last saw of Safeway: sent home (signed out, or Pickup not chosen), an empty cart, no
+ * Checkout on the cart page, or a checkout page that didn't show them. Safeway's own trouble banner is added when shown.
+ */
+export function lookProblem(pages: LookPage[], stopped: string, seen: { signedOut: boolean; noPickup: boolean }): string {
+  const text = (p: LookPage) => (typeof p.text === "string" ? p.text : "");
+  const path = (p: LookPage) => { try { return new URL(String(p.url ?? "")).pathname; } catch { return ""; } };
+  const last = pages.at(-1);
+  const trouble = pages.some((p) => /experiencing technical difficulties/i.test(text(p))) ? " Safeway also says its site is having trouble right now." : "";
+  if (!last) return "Safeway's page didn't load. Try again.";
+  const at = path(last);
+  if (at === "/" || at === PAGE.google.signInPath) {
+    if (seen.signedOut && !seen.noPickup) return `Signed out on Safeway. Sign in on the computer, then try again.${trouble}`;
+    return `Safeway isn't set to Pickup, so it won't open the cart. On Safeway, choose Pickup at your store (not In Store or Delivery), then try again.${trouble}`;
+  }
+  if (at === PAGE.cartPath && new RegExp(PAGE.emptyCart, "i").test(text(last))) return "Safeway's cart is empty. Add something first, then try again.";
+  if (at === PAGE.cartPath || stopped === "no button to press") return `Safeway's cart didn't show Checkout. Try again.${trouble}`;
+  return `Safeway's checkout didn't show the pickup store or card. Try again.${trouble}`;
+}
+
 /**
  * Looks at Safeway's checkout for the store and card to pick (or follows the look started): the read-only look from
  * phase 1 (docs/CHECKOUT.md: Checkout, the suggestions page's Continue, Order info's Continue, one day; never a pickup
@@ -604,6 +628,9 @@ export async function lookUp(jobId?: string, ms = WAIT_MS, since?: string): Prom
   if (job.status !== "done") throw new AppError(failedWords(job));
   const pages = Array.isArray(job.result?.pages) ? (job.result.pages as { text?: unknown; buttons?: unknown }[]) : [];
   const found = choicesOf(pages);
-  await record("store and card read", { jobId: job.id, ...found, stopped: String(job.result?.stopped ?? "") });
-  return found;
+  const stopped = String(job.result?.stopped ?? "");
+  await record("store and card read", { jobId: job.id, ...found, stopped });
+  if (found.store || found.card) return found;
+  const [signedOut, noPickup] = await Promise.all([safewaySignedOut(), safewayNoPickup()]);
+  throw new AppError(lookProblem(pages, stopped, { signedOut, noPickup }));
 }

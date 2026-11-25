@@ -64,6 +64,27 @@ describe("jobs for the Safeway helper", () => {
     expect(await seen()).toEqual([false, false]);
   });
 
+  it("signed in after all: Safeway's sign-in page went home, so it's Pickup not chosen, never signed out (live, Nov 25)", async () => {
+    await setCartLine({ ...milk, qty: 1 });
+    const finish = async (kind: "cart" | "search" | "setQty", raw: Record<string, unknown>, ok = true) => {
+      const j = await queueJob(kind, kind === "search" ? { query: "milk" } : kind === "setQty" ? { productId: milk.productId, qty: 2 } : {});
+      await takeJob("1.0.0", true); return finishJob(j.id, ok, raw);
+    };
+    const seen = async () => [await safewaySignedOut(), await safewayNoPickup()];
+    let j = await finish("cart", { products: [], signedIn: false, google: "not the sign-in page" });
+    expect(j?.result).toMatchObject({ signedIn: false, noPickup: true, products: [], google: "not the sign-in page" });
+    expect(await seen()).toEqual([false, true]);
+    expect((await loadCart()).map((l) => l.productId)).toEqual([milk.productId]);
+    await finish("cart", { products: [], signedIn: false, google: "password" });
+    expect(await seen()).toEqual([true, false]);
+    j = await finish("search", { products: [], signedIn: false, google: "not the sign-in page" });
+    expect(j?.result).toMatchObject({ noPickup: true });
+    await finish("cart", { products: [], signedIn: false });
+    j = await finish("setQty", { error: "signed-out", why: "google: not the sign-in page" }, false);
+    expect(j?.result).toEqual({ error: "no-pickup" });
+    expect(await seen()).toEqual([false, true]);
+  });
+
   it("never guesses the helper's away from when it last checked in (Nov 11: no timer keeps that fresh)", async () => {
     expect(await helperStatus()).toMatchObject({ away: false });
     expect(await takeJob("1.0.0", false)).toBeNull();
